@@ -102,11 +102,19 @@ Open your bot in Telegram and send `/start`.
 node server.js
 ```
 
+### Docker
+
+```bash
+docker build -t ticktick-bot .
+docker run --env-file .env -p 8080:8080 ticktick-bot
+```
+
 ### Cloud (Render — recommended)
 
 1. Connect your GitHub repo on [render.com](https://render.com)
-2. The included `render.yaml` auto-configures the web service
-3. Set these env vars in Render's dashboard:
+2. Render auto-detects the `Dockerfile` and builds from it
+3. The included `render.yaml` blueprint configures the web service
+4. Set these env vars in Render's dashboard:
 
 | Variable | Value |
 |----------|-------|
@@ -121,8 +129,8 @@ node server.js
 | `WEBHOOK_URL` | Your Render URL (e.g., `https://your-app.onrender.com`) |
 | `TICKTICK_REDIRECT_URI` | Same as WEBHOOK_URL + `/` |
 
-4. Update the redirect URI at [developer.ticktick.com](https://developer.ticktick.com) to match
-5. Set up [UptimeRobot](https://uptimerobot.com) to ping `/health` every 5 min (keeps free tier awake)
+5. Update the redirect URI at [developer.ticktick.com](https://developer.ticktick.com) to match
+6. Set up [UptimeRobot](https://uptimerobot.com) to ping `/health` every 5 min (keeps free tier awake)
 
 ---
 
@@ -130,6 +138,7 @@ node server.js
 
 ```
 ├── server.js                    # Entry point (Express + bot startup)
+├── Dockerfile                   # Production Docker image
 ├── render.yaml                  # Render deployment blueprint
 ├── bot/
 │   ├── index.js                 # Bot factory
