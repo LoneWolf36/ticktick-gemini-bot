@@ -11,38 +11,70 @@ export const PRIORITY_MAP = {
 };
 
 // ─── Schedule bucket → ISO due date ─────────────────────────
+// Uses USER_TIMEZONE so "today" means the user's today, not the server's.
+
+const USER_TZ = process.env.USER_TIMEZONE || 'Europe/Dublin';
+
+/** Get the user's "now" as a date string in their timezone */
+function userNow() {
+    // Get components in user's timezone
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: USER_TZ,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(new Date());
+
+    const get = (type) => parts.find(p => p.type === type)?.value;
+    return {
+        year: parseInt(get('year')),
+        month: parseInt(get('month')) - 1, // 0-indexed
+        day: parseInt(get('day')),
+        hour: parseInt(get('hour')),
+        dayOfWeek: new Date(
+            parseInt(get('year')),
+            parseInt(get('month')) - 1,
+            parseInt(get('day'))
+        ).getDay(),
+    };
+}
+
+/** Build an ISO date string representing end-of-day in the user's timezone */
+function endOfDayISO(year, month, day) {
+    // Create a date string that TickTick interprets as that calendar date
+    // TickTick uses yyyy-MM-dd'T'HH:mm:ss format — we send 23:59 on the target date
+    const mm = String(month + 1).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
+    return `${year}-${mm}-${dd}T23:59:00.000+0000`;
+}
 
 export function scheduleToDate(bucket) {
     if (!bucket || bucket === 'someday' || bucket === 'null') return null;
 
-    const now = new Date();
-    const endOfDay = (date) => {
-        const d = new Date(date);
-        d.setHours(23, 59, 0, 0);
-        return d.toISOString();
+    const now = userNow();
+    // Helper to add days to the user's current date
+    const addDays = (n) => {
+        const d = new Date(now.year, now.month, now.day + n);
+        return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate() };
     };
 
     switch (bucket) {
         case 'today':
-            return endOfDay(now);
+            return endOfDayISO(now.year, now.month, now.day);
         case 'tomorrow': {
-            const tomorrow = new Date(now);
-            tomorrow.setDate(now.getDate() + 1);
-            return endOfDay(tomorrow);
+            const t = addDays(1);
+            return endOfDayISO(t.year, t.month, t.day);
         }
         case 'this-week': {
             // Next Friday (or today if it's Friday)
-            const friday = new Date(now);
-            const daysUntilFriday = (5 - now.getDay() + 7) % 7 || 7;
-            friday.setDate(now.getDate() + daysUntilFriday);
-            return endOfDay(friday);
+            const daysUntilFriday = (5 - now.dayOfWeek + 7) % 7 || 7;
+            const f = addDays(daysUntilFriday);
+            return endOfDayISO(f.year, f.month, f.day);
         }
         case 'next-week': {
             // Next Monday
-            const monday = new Date(now);
-            const daysUntilMonday = (8 - now.getDay()) % 7 || 7;
-            monday.setDate(now.getDate() + daysUntilMonday);
-            return endOfDay(monday);
+            const daysUntilMonday = (8 - now.dayOfWeek) % 7 || 7;
+            const m = addDays(daysUntilMonday);
+            return endOfDayISO(m.year, m.month, m.day);
         }
         default:
             return null;

@@ -171,10 +171,27 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
                 title: last.originalTitle,
                 content: last.originalContent,
                 priority: last.originalPriority,
-                // Note: we don't restore due date since the original may not have had one
             });
             store.removeLastUndoEntry();
-            await ctx.reply(`↩️ Reverted: "${last.originalTitle}" restored to its original state.`);
+
+            // Build detailed context of what was reverted
+            const lines = [`↩️ Reverted: "${last.originalTitle}"`];
+            if (last.appliedTitle && last.appliedTitle !== last.originalTitle) {
+                lines.push(`  Title: "${last.appliedTitle}" → "${last.originalTitle}"`);
+            }
+            if (last.appliedPriority) {
+                lines.push(`  Priority: ${last.appliedPriority} → original`);
+            }
+            if (last.appliedProject) {
+                lines.push(`  Project: moved back from ${last.appliedProject}`);
+            }
+            if (last.appliedSchedule) {
+                lines.push(`  Schedule: removed (was: ${last.appliedSchedule})`);
+            }
+            lines.push('\nTask restored to its original state.');
+            await ctx.reply(lines.join('\n'));
+
+            console.log(`[UNDO] Reverted "${last.originalTitle}" (${last.action}) at ${new Date().toISOString()}`);
         } catch (err) {
             console.error('Undo error:', err.message);
             await ctx.reply(`❌ Undo failed: ${err.message}`);
@@ -293,7 +310,8 @@ async function autoApply(task, pendingData, analysis, ticktick) {
     const update = buildTickTickUpdate(pendingData);
     await ticktick.updateTask(task.id, update);
 
-    // Log for /undo
+    // Log for /undo — include what was changed so undo can report it
+    const priorityLabels = { 5: '🔴 career-critical', 3: '🟡 important', 1: '🔵 life-admin', 0: '⚪ consider-dropping' };
     store.addUndoEntry({
         taskId: task.id,
         action: 'auto-apply',
@@ -301,10 +319,18 @@ async function autoApply(task, pendingData, analysis, ticktick) {
         originalContent: task.content || '',
         originalPriority: task.priority,
         originalProjectId: task.projectId,
+        // What the bot changed (for /undo context)
+        appliedTitle: pendingData.improvedTitle || null,
+        appliedPriority: priorityLabels[pendingData.suggestedPriority] || null,
+        appliedProject: (pendingData.suggestedProjectId && pendingData.suggestedProjectId !== task.projectId)
+            ? pendingData.suggestedProject : null,
+        appliedSchedule: pendingData.suggestedSchedule || null,
     });
 
     store.markTaskProcessed(task.id, { ...pendingData, autoApplied: true });
     store.updateStats({ tasksAutoApplied: (store.getStats().tasksAutoApplied || 0) + 1 });
+
+    console.log(`[AUTO-APPLY] "${task.title}" → ${analysis.priority} | sched: ${pendingData.suggestedSchedule || 'none'} | project: ${pendingData.suggestedProject || 'same'}`);
 
     // Build summary for batch notification
     const schedLabel = { today: 'today', tomorrow: 'tomorrow', 'this-week': 'this week', 'next-week': 'next week' };
