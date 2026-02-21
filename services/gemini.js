@@ -1,10 +1,25 @@
 // Gemini AI — goal-aware task analyzer and accountability engine
 import { GoogleGenerativeAI } from '@google/generative-ai';
+import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
+import path from 'path';
 
-// ─── User Context (loaded from user_context.js) ─────────────
-// Edit user_context.js to personalize the AI for your situation, goals, and style.
-// This file stays generic — your personal data lives in user_context.js (gitignored).
-import { USER_CONTEXT } from './user_context.js';
+// ─── User Context ────────────────────────────────────────────
+// Priority: 1) local user_context.js (gitignored), 2) USER_CONTEXT env var, 3) generic default
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const USER_CONTEXT_FILE = path.join(__dirname, 'user_context.js');
+
+let USER_CONTEXT;
+if (existsSync(USER_CONTEXT_FILE)) {
+    const mod = await import('./user_context.js');
+    USER_CONTEXT = mod.USER_CONTEXT;
+} else if (process.env.USER_CONTEXT) {
+    USER_CONTEXT = process.env.USER_CONTEXT;
+} else {
+    USER_CONTEXT = 'You are an AI accountability partner and task analyst. Help the user stay focused, organized, and honest about their priorities.';
+    console.warn('⚠️  No user_context.js found and USER_CONTEXT env var not set. Using generic context.');
+}
+
 
 
 // ─── Task Analysis Prompt ───────────────────────────────────
