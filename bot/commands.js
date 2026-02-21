@@ -430,6 +430,7 @@ export async function analyzeAndSend(ctx, task, gemini, ticktick, projects = [],
         }
         return 'supervised';
     } catch (err) {
+        if (err.message === 'QUOTA_EXHAUSTED') throw err; // Let caller handle quota abort
         console.error(`Failed to analyze "${task.title}":`, err.message);
         return false;
     }
