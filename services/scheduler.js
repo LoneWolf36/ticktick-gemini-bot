@@ -111,5 +111,11 @@ export function startScheduler(bot, ticktick, gemini, config) {
         }
     }, { timezone });
 
+    // ─── Store maintenance (daily at midnight) ─────────────────
+    store.pruneOldEntries(30); // Run once on boot
+    cron.schedule('0 0 * * *', () => {
+        store.pruneOldEntries(30);
+    }, { timezone });
+
     console.log('✅ Scheduler running');
 }

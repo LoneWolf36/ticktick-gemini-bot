@@ -203,3 +203,36 @@ export function updateStats(updates) {
 export function getProcessedTasks() {
     return load().processedTasks;
 }
+
+export function getProcessedCount() {
+    return Object.keys(load().processedTasks).length;
+}
+
+// ─── Maintenance ─────────────────────────────────────────
+
+/** Prune processedTasks and undoLog entries older than `days` days */
+export function pruneOldEntries(days = 30) {
+    const s = load();
+    const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
+    let pruned = 0;
+
+    // Prune processedTasks
+    for (const [id, data] of Object.entries(s.processedTasks)) {
+        const entryDate = new Date(data.reviewedAt || data.sentAt || 0);
+        if (entryDate < cutoff) {
+            delete s.processedTasks[id];
+            pruned++;
+        }
+    }
+
+    // Prune undoLog
+    const beforeUndo = s.undoLog.length;
+    s.undoLog = s.undoLog.filter(e => new Date(e.timestamp || 0) >= cutoff);
+    pruned += beforeUndo - s.undoLog.length;
+
+    if (pruned > 0) {
+        save();
+        console.log(`🧹 Pruned ${pruned} entries older than ${days} days from store.`);
+    }
+    return pruned;
+}
