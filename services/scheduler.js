@@ -2,6 +2,7 @@
 import cron from 'node-cron';
 import * as store from './store.js';
 import { buildAutoApplyNotification } from '../bot/utils.js';
+import { userTimeString, userTodayFormatted } from '../bot/utils.js';
 import { analyzeAndSend } from '../bot/commands.js';
 
 export async function startScheduler(bot, ticktick, gemini, config) {
@@ -23,12 +24,34 @@ export async function startScheduler(bot, ticktick, gemini, config) {
     console.log(`   🤖 Auto-apply life-admin: ${autoApplyLifeAdmin ? 'ON' : 'OFF'}`);
 
     // ─── Task polling (every N minutes) ──────────────────────
+    let tokenExpiredNotified = false;
+
     cron.schedule(`*/${pollMinutes} * * * *`, async () => {
-        if (!ticktick.isAuthenticated()) return;
+        if (!ticktick.isAuthenticated()) {
+            // Send a one-time Telegram notification when token expires
+            if (!tokenExpiredNotified) {
+                tokenExpiredNotified = true;
+                const chatId = store.getChatId();
+                if (chatId) {
+                    try {
+                        await bot.api.sendMessage(chatId,
+                            '🔑 TickTick token has expired!\n\n' +
+                            'The bot can no longer access your tasks. To reconnect:\n' +
+                            `1. Visit: ${ticktick.getAuthUrl()}\n` +
+                            '2. After authorizing, copy the new token from console\n' +
+                            '3. Update TICKTICK_ACCESS_TOKEN in Render env vars'
+                        );
+                    } catch { /* best effort */ }
+                }
+                console.error('🔑 TickTick token expired — sent notification to user.');
+            }
+            return;
+        }
+        tokenExpiredNotified = false; // Reset if re-authenticated
         const chatId = store.getChatId();
         if (!chatId) return;
 
-        console.log(`🔄 [${new Date().toLocaleTimeString('en-IE')}] Polling for new tasks...`);
+        console.log(`🔄 [${userTimeString()}] Polling for new tasks...`);
 
         try {
             const allTasks = await ticktick.getAllTasks();
@@ -72,7 +95,7 @@ export async function startScheduler(bot, ticktick, gemini, config) {
         try {
             const tasks = await ticktick.getAllTasks();
             const briefing = await gemini.generateDailyBriefing(tasks);
-            const today = new Date().toLocaleDateString('en-IE', { weekday: 'long', month: 'long', day: 'numeric' });
+            const today = userTodayFormatted();
 
             let msg = `🌅 MORNING BRIEFING\n${today}\n${'─'.repeat(24)}\n\n${briefing}`;
 

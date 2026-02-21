@@ -137,7 +137,8 @@ export class TickTickClient {
             return resp.data;
         } catch (err) {
             if (err.response?.status === 401) {
-                console.error('🔑 TickTick token expired. Delete token.json and re-auth.');
+                this.accessToken = null; // Clear so isAuthenticated() returns false
+                console.error('🔑 TickTick token expired — re-authorize at the /health endpoint or re-run OAuth.');
             }
             throw err;
         }
@@ -155,7 +156,8 @@ export class TickTickClient {
             return resp.data;
         } catch (err) {
             if (err.response?.status === 401) {
-                console.error('🔑 TickTick token expired. Delete token.json and re-auth.');
+                this.accessToken = null;
+                console.error('🔑 TickTick token expired — re-authorize at the /health endpoint or re-run OAuth.');
             }
             throw err;
         }

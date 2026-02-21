@@ -1,5 +1,6 @@
 // Telegram message formatters — task cards, briefings, digests
 // All output is Telegram-flavored Markdown (MarkdownV2 escaped)
+import { userTodayFormatted, userLocaleString } from './utils.js';
 
 // ─── Task Analysis Card ─────────────────────────────────────
 
@@ -47,7 +48,7 @@ export function formatTaskCard(task, analysis) {
 // ─── Daily Briefing Wrapper ─────────────────────────────────
 
 export function formatDailyBriefing(briefingText) {
-    const header = `🌅 *MORNING BRIEFING*\n${esc(new Date().toLocaleDateString('en-IE', { weekday: 'long', month: 'long', day: 'numeric' }))}\n${'─'.repeat(24)}\n`;
+    const header = `🌅 *MORNING BRIEFING*\n${esc(userTodayFormatted())}\n${'─'.repeat(24)}\n`;
     return header + esc(briefingText);
 }
 
@@ -70,10 +71,10 @@ export function formatStatus(stats, isAuthenticated) {
     ];
 
     if (stats.lastDailyBriefing) {
-        lines.push(`🌅 *Last Briefing:* ${esc(new Date(stats.lastDailyBriefing).toLocaleString('en-IE'))}`);
+        lines.push(`🌅 *Last Briefing:* ${esc(userLocaleString(stats.lastDailyBriefing))}`);
     }
     if (stats.lastWeeklyDigest) {
-        lines.push(`📊 *Last Digest:* ${esc(new Date(stats.lastWeeklyDigest).toLocaleString('en-IE'))}`);
+        lines.push(`📊 *Last Digest:* ${esc(userLocaleString(stats.lastWeeklyDigest))}`);
     }
 
     lines.push(`\n_Commands: /scan \\| /briefing \\| /weekly \\| /status_`);

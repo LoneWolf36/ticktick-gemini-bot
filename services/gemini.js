@@ -3,6 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import path from 'path';
+import { userTodayFormatted } from '../bot/utils.js';
 
 // ─── User Context ────────────────────────────────────────────
 // Priority: 1) local user_context.js (gitignored), 2) USER_CONTEXT env var, 3) generic default
@@ -234,9 +235,7 @@ export class GeminiAnalyzer {
             })
             .join('\n');
 
-        const today = new Date().toLocaleDateString('en-IE', {
-            weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
-        });
+        const today = userTodayFormatted();
 
         const prompt = `Today is ${today}.\n\nActive tasks (${tasks.length} total):\n${taskList}`;
         const result = await this.briefingModel.generateContent(prompt);
@@ -262,9 +261,7 @@ export class GeminiAnalyzer {
     // ─── Free-form conversation / instruction handling ─────────
 
     async handleFreeform(message, tasks = [], projects = []) {
-        const today = new Date();
-        const dayName = today.toLocaleDateString('en-IE', { weekday: 'long' });
-        const dateStr = today.toLocaleDateString('en-IE', { year: 'numeric', month: 'long', day: 'numeric' });
+        const today = userTodayFormatted();
 
         // Build concise task context
         const taskList = tasks.slice(0, 50).map((t, i) => {
@@ -276,7 +273,7 @@ export class GeminiAnalyzer {
 
         const projectList = projects.map(p => `- ${p.name} (id:${p.id})`).join('\n');
 
-        const prompt = `Today is ${dayName}, ${dateStr}.\n\nUser's current tasks (${tasks.length} total):\n${taskList}\n\nAvailable projects:\n${projectList}\n\nUser message: "${message}"`;
+        const prompt = `Today is ${today}.\n\nUser's current tasks (${tasks.length} total):\n${taskList}\n\nAvailable projects:\n${projectList}\n\nUser message: "${message}"`;
 
         const maxRetries = 2;
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -308,11 +305,9 @@ export class GeminiAnalyzer {
     // ─── Helpers ──────────────────────────────────────────────
 
     _buildTaskPrompt(task, projectList = []) {
-        const today = new Date();
-        const dayName = today.toLocaleDateString('en-IE', { weekday: 'long' });
-        const dateStr = today.toLocaleDateString('en-IE', { year: 'numeric', month: 'long', day: 'numeric' });
+        const today = userTodayFormatted();
 
-        let prompt = `Today is ${dayName}, ${dateStr}.\n`;
+        let prompt = `Today is ${today}.\n`;
         prompt += `Analyze this task:\nTitle: "${task.title}"`;
         if (task.content) prompt += `\nDescription: "${task.content}"`;
         if (task.dueDate) {

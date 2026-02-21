@@ -1,5 +1,5 @@
 // Shared utilities — card builders, formatters, update builders
-// Single source of truth used by commands.js, callbacks.js, and scheduler.js
+// Single source of truth used by commands.js, callbacks.js, scheduler.js, and gemini.js
 
 // ─── Priority Map (Gemini label → TickTick priority number) ─
 
@@ -10,14 +10,14 @@ export const PRIORITY_MAP = {
     'consider-dropping': 0, // None
 };
 
-// ─── Schedule bucket → ISO due date ─────────────────────────
-// Uses USER_TIMEZONE so "today" means the user's today, not the server's.
+// ─── Timezone Helpers (single source of truth) ──────────────
+// ALL date formatting in the entire app must use these helpers.
+// Never call new Date().toLocaleDateString() without passing USER_TZ.
 
-const USER_TZ = process.env.USER_TIMEZONE || 'Europe/Dublin';
+export const USER_TZ = process.env.USER_TIMEZONE || 'Europe/Dublin';
 
-/** Get the user's "now" as a date string in their timezone */
-function userNow() {
-    // Get components in user's timezone
+/** Get the user's "now" as date components in their timezone */
+export function userNow() {
     const parts = new Intl.DateTimeFormat('en-CA', {
         timeZone: USER_TZ,
         year: 'numeric', month: '2-digit', day: '2-digit',
@@ -38,14 +38,47 @@ function userNow() {
     };
 }
 
-/** Build an ISO date string representing end-of-day in the user's timezone */
+/** Format today's date as "Monday, 21 February 2026" in the user's timezone */
+export function userTodayFormatted() {
+    return new Date().toLocaleDateString('en-IE', {
+        timeZone: USER_TZ,
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+}
+
+/** Format a Date for display in the user's timezone (e.g. stats) */
+export function userLocaleString(date) {
+    return new Date(date).toLocaleString('en-IE', { timeZone: USER_TZ });
+}
+
+/** Format time only in user's timezone (for logs) */
+export function userTimeString() {
+    return new Date().toLocaleTimeString('en-IE', { timeZone: USER_TZ });
+}
+
+/** Build an ISO date string for TickTick, with correct timezone offset */
 function endOfDayISO(year, month, day) {
-    // Create a date string that TickTick interprets as that calendar date
-    // TickTick uses yyyy-MM-dd'T'HH:mm:ss format — we send 23:59 on the target date
+    // Create a Date at 23:59 on the target day in the user's timezone
+    // We use Intl to find the UTC offset, then construct the ISO string
+    const targetDate = new Date(year, month, day, 23, 59, 0);
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: USER_TZ,
+        timeZoneName: 'shortOffset',
+    });
+    const parts = formatter.formatToParts(targetDate);
+    const offsetStr = parts.find(p => p.type === 'timeZoneName')?.value || 'GMT';
+    // offsetStr is like "GMT", "GMT+1", "GMT-5" — convert to "+0000" format
+    const match = offsetStr.match(/GMT([+-]?\d+)?/);
+    const offsetHours = match?.[1] ? parseInt(match[1]) : 0;
+    const sign = offsetHours >= 0 ? '+' : '-';
+    const absHours = String(Math.abs(offsetHours)).padStart(2, '0');
+    const tzOffset = `${sign}${absHours}00`;
+
     const mm = String(month + 1).padStart(2, '0');
     const dd = String(day).padStart(2, '0');
-    return `${year}-${mm}-${dd}T23:59:00.000+0000`;
+    return `${year}-${mm}-${dd}T23:59:00.000${tzOffset}`;
 }
+
 
 export function scheduleToDate(bucket) {
     if (!bucket || bucket === 'someday' || bucket === 'null') return null;

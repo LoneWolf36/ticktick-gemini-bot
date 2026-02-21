@@ -2,8 +2,8 @@
 import * as store from '../services/store.js';
 import { taskReviewKeyboard } from './callbacks.js';
 import {
-    buildTaskCard, buildPendingData, buildTickTickUpdate,
-    buildAutoApplyNotification, pendingToAnalysis, PRIORITY_MAP, sleep,
+    buildTaskCard, buildPendingData, pendingToAnalysis, buildTickTickUpdate,
+    PRIORITY_MAP, sleep, userTodayFormatted, userLocaleString,
 } from './utils.js';
 
 // ─── Access Control ─────────────────────────────────────────
@@ -83,10 +83,10 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             `\n🤖 Auto-apply life-admin: ${autoApplyLifeAdmin ? 'ON' : 'OFF'}`,
         ];
         if (stats.lastDailyBriefing) {
-            lines.push(`🌅 Last Briefing: ${new Date(stats.lastDailyBriefing).toLocaleString('en-IE')}`);
+            lines.push(`🌅 Last Briefing: ${userLocaleString(stats.lastDailyBriefing)}`);
         }
         if (stats.lastWeeklyDigest) {
-            lines.push(`📊 Last Digest: ${new Date(stats.lastWeeklyDigest).toLocaleString('en-IE')}`);
+            lines.push(`📊 Last Digest: ${userLocaleString(stats.lastWeeklyDigest)}`);
         }
         lines.push('\nCommands: /scan | /pending | /undo | /briefing | /weekly');
         await ctx.reply(lines.join('\n'));
@@ -224,7 +224,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         try {
             const tasks = await ticktick.getAllTasks();
             const briefing = await gemini.generateDailyBriefing(tasks);
-            const header = `🌅 MORNING BRIEFING\n${new Date().toLocaleDateString('en-IE', { weekday: 'long', month: 'long', day: 'numeric' })}\n${'─'.repeat(24)}\n\n`;
+            const header = `🌅 MORNING BRIEFING\n${userTodayFormatted()}\n${'─'.repeat(24)}\n\n`;
             await ctx.reply(header + briefing);
             await store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         } catch (err) {
