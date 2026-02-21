@@ -119,6 +119,7 @@ app.listen(parseInt(PORT), async () => {
 
     // Start Telegram bot
     if (BOT_MODE === 'webhook' && WEBHOOK_URL) {
+        await bot.init();  // Required for webhook mode — polling does this automatically
         await bot.api.setWebhook(`${WEBHOOK_URL}/webhook`);
         console.log(chalk.green(`📡 Telegram bot running (webhook: ${WEBHOOK_URL})`));
     } else {
