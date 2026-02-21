@@ -34,7 +34,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
     bot.command('start', async (ctx) => {
         if (!await guardAccess(ctx)) return;
         const chatId = ctx.chat.id;
-        store.setChatId(chatId);
+        await store.setChatId(chatId);
         await ctx.reply(
             `🧠 TickTick AI Accountability Partner\n\n` +
             `Connected! Chat ID: ${chatId}\n\n` +
@@ -45,8 +45,26 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             `/weekly — Weekly accountability digest\n` +
             `/review — Walk through all unreviewed tasks\n` +
             `/undo — Revert last auto-applied change\n` +
+            `/reset — Wipe all bot data and start fresh\n` +
             `/status — Bot status and stats`
         );
+    });
+
+    // ─── /reset ──────────────────────────────────────────────
+    bot.command('reset', async (ctx) => {
+        if (!await guardAccess(ctx)) return;
+        const arg = ctx.match?.trim();
+        if (arg !== 'CONFIRM') {
+            await ctx.reply(
+                '⚠️ This will wipe ALL bot data:\n' +
+                '• Pending tasks\n• Processed tasks\n• Undo history\n• Stats\n\n' +
+                'Your TickTick tasks are NOT affected.\n\n' +
+                'To confirm, type: /reset CONFIRM'
+            );
+            return;
+        }
+        await store.resetAll();
+        await ctx.reply('🗑️ All bot data has been wiped. Fresh start.\n\nRun /scan to re-analyze your tasks.');
     });
 
     // ─── /status ──────────────────────────────────────────────
@@ -172,7 +190,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
                 content: last.originalContent,
                 priority: last.originalPriority,
             });
-            store.removeLastUndoEntry();
+            await store.removeLastUndoEntry();
 
             // Build detailed context of what was reverted
             const lines = [`↩️ Reverted: "${last.originalTitle}"`];
@@ -208,7 +226,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             const briefing = await gemini.generateDailyBriefing(tasks);
             const header = `🌅 MORNING BRIEFING\n${new Date().toLocaleDateString('en-IE', { weekday: 'long', month: 'long', day: 'numeric' })}\n${'─'.repeat(24)}\n\n`;
             await ctx.reply(header + briefing);
-            store.updateStats({ lastDailyBriefing: new Date().toISOString() });
+            await store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         } catch (err) {
             await ctx.reply(`❌ Briefing error: ${err.message}`);
         }
@@ -229,7 +247,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             }
             const digest = await gemini.generateWeeklyDigest(tasks, thisWeek);
             await ctx.reply(`📊 WEEKLY ACCOUNTABILITY REVIEW\n${'─'.repeat(28)}\n\n${digest}`);
-            store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
+            await store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         } catch (err) {
             await ctx.reply(`❌ Weekly digest error: ${err.message}`);
         }
@@ -329,7 +347,7 @@ async function executeActions(actions, ticktick, currentTasks) {
 
             if (action.type === 'update' && action.changes) {
                 // Log for /undo before applying
-                store.addUndoEntry({
+                await store.addUndoEntry({
                     taskId: task.id,
                     action: 'freeform-update',
                     originalTitle: task.title,
@@ -348,7 +366,7 @@ async function executeActions(actions, ticktick, currentTasks) {
                 outcomes.push(`✅ Updated: "${task.title}"`);
             } else if (action.type === 'drop') {
                 // Flag as dropped but DON'T delete — too risky
-                store.markTaskProcessed(task.id, {
+                await store.markTaskProcessed(task.id, {
                     originalTitle: task.title,
                     dropped: true,
                     droppedByFreeform: true,
@@ -379,7 +397,7 @@ export async function analyzeAndSend(ctx, task, gemini, ticktick, projects = [],
         }
 
         // Supervised: send card with buttons
-        store.markTaskPending(task.id, pendingData);
+        await store.markTaskPending(task.id, pendingData);
         const card = buildTaskCard(task, analysis);
         const chatId = store.getChatId();
 
@@ -404,7 +422,7 @@ async function autoApply(task, pendingData, analysis, ticktick) {
 
     // Log for /undo — include what was changed so undo can report it
     const priorityLabels = { 5: '🔴 career-critical', 3: '🟡 important', 1: '🔵 life-admin', 0: '⚪ consider-dropping' };
-    store.addUndoEntry({
+    await store.addUndoEntry({
         taskId: task.id,
         action: 'auto-apply',
         originalTitle: task.title,
@@ -419,8 +437,8 @@ async function autoApply(task, pendingData, analysis, ticktick) {
         appliedSchedule: pendingData.suggestedSchedule || null,
     });
 
-    store.markTaskProcessed(task.id, { ...pendingData, autoApplied: true });
-    store.updateStats({ tasksAutoApplied: (store.getStats().tasksAutoApplied || 0) + 1 });
+    await store.markTaskProcessed(task.id, { ...pendingData, autoApplied: true });
+    await store.updateStats({ tasksAutoApplied: (store.getStats().tasksAutoApplied || 0) + 1 });
 
     console.log(`[AUTO-APPLY] "${task.title}" → ${analysis.priority} | sched: ${pendingData.suggestedSchedule || 'none'} | project: ${pendingData.suggestedProject || 'same'}`);
 

@@ -140,7 +140,7 @@ app.listen(parseInt(PORT), async () => {
     }
 
     // Start scheduler
-    startScheduler(bot, ticktick, gemini, {
+    await startScheduler(bot, ticktick, gemini, {
         dailyHour: parseInt(DAILY_BRIEFING_HOUR),
         weeklyDay: parseInt(WEEKLY_DIGEST_DAY),
         pollMinutes: parseInt(POLL_INTERVAL_MINUTES),

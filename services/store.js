@@ -1,14 +1,16 @@
 // State store — two-phase task tracking (pending → processed)
 //
-// Flow: Task analyzed → stored in pendingTasks → user clicks button → moved to processedTasks
-// This ensures no task is ever lost if the user hasn't reviewed it yet.
+// Backend: Redis if REDIS_URL is set (for cloud), file-based fallback (for local dev).
+// The entire state is stored as a single JSON blob — simple, no schema to manage.
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import Redis from 'ioredis';
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const STORE_FILE = path.join(DATA_DIR, 'store.json');
+const REDIS_KEY = 'ticktick-bot:state';
 
 const DEFAULT_STATE = {
     chatId: null,
@@ -25,213 +27,264 @@ const DEFAULT_STATE = {
     },
 };
 
+// ─── Backend Selection ───────────────────────────────────────
+
+let redis = null;
 let state = null;
+let useRedis = false;
+
+if (process.env.REDIS_URL) {
+    try {
+        redis = new Redis(process.env.REDIS_URL, {
+            maxRetriesPerRequest: 3,
+            retryStrategy: (times) => Math.min(times * 500, 3000),
+            lazyConnect: true,
+        });
+        await redis.connect();
+        useRedis = true;
+        console.log('🔴 Store: Redis connected');
+    } catch (err) {
+        console.warn('⚠️  Redis connection failed, falling back to file:', err.message);
+        redis = null;
+        useRedis = false;
+    }
+} else {
+    console.log('📁 Store: file-based (set REDIS_URL for cloud persistence)');
+}
+
+// ─── Load / Save ─────────────────────────────────────────────
 
 function ensureDir() {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
-function load() {
-    if (state) return state;
+async function loadFromRedis() {
+    try {
+        const raw = await redis.get(REDIS_KEY);
+        if (raw) {
+            const parsed = JSON.parse(raw);
+            return {
+                ...DEFAULT_STATE,
+                ...parsed,
+                stats: { ...DEFAULT_STATE.stats, ...parsed.stats },
+                pendingTasks: parsed.pendingTasks || {},
+                processedTasks: parsed.processedTasks || {},
+                undoLog: parsed.undoLog || [],
+            };
+        }
+    } catch (err) {
+        console.warn('⚠️  Redis load error:', err.message);
+    }
+    return structuredClone(DEFAULT_STATE);
+}
+
+function loadFromFile() {
     ensureDir();
     try {
         if (fs.existsSync(STORE_FILE)) {
-            state = JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'));
-            state = {
+            const parsed = JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'));
+            return {
                 ...DEFAULT_STATE,
-                ...state,
-                stats: { ...DEFAULT_STATE.stats, ...state.stats },
-                pendingTasks: state.pendingTasks || {},
+                ...parsed,
+                stats: { ...DEFAULT_STATE.stats, ...parsed.stats },
+                pendingTasks: parsed.pendingTasks || {},
+                processedTasks: parsed.processedTasks || {},
+                undoLog: parsed.undoLog || [],
             };
-            return state;
         }
     } catch { /* ignore corrupt file */ }
-    state = structuredClone(DEFAULT_STATE);
+    return structuredClone(DEFAULT_STATE);
+}
+
+async function load() {
+    if (state) return state;
+    state = useRedis ? await loadFromRedis() : loadFromFile();
     return state;
 }
 
-function save() {
-    ensureDir();
-    fs.writeFileSync(STORE_FILE, JSON.stringify(state, null, 2));
+async function save() {
+    if (useRedis) {
+        try {
+            await redis.set(REDIS_KEY, JSON.stringify(state));
+        } catch (err) {
+            console.error('⚠️  Redis save error:', err.message);
+        }
+    } else {
+        ensureDir();
+        fs.writeFileSync(STORE_FILE, JSON.stringify(state, null, 2));
+    }
 }
+
+// ─── Initialize on import ────────────────────────────────────
+await load();
 
 // ─── Chat ID ─────────────────────────────────────────────────
 
 export function getChatId() {
-    return load().chatId;
+    return state.chatId;
 }
 
-export function setChatId(id) {
-    load().chatId = id;
-    save();
+export async function setChatId(id) {
+    state.chatId = id;
+    await save();
 }
 
 // ─── Task Status Checks ─────────────────────────────────────
 
-/** Returns true if task has been fully reviewed (approved/skipped/dropped) */
 export function isTaskProcessed(taskId) {
-    return !!load().processedTasks[taskId];
+    return !!state.processedTasks[taskId];
 }
 
-/** Returns true if task has been sent to Telegram but not yet reviewed */
 export function isTaskPending(taskId) {
-    return !!load().pendingTasks[taskId];
+    return !!state.pendingTasks[taskId];
 }
 
-/** Returns true if task has been touched at all (pending or processed) */
 export function isTaskKnown(taskId) {
-    const s = load();
-    return !!s.processedTasks[taskId] || !!s.pendingTasks[taskId];
+    return !!state.processedTasks[taskId] || !!state.pendingTasks[taskId];
 }
 
 // ─── Phase 1: Pending (analyzed, sent to Telegram) ──────────
 
-export function markTaskPending(taskId, data) {
-    const s = load();
-    s.pendingTasks[taskId] = {
+export async function markTaskPending(taskId, data) {
+    state.pendingTasks[taskId] = {
         ...data,
         sentAt: new Date().toISOString(),
     };
-    s.stats.tasksAnalyzed++;
-    save();
+    state.stats.tasksAnalyzed++;
+    await save();
 }
 
 // ─── Phase 2: Processed (user clicked a button) ─────────────
 
-export function approveTask(taskId) {
-    const s = load();
-    const pending = s.pendingTasks[taskId];
+export async function approveTask(taskId) {
+    const pending = state.pendingTasks[taskId];
     if (!pending) return null;
 
-    // Move to processed
-    s.processedTasks[taskId] = {
+    state.processedTasks[taskId] = {
         ...pending,
         approved: true,
         reviewedAt: new Date().toISOString(),
     };
-    delete s.pendingTasks[taskId];
-    s.stats.tasksApproved++;
-    save();
-    return s.processedTasks[taskId];
+    delete state.pendingTasks[taskId];
+    state.stats.tasksApproved++;
+    await save();
+    return state.processedTasks[taskId];
 }
 
-export function skipTask(taskId) {
-    const s = load();
-    const pending = s.pendingTasks[taskId];
+export async function skipTask(taskId) {
+    const pending = state.pendingTasks[taskId];
     if (!pending) return null;
 
-    s.processedTasks[taskId] = {
+    state.processedTasks[taskId] = {
         ...pending,
         skipped: true,
         reviewedAt: new Date().toISOString(),
     };
-    delete s.pendingTasks[taskId];
-    s.stats.tasksSkipped++;
-    save();
-    return s.processedTasks[taskId];
+    delete state.pendingTasks[taskId];
+    state.stats.tasksSkipped++;
+    await save();
+    return state.processedTasks[taskId];
 }
 
-export function dropTask(taskId) {
-    const s = load();
-    const pending = s.pendingTasks[taskId];
+export async function dropTask(taskId) {
+    const pending = state.pendingTasks[taskId];
     if (!pending) return null;
 
-    s.processedTasks[taskId] = {
+    state.processedTasks[taskId] = {
         ...pending,
         dropped: true,
         reviewedAt: new Date().toISOString(),
     };
-    delete s.pendingTasks[taskId];
-    s.stats.tasksSkipped++;
-    save();
-    return s.processedTasks[taskId];
+    delete state.pendingTasks[taskId];
+    state.stats.tasksSkipped++;
+    await save();
+    return state.processedTasks[taskId];
 }
 
-/** Direct processed (for auto-apply — task was never in pending) */
-export function markTaskProcessed(taskId, data) {
-    const s = load();
-    s.processedTasks[taskId] = {
+export async function markTaskProcessed(taskId, data) {
+    state.processedTasks[taskId] = {
         ...data,
         reviewedAt: new Date().toISOString(),
     };
-    s.stats.tasksAnalyzed++;
-    save();
+    state.stats.tasksAnalyzed++;
+    await save();
 }
 
 // ─── Pending Tasks Retrieval ─────────────────────────────────
 
 export function getPendingTasks() {
-    return load().pendingTasks;
+    return state.pendingTasks;
 }
 
 export function getPendingCount() {
-    return Object.keys(load().pendingTasks).length;
+    return Object.keys(state.pendingTasks).length;
 }
 
 // ─── Undo Log ────────────────────────────────────────────────
 
-export function addUndoEntry(entry) {
-    const s = load();
-    s.undoLog.push({ ...entry, timestamp: new Date().toISOString() });
-    if (s.undoLog.length > 200) s.undoLog = s.undoLog.slice(-200);
-    save();
+export async function addUndoEntry(entry) {
+    state.undoLog.push({ ...entry, timestamp: new Date().toISOString() });
+    if (state.undoLog.length > 200) state.undoLog = state.undoLog.slice(-200);
+    await save();
 }
 
 export function getLastUndoEntry() {
-    const s = load();
-    return s.undoLog.length > 0 ? s.undoLog[s.undoLog.length - 1] : null;
+    return state.undoLog.length > 0 ? state.undoLog[state.undoLog.length - 1] : null;
 }
 
-export function removeLastUndoEntry() {
-    const s = load();
-    s.undoLog.pop();
-    save();
+export async function removeLastUndoEntry() {
+    state.undoLog.pop();
+    await save();
 }
 
 // ─── Stats ───────────────────────────────────────────────────
 
 export function getStats() {
-    return load().stats;
+    return state.stats;
 }
 
-export function updateStats(updates) {
-    const s = load();
-    Object.assign(s.stats, updates);
-    save();
+export async function updateStats(updates) {
+    Object.assign(state.stats, updates);
+    await save();
 }
 
 export function getProcessedTasks() {
-    return load().processedTasks;
+    return state.processedTasks;
 }
 
 export function getProcessedCount() {
-    return Object.keys(load().processedTasks).length;
+    return Object.keys(state.processedTasks).length;
 }
 
-// ─── Maintenance ─────────────────────────────────────────
+// ─── Maintenance ─────────────────────────────────────────────
 
-/** Prune processedTasks and undoLog entries older than `days` days */
-export function pruneOldEntries(days = 30) {
-    const s = load();
+/** Wipe all data and start fresh */
+export async function resetAll() {
+    const chatId = state.chatId; // Preserve chatId so bot stays connected
+    state = structuredClone(DEFAULT_STATE);
+    state.chatId = chatId;
+    await save();
+    console.log('🗑️  Store reset to defaults.');
+}
+
+export async function pruneOldEntries(days = 30) {
     const cutoff = new Date(Date.now() - days * 24 * 60 * 60 * 1000);
     let pruned = 0;
 
-    // Prune processedTasks
-    for (const [id, data] of Object.entries(s.processedTasks)) {
+    for (const [id, data] of Object.entries(state.processedTasks)) {
         const entryDate = new Date(data.reviewedAt || data.sentAt || 0);
         if (entryDate < cutoff) {
-            delete s.processedTasks[id];
+            delete state.processedTasks[id];
             pruned++;
         }
     }
 
-    // Prune undoLog
-    const beforeUndo = s.undoLog.length;
-    s.undoLog = s.undoLog.filter(e => new Date(e.timestamp || 0) >= cutoff);
-    pruned += beforeUndo - s.undoLog.length;
+    const beforeUndo = state.undoLog.length;
+    state.undoLog = state.undoLog.filter(e => new Date(e.timestamp || 0) >= cutoff);
+    pruned += beforeUndo - state.undoLog.length;
 
     if (pruned > 0) {
-        save();
+        await save();
         console.log(`🧹 Pruned ${pruned} entries older than ${days} days from store.`);
     }
     return pruned;

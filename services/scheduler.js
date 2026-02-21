@@ -4,7 +4,7 @@ import * as store from './store.js';
 import { buildAutoApplyNotification } from '../bot/utils.js';
 import { analyzeAndSend } from '../bot/commands.js';
 
-export function startScheduler(bot, ticktick, gemini, config) {
+export async function startScheduler(bot, ticktick, gemini, config) {
     const {
         dailyHour = 8,
         weeklyDay = 0,
@@ -82,7 +82,7 @@ export function startScheduler(bot, ticktick, gemini, config) {
             }
 
             await bot.api.sendMessage(chatId, msg);
-            store.updateStats({ lastDailyBriefing: new Date().toISOString() });
+            await store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         } catch (err) {
             console.error('Daily briefing error:', err.message);
         }
@@ -105,16 +105,16 @@ export function startScheduler(bot, ticktick, gemini, config) {
             }
             const digest = await gemini.generateWeeklyDigest(tasks, thisWeek);
             await bot.api.sendMessage(chatId, `📊 WEEKLY ACCOUNTABILITY REVIEW\n${'─'.repeat(28)}\n\n${digest}`);
-            store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
+            await store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         } catch (err) {
             console.error('Weekly digest error:', err.message);
         }
     }, { timezone });
 
     // ─── Store maintenance (daily at midnight) ─────────────────
-    store.pruneOldEntries(30); // Run once on boot
-    cron.schedule('0 0 * * *', () => {
-        store.pruneOldEntries(30);
+    await store.pruneOldEntries(30); // Run once on boot
+    cron.schedule('0 0 * * *', async () => {
+        await store.pruneOldEntries(30);
     }, { timezone });
 
     console.log('✅ Scheduler running');

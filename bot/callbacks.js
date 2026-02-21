@@ -46,7 +46,7 @@ export function registerCallbacks(bot, ticktick, gemini) {
             // Use shared builder — applies title, description, priority, project, AND due date
             const update = buildTickTickUpdate(data);
 
-            store.addUndoEntry({
+            await store.addUndoEntry({
                 taskId,
                 action: 'approve',
                 originalTitle: data.originalTitle,
@@ -56,7 +56,7 @@ export function registerCallbacks(bot, ticktick, gemini) {
             });
 
             await ticktick.updateTask(taskId, update);
-            store.approveTask(taskId);
+            await store.approveTask(taskId);
 
             const movedNote = (data.suggestedProjectId && data.suggestedProjectId !== data.projectId)
                 ? ` Moved to ${data.suggestedProject}.` : '';
@@ -86,7 +86,7 @@ export function registerCallbacks(bot, ticktick, gemini) {
             return;
         }
 
-        store.skipTask(taskId);
+        await store.skipTask(taskId);
         await ctx.answerCallbackQuery({ text: '⏭ Skipped' });
         await ctx.editMessageText('⏭ Skipped — task left unchanged in TickTick.');
     });
@@ -104,7 +104,7 @@ export function registerCallbacks(bot, ticktick, gemini) {
             return;
         }
 
-        store.dropTask(taskId);
+        await store.dropTask(taskId);
         await ctx.answerCallbackQuery({ text: '⚪ Flagged for removal' });
         await ctx.editMessageText(
             '⚪ Consider dropping — this task has been flagged.\nGo to TickTick to delete it if you agree.'
