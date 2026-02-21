@@ -50,6 +50,12 @@ export class TickTickClient {
         );
         this.accessToken = resp.data.access_token;
         this._saveToken(resp.data);
+
+        // Log token for cloud deployments (Render, Railway) where filesystem is ephemeral
+        console.log('\n🔑 TickTick OAuth token obtained.');
+        console.log('   If deploying to Render/Railway, set this env var:');
+        console.log(`   TICKTICK_ACCESS_TOKEN=${resp.data.access_token}\n`);
+
         return resp.data;
     }
 
@@ -160,6 +166,12 @@ export class TickTickClient {
     }
 
     _loadToken() {
+        // Priority 1: Environment variable (for cloud deployments with ephemeral FS)
+        if (process.env.TICKTICK_ACCESS_TOKEN) {
+            this.accessToken = process.env.TICKTICK_ACCESS_TOKEN;
+            return;
+        }
+        // Priority 2: Local token file (for local dev)
         try {
             if (fs.existsSync(TOKEN_FILE)) {
                 const data = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf-8'));

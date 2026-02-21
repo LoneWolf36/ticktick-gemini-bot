@@ -1,0 +1,37 @@
+# Render Blueprint — TickTick AI Accountability Partner
+# Deploy: connect your GitHub repo on render.com, this file auto-configures everything.
+
+services:
+  - type: web
+    name: ticktick-gemini-bot
+    runtime: node
+    plan: free    # Change to 'starter' ($7/mo) for always-on without pinger
+    buildCommand: npm install
+    startCommand: node server.js
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: GEMINI_API_KEY
+        sync: false
+      - key: TICKTICK_CLIENT_ID
+        sync: false
+      - key: TICKTICK_CLIENT_SECRET
+        sync: false
+      - key: TICKTICK_REDIRECT_URI
+        sync: false
+      - key: TICKTICK_ACCESS_TOKEN
+        sync: false
+      - key: BOT_MODE
+        value: webhook
+      - key: WEBHOOK_URL
+        sync: false      # Set to your Render URL: https://ticktick-gemini-bot.onrender.com
+      - key: USER_TIMEZONE
+        value: Europe/Dublin
+      - key: AUTO_APPLY_LIFE_ADMIN
+        value: "true"
+      - key: AUTO_APPLY_DROPS
+        value: "false"
+      - key: PORT
+        value: "10000"   # Render uses port 10000 by default
