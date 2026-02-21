@@ -1,17 +1,26 @@
 // Scheduler — cron jobs for daily briefing, weekly digest, and task polling
-// Uses shared utils from bot/utils.js (no duplication)
 import cron from 'node-cron';
 import * as store from './store.js';
-import { buildTaskCard, buildPendingData } from '../bot/utils.js';
-import { taskReviewKeyboard } from '../bot/callbacks.js';
+import { buildAutoApplyNotification } from '../bot/utils.js';
+import { analyzeAndSend } from '../bot/commands.js';
 
 export function startScheduler(bot, ticktick, gemini, config) {
-    const { dailyHour = 8, weeklyDay = 0, pollMinutes = 5, timezone = 'Europe/Dublin' } = config;
+    const {
+        dailyHour = 8,
+        weeklyDay = 0,
+        pollMinutes = 5,
+        timezone = 'Europe/Dublin',
+        autoApplyLifeAdmin = false,
+        autoApplyDrops = false,
+    } = config;
+
+    const autoConfig = { autoApplyLifeAdmin, autoApplyDrops };
 
     console.log(`📅 Scheduler starting (timezone: ${timezone})`);
     console.log(`   🌅 Daily briefing: ${dailyHour}:00`);
     console.log(`   📊 Weekly digest: ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][weeklyDay]} 20:00`);
     console.log(`   🔄 Task polling: every ${pollMinutes} min`);
+    console.log(`   🤖 Auto-apply life-admin: ${autoApplyLifeAdmin ? 'ON' : 'OFF'}`);
 
     // ─── Task polling (every N minutes) ──────────────────────
     cron.schedule(`*/${pollMinutes} * * * *`, async () => {
@@ -23,29 +32,30 @@ export function startScheduler(bot, ticktick, gemini, config) {
 
         try {
             const allTasks = await ticktick.getAllTasks();
+            const projects = ticktick.getLastFetchedProjects();
             const newTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (newTasks.length === 0) return;
             console.log(`📬 Found ${newTasks.length} new task(s)`);
 
-            // Process max 5 per poll cycle to avoid flooding
             const batch = newTasks.slice(0, 5);
+            const autoApplied = [];
 
             for (const task of batch) {
                 try {
-                    const analysis = await gemini.analyzeTask(task);
-
-                    // Use shared storage builder (same as commands.js)
-                    store.markTaskPending(task.id, buildPendingData(task, analysis));
-
-                    const card = buildTaskCard(task, analysis);
-                    await bot.api.sendMessage(chatId, card, {
-                        reply_markup: taskReviewKeyboard(task.id),
-                    });
+                    // Pass bot as ctx — analyzeAndSend handles both ctx.reply and bot.api.sendMessage
+                    const result = await analyzeAndSend(bot, task, gemini, ticktick, projects, autoConfig);
+                    if (result && result !== 'supervised') autoApplied.push(result);
                 } catch (err) {
                     console.error(`  ❌ Failed: "${task.title}":`, err.message);
                 }
                 await new Promise(r => setTimeout(r, 2000));
+            }
+
+            // Send one compact batch notification for auto-applied tasks
+            if (autoApplied.length > 0) {
+                const notification = buildAutoApplyNotification(autoApplied);
+                if (notification) await bot.api.sendMessage(chatId, notification);
             }
         } catch (err) {
             console.error('Poll error:', err.message);
@@ -66,10 +76,9 @@ export function startScheduler(bot, ticktick, gemini, config) {
 
             let msg = `🌅 MORNING BRIEFING\n${today}\n${'─'.repeat(24)}\n\n${briefing}`;
 
-            // Append pending count reminder
             const pendingCount = store.getPendingCount();
             if (pendingCount > 0) {
-                msg += `\n\n⏳ You have ${pendingCount} task(s) pending review. Run /pending to review them.`;
+                msg += `\n\n⏳ ${pendingCount} task(s) pending your review. Run /pending.`;
             }
 
             await bot.api.sendMessage(chatId, msg);

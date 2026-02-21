@@ -1,5 +1,89 @@
-// Shared utilities — card builders, formatters, data builders
-// Single source of truth used by commands.js and scheduler.js
+// Shared utilities — card builders, formatters, update builders
+// Single source of truth used by commands.js, callbacks.js, and scheduler.js
+
+// ─── Priority Map (Gemini label → TickTick priority number) ─
+
+export const PRIORITY_MAP = {
+    'career-critical': 5,   // 🔴 High (red)
+    'important': 3,         // 🟡 Medium (yellow)
+    'life-admin': 1,        // 🔵 Low (blue)
+    'consider-dropping': 0, // None
+};
+
+// ─── Schedule bucket → ISO due date ─────────────────────────
+
+export function scheduleToDate(bucket) {
+    if (!bucket || bucket === 'someday' || bucket === 'null') return null;
+
+    const now = new Date();
+    const endOfDay = (date) => {
+        const d = new Date(date);
+        d.setHours(23, 59, 0, 0);
+        return d.toISOString();
+    };
+
+    switch (bucket) {
+        case 'today':
+            return endOfDay(now);
+        case 'tomorrow': {
+            const tomorrow = new Date(now);
+            tomorrow.setDate(now.getDate() + 1);
+            return endOfDay(tomorrow);
+        }
+        case 'this-week': {
+            // Next Friday (or today if it's Friday)
+            const friday = new Date(now);
+            const daysUntilFriday = (5 - now.getDay() + 7) % 7 || 7;
+            friday.setDate(now.getDate() + daysUntilFriday);
+            return endOfDay(friday);
+        }
+        case 'next-week': {
+            // Next Monday
+            const monday = new Date(now);
+            const daysUntilMonday = (8 - now.getDay()) % 7 || 7;
+            monday.setDate(now.getDate() + daysUntilMonday);
+            return endOfDay(monday);
+        }
+        default:
+            return null;
+    }
+}
+
+function scheduleLabel(bucket) {
+    const labels = {
+        'today': 'Today',
+        'tomorrow': 'Tomorrow',
+        'this-week': 'This week',
+        'next-week': 'Next week',
+        'someday': 'Someday (no rush)',
+    };
+    return labels[bucket] || null;
+}
+
+// ─── TickTick update object builder ─────────────────────────
+// Used by BOTH callbacks.js (manual ✅ Approve) and autoApply().
+// Single source of truth for what gets written to TickTick.
+
+export function buildTickTickUpdate(data) {
+    const update = { projectId: data.projectId }; // current project as base
+
+    if (data.improvedTitle) update.title = data.improvedTitle;
+    if (data.improvedContent) update.content = data.improvedContent;
+    if (data.suggestedPriority !== undefined) update.priority = data.suggestedPriority;
+
+    // Move to a different project if Gemini suggested one
+    if (data.suggestedProjectId && data.suggestedProjectId !== data.projectId) {
+        update.projectId = data.suggestedProjectId;
+    }
+
+    // Apply due date if schedule is set and not vague
+    if (data.suggestedSchedule && data.suggestedSchedule !== 'someday' && data.suggestedSchedule !== 'null') {
+        const dueDate = scheduleToDate(data.suggestedSchedule);
+        if (dueDate) update.dueDate = dueDate;
+    }
+
+    return update;
+}
 
 // ─── Task Card (for Telegram display) ───────────────────────
 
@@ -13,7 +97,18 @@ export function buildTaskCard(task, analysis) {
         lines.push(`✨ Suggested: ${analysis.improved_title}\n`);
     }
 
+    // Suggested project move
+    if (analysis.suggested_project && analysis.suggested_project !== (task.projectName || 'Inbox')) {
+        lines.push(`📁 Move to: ${analysis.suggested_project}`);
+    }
+
     lines.push(`${analysis.priority_emoji || '🟡'} Priority: ${analysis.priority}`);
+
+    // Suggested schedule
+    const schedLabel = scheduleLabel(analysis.suggested_schedule);
+    if (schedLabel) {
+        lines.push(`📅 Schedule: ${schedLabel}`);
+    }
 
     if (analysis.needle_mover !== undefined) {
         lines.push(`🎯 Needle-mover: ${analysis.needle_mover ? 'Yes ✅' : 'No — consider if worth your time'}`);
@@ -62,7 +157,16 @@ export function buildImprovedContent(analysis) {
 // ─── Pending Data (stored in store.json) ────────────────────
 // Single source for both commands.js/analyzeAndSend and scheduler.js
 
-export function buildPendingData(task, analysis) {
+export function buildPendingData(task, analysis, projects = []) {
+    // Resolve suggested project name → ID
+    let suggestedProjectId = null;
+    if (analysis.suggested_project) {
+        const match = projects.find(p =>
+            p.name.trim().toLowerCase() === analysis.suggested_project.trim().toLowerCase()
+        );
+        suggestedProjectId = match?.id || null;
+    }
+
     return {
         originalTitle: task.title,
         originalContent: task.content || '',
@@ -72,9 +176,12 @@ export function buildPendingData(task, analysis) {
         suggestedPriority: PRIORITY_MAP[analysis.priority] ?? task.priority,
         projectId: task.projectId,
         projectName: task.projectName,
-        // Store raw fields individually for /pending card reconstruction
+        suggestedProject: analysis.suggested_project || null,
+        suggestedProjectId,
+        suggestedSchedule: analysis.suggested_schedule || null,
+        // Raw fields for /pending card reconstruction
         analysis: analysis.analysis,
-        description: analysis.description,   // RAW description (not formatted)
+        description: analysis.description,
         priority: analysis.priority,
         priorityEmoji: analysis.priority_emoji,
         needleMover: analysis.needle_mover,
@@ -91,24 +198,33 @@ export function pendingToAnalysis(data) {
     return {
         improved_title: data.improvedTitle,
         analysis: data.analysis,
-        description: data.description,       // Raw description, not formatted
+        description: data.description,
         priority: data.priority || 'important',
         priority_emoji: data.priorityEmoji || '🟡',
         needle_mover: data.needleMover,
         sub_steps: data.subSteps || [],
         success_criteria: data.successCriteria,
         callout: data.callout,
+        suggested_project: data.suggestedProject,
+        suggested_schedule: data.suggestedSchedule,
     };
 }
 
-// ─── Constants ──────────────────────────────────────────────
+// ─── Auto-apply notification builder ────────────────────────
 
-export const PRIORITY_MAP = {
-    'career-critical': 5,
-    'important': 3,
-    'life-admin': 1,
-    'consider-dropping': 0,
-};
+export function buildAutoApplyNotification(results) {
+    if (results.length === 0) return null;
+    const lines = [`⚡ Auto-applied ${results.length} task(s):`];
+    for (const r of results) {
+        const parts = [];
+        if (r.schedule) parts.push(`due ${r.schedule}`);
+        if (r.movedTo) parts.push(`moved to ${r.movedTo}`);
+        const detail = parts.length > 0 ? ` → ${parts.join(', ')}` : '';
+        lines.push(`• "${r.title}"${detail}`);
+    }
+    lines.push(`\nRun /undo to revert the last one.`);
+    return lines.join('\n');
+}
 
 // ─── Helpers ────────────────────────────────────────────────
 

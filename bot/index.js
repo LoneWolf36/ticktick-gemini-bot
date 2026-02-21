@@ -3,7 +3,7 @@ import { Bot } from 'grammy';
 import { registerCommands } from './commands.js';
 import { registerCallbacks } from './callbacks.js';
 
-export function createBot(token, ticktick, gemini) {
+export function createBot(token, ticktick, gemini, config = {}) {
     const bot = new Bot(token);
 
     // Error handler
@@ -12,7 +12,7 @@ export function createBot(token, ticktick, gemini) {
     });
 
     // Register all handlers
-    registerCommands(bot, ticktick, gemini);
+    registerCommands(bot, ticktick, gemini, config);
     registerCallbacks(bot, ticktick, gemini);
 
     return bot;

@@ -2,6 +2,7 @@
 // These move tasks from pendingTasks → processedTasks
 import { InlineKeyboard } from 'grammy';
 import * as store from '../services/store.js';
+import { buildTickTickUpdate } from './utils.js';
 
 const AUTHORIZED_CHAT_ID = process.env.TELEGRAM_CHAT_ID
     ? parseInt(process.env.TELEGRAM_CHAT_ID)
@@ -33,7 +34,6 @@ export function registerCallbacks(bot, ticktick, gemini) {
         const data = store.getPendingTasks()[taskId];
 
         if (!data) {
-            // Might already be processed
             if (store.isTaskProcessed(taskId)) {
                 await ctx.answerCallbackQuery({ text: '✅ Already handled' });
                 return;
@@ -43,26 +43,29 @@ export function registerCallbacks(bot, ticktick, gemini) {
         }
 
         try {
-            const update = { projectId: data.projectId };
-            if (data.improvedTitle) update.title = data.improvedTitle;
-            if (data.improvedContent) update.content = data.improvedContent;
-            if (data.suggestedPriority !== undefined) update.priority = data.suggestedPriority;
+            // Use shared builder — applies title, description, priority, project, AND due date
+            const update = buildTickTickUpdate(data);
 
-            // Save original for undo
             store.addUndoEntry({
                 taskId,
                 action: 'approve',
                 originalTitle: data.originalTitle,
                 originalContent: data.originalContent,
                 originalPriority: data.originalPriority,
+                originalProjectId: data.projectId,
             });
 
             await ticktick.updateTask(taskId, update);
             store.approveTask(taskId);
 
+            const movedNote = (data.suggestedProjectId && data.suggestedProjectId !== data.projectId)
+                ? ` Moved to ${data.suggestedProject}.` : '';
+            const dateNote = data.suggestedSchedule && data.suggestedSchedule !== 'someday'
+                ? ` Due: ${data.suggestedSchedule}.` : '';
+
             await ctx.answerCallbackQuery({ text: '✅ Applied to TickTick!' });
             await ctx.editMessageText(
-                `✅ Updated: "${data.improvedTitle || data.originalTitle}"\n\nApplied to TickTick successfully.`
+                `✅ Updated: "${data.improvedTitle || data.originalTitle}"${movedNote}${dateNote}\n\nApplied successfully.`
             );
         } catch (err) {
             console.error('Approve error:', err.message);

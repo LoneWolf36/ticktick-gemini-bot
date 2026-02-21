@@ -15,6 +15,7 @@ export class TickTickClient {
         this.clientSecret = clientSecret;
         this.redirectUri = redirectUri;
         this.accessToken = null;
+        this._cachedProjects = [];
         this._loadToken();
     }
 
@@ -88,6 +89,7 @@ export class TickTickClient {
 
     async getAllTasks() {
         const projects = await this.getProjects();
+        this._cachedProjects = projects; // Cache for use by Gemini analyzeTask
         const allTasks = [];
 
         for (const project of projects) {
@@ -111,6 +113,11 @@ export class TickTickClient {
         }
 
         return allTasks;
+    }
+
+    /** Returns project list from the last getAllTasks() call — no extra API call needed */
+    getLastFetchedProjects() {
+        return this._cachedProjects;
     }
 
     // ─── Internal ──────────────────────────────────────────────

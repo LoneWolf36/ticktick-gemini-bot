@@ -22,6 +22,8 @@ const {
     BOT_MODE = 'polling',
     WEBHOOK_URL = '',
     PORT = '8080',
+    AUTO_APPLY_LIFE_ADMIN = 'true',
+    AUTO_APPLY_DROPS = 'false',
 } = process.env;
 
 // ─── Validate required vars ─────────────────────────────────
@@ -45,8 +47,14 @@ try {
     process.exit(1);
 }
 
+// ─── Bot config ─────────────────────────────────────────────
+const botConfig = {
+    autoApplyLifeAdmin: AUTO_APPLY_LIFE_ADMIN === 'true',
+    autoApplyDrops: AUTO_APPLY_DROPS === 'true',
+};
+
 // ─── Create Telegram bot ────────────────────────────────────
-const bot = createBot(TELEGRAM_BOT_TOKEN, ticktick, gemini);
+const bot = createBot(TELEGRAM_BOT_TOKEN, ticktick, gemini, botConfig);
 
 // ─── Express (OAuth callback + health check) ────────────────
 const app = express();
@@ -136,6 +144,7 @@ app.listen(parseInt(PORT), async () => {
         weeklyDay: parseInt(WEEKLY_DIGEST_DAY),
         pollMinutes: parseInt(POLL_INTERVAL_MINUTES),
         timezone: USER_TIMEZONE,
+        ...botConfig,
     });
 
     console.log(chalk.dim(`\n🌐 Server: http://127.0.0.1:${PORT}`));

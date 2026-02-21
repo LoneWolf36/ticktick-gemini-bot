@@ -11,10 +11,12 @@ import { USER_CONTEXT } from './user_context.js';
 const ANALYZE_PROMPT = `${USER_CONTEXT}
 
 When analyzing a task, evaluate on these dimensions:
-1. NEEDLE-MOVER? Does this directly advance his top career goals, or is it admin/busywork/avoidance?
+1. NEEDLE-MOVER? Does this directly advance the top career goals, or is it admin/busywork/avoidance?
 2. SMART? Is it Specific, Measurable, Achievable, Relevant, Time-bound?
 3. SCOPED? Is it realistically completable, or likely to become another abandoned effort?
 4. PRIORITY: 🔴 Career-critical (DSA, system design, interviews, key projects) | 🟡 Important but secondary (coursework, business) | 🟢 Life admin | ⚪ Consider dropping
+5. PROJECT: Does this task belong in a different project/category? Use the list provided.
+6. SCHEDULE: When should this realistically be done? Be honest — don’t schedule everything for “today”.
 
 Respond ONLY in this exact JSON format (no markdown fences):
 {
@@ -26,7 +28,9 @@ Respond ONLY in this exact JSON format (no markdown fences):
   "priority_emoji": "🔴|🟡|🟢|⚪",
   "needle_mover": true,
   "success_criteria": "Concrete definition of done",
-  "callout": "Direct, honest accountability note (e.g. 'This looks like planning avoidance — when will you actually start coding?')"
+  "callout": "Direct, honest accountability note",
+  "suggested_project": "Exact project name from the provided list, or null if current project is correct",
+  "suggested_schedule": "today|tomorrow|this-week|next-week|someday|null"
 }`;
 
 // ─── Daily Briefing Prompt ──────────────────────────────────
@@ -104,8 +108,8 @@ export class GeminiAnalyzer {
 
     // ─── Analyze a single task (with retry for rate limits) ────
 
-    async analyzeTask(task) {
-        const prompt = this._buildTaskPrompt(task);
+    async analyzeTask(task, projectList = []) {
+        const prompt = this._buildTaskPrompt(task, projectList);
         const maxRetries = 3;
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
@@ -200,14 +204,28 @@ export class GeminiAnalyzer {
 
     // ─── Helpers ──────────────────────────────────────────────
 
-    _buildTaskPrompt(task) {
-        let prompt = `Analyze this task:\nTitle: "${task.title}"`;
+    _buildTaskPrompt(task, projectList = []) {
+        const today = new Date();
+        const dayName = today.toLocaleDateString('en-IE', { weekday: 'long' });
+        const dateStr = today.toLocaleDateString('en-IE', { year: 'numeric', month: 'long', day: 'numeric' });
+
+        let prompt = `Today is ${dayName}, ${dateStr}.\n`;
+        prompt += `Analyze this task:\nTitle: "${task.title}"`;
         if (task.content) prompt += `\nDescription: "${task.content}"`;
-        if (task.dueDate) prompt += `\nDue: ${task.dueDate}`;
-        if (task.projectName) prompt += `\nProject: ${task.projectName}`;
+        if (task.dueDate) {
+            prompt += `\nExisting due date: ${task.dueDate} (respect this — set suggested_schedule to null if already dated)`;
+        }
+        if (task.projectName) prompt += `\nCurrent project: ${task.projectName}`;
         if (task.tags?.length) prompt += `\nTags: ${task.tags.join(', ')}`;
         const pMap = { 0: 'None', 1: 'Low', 3: 'Medium', 5: 'High' };
-        if (task.priority !== undefined) prompt += `\nPriority: ${pMap[task.priority] || 'Unknown'}`;
+        if (task.priority !== undefined) prompt += `\nCurrent priority: ${pMap[task.priority] || 'Unknown'}`;
+
+        if (projectList.length > 0) {
+            prompt += `\n\nAvailable projects (use exact names):\n`;
+            prompt += projectList.map(p => `- ${p.name}`).join('\n');
+            prompt += `\nSet suggested_project to null if the current project is already correct.`;
+        }
+
         return prompt;
     }
 }

@@ -1,7 +1,10 @@
-// Bot command handlers — /start, /status, /scan, /briefing, /weekly, /review, /pending
+// Bot command handlers — /start, /status, /scan, /briefing, /weekly, /review, /pending, /undo
 import * as store from '../services/store.js';
 import { taskReviewKeyboard } from './callbacks.js';
-import { buildTaskCard, buildPendingData, pendingToAnalysis, PRIORITY_MAP, sleep } from './utils.js';
+import {
+    buildTaskCard, buildPendingData, buildTickTickUpdate,
+    buildAutoApplyNotification, pendingToAnalysis, PRIORITY_MAP, sleep,
+} from './utils.js';
 
 // ─── Access Control ─────────────────────────────────────────
 const AUTHORIZED_CHAT_ID = process.env.TELEGRAM_CHAT_ID
@@ -9,7 +12,7 @@ const AUTHORIZED_CHAT_ID = process.env.TELEGRAM_CHAT_ID
     : null;
 
 function isAuthorized(ctx) {
-    if (!AUTHORIZED_CHAT_ID) return true; // No restriction if not set
+    if (!AUTHORIZED_CHAT_ID) return true;
     return ctx.chat.id === AUTHORIZED_CHAT_ID;
 }
 
@@ -21,29 +24,32 @@ async function guardAccess(ctx) {
     return true;
 }
 
-export function registerCommands(bot, ticktick, gemini) {
+export function registerCommands(bot, ticktick, gemini, config = {}) {
+    const {
+        autoApplyLifeAdmin = false,
+        autoApplyDrops = false,
+    } = config;
 
-    // ─── /start — register chat ID ────────────────────────────
+    // ─── /start ───────────────────────────────────────────────
     bot.command('start', async (ctx) => {
         if (!await guardAccess(ctx)) return;
-
         const chatId = ctx.chat.id;
         store.setChatId(chatId);
-
         await ctx.reply(
             `🧠 TickTick AI Accountability Partner\n\n` +
-            `Connected! Your chat ID is ${chatId}.\n\n` +
+            `Connected! Chat ID: ${chatId}\n\n` +
             `Commands:\n` +
-            `/scan — Check for new tasks now (batched, 5 at a time)\n` +
-            `/review — Walk through all tasks one by one\n` +
-            `/pending — Re-surface tasks you haven't responded to\n` +
-            `/briefing — Get today's morning briefing\n` +
-            `/weekly — Get weekly accountability digest\n` +
-            `/status — Show bot status and stats`
+            `/scan — Analyze new tasks (batched, 5 at a time)\n` +
+            `/pending — Re-surface tasks awaiting review\n` +
+            `/briefing — Today's prioritized morning plan\n` +
+            `/weekly — Weekly accountability digest\n` +
+            `/review — Walk through all unreviewed tasks\n` +
+            `/undo — Revert last auto-applied change\n` +
+            `/status — Bot status and stats`
         );
     });
 
-    // ─── /status — show stats ─────────────────────────────────
+    // ─── /status ──────────────────────────────────────────────
     bot.command('status', async (ctx) => {
         if (!await guardAccess(ctx)) return;
         const stats = store.getStats();
@@ -53,8 +59,10 @@ export function registerCommands(bot, ticktick, gemini) {
             `🔌 TickTick: ${ticktick.isAuthenticated() ? '🟢 Connected' : '🔴 Not connected'}`,
             `📊 Tasks Analyzed: ${stats.tasksAnalyzed}`,
             `✅ Approved: ${stats.tasksApproved}`,
+            `⚡ Auto-applied: ${stats.tasksAutoApplied || 0}`,
             `⏭ Skipped: ${stats.tasksSkipped}`,
             `⏳ Pending Review: ${pendingCount}`,
+            `\n🤖 Auto-apply life-admin: ${autoApplyLifeAdmin ? 'ON' : 'OFF'}`,
         ];
         if (stats.lastDailyBriefing) {
             lines.push(`🌅 Last Briefing: ${new Date(stats.lastDailyBriefing).toLocaleString('en-IE')}`);
@@ -62,7 +70,7 @@ export function registerCommands(bot, ticktick, gemini) {
         if (stats.lastWeeklyDigest) {
             lines.push(`📊 Last Digest: ${new Date(stats.lastWeeklyDigest).toLocaleString('en-IE')}`);
         }
-        lines.push('\nCommands: /scan | /pending | /briefing | /weekly');
+        lines.push('\nCommands: /scan | /pending | /undo | /briefing | /weekly');
         await ctx.reply(lines.join('\n'));
     });
 
@@ -78,13 +86,14 @@ export function registerCommands(bot, ticktick, gemini) {
 
         try {
             const allTasks = await ticktick.getAllTasks();
+            const projects = ticktick.getLastFetchedProjects();
             const newTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (newTasks.length === 0) {
                 const pendingCount = store.getPendingCount();
                 let msg = '✅ No new tasks found.';
                 if (pendingCount > 0) {
-                    msg += `\n\n⏳ You have ${pendingCount} task(s) still pending review. Run /pending to see them.`;
+                    msg += `\n\n⏳ You have ${pendingCount} task(s) pending review. Run /pending to see them.`;
                 }
                 await ctx.reply(msg);
                 return;
@@ -93,21 +102,26 @@ export function registerCommands(bot, ticktick, gemini) {
             const batch = newTasks.slice(0, 5);
             await ctx.reply(`📬 Found ${newTasks.length} new task(s). Analyzing first ${batch.length}...`);
 
-            let successes = 0;
+            let supervised = 0, autoApplied = [];
+            const autoConfig = { autoApplyLifeAdmin, autoApplyDrops };
+
             for (const task of batch) {
-                const ok = await analyzeAndSend(ctx, task, gemini);
-                if (ok) successes++;
-                await sleep(5000);  // 5s between tasks to avoid Gemini rate limits
+                const result = await analyzeAndSend(ctx, task, gemini, ticktick, projects, autoConfig);
+                if (result === 'supervised') supervised++;
+                else if (result) autoApplied.push(result);
+                await sleep(5000);
             }
 
-            let doneMsg = `✨ Batch done! ${successes}/${batch.length} task(s) analyzed.`;
-            if (successes < batch.length) {
-                doneMsg += `\n\n⚠️ ${batch.length - successes} failed (likely rate-limited). Run /scan again — they'll retry.`;
+            let doneMsg = '';
+            if (supervised > 0) doneMsg += `✨ ${supervised} task(s) sent for your review.\n`;
+            if (autoApplied.length > 0) {
+                doneMsg += buildAutoApplyNotification(autoApplied);
             }
+            if (!doneMsg) doneMsg = `✨ Batch done! ${batch.length} task(s) processed.`;
             if (newTasks.length > 5) {
                 doneMsg += `\n\n📝 ${newTasks.length - 5} more remain. Run /scan again for the next batch.`;
             }
-            await ctx.reply(doneMsg);
+            await ctx.reply(doneMsg.trim());
         } catch (err) {
             console.error('Scan error:', err.message);
             await ctx.reply(`❌ Scan error: ${err.message}`);
@@ -129,12 +143,8 @@ export function registerCommands(bot, ticktick, gemini) {
 
         const batch = entries.slice(0, 5);
         for (const [taskId, data] of batch) {
-            // Reconstruct analysis from stored raw fields (no double-formatting)
             const analysis = pendingToAnalysis(data);
-            const card = buildTaskCard(
-                { title: data.originalTitle, projectName: data.projectName },
-                analysis
-            );
+            const card = buildTaskCard({ title: data.originalTitle, projectName: data.projectName }, analysis);
             await ctx.reply(card, { reply_markup: taskReviewKeyboard(taskId) });
             await sleep(1000);
         }
@@ -144,16 +154,38 @@ export function registerCommands(bot, ticktick, gemini) {
         }
     });
 
-    // ─── /briefing — daily briefing on demand ─────────────────
-    bot.command('briefing', async (ctx) => {
+    // ─── /undo — revert last auto-applied change ──────────────
+    bot.command('undo', async (ctx) => {
         if (!await guardAccess(ctx)) return;
-        if (!ticktick.isAuthenticated()) {
-            await ctx.reply('🔴 TickTick not connected.');
+        const last = store.getLastUndoEntry();
+
+        if (!last) {
+            await ctx.reply('Nothing to undo.');
             return;
         }
 
-        await ctx.reply('🌅 Generating your briefing...');
+        try {
+            // Restore original values to TickTick
+            await ticktick.updateTask(last.taskId, {
+                projectId: last.originalProjectId,
+                title: last.originalTitle,
+                content: last.originalContent,
+                priority: last.originalPriority,
+                // Note: we don't restore due date since the original may not have had one
+            });
+            store.removeLastUndoEntry();
+            await ctx.reply(`↩️ Reverted: "${last.originalTitle}" restored to its original state.`);
+        } catch (err) {
+            console.error('Undo error:', err.message);
+            await ctx.reply(`❌ Undo failed: ${err.message}`);
+        }
+    });
 
+    // ─── /briefing ────────────────────────────────────────────
+    bot.command('briefing', async (ctx) => {
+        if (!await guardAccess(ctx)) return;
+        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
+        await ctx.reply('🌅 Generating your briefing...');
         try {
             const tasks = await ticktick.getAllTasks();
             const briefing = await gemini.generateDailyBriefing(tasks);
@@ -161,21 +193,15 @@ export function registerCommands(bot, ticktick, gemini) {
             await ctx.reply(header + briefing);
             store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         } catch (err) {
-            console.error('Briefing error:', err.message);
             await ctx.reply(`❌ Briefing error: ${err.message}`);
         }
     });
 
-    // ─── /weekly — weekly digest on demand ────────────────────
+    // ─── /weekly ──────────────────────────────────────────────
     bot.command('weekly', async (ctx) => {
         if (!await guardAccess(ctx)) return;
-        if (!ticktick.isAuthenticated()) {
-            await ctx.reply('🔴 TickTick not connected.');
-            return;
-        }
-
+        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         await ctx.reply('📊 Generating your weekly review...');
-
         try {
             const tasks = await ticktick.getAllTasks();
             const processed = store.getProcessedTasks();
@@ -185,74 +211,107 @@ export function registerCommands(bot, ticktick, gemini) {
                 if (new Date(data.reviewedAt || data.processedAt) > oneWeekAgo) thisWeek[id] = data;
             }
             const digest = await gemini.generateWeeklyDigest(tasks, thisWeek);
-            const header = `📊 WEEKLY ACCOUNTABILITY REVIEW\n${'─'.repeat(28)}\n\n`;
-            await ctx.reply(header + digest);
+            await ctx.reply(`📊 WEEKLY ACCOUNTABILITY REVIEW\n${'─'.repeat(28)}\n\n${digest}`);
             store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         } catch (err) {
-            console.error('Weekly error:', err.message);
             await ctx.reply(`❌ Weekly digest error: ${err.message}`);
         }
     });
 
-    // ─── /review — batch walk-through ─────────────────────────
+    // ─── /review ──────────────────────────────────────────────
     bot.command('review', async (ctx) => {
         if (!await guardAccess(ctx)) return;
-        if (!ticktick.isAuthenticated()) {
-            await ctx.reply('🔴 TickTick not connected.');
-            return;
-        }
+        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
 
         const pendingCount = store.getPendingCount();
         if (pendingCount > 0) {
-            await ctx.reply(`⏳ You have ${pendingCount} task(s) still pending review.\nRun /pending to review them first, or /scan to analyze new ones.`);
+            await ctx.reply(`⏳ You have ${pendingCount} task(s) pending review.\nRun /pending first, or /scan for new tasks.`);
             return;
         }
 
         await ctx.reply('📋 Checking for unreviewed tasks...');
-
         try {
             const allTasks = await ticktick.getAllTasks();
+            const projects = ticktick.getLastFetchedProjects();
             const unreviewed = allTasks.filter(t => !store.isTaskKnown(t.id));
 
-            if (unreviewed.length === 0) {
-                await ctx.reply('✅ All tasks have been reviewed!');
-                return;
-            }
+            if (unreviewed.length === 0) { await ctx.reply('✅ All tasks reviewed!'); return; }
 
             const batch = unreviewed.slice(0, 5);
             await ctx.reply(`📬 ${unreviewed.length} task(s) to review. Sending ${batch.length}...`);
 
             for (const task of batch) {
-                await analyzeAndSend(ctx, task, gemini);
+                await analyzeAndSend(ctx, task, gemini, ticktick, projects, { autoApplyLifeAdmin, autoApplyDrops });
                 await sleep(2500);
             }
-
             if (unreviewed.length > 5) {
-                await ctx.reply(`📝 Sent ${batch.length} of ${unreviewed.length}. Run /review again for the next batch.`);
+                await ctx.reply(`📝 Sent ${batch.length} of ${unreviewed.length}. Run /review again for more.`);
             }
         } catch (err) {
-            console.error('Review error:', err.message);
             await ctx.reply(`❌ Review error: ${err.message}`);
         }
     });
 }
 
-// ─── Analyze a task and send to Telegram ────────────────────
+// ─── Core: Analyze a task, then auto-apply or send card ─────
+// Returns: 'supervised' if card sent, auto-apply result object if auto-applied, false if failed
 
-export async function analyzeAndSend(ctx, task, gemini) {
+export async function analyzeAndSend(ctx, task, gemini, ticktick, projects = [], config = {}) {
     try {
-        const analysis = await gemini.analyzeTask(task);
+        const analysis = await gemini.analyzeTask(task, projects);
+        const pendingData = buildPendingData(task, analysis, projects);
 
-        // Store in PENDING using shared builder (single source of truth)
-        store.markTaskPending(task.id, buildPendingData(task, analysis));
+        const shouldAutoApply =
+            (analysis.priority === 'life-admin' && config.autoApplyLifeAdmin) ||
+            (analysis.priority === 'consider-dropping' && config.autoApplyDrops);
 
+        if (shouldAutoApply) {
+            return await autoApply(task, pendingData, analysis, ticktick);
+        }
+
+        // Supervised: send card with buttons
+        store.markTaskPending(task.id, pendingData);
         const card = buildTaskCard(task, analysis);
-        await ctx.reply(card, {
-            reply_markup: taskReviewKeyboard(task.id),
-        });
-        return true;
+        const chatId = store.getChatId();
+
+        if (ctx?.reply) {
+            await ctx.reply(card, { reply_markup: taskReviewKeyboard(task.id) });
+        } else if (ctx?.api && chatId) {
+            // Called from scheduler — ctx is the bot object
+            await ctx.api.sendMessage(chatId, card, { reply_markup: taskReviewKeyboard(task.id) });
+        }
+        return 'supervised';
     } catch (err) {
         console.error(`Failed to analyze "${task.title}":`, err.message);
         return false;
     }
+}
+
+// ─── Auto-apply: update TickTick directly, no user approval ─
+
+async function autoApply(task, pendingData, analysis, ticktick) {
+    const update = buildTickTickUpdate(pendingData);
+    await ticktick.updateTask(task.id, update);
+
+    // Log for /undo
+    store.addUndoEntry({
+        taskId: task.id,
+        action: 'auto-apply',
+        originalTitle: task.title,
+        originalContent: task.content || '',
+        originalPriority: task.priority,
+        originalProjectId: task.projectId,
+    });
+
+    store.markTaskProcessed(task.id, { ...pendingData, autoApplied: true });
+    store.updateStats({ tasksAutoApplied: (store.getStats().tasksAutoApplied || 0) + 1 });
+
+    // Build summary for batch notification
+    const schedLabel = { today: 'today', tomorrow: 'tomorrow', 'this-week': 'this week', 'next-week': 'next week' };
+    return {
+        title: pendingData.improvedTitle || task.title,
+        schedule: schedLabel[pendingData.suggestedSchedule] || null,
+        movedTo: (pendingData.suggestedProjectId && pendingData.suggestedProjectId !== task.projectId)
+            ? pendingData.suggestedProject : null,
+    };
 }

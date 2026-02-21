@@ -19,6 +19,7 @@ const DEFAULT_STATE = {
         tasksAnalyzed: 0,
         tasksApproved: 0,
         tasksSkipped: 0,
+        tasksAutoApplied: 0,
         lastDailyBriefing: null,
         lastWeeklyDigest: null,
     },
@@ -146,6 +147,17 @@ export function dropTask(taskId) {
     return s.processedTasks[taskId];
 }
 
+/** Direct processed (for auto-apply — task was never in pending) */
+export function markTaskProcessed(taskId, data) {
+    const s = load();
+    s.processedTasks[taskId] = {
+        ...data,
+        reviewedAt: new Date().toISOString(),
+    };
+    s.stats.tasksAnalyzed++;
+    save();
+}
+
 // ─── Pending Tasks Retrieval ─────────────────────────────────
 
 export function getPendingTasks() {
@@ -162,6 +174,17 @@ export function addUndoEntry(entry) {
     const s = load();
     s.undoLog.push({ ...entry, timestamp: new Date().toISOString() });
     if (s.undoLog.length > 200) s.undoLog = s.undoLog.slice(-200);
+    save();
+}
+
+export function getLastUndoEntry() {
+    const s = load();
+    return s.undoLog.length > 0 ? s.undoLog[s.undoLog.length - 1] : null;
+}
+
+export function removeLastUndoEntry() {
+    const s = load();
+    s.undoLog.pop();
     save();
 }
 
