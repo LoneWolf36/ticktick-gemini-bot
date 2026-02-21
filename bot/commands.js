@@ -268,6 +268,98 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             await ctx.reply(`❌ Review error: ${err.message}`);
         }
     });
+
+    // ─── Catch-all: free-form messages → Gemini ─────────────
+    bot.on('message:text', async (ctx) => {
+        if (!isAuthorized(ctx)) return;
+        // Skip commands (Grammy routes them first, but just in case)
+        if (ctx.message.text.startsWith('/')) return;
+        if (!ticktick.isAuthenticated()) {
+            await ctx.reply('🔴 TickTick not connected yet. Complete OAuth first.');
+            return;
+        }
+
+        const userMessage = ctx.message.text.trim();
+        if (!userMessage) return;
+
+        await ctx.reply('🤔 Thinking...');
+
+        try {
+            const tasks = await ticktick.getAllTasks();
+            const projects = ticktick.getLastFetchedProjects();
+            const result = await gemini.handleFreeform(userMessage, tasks, projects);
+
+            if (!result) {
+                await ctx.reply('Sorry, I couldn\'t process that. Try again?');
+                return;
+            }
+
+            if (result.mode === 'action' && result.actions?.length > 0) {
+                // Execute the actions Gemini suggested
+                const outcomes = await executeActions(result.actions, ticktick, tasks);
+                let response = result.summary || '✅ Done.';
+                if (outcomes.length > 0) {
+                    response += '\n\n' + outcomes.join('\n');
+                }
+                response += '\n\nRun /undo to revert the last change.';
+                await ctx.reply(response);
+            } else if (result.mode === 'coach') {
+                await ctx.reply(result.response || 'I\'m here to help. Ask me anything about your tasks!');
+            } else {
+                await ctx.reply(result.response || result.summary || 'Got it! Let me know if you need anything else.');
+            }
+        } catch (err) {
+            console.error('Freeform error:', err.message);
+            await ctx.reply(`❌ Error: ${err.message}`);
+        }
+    });
+}
+
+// ─── Execute Gemini-suggested actions against TickTick ────────
+
+async function executeActions(actions, ticktick, currentTasks) {
+    const outcomes = [];
+    for (const action of actions) {
+        try {
+            const task = currentTasks.find(t => t.id === action.taskId);
+            if (!task) {
+                outcomes.push(`⚠️ Task not found: ${action.taskId}`);
+                continue;
+            }
+
+            if (action.type === 'update' && action.changes) {
+                // Log for /undo before applying
+                store.addUndoEntry({
+                    taskId: task.id,
+                    action: 'freeform-update',
+                    originalTitle: task.title,
+                    originalContent: task.content || '',
+                    originalPriority: task.priority,
+                    originalProjectId: task.projectId,
+                    appliedTitle: action.changes.title || null,
+                    appliedProject: action.changes.projectId ? 'new project' : null,
+                    appliedSchedule: action.changes.dueDate || null,
+                });
+
+                await ticktick.updateTask(task.id, {
+                    projectId: action.changes.projectId || task.projectId,
+                    ...action.changes,
+                });
+                outcomes.push(`✅ Updated: "${task.title}"`);
+            } else if (action.type === 'drop') {
+                // Flag as dropped but DON'T delete — too risky
+                store.markTaskProcessed(task.id, {
+                    originalTitle: task.title,
+                    dropped: true,
+                    droppedByFreeform: true,
+                });
+                outcomes.push(`⚪ Flagged for dropping: "${task.title}" (not deleted — mark complete in TickTick if you agree)`);
+            }
+        } catch (err) {
+            outcomes.push(`❌ Failed on "${action.taskId}": ${err.message}`);
+        }
+    }
+    return outcomes;
 }
 
 // ─── Core: Analyze a task, then auto-apply or send card ─────

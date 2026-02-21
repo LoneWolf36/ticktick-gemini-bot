@@ -63,6 +63,37 @@ Cover these (keep it direct and concise):
 
 Respond in plain text formatted for Telegram with emoji. Be honest, not gentle.`;
 
+// ─── Free-form Conversation Prompt ───────────────────────
+const CONVERSE_PROMPT = `${USER_CONTEXT}
+
+You are an AI accountability partner with direct access to the user's tasks.
+The user is sending you a free-form message. It could be:
+- A command: "move all gym tasks to next week", "drop everything in Inbox"
+- A question: "what should I focus on right now?"
+- A vent: "I'm overwhelmed" or "I keep procrastinating"
+
+Rules:
+1. If the message implies CHANGES to tasks, respond in this JSON format:
+{
+  "mode": "action",
+  "actions": [
+    { "taskId": "...", "type": "update", "changes": { "title": "...", "priority": 5, "dueDate": "...", "projectId": "..." } },
+    { "taskId": "...", "type": "drop" }
+  ],
+  "summary": "Human-readable summary of what you did"
+}
+
+2. If the message is conversational (question, vent, coaching), respond in this format:
+{
+  "mode": "coach",
+  "response": "Your coaching/advice response with emoji, formatted for Telegram"
+}
+
+3. If unsure whether the user wants action or advice, default to coaching and ASK.
+4. Never execute destructive actions (dropping career-critical tasks) without flagging it.
+5. Keep responses punchy and direct — this is Telegram, not an essay.
+6. Respond ONLY in JSON (no markdown fences).`;
+
 export class GeminiAnalyzer {
     constructor(apiKey) {
         if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
@@ -103,6 +134,17 @@ export class GeminiAnalyzer {
                 maxOutputTokens: 8192,
             },
             thinkingConfig: { thinkingBudget: 2048 },
+        });
+
+        this.chatModel = genAI.getGenerativeModel({
+            model: 'gemini-2.5-flash',
+            systemInstruction: CONVERSE_PROMPT,
+            generationConfig: {
+                temperature: 0.8,
+                topP: 0.9,
+                maxOutputTokens: 4096,
+            },
+            thinkingConfig: { thinkingBudget: 1024 },
         });
     }
 
@@ -200,6 +242,52 @@ export class GeminiAnalyzer {
         const prompt = `Current active tasks (${allTasks.length}):\n${taskList}\n\nTasks analyzed this week:\n${processed || 'None'}`;
         const result = await this.weeklyModel.generateContent(prompt);
         return result.response.text().trim();
+    }
+
+    // ─── Free-form conversation / instruction handling ─────────
+
+    async handleFreeform(message, tasks = [], projects = []) {
+        const today = new Date();
+        const dayName = today.toLocaleDateString('en-IE', { weekday: 'long' });
+        const dateStr = today.toLocaleDateString('en-IE', { year: 'numeric', month: 'long', day: 'numeric' });
+
+        // Build concise task context
+        const taskList = tasks.slice(0, 50).map((t, i) => {
+            const pMap = { 5: '🔴', 3: '🟡', 1: '🔵', 0: '⚪' };
+            let line = `${i + 1}. [id:${t.id}] "${t.title}" [${t.projectName || 'Inbox'}] ${pMap[t.priority] || ''}`;
+            if (t.dueDate) line += ` due:${t.dueDate}`;
+            return line;
+        }).join('\n');
+
+        const projectList = projects.map(p => `- ${p.name} (id:${p.id})`).join('\n');
+
+        const prompt = `Today is ${dayName}, ${dateStr}.\n\nUser's current tasks (${tasks.length} total):\n${taskList}\n\nAvailable projects:\n${projectList}\n\nUser message: "${message}"`;
+
+        const maxRetries = 2;
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                const result = await this.chatModel.generateContent(prompt);
+                const raw = result.response.text().trim();
+
+                // Try to parse JSON
+                const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+                try {
+                    return JSON.parse(cleaned);
+                } catch {
+                    // If Gemini didn't return valid JSON, treat as coaching response
+                    return { mode: 'coach', response: raw };
+                }
+            } catch (err) {
+                if (err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED')) {
+                    if (attempt < maxRetries) {
+                        console.log(`  ⏳ Rate limited on chat, retry ${attempt + 1}/${maxRetries}...`);
+                        await new Promise(r => setTimeout(r, 10000 * (attempt + 1)));
+                        continue;
+                    }
+                }
+                throw err;
+            }
+        }
     }
 
     // ─── Helpers ──────────────────────────────────────────────
