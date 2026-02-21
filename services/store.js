@@ -16,6 +16,7 @@ const DEFAULT_STATE = {
     chatId: null,
     pendingTasks: {},    // Analyzed + sent to Telegram, awaiting user review
     processedTasks: {},  // User has clicked approve/skip/drop
+    failedTasks: {},     // AI analysis failed (rate limit) — parked to prevent re-polling
     undoLog: [],
     stats: {
         tasksAnalyzed: 0,
@@ -140,7 +141,23 @@ export function isTaskPending(taskId) {
 }
 
 export function isTaskKnown(taskId) {
-    return !!state.processedTasks[taskId] || !!state.pendingTasks[taskId];
+    if (state.processedTasks[taskId] || state.pendingTasks[taskId]) return true;
+    // Failed tasks are "known" only while their cooldown hasn't expired
+    const failed = state.failedTasks?.[taskId];
+    if (failed && new Date(failed.retryAfter) > new Date()) return true;
+    if (failed) delete state.failedTasks[taskId]; // Expired — let it re-poll
+    return false;
+}
+
+/** Park a task that failed analysis (rate limit) — prevents re-polling for 2 hours */
+export async function markTaskFailed(taskId, reason) {
+    if (!state.failedTasks) state.failedTasks = {};
+    state.failedTasks[taskId] = {
+        reason,
+        failedAt: new Date().toISOString(),
+        retryAfter: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), // 2 hours
+    };
+    await save();
 }
 
 // ─── Phase 1: Pending (analyzed, sent to Telegram) ──────────

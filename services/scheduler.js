@@ -54,6 +54,12 @@ export async function startScheduler(bot, ticktick, gemini, config) {
         console.log(`🔄 [${userTimeString()}] Polling for new tasks...`);
 
         try {
+            // Skip if Gemini quota is known to be exhausted
+            if (gemini.isQuotaExhausted()) {
+                console.log('⏸️  Skipping poll — Gemini quota cooldown active.');
+                return;
+            }
+
             const allTasks = await ticktick.getAllTasks();
             const projects = ticktick.getLastFetchedProjects();
             const newTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
@@ -63,22 +69,41 @@ export async function startScheduler(bot, ticktick, gemini, config) {
 
             const batch = newTasks.slice(0, 5);
             const autoApplied = [];
+            let quotaHit = false;
 
             for (const task of batch) {
                 try {
-                    // Pass bot as ctx — analyzeAndSend handles both ctx.reply and bot.api.sendMessage
                     const result = await analyzeAndSend(bot, task, gemini, ticktick, projects, autoConfig);
                     if (result && result !== 'supervised') autoApplied.push(result);
                 } catch (err) {
-                    console.error(`  ❌ Failed: "${task.title}":`, err.message);
+                    if (err.message === 'QUOTA_EXHAUSTED') {
+                        // Park remaining batch tasks so they don't re-poll
+                        const remaining = batch.slice(batch.indexOf(task));
+                        for (const t of remaining) {
+                            await store.markTaskFailed(t.id, 'quota_exhausted');
+                        }
+                        console.log(`⏸️  Quota exhausted — parked ${remaining.length} task(s) for later.`);
+                        quotaHit = true;
+                        break;
+                    }
+                    // Non-quota failure — park individual task
+                    await store.markTaskFailed(task.id, err.message);
+                    console.error(`  ❌ Failed: "${task.title}": ${err.message}`);
                 }
-                await new Promise(r => setTimeout(r, 2000));
+                await new Promise(r => setTimeout(r, 3000));
             }
 
             // Send one compact batch notification for auto-applied tasks
             if (autoApplied.length > 0) {
                 const notification = buildAutoApplyNotification(autoApplied);
                 if (notification) await bot.api.sendMessage(chatId, notification);
+            }
+
+            if (quotaHit) {
+                await bot.api.sendMessage(chatId,
+                    `⚠️ AI quota reached — processed some tasks, ${newTasks.length - autoApplied.length} parked for retry later.\n` +
+                    `Run /scan again in ~2 hours or wait for automatic retry.`
+                );
             }
         } catch (err) {
             console.error('Poll error:', err.message);

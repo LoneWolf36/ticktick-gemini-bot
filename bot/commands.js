@@ -120,20 +120,41 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             const batch = newTasks.slice(0, 5);
             await ctx.reply(`📬 Found ${newTasks.length} new task(s). Analyzing first ${batch.length}...`);
 
-            let supervised = 0, autoApplied = [];
+            let supervised = 0, autoApplied = [], failed = 0;
             const autoConfig = { autoApplyLifeAdmin, autoApplyDrops };
+            let quotaHit = false;
 
             for (const task of batch) {
-                const result = await analyzeAndSend(ctx, task, gemini, ticktick, projects, autoConfig);
-                if (result === 'supervised') supervised++;
-                else if (result) autoApplied.push(result);
-                await sleep(5000);
+                try {
+                    const result = await analyzeAndSend(ctx, task, gemini, ticktick, projects, autoConfig);
+                    if (result === 'supervised') supervised++;
+                    else if (result) autoApplied.push(result);
+                } catch (err) {
+                    if (err.message === 'QUOTA_EXHAUSTED') {
+                        // Park remaining tasks
+                        const remaining = batch.slice(batch.indexOf(task));
+                        for (const t of remaining) {
+                            await store.markTaskFailed(t.id, 'quota_exhausted');
+                        }
+                        failed += remaining.length;
+                        quotaHit = true;
+                        break;
+                    }
+                    await store.markTaskFailed(task.id, err.message);
+                    failed++;
+                }
+                await sleep(3000);
             }
 
             let doneMsg = '';
             if (supervised > 0) doneMsg += `✨ ${supervised} task(s) sent for your review.\n`;
             if (autoApplied.length > 0) {
                 doneMsg += buildAutoApplyNotification(autoApplied);
+            }
+            if (quotaHit) {
+                doneMsg += `\n⚠️ AI quota reached — ${failed} task(s) parked for retry in ~2 hours.`;
+            } else if (failed > 0) {
+                doneMsg += `\n⚠️ ${failed} task(s) failed — parked for retry later.`;
             }
             if (!doneMsg) doneMsg = `✨ Batch done! ${batch.length} task(s) processed.`;
             if (newTasks.length > 5) {

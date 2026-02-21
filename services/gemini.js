@@ -117,39 +117,36 @@ export class GeminiAnalyzer {
         }
         const genAI = new GoogleGenerativeAI(apiKey);
 
+        // gemini-2.0-flash for bulk work (1500 RPD free tier)
+        // gemini-2.5-flash reserved for chat/reasoning only (20 RPD free tier)
         this.analyzeModel = genAI.getGenerativeModel({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.0-flash',
             systemInstruction: ANALYZE_PROMPT,
             generationConfig: {
-                temperature: 0.7,
+                temperature: 0.3,
                 topP: 0.9,
                 maxOutputTokens: 4096,
             },
-            // Disable thinking for task analysis — it's a simple JSON classification
-            // Thinking burns tokens and adds latency with no benefit here
-            thinkingConfig: { thinkingBudget: 0 },
         });
 
         this.briefingModel = genAI.getGenerativeModel({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.0-flash',
             systemInstruction: BRIEFING_PROMPT,
             generationConfig: {
                 temperature: 0.8,
                 topP: 0.9,
                 maxOutputTokens: 4096,
             },
-            thinkingConfig: { thinkingBudget: 1024 },
         });
 
         this.weeklyModel = genAI.getGenerativeModel({
-            model: 'gemini-2.5-flash',
+            model: 'gemini-2.0-flash',
             systemInstruction: WEEKLY_PROMPT,
             generationConfig: {
                 temperature: 0.8,
                 topP: 0.9,
                 maxOutputTokens: 8192,
             },
-            thinkingConfig: { thinkingBudget: 2048 },
         });
 
         this.chatModel = genAI.getGenerativeModel({
@@ -162,13 +159,31 @@ export class GeminiAnalyzer {
             },
             thinkingConfig: { thinkingBudget: 1024 },
         });
+
+        // Daily quota circuit breaker
+        this._quotaExhaustedUntil = null;
     }
 
-    // ─── Analyze a single task (with retry for rate limits) ────
+    /** Check if we've hit the daily quota wall */
+    isQuotaExhausted() {
+        if (!this._quotaExhaustedUntil) return false;
+        if (Date.now() > this._quotaExhaustedUntil) {
+            this._quotaExhaustedUntil = null; // Reset after cooldown
+            return false;
+        }
+        return true;
+    }
+
+    // ─── Analyze a single task (with smart retry) ───────────────
 
     async analyzeTask(task, projectList = []) {
+        // Don't even try if we know quota is exhausted
+        if (this.isQuotaExhausted()) {
+            throw new Error('QUOTA_EXHAUSTED');
+        }
+
         const prompt = this._buildTaskPrompt(task, projectList);
-        const maxRetries = 3;
+        const maxRetries = 2;
 
         for (let attempt = 0; attempt <= maxRetries; attempt++) {
             try {
@@ -180,15 +195,27 @@ export class GeminiAnalyzer {
                     || err.message?.includes('RESOURCE_EXHAUSTED')
                     || err.message?.includes('429');
 
+                // Check if daily quota exhausted (not just per-minute rate limit)
+                const isDailyQuota = err.message?.includes('PerDay')
+                    || err.message?.includes('per day')
+                    || err.message?.includes('quota');
+
+                if (isRateLimit && isDailyQuota) {
+                    // Daily quota hit — don't retry, circuit-break for 15 min
+                    console.error('🛑 Daily quota exhausted — pausing AI calls for 15 min.');
+                    this._quotaExhaustedUntil = Date.now() + (15 * 60 * 1000);
+                    throw new Error('QUOTA_EXHAUSTED');
+                }
+
                 if (isRateLimit && attempt < maxRetries) {
-                    // Extract retry delay from error if available, else backoff
+                    // Transient rate limit — retry with backoff
                     const match = err.message?.match(/retry in ([\d.]+)s/i);
-                    const waitSec = match ? Math.ceil(parseFloat(match[1])) + 2 : (10 * Math.pow(2, attempt));
+                    const waitSec = match ? Math.ceil(parseFloat(match[1])) + 2 : (15 * (attempt + 1));
                     console.log(`⏳ Rate limited, waiting ${waitSec}s before retry ${attempt + 1}/${maxRetries}...`);
                     await new Promise(r => setTimeout(r, waitSec * 1000));
                     continue;
                 }
-                throw err; // Non-rate-limit error or retries exhausted
+                throw err;
             }
         }
     }
