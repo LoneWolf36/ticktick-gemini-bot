@@ -149,13 +149,15 @@ export function isTaskKnown(taskId) {
     return false;
 }
 
-/** Park a task that failed analysis (rate limit) — prevents re-polling for 2 hours */
-export async function markTaskFailed(taskId, reason) {
+/** Park a task that failed analysis — prevents re-polling until retryAfterMs expires.
+ *  @param {number} [retryAfterMs=7200000] — ms to park (default 2h; callers can pass quota-aligned duration)
+ */
+export async function markTaskFailed(taskId, reason, retryAfterMs = 2 * 60 * 60 * 1000) {
     if (!state.failedTasks) state.failedTasks = {};
     state.failedTasks[taskId] = {
         reason,
         failedAt: new Date().toISOString(),
-        retryAfter: new Date(Date.now() + 2 * 60 * 60 * 1000).toISOString(), // 2 hours
+        retryAfter: new Date(Date.now() + retryAfterMs).toISOString(),
     };
     await save();
 }

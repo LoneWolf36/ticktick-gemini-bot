@@ -25,6 +25,7 @@ export async function startScheduler(bot, ticktick, gemini, config) {
 
     // ─── Task polling (every N minutes) ──────────────────────
     let tokenExpiredNotified = false;
+    let quotaNotificationSent = false;
 
     cron.schedule(`*/${pollMinutes} * * * *`, async () => {
         if (!ticktick.isAuthenticated()) {
@@ -77,12 +78,14 @@ export async function startScheduler(bot, ticktick, gemini, config) {
                     if (result && result !== 'supervised') autoApplied.push(result);
                 } catch (err) {
                     if (err.message === 'QUOTA_EXHAUSTED') {
-                        // Park remaining batch tasks so they don't re-poll
-                        const remaining = batch.slice(batch.indexOf(task));
-                        for (const t of remaining) {
-                            await store.markTaskFailed(t.id, 'quota_exhausted');
+                        // Park ALL new tasks (not just this batch) — none can be processed
+                        const resetMs = gemini.quotaResumeTime()
+                            ? gemini.quotaResumeTime().getTime() - Date.now()
+                            : 2 * 60 * 60 * 1000;
+                        for (const t of newTasks) {
+                            await store.markTaskFailed(t.id, 'quota_exhausted', resetMs);
                         }
-                        console.log(`⏸️  Quota exhausted — parked ${remaining.length} task(s) for later.`);
+                        console.log(`⏸️  Quota exhausted — parked ${newTasks.length} task(s) until quota resets.`);
                         quotaHit = true;
                         break;
                     }
@@ -99,14 +102,27 @@ export async function startScheduler(bot, ticktick, gemini, config) {
                 if (notification) await bot.api.sendMessage(chatId, notification);
             }
 
-            if (quotaHit) {
+            if (quotaHit && !quotaNotificationSent) {
+                quotaNotificationSent = true;
+                const resumeTime = gemini.quotaResumeTime();
+                const resumeStr = resumeTime
+                    ? resumeTime.toLocaleTimeString('en-US', {
+                        timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit'
+                    }) + ' PT'
+                    : '~midnight PT';
                 await bot.api.sendMessage(chatId,
-                    `⚠️ AI quota reached — processed some tasks, ${newTasks.length - autoApplied.length} parked for retry later.\n` +
-                    `Run /scan again in ~2 hours or wait for automatic retry.`
+                    `⚠️ AI daily quota exhausted — ${newTasks.length} tasks parked.\n` +
+                    `Quota resets at ~${resumeStr}. Bot will auto-resume then.\n` +
+                    `Or run /scan manually after reset.`
                 );
             }
         } catch (err) {
             console.error('Poll error:', err.message);
+        }
+
+        // Reset spam suppression flag once quota cooldown has actually expired
+        if (quotaNotificationSent && !gemini.isQuotaExhausted()) {
+            quotaNotificationSent = false;
         }
     }, { timezone });
 
@@ -118,6 +134,11 @@ export async function startScheduler(bot, ticktick, gemini, config) {
 
         console.log('🌅 Sending daily briefing...');
         try {
+            // Don't waste an API call if quota is exhausted
+            if (gemini.isQuotaExhausted()) {
+                console.log('⏸️  Skipping daily briefing — Gemini quota exhausted.');
+                return;
+            }
             const tasks = await ticktick.getAllTasks();
             const briefing = await gemini.generateDailyBriefing(tasks);
             const today = userTodayFormatted();

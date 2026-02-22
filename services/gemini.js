@@ -164,6 +164,24 @@ export class GeminiAnalyzer {
         this._quotaExhaustedUntil = null;
     }
 
+    /** Milliseconds until midnight Pacific (when Google resets free-tier daily quotas) */
+    _getQuotaResetMs() {
+        const now = new Date();
+        // Google resets at midnight Pacific — build that timestamp
+        const pacific = new Date(now.toLocaleString('en-US', { timeZone: 'America/Los_Angeles' }));
+        const midnightPT = new Date(pacific);
+        midnightPT.setDate(midnightPT.getDate() + 1);
+        midnightPT.setHours(0, 0, 0, 0);
+        // Convert back to UTC offset
+        const diffMs = midnightPT.getTime() - pacific.getTime();
+        return Math.max(diffMs, 30 * 60 * 1000); // At least 30 min (safety floor)
+    }
+
+    /** Returns the Date when quota will reset (null if not exhausted) */
+    quotaResumeTime() {
+        return this._quotaExhaustedUntil ? new Date(this._quotaExhaustedUntil) : null;
+    }
+
     /** Check if we've hit the daily quota wall */
     isQuotaExhausted() {
         if (!this._quotaExhaustedUntil) return false;
@@ -201,9 +219,14 @@ export class GeminiAnalyzer {
                     || err.message?.includes('quota');
 
                 if (isRateLimit && isDailyQuota) {
-                    // Daily quota hit — don't retry, circuit-break for 15 min
-                    console.error('🛑 Daily quota exhausted — pausing AI calls for 15 min.');
-                    this._quotaExhaustedUntil = Date.now() + (15 * 60 * 1000);
+                    // Daily quota hit — pause until midnight Pacific (free-tier reset)
+                    const resetMs = this._getQuotaResetMs();
+                    const resumeTime = new Date(Date.now() + resetMs);
+                    const resumeStr = resumeTime.toLocaleTimeString('en-US', {
+                        timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit'
+                    });
+                    console.error(`🛑 Daily quota exhausted — pausing AI calls until ~${resumeStr} PT (midnight reset).`);
+                    this._quotaExhaustedUntil = Date.now() + resetMs;
                     throw new Error('QUOTA_EXHAUSTED');
                 }
 
