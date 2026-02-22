@@ -370,3 +370,19 @@ export async function pruneOldEntries(days = 30) {
     }
     return pruned;
 }
+
+export async function pruneFailedTasks(now = new Date()) {
+    if (!state.failedTasks || typeof state.failedTasks !== 'object' || Array.isArray(state.failedTasks)) {
+        return 0;
+    }
+
+    let removedCount = 0;
+    for (const [id, data] of Object.entries(state.failedTasks)) {
+        if (data && data.retryAfter && new Date(data.retryAfter) <= now) {
+            delete state.failedTasks[id];
+            removedCount++;
+        }
+    }
+    if (removedCount > 0) await save();
+    return removedCount;
+}

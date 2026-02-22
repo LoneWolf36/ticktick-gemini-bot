@@ -204,8 +204,13 @@ export async function startScheduler(bot, ticktick, gemini, config) {
 
     // ─── Store maintenance (daily at midnight) ─────────────────
     await store.pruneOldEntries(30); // Run once on boot
+    const initialPruned = await store.pruneFailedTasks();
+    if (initialPruned > 0) console.log(`🧹 Boot maintenance: Pruned ${initialPruned} recovered failed tasks.`);
+
     cron.schedule('0 0 * * *', async () => {
         await store.pruneOldEntries(30);
+        const prunedCount = await store.pruneFailedTasks();
+        if (prunedCount > 0) console.log(`🧹 Daily maintenance: Pruned ${prunedCount} recovered failed tasks.`);
     }, { timezone });
 
     console.log('✅ Scheduler running');
