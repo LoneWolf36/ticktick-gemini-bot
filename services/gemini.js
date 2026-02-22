@@ -113,11 +113,22 @@ Rules:
 6. Respond ONLY in JSON (no markdown fences).`;
 
 export class GeminiAnalyzer {
-    constructor(apiKey) {
-        if (!apiKey || apiKey === 'YOUR_GEMINI_API_KEY_HERE') {
+    constructor(apiKeys) {
+        const keys = Array.isArray(apiKeys) ? apiKeys : [apiKeys];
+        this._keys = keys.filter(k => k && k !== 'YOUR_GEMINI_API_KEY_HERE');
+        if (this._keys.length === 0) {
             throw new Error('❌ Gemini API key not set! Get one from https://aistudio.google.com/apikey');
         }
-        const genAI = new GoogleGenerativeAI(apiKey);
+
+        this._activeKeyIndex = 0;
+        this._exhaustedUntilByKey = new Array(this._keys.length).fill(null);
+        this._rotationPromise = null;
+
+        this._initModelsForActiveKey();
+    }
+
+    _initModelsForActiveKey() {
+        const genAI = new GoogleGenerativeAI(this._keys[this._activeKeyIndex]);
 
         // gemini-2.0-flash for bulk work (1500 RPD free tier)
         // gemini-2.5-flash reserved for chat/reasoning only (20 RPD free tier)
@@ -161,9 +172,10 @@ export class GeminiAnalyzer {
             },
             thinkingConfig: { thinkingBudget: 1024 },
         });
+    }
 
-        // Daily quota circuit breaker
-        this._quotaExhaustedUntil = null;
+    activeKeyInfo() {
+        return { index: this._activeKeyIndex + 1, total: this._keys.length };
     }
 
     /** Milliseconds until midnight Pacific (when Google resets free-tier daily quotas) */
@@ -179,70 +191,122 @@ export class GeminiAnalyzer {
         return Math.max(diffMs, 30 * 60 * 1000); // At least 30 min (safety floor)
     }
 
+    _isDailyQuotaError(err) {
+        const isRateLimit = err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429');
+        const isDailyQuota = err.message?.includes('PerDay') || err.message?.includes('per day') || err.message?.includes('quota');
+        return isRateLimit && isDailyQuota;
+    }
+
+    _findNextAvailableKeyIndex() {
+        const now = Date.now();
+        for (let i = 1; i <= this._keys.length; i++) {
+            const idx = (this._activeKeyIndex + i) % this._keys.length;
+            const exhaustedUntil = this._exhaustedUntilByKey[idx];
+            if (!exhaustedUntil || now > exhaustedUntil) {
+                return idx;
+            }
+        }
+        return -1;
+    }
+
+    async _rotateToNextKeyIfAvailable() {
+        if (this._rotationPromise) {
+            await this._rotationPromise;
+            const now = Date.now();
+            const exhaustedUntil = this._exhaustedUntilByKey[this._activeKeyIndex];
+            return !exhaustedUntil || now > exhaustedUntil;
+        }
+
+        const rotate = async () => {
+            const nextIdx = this._findNextAvailableKeyIndex();
+            if (nextIdx !== -1) {
+                const oldIdx = this._activeKeyIndex;
+                this._activeKeyIndex = nextIdx;
+                console.log(`🔄 Rotating Gemini key ${oldIdx + 1}/${this._keys.length} → ${nextIdx + 1}/${this._keys.length} (daily quota)`);
+                this._initModelsForActiveKey();
+                return true;
+            }
+            return false;
+        };
+
+        this._rotationPromise = rotate();
+        try {
+            return await this._rotationPromise;
+        } finally {
+            this._rotationPromise = null;
+        }
+    }
+
     /** Returns the Date when quota will reset (null if not exhausted) */
     quotaResumeTime() {
-        return this._quotaExhaustedUntil ? new Date(this._quotaExhaustedUntil) : null;
+        if (!this.isQuotaExhausted()) return null;
+        const nonNulls = this._exhaustedUntilByKey.filter(t => t !== null);
+        return nonNulls.length ? new Date(Math.min(...nonNulls)) : null;
     }
 
     /** Check if we've hit the daily quota wall */
     isQuotaExhausted() {
-        if (!this._quotaExhaustedUntil) return false;
-        if (Date.now() > this._quotaExhaustedUntil) {
-            this._quotaExhaustedUntil = null; // Reset after cooldown
-            return false;
+        const now = Date.now();
+        return this._exhaustedUntilByKey.every(t => t !== null && now <= t);
+    }
+
+    async _generateWithFailover(getModelFn, prompt, { transientBaseMs = 15 } = {}) {
+        if (this.isQuotaExhausted()) {
+            throw new Error('QUOTA_EXHAUSTED');
         }
-        return true;
+
+        const maxRetries = 2; // For transient 429s
+        let rotatedThisCall = false;
+
+        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+            try {
+                const model = getModelFn.call(this);
+                const result = await model.generateContent(prompt);
+                return result;
+            } catch (err) {
+                if (this._isDailyQuotaError(err)) {
+                    // Mark current key as exhausted
+                    const resetMs = this._getQuotaResetMs();
+                    this._exhaustedUntilByKey[this._activeKeyIndex] = Date.now() + resetMs;
+
+                    if (!rotatedThisCall && await this._rotateToNextKeyIfAvailable()) {
+                        rotatedThisCall = true;
+                        continue; // Valid retry on new key without decrementing attempt
+                    } else {
+                        if (this.isQuotaExhausted()) {
+                            const resumeTime = this.quotaResumeTime();
+                            const resumeStr = resumeTime ? resumeTime.toLocaleTimeString('en-US', {
+                                timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit'
+                            }) : 'unknown';
+                            console.error(`🛑 All AI keys exhausted — pausing calls until ~${resumeStr} PT.`);
+                        } else {
+                            console.error(`⚠️ Daily quota hit twice in one call. Aborting request to prevent cascade.`);
+                        }
+                        throw new Error('QUOTA_EXHAUSTED');
+                    }
+                }
+
+                // Transient Rate Limit handling
+                const isRateLimit = err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429');
+                if (isRateLimit && attempt < maxRetries) {
+                    const match = err.message?.match(/retry in ([\d.]+)s/i);
+                    const waitSec = match ? Math.ceil(parseFloat(match[1])) + 2 : (transientBaseMs * (attempt + 1));
+                    console.log(`⏳ Rate limited, waiting ${waitSec}s before retry ${attempt + 1}/${maxRetries}...`);
+                    await new Promise(r => setTimeout(r, waitSec * 1000));
+                    continue;
+                }
+
+                throw err;
+            }
+        }
     }
 
     // ─── Analyze a single task (with smart retry) ───────────────
 
     async analyzeTask(task, projectList = []) {
-        // Don't even try if we know quota is exhausted
-        if (this.isQuotaExhausted()) {
-            throw new Error('QUOTA_EXHAUSTED');
-        }
-
         const prompt = this._buildTaskPrompt(task, projectList);
-        const maxRetries = 2;
-
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-            try {
-                const result = await this.analyzeModel.generateContent(prompt);
-                const text = result.response.text().trim();
-                return this._parseAnalysis(text, task);
-            } catch (err) {
-                const isRateLimit = err.status === 429
-                    || err.message?.includes('RESOURCE_EXHAUSTED')
-                    || err.message?.includes('429');
-
-                // Check if daily quota exhausted (not just per-minute rate limit)
-                const isDailyQuota = err.message?.includes('PerDay')
-                    || err.message?.includes('per day')
-                    || err.message?.includes('quota');
-
-                if (isRateLimit && isDailyQuota) {
-                    // Daily quota hit — pause until midnight Pacific (free-tier reset)
-                    const resetMs = this._getQuotaResetMs();
-                    const resumeTime = new Date(Date.now() + resetMs);
-                    const resumeStr = resumeTime.toLocaleTimeString('en-US', {
-                        timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit'
-                    });
-                    console.error(`🛑 Daily quota exhausted — pausing AI calls until ~${resumeStr} PT (midnight reset).`);
-                    this._quotaExhaustedUntil = Date.now() + resetMs;
-                    throw new Error('QUOTA_EXHAUSTED');
-                }
-
-                if (isRateLimit && attempt < maxRetries) {
-                    // Transient rate limit — retry with backoff
-                    const match = err.message?.match(/retry in ([\d.]+)s/i);
-                    const waitSec = match ? Math.ceil(parseFloat(match[1])) + 2 : (15 * (attempt + 1));
-                    console.log(`⏳ Rate limited, waiting ${waitSec}s before retry ${attempt + 1}/${maxRetries}...`);
-                    await new Promise(r => setTimeout(r, waitSec * 1000));
-                    continue;
-                }
-                throw err;
-            }
-        }
+        const result = await this._generateWithFailover(() => this.analyzeModel, prompt, { transientBaseMs: 15 });
+        return this._parseAnalysis(result.response.text().trim(), task);
     }
 
     _parseAnalysis(text, task) {
@@ -290,7 +354,7 @@ export class GeminiAnalyzer {
         const today = userTodayFormatted();
 
         const prompt = `Today is ${today}.\n\nActive tasks (${tasks.length} total):\n${taskList}`;
-        const result = await this.briefingModel.generateContent(prompt);
+        const result = await this._generateWithFailover(() => this.briefingModel, prompt, { transientBaseMs: 15 });
         return result.response.text().trim();
     }
 
@@ -306,7 +370,7 @@ export class GeminiAnalyzer {
             .join('\n');
 
         const prompt = `Current active tasks (${allTasks.length}):\n${taskList}\n\nTasks analyzed this week:\n${processed || 'None'}`;
-        const result = await this.weeklyModel.generateContent(prompt);
+        const result = await this._generateWithFailover(() => this.weeklyModel, prompt, { transientBaseMs: 15 });
         return result.response.text().trim();
     }
 
@@ -326,30 +390,16 @@ export class GeminiAnalyzer {
 
         const prompt = `Today is ${today}.\n\nUser's current tasks (${tasks.length} total):\n${taskList}\n\nAvailable projects:\n${projectList}\n\nUser message: "${message}"`;
 
-        const maxRetries = 2;
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
-            try {
-                const result = await this.chatModel.generateContent(prompt);
-                const raw = result.response.text().trim();
+        const result = await this._generateWithFailover(() => this.chatModel, prompt, { transientBaseMs: 10 });
+        const raw = result.response.text().trim();
 
-                // Try to parse JSON
-                const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
-                try {
-                    return JSON.parse(cleaned);
-                } catch {
-                    // If Gemini didn't return valid JSON, treat as coaching response
-                    return { mode: 'coach', response: raw };
-                }
-            } catch (err) {
-                if (err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED')) {
-                    if (attempt < maxRetries) {
-                        console.log(`  ⏳ Rate limited on chat, retry ${attempt + 1}/${maxRetries}...`);
-                        await new Promise(r => setTimeout(r, 10000 * (attempt + 1)));
-                        continue;
-                    }
-                }
-                throw err;
-            }
+        // Try to parse JSON
+        const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        try {
+            return JSON.parse(cleaned);
+        } catch {
+            // If Gemini didn't return valid JSON, treat as coaching response
+            return { mode: 'coach', response: raw };
         }
     }
 

@@ -13,6 +13,7 @@ const {
     TICKTICK_CLIENT_SECRET,
     TICKTICK_REDIRECT_URI,
     GEMINI_API_KEY,
+    GEMINI_API_KEYS,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
     USER_TIMEZONE = 'Europe/Dublin',
@@ -58,9 +59,21 @@ const ticktick = new TickTickClient({
     redirectUri: TICKTICK_REDIRECT_URI,
 });
 
+let geminiKeys = [];
+if (GEMINI_API_KEYS && GEMINI_API_KEYS.trim().length > 0) {
+    geminiKeys = GEMINI_API_KEYS.split(',').map(k => k.trim()).filter(k => k);
+} else if (GEMINI_API_KEY && GEMINI_API_KEY.trim().length > 0) {
+    geminiKeys = [GEMINI_API_KEY.trim()];
+}
+
+if (geminiKeys.length === 0) {
+    console.error(chalk.red('❌ Missing GEMINI_API_KEYS (or GEMINI_API_KEY) in .env'));
+    process.exit(1);
+}
+
 let gemini;
 try {
-    gemini = new GeminiAnalyzer(GEMINI_API_KEY);
+    gemini = new GeminiAnalyzer(geminiKeys);
 } catch (err) {
     console.error(chalk.red(err.message));
     process.exit(1);

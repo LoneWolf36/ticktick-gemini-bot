@@ -82,6 +82,11 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             lines.push(`🗄️ Cache Age: ${cacheAge}s old`);
         }
 
+        const keyInfo = gemini.activeKeyInfo?.();
+        if (keyInfo) {
+            lines.push(`🔑 Gemini Key: ${keyInfo.index}/${keyInfo.total}`);
+        }
+
         lines.push('\nCommands: /scan | /pending | /undo | /briefing | /weekly');
         await ctx.reply(lines.join('\n'));
     });
