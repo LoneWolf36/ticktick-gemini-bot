@@ -10,6 +10,7 @@ import Redis from 'ioredis';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const DATA_DIR = path.join(__dirname, '..', 'data');
 const STORE_FILE = path.join(DATA_DIR, 'store.json');
+const STORE_FILE_TMP = path.join(DATA_DIR, 'store.json.tmp'); // D.3.6 Atomic persistence
 const REDIS_KEY = 'ticktick-bot:state';
 
 const DEFAULT_STATE = {
@@ -80,21 +81,66 @@ async function loadFromRedis() {
     return structuredClone(DEFAULT_STATE);
 }
 
+// Micro-test: ensure the data serializes fully before writing to disk
+function _validateSerialization(data) {
+    const jsonStr = JSON.stringify(data, null, 2);
+    JSON.parse(jsonStr); // Throws if incomplete/corrupt
+    return jsonStr;
+}
+
+// Micro-validator: ensure the loaded object looks like our state schema
+function _isValidStateShape(data) {
+    return data
+        && typeof data === 'object'
+        && !Array.isArray(data)
+        && data.stats
+        && typeof data.pendingTasks === 'object'
+        && typeof data.processedTasks === 'object';
+}
+
+function _parseFile(filePath) {
+    if (fs.existsSync(filePath)) {
+        const raw = fs.readFileSync(filePath, 'utf-8');
+        if (raw.trim() === '') return null;
+        return JSON.parse(raw);
+    }
+    return null;
+}
+
 function loadFromFile() {
     ensureDir();
+    let parsed = null;
+
     try {
-        if (fs.existsSync(STORE_FILE)) {
-            const parsed = JSON.parse(fs.readFileSync(STORE_FILE, 'utf-8'));
-            return {
-                ...DEFAULT_STATE,
-                ...parsed,
-                stats: { ...DEFAULT_STATE.stats, ...parsed.stats },
-                pendingTasks: parsed.pendingTasks || {},
-                processedTasks: parsed.processedTasks || {},
-                undoLog: parsed.undoLog || [],
-            };
+        parsed = _parseFile(STORE_FILE);
+    } catch (err) {
+        console.warn('⚠️  Primary state file is corrupt. Attempting recovery from tmp copy...');
+    }
+
+    if (!parsed || !_isValidStateShape(parsed)) {
+        try {
+            const tmpParsed = _parseFile(STORE_FILE_TMP);
+            if (tmpParsed && _isValidStateShape(tmpParsed)) {
+                console.log('↩️  Successfully recovered state from tmp copy. Promoting file...');
+                parsed = tmpParsed;
+                fs.renameSync(STORE_FILE_TMP, STORE_FILE);
+            }
+        } catch (err) {
+            console.warn('⚠️  Tmp copy missing, corrupt, or invalid. Falling back to default state.');
         }
-    } catch { /* ignore corrupt file */ }
+    }
+
+    if (parsed) {
+        return {
+            ...DEFAULT_STATE,
+            ...parsed,
+            stats: { ...DEFAULT_STATE.stats, ...parsed.stats },
+            pendingTasks: parsed.pendingTasks || {},
+            processedTasks: parsed.processedTasks || {},
+            undoLog: parsed.undoLog || [],
+        };
+    }
+
     return structuredClone(DEFAULT_STATE);
 }
 
@@ -113,7 +159,25 @@ async function save() {
         }
     } else {
         ensureDir();
-        fs.writeFileSync(STORE_FILE, JSON.stringify(state, null, 2));
+        try {
+            const jsonStr = _validateSerialization(state);
+            const fd = fs.openSync(STORE_FILE_TMP, 'w');
+            fs.writeSync(fd, jsonStr);
+            fs.fsyncSync(fd);
+            fs.closeSync(fd);
+
+            fs.renameSync(STORE_FILE_TMP, STORE_FILE);
+
+            // Best-effort directory fsync (max durability on Linux)
+            try {
+                const dirFd = fs.openSync(DATA_DIR, 'r');
+                fs.fsyncSync(dirFd);
+                fs.closeSync(dirFd);
+            } catch { /* Ignore directory sync failures */ }
+
+        } catch (err) {
+            console.error('⚠️  Local file save failed. Existing data preserved.', err.message);
+        }
     }
 }
 
