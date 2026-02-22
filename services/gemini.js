@@ -255,10 +255,13 @@ export class GeminiAnalyzer {
             throw new Error('QUOTA_EXHAUSTED');
         }
 
-        const maxRetries = 2; // For transient 429s
-        let rotatedThisCall = false;
+        const maxTransientRetries = 2; // For transient 429s
+        let transientAttempts = 0;
 
-        for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        const maxRotations = Math.max(0, this._keys.length - 1);
+        let rotations = 0;
+
+        while (true) {
             try {
                 const model = getModelFn.call(this);
                 const result = await model.generateContent(prompt);
@@ -269,9 +272,9 @@ export class GeminiAnalyzer {
                     const resetMs = this._getQuotaResetMs();
                     this._exhaustedUntilByKey[this._activeKeyIndex] = Date.now() + resetMs;
 
-                    if (!rotatedThisCall && await this._rotateToNextKeyIfAvailable()) {
-                        rotatedThisCall = true;
-                        continue; // Valid retry on new key without decrementing attempt
+                    if (rotations < maxRotations && await this._rotateToNextKeyIfAvailable()) {
+                        rotations++;
+                        continue; // Valid retry on new key, transientAttempts remains unchanged
                     } else {
                         if (this.isQuotaExhausted()) {
                             const resumeTime = this.quotaResumeTime();
@@ -280,7 +283,7 @@ export class GeminiAnalyzer {
                             }) : 'unknown';
                             console.error(`🛑 All AI keys exhausted — pausing calls until ~${resumeStr} PT.`);
                         } else {
-                            console.error(`⚠️ Daily quota hit twice in one call. Aborting request to prevent cascade.`);
+                            console.error(`⚠️ Daily quota hit across ${rotations + 1} attempted keys in one call. Aborting request to prevent runaway cascade.`);
                         }
                         throw new Error('QUOTA_EXHAUSTED');
                     }
@@ -288,11 +291,12 @@ export class GeminiAnalyzer {
 
                 // Transient Rate Limit handling
                 const isRateLimit = err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429');
-                if (isRateLimit && attempt < maxRetries) {
+                if (isRateLimit && transientAttempts < maxTransientRetries) {
                     const match = err.message?.match(/retry in ([\d.]+)s/i);
-                    const waitSec = match ? Math.ceil(parseFloat(match[1])) + 2 : (transientBaseMs * (attempt + 1));
-                    console.log(`⏳ Rate limited, waiting ${waitSec}s before retry ${attempt + 1}/${maxRetries}...`);
+                    const waitSec = match ? Math.ceil(parseFloat(match[1])) + 2 : (transientBaseMs * (transientAttempts + 1));
+                    console.log(`⏳ Rate limited, waiting ${waitSec}s before retry ${transientAttempts + 1}/${maxTransientRetries}...`);
                     await new Promise(r => setTimeout(r, waitSec * 1000));
+                    transientAttempts++;
                     continue;
                 }
 
