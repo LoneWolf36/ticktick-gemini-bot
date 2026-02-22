@@ -10,6 +10,54 @@ export const PRIORITY_MAP = {
     'consider-dropping': 0, // None
 };
 
+// TickTick number → emoji (for task list formatting)
+export const PRIORITY_EMOJI = { 5: '🔴', 3: '🟡', 1: '🔵', 0: '⚪' };
+
+// TickTick number → display label (for user-facing messages)
+export const PRIORITY_LABEL = {
+    5: '🔴 career-critical',
+    3: '🟡 important',
+    1: '🔵 life-admin',
+    0: '⚪ consider-dropping',
+};
+
+// ─── Access Control (single source of truth) ────────────────
+
+export const AUTHORIZED_CHAT_ID = process.env.TELEGRAM_CHAT_ID
+    ? parseInt(process.env.TELEGRAM_CHAT_ID)
+    : null;
+
+export function isAuthorized(ctx) {
+    if (!AUTHORIZED_CHAT_ID) return true;
+    return ctx.chat?.id === AUTHORIZED_CHAT_ID;
+}
+
+export async function guardAccess(ctx) {
+    if (!isAuthorized(ctx)) {
+        await ctx.reply('🔒 Unauthorized. This bot is private.');
+        return false;
+    }
+    return true;
+}
+
+// ─── Undo Entry Builder ─────────────────────────────────────
+
+export function buildUndoEntry({ source, action, applied = {} }) {
+    return {
+        taskId: source.id ?? source.taskId,
+        action,
+        originalTitle: source.title ?? source.originalTitle,
+        originalContent: source.content ?? source.originalContent ?? '',
+        originalPriority: source.priority ?? source.originalPriority,
+        originalProjectId: source.projectId ?? source.originalProjectId,
+
+        appliedTitle: applied.title ?? null,
+        appliedPriority: applied.priority ?? null,
+        appliedProject: applied.project ?? null,
+        appliedSchedule: applied.schedule ?? null,
+    };
+}
+
 // ─── Timezone Helpers (single source of truth) ──────────────
 // ALL date formatting in the entire app must use these helpers.
 // Never call new Date().toLocaleDateString() without passing USER_TZ.

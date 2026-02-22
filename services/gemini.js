@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import path from 'path';
-import { userTodayFormatted } from '../bot/utils.js';
+import { userTodayFormatted, PRIORITY_EMOJI } from '../bot/utils.js';
 
 // ─── User Context ────────────────────────────────────────────
 // Priority: 1) local user_context.js (gitignored), 2) USER_CONTEXT env var, 3) generic default
@@ -280,7 +280,7 @@ export class GeminiAnalyzer {
             .map((t, i) => {
                 let line = `${i + 1}. "${t.title}" [${t.projectName || 'Inbox'}]`;
                 if (t.dueDate) line += ` — due: ${t.dueDate}`;
-                if (t.priority === 5) line += ' 🔴';
+                if (t.priority === 5) line += ` ${PRIORITY_EMOJI[5]}`;
                 return line;
             })
             .join('\n');
@@ -315,8 +315,7 @@ export class GeminiAnalyzer {
 
         // Build concise task context
         const taskList = tasks.slice(0, 50).map((t, i) => {
-            const pMap = { 5: '🔴', 3: '🟡', 1: '🔵', 0: '⚪' };
-            let line = `${i + 1}. [id:${t.id}] "${t.title}" [${t.projectName || 'Inbox'}] ${pMap[t.priority] || ''}`;
+            let line = `${i + 1}. [id:${t.id}] "${t.title}" [${t.projectName || 'Inbox'}] ${PRIORITY_EMOJI[t.priority] || ''}`;
             if (t.dueDate) line += ` due:${t.dueDate}`;
             return line;
         }).join('\n');

@@ -22,6 +22,7 @@ const DEFAULT_STATE = {
         tasksAnalyzed: 0,
         tasksApproved: 0,
         tasksSkipped: 0,
+        tasksDropped: 0,
         tasksAutoApplied: 0,
         lastDailyBriefing: null,
         lastWeeklyDigest: null,
@@ -215,7 +216,7 @@ export async function dropTask(taskId) {
         reviewedAt: new Date().toISOString(),
     };
     delete state.pendingTasks[taskId];
-    state.stats.tasksSkipped++;
+    state.stats.tasksDropped++;
     await save();
     return state.processedTasks[taskId];
 }

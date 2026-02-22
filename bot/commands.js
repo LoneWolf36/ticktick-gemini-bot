@@ -3,26 +3,8 @@ import * as store from '../services/store.js';
 import { taskReviewKeyboard } from './callbacks.js';
 import {
     buildTaskCard, buildPendingData, pendingToAnalysis, buildTickTickUpdate,
-    PRIORITY_MAP, sleep, userTodayFormatted, userLocaleString,
+    sleep, userTodayFormatted, userLocaleString, isAuthorized, guardAccess, PRIORITY_LABEL, buildUndoEntry,
 } from './utils.js';
-
-// ─── Access Control ─────────────────────────────────────────
-const AUTHORIZED_CHAT_ID = process.env.TELEGRAM_CHAT_ID
-    ? parseInt(process.env.TELEGRAM_CHAT_ID)
-    : null;
-
-function isAuthorized(ctx) {
-    if (!AUTHORIZED_CHAT_ID) return true;
-    return ctx.chat.id === AUTHORIZED_CHAT_ID;
-}
-
-async function guardAccess(ctx) {
-    if (!isAuthorized(ctx)) {
-        await ctx.reply('🔒 Unauthorized. This bot is private.');
-        return false;
-    }
-    return true;
-}
 
 export function registerCommands(bot, ticktick, gemini, config = {}) {
     const {
@@ -368,17 +350,15 @@ async function executeActions(actions, ticktick, currentTasks) {
 
             if (action.type === 'update' && action.changes) {
                 // Log for /undo before applying
-                await store.addUndoEntry({
-                    taskId: task.id,
+                await store.addUndoEntry(buildUndoEntry({
+                    source: task,
                     action: 'freeform-update',
-                    originalTitle: task.title,
-                    originalContent: task.content || '',
-                    originalPriority: task.priority,
-                    originalProjectId: task.projectId,
-                    appliedTitle: action.changes.title || null,
-                    appliedProject: action.changes.projectId ? 'new project' : null,
-                    appliedSchedule: action.changes.dueDate || null,
-                });
+                    applied: {
+                        title: action.changes.title ?? null,
+                        project: null,
+                        schedule: action.changes.dueDate ?? null,
+                    }
+                }));
 
                 await ticktick.updateTask(task.id, {
                     projectId: action.changes.projectId || task.projectId,
@@ -443,21 +423,17 @@ async function autoApply(task, pendingData, analysis, ticktick) {
     await ticktick.updateTask(task.id, update);
 
     // Log for /undo — include what was changed so undo can report it
-    const priorityLabels = { 5: '🔴 career-critical', 3: '🟡 important', 1: '🔵 life-admin', 0: '⚪ consider-dropping' };
-    await store.addUndoEntry({
-        taskId: task.id,
+    await store.addUndoEntry(buildUndoEntry({
+        source: task,
         action: 'auto-apply',
-        originalTitle: task.title,
-        originalContent: task.content || '',
-        originalPriority: task.priority,
-        originalProjectId: task.projectId,
-        // What the bot changed (for /undo context)
-        appliedTitle: pendingData.improvedTitle || null,
-        appliedPriority: priorityLabels[pendingData.suggestedPriority] || null,
-        appliedProject: (pendingData.suggestedProjectId && pendingData.suggestedProjectId !== task.projectId)
-            ? pendingData.suggestedProject : null,
-        appliedSchedule: pendingData.suggestedSchedule || null,
-    });
+        applied: {
+            title: pendingData.improvedTitle ?? null,
+            priority: PRIORITY_LABEL[pendingData.suggestedPriority] ?? null,
+            project: (pendingData.suggestedProjectId && pendingData.suggestedProjectId !== task.projectId)
+                ? pendingData.suggestedProject : null,
+            schedule: pendingData.suggestedSchedule ?? null,
+        }
+    }));
 
     await store.markTaskProcessed(task.id, { ...pendingData, autoApplied: true });
     await store.updateStats({ tasksAutoApplied: (store.getStats().tasksAutoApplied || 0) + 1 });

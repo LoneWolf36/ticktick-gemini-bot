@@ -2,11 +2,7 @@
 // These move tasks from pendingTasks → processedTasks
 import { InlineKeyboard } from 'grammy';
 import * as store from '../services/store.js';
-import { buildTickTickUpdate } from './utils.js';
-
-const AUTHORIZED_CHAT_ID = process.env.TELEGRAM_CHAT_ID
-    ? parseInt(process.env.TELEGRAM_CHAT_ID)
-    : null;
+import { buildTickTickUpdate, isAuthorized, buildUndoEntry, PRIORITY_LABEL } from './utils.js';
 
 // ─── Build Keyboard for Task Review ─────────────────────────
 
@@ -26,7 +22,7 @@ export function registerCallbacks(bot, ticktick, gemini) {
 
     // ─── Approve: move pending → processed, update TickTick ───
     bot.callbackQuery(/^a:(.+)$/, async (ctx) => {
-        if (AUTHORIZED_CHAT_ID && ctx.chat?.id !== AUTHORIZED_CHAT_ID) {
+        if (!isAuthorized(ctx)) {
             await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
             return;
         }
@@ -46,14 +42,17 @@ export function registerCallbacks(bot, ticktick, gemini) {
             // Use shared builder — applies title, description, priority, project, AND due date
             const update = buildTickTickUpdate(data);
 
-            await store.addUndoEntry({
-                taskId,
+            await store.addUndoEntry(buildUndoEntry({
+                source: data, // `data` has taskId, originalTitle, etc.
                 action: 'approve',
-                originalTitle: data.originalTitle,
-                originalContent: data.originalContent,
-                originalPriority: data.originalPriority,
-                originalProjectId: data.projectId,
-            });
+                applied: {
+                    title: data.improvedTitle ?? null,
+                    priority: PRIORITY_LABEL[data.suggestedPriority] ?? null,
+                    project: (data.suggestedProjectId && data.suggestedProjectId !== data.projectId)
+                        ? data.suggestedProject : null,
+                    schedule: data.suggestedSchedule ?? null,
+                }
+            }));
 
             await ticktick.updateTask(taskId, update);
             await store.approveTask(taskId);
@@ -75,7 +74,7 @@ export function registerCallbacks(bot, ticktick, gemini) {
 
     // ─── Skip: move pending → processed, leave TickTick alone ─
     bot.callbackQuery(/^s:(.+)$/, async (ctx) => {
-        if (AUTHORIZED_CHAT_ID && ctx.chat?.id !== AUTHORIZED_CHAT_ID) {
+        if (!isAuthorized(ctx)) {
             await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
             return;
         }
@@ -93,7 +92,7 @@ export function registerCallbacks(bot, ticktick, gemini) {
 
     // ─── Drop: move pending → processed, flag for removal ─────
     bot.callbackQuery(/^d:(.+)$/, async (ctx) => {
-        if (AUTHORIZED_CHAT_ID && ctx.chat?.id !== AUTHORIZED_CHAT_ID) {
+        if (!isAuthorized(ctx)) {
             await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
             return;
         }
