@@ -193,7 +193,9 @@ export class GeminiAnalyzer {
 
     _isDailyQuotaError(err) {
         const isRateLimit = err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429');
-        const isDailyQuota = err.message?.includes('PerDay') || err.message?.includes('per day') || err.message?.includes('quota');
+        const msg = (err.message || '').toLowerCase();
+        // Specifically check for 'per day' or 'perday' to avoid catching 'per minute' or generic '(e.g. check quota)' transient limits
+        const isDailyQuota = msg.includes('perday') || msg.includes('per day');
         return isRateLimit && isDailyQuota;
     }
 
