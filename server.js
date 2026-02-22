@@ -27,8 +27,27 @@ const {
 } = process.env;
 
 // ─── Validate required vars ─────────────────────────────────
-if (!TELEGRAM_BOT_TOKEN) {
-    console.error(chalk.red('❌ TELEGRAM_BOT_TOKEN not set in .env'));
+const REQUIRED_VARS = {
+    'TICKTICK_CLIENT_ID': TICKTICK_CLIENT_ID,
+    'TICKTICK_CLIENT_SECRET': TICKTICK_CLIENT_SECRET,
+    'TICKTICK_REDIRECT_URI': TICKTICK_REDIRECT_URI,
+    'TELEGRAM_BOT_TOKEN': TELEGRAM_BOT_TOKEN,
+    'TELEGRAM_CHAT_ID': TELEGRAM_CHAT_ID
+};
+
+const missingVars = Object.entries(REQUIRED_VARS)
+    .filter(([_, val]) => !val || val.trim() === '')
+    .map(([key]) => key);
+
+if (missingVars.length > 0) {
+    console.error(chalk.red('❌ Missing required environment variables:'));
+    missingVars.forEach(v => console.error(chalk.red(`   - ${v}`)));
+    console.error(chalk.yellow('\n💡 Example .env configuration:'));
+    console.error(chalk.yellow('   TICKTICK_CLIENT_ID="your_client_id"'));
+    console.error(chalk.yellow('   TICKTICK_CLIENT_SECRET="your_client_secret"'));
+    console.error(chalk.yellow('   TICKTICK_REDIRECT_URI="http://localhost:8080/"'));
+    console.error(chalk.yellow('   TELEGRAM_BOT_TOKEN="12345:ABCDE"'));
+    console.error(chalk.yellow('   TELEGRAM_CHAT_ID="831923" (Required to secure the bot to your account)\n'));
     process.exit(1);
 }
 
