@@ -92,11 +92,13 @@ Rules:
 1. If the message implies CHANGES to tasks, respond in this JSON format:
 {
   "mode": "action",
+  "summary": "Brief summary of what you did",
   "actions": [
-    { "taskId": "...", "type": "update", "changes": { "title": "...", "priority": 5, "dueDate": "...", "projectId": "..." } },
-    { "taskId": "...", "type": "drop" }
-  ],
-  "summary": "Human-readable summary of what you did"
+    { "type": "update", "taskId": "existing_id", "changes": { "title": "New", "projectId": "pid", "dueDate": "today" } },
+    { "type": "drop", "taskId": "existing_id" },
+    { "type": "create", "changes": { "title": "New task from user", "dueDate": "tomorrow", "isAllDay": true } },
+    { "type": "complete", "taskId": "existing_id" }
+  ]
 }
 
 2. If the message is conversational (question, vent, coaching), respond in this format:

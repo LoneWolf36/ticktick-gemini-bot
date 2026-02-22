@@ -80,18 +80,30 @@ export class TickTickClient {
     }
 
     async createTask(taskData) {
+        this._invalidateCache();
         return this._post('/task', taskData);
     }
 
     async updateTask(taskId, taskData) {
+        this._invalidateCache();
         return this._post(`/task/${taskId}`, taskData);
     }
 
     async completeTask(projectId, taskId) {
+        this._invalidateCache();
         return this._post(`/project/${projectId}/task/${taskId}/complete`);
     }
 
     // ─── Fetch ALL uncompleted tasks across all projects ──────
+
+    async getAllTasksCached(ttlMs = 60000) {
+        if (this._tasksCache && (Date.now() - this._cacheTime) < ttlMs) {
+            return this._tasksCache;
+        }
+        this._tasksCache = await this.getAllTasks();
+        this._cacheTime = Date.now();
+        return this._tasksCache;
+    }
 
     async getAllTasks() {
         const projects = await this.getProjects();
@@ -111,6 +123,9 @@ export class TickTickClient {
                     allTasks.push(...activeTasks);
                 }
             } catch (err) {
+                if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
+                    throw err; // D.3.5: Abort mid-loop to prevent partial task state on 401s
+                }
                 // Some projects may not be accessible
                 if (err.response?.status !== 404) {
                     console.warn(`  ⚠ Skipped project "${project.name}": ${err.message}`);
@@ -138,7 +153,11 @@ export class TickTickClient {
         } catch (err) {
             if (err.response?.status === 401) {
                 this.accessToken = null; // Clear so isAuthenticated() returns false
+                this._invalidateCache();
                 console.error('🔑 TickTick token expired — re-authorize at the /health endpoint or re-run OAuth.');
+                const customErr = new Error('TICKTICK_TOKEN_EXPIRED');
+                customErr.isAuthError = true;
+                throw customErr;
             }
             throw err;
         }
@@ -157,14 +176,24 @@ export class TickTickClient {
         } catch (err) {
             if (err.response?.status === 401) {
                 this.accessToken = null;
+                this._invalidateCache();
                 console.error('🔑 TickTick token expired — re-authorize at the /health endpoint or re-run OAuth.');
+                const customErr = new Error('TICKTICK_TOKEN_EXPIRED');
+                customErr.isAuthError = true;
+                throw customErr;
             }
             throw err;
         }
     }
 
+    _invalidateCache() {
+        this._tasksCache = null;
+        this._cacheTime = 0;
+    }
+
     _saveToken(tokenData) {
         fs.writeFileSync(TOKEN_FILE, JSON.stringify(tokenData, null, 2));
+        this._invalidateCache(); // Clear cache on new auth
     }
 
     _loadToken() {

@@ -170,6 +170,10 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
                 }
             }
         } catch (err) {
+            if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
+                await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
+                return;
+            }
             if (mode === 'scan') console.error('Scan error:', err.message);
             await ctx.reply(mode === 'scan' ? `❌ Scan error: ${err.message}` : `❌ Review error: ${err.message}`);
         }
@@ -276,6 +280,10 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             await ctx.reply(formatBriefingHeader({ kind: 'daily' }) + briefing);
             await store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         } catch (err) {
+            if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
+                await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
+                return;
+            }
             await ctx.reply(`❌ Briefing error: ${err.message}`);
         }
     });
@@ -297,6 +305,10 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             await ctx.reply(formatBriefingHeader({ kind: 'weekly' }) + digest);
             await store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         } catch (err) {
+            if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
+                await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
+                return;
+            }
             await ctx.reply(`❌ Weekly digest error: ${err.message}`);
         }
     });
@@ -332,7 +344,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         await ctx.reply('🤔 Thinking...');
 
         try {
-            const tasks = await ticktick.getAllTasks();
+            const tasks = await ticktick.getAllTasksCached(60000);
             const projects = ticktick.getLastFetchedProjects();
             const result = await gemini.handleFreeform(userMessage, tasks, projects);
 
@@ -343,12 +355,14 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
 
             if (result.mode === 'action' && result.actions?.length > 0) {
                 // Execute the actions Gemini suggested
-                const outcomes = await executeActions(result.actions, ticktick, tasks);
+                const { outcomes, hasUndoableActions } = await executeActions(result.actions, ticktick, tasks);
                 let response = result.summary || '✅ Done.';
                 if (outcomes.length > 0) {
                     response += '\n\n' + outcomes.join('\n');
                 }
-                response += '\n\nRun /undo to revert the last change.';
+                if (hasUndoableActions) {
+                    response += '\n\nRun /undo to revert the last change.';
+                }
                 await ctx.reply(response);
             } else if (result.mode === 'coach') {
                 await ctx.reply(result.response || 'I\'m here to help. Ask me anything about your tasks!');
@@ -356,6 +370,10 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
                 await ctx.reply(result.response || result.summary || 'Got it! Let me know if you need anything else.');
             }
         } catch (err) {
+            if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
+                await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
+                return;
+            }
             console.error('Freeform error:', err.message);
             await ctx.reply(`❌ Error: ${err.message}`);
         }
@@ -366,11 +384,24 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
 
 async function executeActions(actions, ticktick, currentTasks) {
     const outcomes = [];
+    let hasUndoableActions = false;
     for (const action of actions) {
         try {
+            if (action.type === 'create' && action.changes && action.changes.title) {
+                await ticktick.createTask({ title: action.changes.title, ...action.changes });
+                outcomes.push(`✅ Created: "${action.changes.title}"`);
+                continue;
+            }
+
             const task = currentTasks.find(t => t.id === action.taskId);
             if (!task) {
                 outcomes.push(`⚠️ Task not found: ${action.taskId}`);
+                continue;
+            }
+
+            if (action.type === 'complete') {
+                await ticktick.completeTask(task.projectId, task.id);
+                outcomes.push(`✅ Marked complete: "${task.title}"`);
                 continue;
             }
 
@@ -391,6 +422,7 @@ async function executeActions(actions, ticktick, currentTasks) {
                     ...action.changes,
                 });
                 outcomes.push(`✅ Updated: "${task.title}"`);
+                hasUndoableActions = true;
             } else if (action.type === 'drop') {
                 // Flag as dropped but DON'T delete — too risky
                 await store.markTaskProcessed(task.id, {
@@ -399,12 +431,14 @@ async function executeActions(actions, ticktick, currentTasks) {
                     droppedByFreeform: true,
                 });
                 outcomes.push(`⚪ Flagged for dropping: "${task.title}" (not deleted — mark complete in TickTick if you agree)`);
+            } else {
+                outcomes.push(`⚠️ Skipped invalid/unsupported action: ${action.type}`);
             }
         } catch (err) {
             outcomes.push(`❌ Failed on "${action.taskId}": ${err.message}`);
         }
     }
-    return outcomes;
+    return { outcomes, hasUndoableActions };
 }
 
 // ─── Core: Analyze a task, then auto-apply or send card ─────
