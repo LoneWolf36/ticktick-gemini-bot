@@ -94,6 +94,12 @@ export class TickTickClient {
         return this._post(`/project/${projectId}/task/${taskId}/complete`);
     }
 
+    /** Returns cache age in seconds, or null if empty/invalidated */
+    getCacheAgeSeconds() {
+        if (!this._tasksCache || !this._cacheTime) return null;
+        return Math.floor((Date.now() - this._cacheTime) / 1000);
+    }
+
     // ─── Fetch ALL uncompleted tasks across all projects ──────
 
     async getAllTasksCached(ttlMs = 60000) {

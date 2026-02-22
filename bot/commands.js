@@ -71,6 +71,17 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         if (stats.lastWeeklyDigest) {
             lines.push(`📊 Last Digest: ${userLocaleString(stats.lastWeeklyDigest)}`);
         }
+
+        const quotaResume = gemini.quotaResumeTime();
+        if (quotaResume) {
+            lines.push(`⚠️ Quota Exhausted Until: ${userLocaleString(quotaResume.toISOString())}`);
+        }
+
+        const cacheAge = ticktick.getCacheAgeSeconds();
+        if (cacheAge !== null) {
+            lines.push(`🗄️ Cache Age: ${cacheAge}s old`);
+        }
+
         lines.push('\nCommands: /scan | /pending | /undo | /briefing | /weekly');
         await ctx.reply(lines.join('\n'));
     });

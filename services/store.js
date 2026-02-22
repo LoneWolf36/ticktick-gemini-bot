@@ -166,6 +166,14 @@ async function save() {
             fs.fsyncSync(fd);
             fs.closeSync(fd);
 
+            // Win 1: Durable backup rotation (file-based persistence only)
+            try {
+                if (fs.existsSync(STORE_FILE)) {
+                    const BACKUP_FILE = `${STORE_FILE}.bak`;
+                    fs.copyFileSync(STORE_FILE, BACKUP_FILE);
+                }
+            } catch (backupErr) { /* Best-effort backup */ }
+
             fs.renameSync(STORE_FILE_TMP, STORE_FILE);
 
             // Best-effort directory fsync (max durability on Linux)
