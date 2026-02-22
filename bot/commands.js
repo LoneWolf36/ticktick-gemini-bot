@@ -4,6 +4,7 @@ import { taskReviewKeyboard } from './callbacks.js';
 import {
     buildTaskCard, buildPendingData, pendingToAnalysis, buildTickTickUpdate,
     sleep, userTodayFormatted, userLocaleString, isAuthorized, guardAccess, PRIORITY_LABEL, buildUndoEntry,
+    formatBriefingHeader, filterProcessedThisWeek
 } from './utils.js';
 
 export function registerCommands(bot, ticktick, gemini, config = {}) {
@@ -227,8 +228,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         try {
             const tasks = await ticktick.getAllTasks();
             const briefing = await gemini.generateDailyBriefing(tasks);
-            const header = `🌅 MORNING BRIEFING\n${userTodayFormatted()}\n${'─'.repeat(24)}\n\n`;
-            await ctx.reply(header + briefing);
+            await ctx.reply(formatBriefingHeader({ kind: 'daily' }) + briefing);
             await store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         } catch (err) {
             await ctx.reply(`❌ Briefing error: ${err.message}`);
@@ -243,13 +243,9 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         try {
             const tasks = await ticktick.getAllTasks();
             const processed = store.getProcessedTasks();
-            const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-            const thisWeek = {};
-            for (const [id, data] of Object.entries(processed)) {
-                if (new Date(data.reviewedAt || data.processedAt) > oneWeekAgo) thisWeek[id] = data;
-            }
+            const thisWeek = filterProcessedThisWeek(processed, ['processedAt']);
             const digest = await gemini.generateWeeklyDigest(tasks, thisWeek);
-            await ctx.reply(`📊 WEEKLY ACCOUNTABILITY REVIEW\n${'─'.repeat(28)}\n\n${digest}`);
+            await ctx.reply(formatBriefingHeader({ kind: 'weekly' }) + digest);
             await store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         } catch (err) {
             await ctx.reply(`❌ Weekly digest error: ${err.message}`);

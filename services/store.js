@@ -176,50 +176,36 @@ export async function markTaskPending(taskId, data) {
 
 // ─── Phase 2: Processed (user clicked a button) ─────────────
 
-export async function approveTask(taskId) {
+export async function resolveTask(taskId, status) {
+    if (!['approve', 'skip', 'drop'].includes(status)) {
+        throw new Error(`Invalid status: ${status}`);
+    }
+
     const pending = state.pendingTasks[taskId];
     if (!pending) return null;
 
+    const statusFlag = status === 'approve' ? { approved: true }
+        : status === 'skip' ? { skipped: true }
+            : { dropped: true };
+
     state.processedTasks[taskId] = {
         ...pending,
-        approved: true,
+        ...statusFlag,
         reviewedAt: new Date().toISOString(),
     };
     delete state.pendingTasks[taskId];
-    state.stats.tasksApproved++;
+
+    if (status === 'approve') state.stats.tasksApproved++;
+    if (status === 'skip') state.stats.tasksSkipped++;
+    if (status === 'drop') state.stats.tasksDropped++;
+
     await save();
     return state.processedTasks[taskId];
 }
 
-export async function skipTask(taskId) {
-    const pending = state.pendingTasks[taskId];
-    if (!pending) return null;
-
-    state.processedTasks[taskId] = {
-        ...pending,
-        skipped: true,
-        reviewedAt: new Date().toISOString(),
-    };
-    delete state.pendingTasks[taskId];
-    state.stats.tasksSkipped++;
-    await save();
-    return state.processedTasks[taskId];
-}
-
-export async function dropTask(taskId) {
-    const pending = state.pendingTasks[taskId];
-    if (!pending) return null;
-
-    state.processedTasks[taskId] = {
-        ...pending,
-        dropped: true,
-        reviewedAt: new Date().toISOString(),
-    };
-    delete state.pendingTasks[taskId];
-    state.stats.tasksDropped++;
-    await save();
-    return state.processedTasks[taskId];
-}
+export async function approveTask(taskId) { return resolveTask(taskId, 'approve'); }
+export async function skipTask(taskId) { return resolveTask(taskId, 'skip'); }
+export async function dropTask(taskId) { return resolveTask(taskId, 'drop'); }
 
 export async function markTaskProcessed(taskId, data) {
     state.processedTasks[taskId] = {

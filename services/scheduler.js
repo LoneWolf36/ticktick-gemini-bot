@@ -2,7 +2,7 @@
 import cron from 'node-cron';
 import * as store from './store.js';
 import { buildAutoApplyNotification } from '../bot/utils.js';
-import { userTimeString, userTodayFormatted } from '../bot/utils.js';
+import { userTimeString, userTodayFormatted, formatBriefingHeader, filterProcessedThisWeek } from '../bot/utils.js';
 import { analyzeAndSend } from '../bot/commands.js';
 
 export async function startScheduler(bot, ticktick, gemini, config) {
@@ -141,9 +141,8 @@ export async function startScheduler(bot, ticktick, gemini, config) {
             }
             const tasks = await ticktick.getAllTasks();
             const briefing = await gemini.generateDailyBriefing(tasks);
-            const today = userTodayFormatted();
 
-            let msg = `🌅 MORNING BRIEFING\n${today}\n${'─'.repeat(24)}\n\n${briefing}`;
+            let msg = formatBriefingHeader({ kind: 'daily' }) + briefing;
 
             const pendingCount = store.getPendingCount();
             if (pendingCount > 0) {
@@ -167,13 +166,9 @@ export async function startScheduler(bot, ticktick, gemini, config) {
         try {
             const tasks = await ticktick.getAllTasks();
             const processed = store.getProcessedTasks();
-            const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-            const thisWeek = {};
-            for (const [id, data] of Object.entries(processed)) {
-                if (new Date(data.reviewedAt || data.sentAt) > oneWeekAgo) thisWeek[id] = data;
-            }
+            const thisWeek = filterProcessedThisWeek(processed, ['sentAt']);
             const digest = await gemini.generateWeeklyDigest(tasks, thisWeek);
-            await bot.api.sendMessage(chatId, `📊 WEEKLY ACCOUNTABILITY REVIEW\n${'─'.repeat(28)}\n\n${digest}`);
+            await bot.api.sendMessage(chatId, formatBriefingHeader({ kind: 'weekly' }) + digest);
             await store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         } catch (err) {
             console.error('Weekly digest error:', err.message);
