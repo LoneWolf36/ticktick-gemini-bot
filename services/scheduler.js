@@ -2,7 +2,7 @@
 import cron from 'node-cron';
 import * as store from './store.js';
 import { buildAutoApplyNotification } from '../bot/utils.js';
-import { userTimeString, userTodayFormatted, formatBriefingHeader, filterProcessedThisWeek } from '../bot/utils.js';
+import { userTimeString, formatBriefingHeader, filterProcessedThisWeek } from '../bot/utils.js';
 import { analyzeAndSend } from '../bot/commands.js';
 
 export async function startScheduler(bot, ticktick, gemini, config) {
@@ -26,6 +26,7 @@ export async function startScheduler(bot, ticktick, gemini, config) {
     // ─── Task polling (every N minutes) ──────────────────────
     let tokenExpiredNotified = false;
     let quotaNotificationSent = false;
+    let pendingSuppressionSent = false;
 
     cron.schedule(`*/${pollMinutes} * * * *`, async () => {
         if (!ticktick.isAuthenticated()) {
@@ -53,6 +54,26 @@ export async function startScheduler(bot, ticktick, gemini, config) {
         if (!chatId) return;
 
         console.log(`🔄 [${userTimeString()}] Polling for new tasks...`);
+
+        const pendingCount = store.getPendingCount();
+        if (pendingCount > 0) {
+            console.log(`⏸️  Skipping poll — ${pendingCount} tasks already pending review.`);
+            if (!pendingSuppressionSent) {
+                try {
+                    await bot.api.sendMessage(chatId, `⏳ You have ${pendingCount} pending task(s). Run /pending to review; background scanning paused to save your API quota.`);
+                    pendingSuppressionSent = true;
+                } catch (err) {
+                    console.error('Failed to send pending suppression notice:', err.message);
+                }
+            }
+            return;
+        }
+        pendingSuppressionSent = false; // Reset if user clears pending list
+
+        if (!store.tryAcquireIntakeLock()) {
+            console.log('⏸️  Skipping poll — intake lock held by an active operation.');
+            return;
+        }
 
         try {
             // Skip if Gemini quota is known to be exhausted
@@ -118,6 +139,8 @@ export async function startScheduler(bot, ticktick, gemini, config) {
             }
         } catch (err) {
             console.error('Poll error:', err.message);
+        } finally {
+            store.releaseIntakeLock();
         }
 
         // Reset spam suppression flag once quota cooldown has actually expired
@@ -164,6 +187,10 @@ export async function startScheduler(bot, ticktick, gemini, config) {
 
         console.log('📊 Sending weekly digest...');
         try {
+            if (gemini.isQuotaExhausted()) {
+                console.log('⏸️  Skipping weekly digest — Gemini quota exhausted.');
+                return;
+            }
             const tasks = await ticktick.getAllTasks();
             const processed = store.getProcessedTasks();
             const thisWeek = filterProcessedThisWeek(processed, ['sentAt']);

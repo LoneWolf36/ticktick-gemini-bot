@@ -120,6 +120,17 @@ async function save() {
 // ─── Initialize on import ────────────────────────────────────
 await load();
 
+// ─── Shared Analysis Lock ────────────────────────────────────
+let intakeLock = false;
+export function tryAcquireIntakeLock() {
+    if (intakeLock) return false;
+    intakeLock = true;
+    return true;
+}
+export function releaseIntakeLock() {
+    intakeLock = false;
+}
+
 // ─── Chat ID ─────────────────────────────────────────────────
 
 export function getChatId() {

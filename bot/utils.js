@@ -374,3 +374,14 @@ export function filterProcessedThisWeek(processedTasks, fallbackKeys = []) {
     }
     return thisWeek;
 }
+
+export function buildQuotaExhaustedMessage(gemini) {
+    const resumeTime = gemini.quotaResumeTime();
+    if (resumeTime) {
+        const resumeStr = resumeTime.toLocaleTimeString('en-US', {
+            timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit'
+        }) + ' PT';
+        return `⚠️ AI quota exhausted. Try again around ${resumeStr}.`;
+    }
+    return `⚠️ AI quota exhausted. Try again in ~2 hours or after midnight PT.`;
+}

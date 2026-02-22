@@ -3,8 +3,8 @@ import * as store from '../services/store.js';
 import { taskReviewKeyboard } from './callbacks.js';
 import {
     buildTaskCard, buildPendingData, pendingToAnalysis, buildTickTickUpdate,
-    sleep, userTodayFormatted, userLocaleString, isAuthorized, guardAccess, PRIORITY_LABEL, buildUndoEntry,
-    formatBriefingHeader, filterProcessedThisWeek
+    sleep, userLocaleString, isAuthorized, guardAccess, PRIORITY_LABEL, buildUndoEntry,
+    formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage
 } from './utils.js';
 
 export function registerCommands(bot, ticktick, gemini, config = {}) {
@@ -177,7 +177,18 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
 
     // ─── /scan — manual poll, BATCHED (5 at a time) ───────────
     bot.command('scan', async (ctx) => {
-        await runTaskIntake(ctx, { mode: 'scan', pendingGate: false, quotaParking: true });
+        if (!await guardAccess(ctx)) return;
+        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected. Run the OAuth flow first.'); return; }
+
+        const pendingCount = store.getPendingCount();
+        if (pendingCount > 0) {
+            await ctx.reply(`⏳ You have ${pendingCount} task(s) pending review. Run /pending first.`);
+            return;
+        }
+
+        if (!store.tryAcquireIntakeLock()) { await ctx.reply('⏳ A scan or poll is already running.'); return; }
+        try { await runTaskIntake(ctx, { mode: 'scan', pendingGate: false, quotaParking: true }); }
+        finally { store.releaseIntakeLock(); }
     });
 
     // ─── /pending — re-surface un-reviewed tasks ──────────────
@@ -254,6 +265,10 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
     bot.command('briefing', async (ctx) => {
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
+        if (gemini.isQuotaExhausted()) {
+            await ctx.reply(buildQuotaExhaustedMessage(gemini));
+            return;
+        }
         await ctx.reply('🌅 Generating your briefing...');
         try {
             const tasks = await ticktick.getAllTasks();
@@ -269,6 +284,10 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
     bot.command('weekly', async (ctx) => {
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
+        if (gemini.isQuotaExhausted()) {
+            await ctx.reply(buildQuotaExhaustedMessage(gemini));
+            return;
+        }
         await ctx.reply('📊 Generating your weekly review...');
         try {
             const tasks = await ticktick.getAllTasks();
@@ -284,7 +303,12 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
 
     // ─── /review ──────────────────────────────────────────────
     bot.command('review', async (ctx) => {
-        await runTaskIntake(ctx, { mode: 'review', pendingGate: true, quotaParking: false });
+        if (!await guardAccess(ctx)) return;
+        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
+
+        if (!store.tryAcquireIntakeLock()) { await ctx.reply('⏳ A scan or poll is already running.'); return; }
+        try { await runTaskIntake(ctx, { mode: 'review', pendingGate: true, quotaParking: false }); }
+        finally { store.releaseIntakeLock(); }
     });
 
     // ─── Catch-all: free-form messages → Gemini ─────────────
@@ -299,6 +323,11 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
 
         const userMessage = ctx.message.text.trim();
         if (!userMessage) return;
+
+        if (gemini.isQuotaExhausted()) {
+            await ctx.reply(buildQuotaExhaustedMessage(gemini));
+            return;
+        }
 
         await ctx.reply('🤔 Thinking...');
 
