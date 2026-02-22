@@ -75,79 +75,109 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         await ctx.reply(lines.join('\n'));
     });
 
-    // ─── /scan — manual poll, BATCHED (5 at a time) ───────────
-    bot.command('scan', async (ctx) => {
+    async function runTaskIntake(ctx, { mode, pendingGate, quotaParking }) {
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) {
-            await ctx.reply('🔴 TickTick not connected. Run the OAuth flow first.');
+            await ctx.reply(mode === 'scan'
+                ? '🔴 TickTick not connected. Run the OAuth flow first.'
+                : '🔴 TickTick not connected.'
+            );
             return;
         }
 
-        await ctx.reply('🔍 Scanning for new tasks...');
+        if (pendingGate) {
+            const pendingCount = store.getPendingCount();
+            if (pendingCount > 0) {
+                await ctx.reply(`⏳ You have ${pendingCount} task(s) pending review.\nRun /pending first, or /scan for new tasks.`);
+                return;
+            }
+        }
+
+        await ctx.reply(mode === 'scan' ? '🔍 Scanning for new tasks...' : '📋 Checking for unreviewed tasks...');
 
         try {
             const allTasks = await ticktick.getAllTasks();
             const projects = ticktick.getLastFetchedProjects();
-            const newTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
+            const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
-            if (newTasks.length === 0) {
-                const pendingCount = store.getPendingCount();
-                let msg = '✅ No new tasks found.';
-                if (pendingCount > 0) {
-                    msg += `\n\n⏳ You have ${pendingCount} task(s) pending review. Run /pending to see them.`;
+            if (targetTasks.length === 0) {
+                if (mode === 'scan') {
+                    const pendingCount = store.getPendingCount();
+                    let msg = '✅ No new tasks found.';
+                    if (pendingCount > 0) {
+                        msg += `\n\n⏳ You have ${pendingCount} task(s) pending review. Run /pending to see them.`;
+                    }
+                    await ctx.reply(msg);
+                } else {
+                    await ctx.reply('✅ All tasks reviewed!');
                 }
-                await ctx.reply(msg);
                 return;
             }
 
-            const batch = newTasks.slice(0, 5);
-            await ctx.reply(`📬 Found ${newTasks.length} new task(s). Analyzing first ${batch.length}...`);
+            const batch = targetTasks.slice(0, 5);
+            await ctx.reply(mode === 'scan'
+                ? `📬 Found ${targetTasks.length} new task(s). Analyzing first ${batch.length}...`
+                : `📬 ${targetTasks.length} task(s) to review. Sending ${batch.length}...`
+            );
 
             let supervised = 0, autoApplied = [], failed = 0;
             const autoConfig = { autoApplyLifeAdmin, autoApplyDrops };
             let quotaHit = false;
 
             for (const task of batch) {
-                try {
-                    const result = await analyzeAndSend(ctx, task, gemini, ticktick, projects, autoConfig);
-                    if (result === 'supervised') supervised++;
-                    else if (result) autoApplied.push(result);
-                } catch (err) {
-                    if (err.message === 'QUOTA_EXHAUSTED') {
-                        // Park remaining tasks
-                        const remaining = batch.slice(batch.indexOf(task));
-                        for (const t of remaining) {
-                            await store.markTaskFailed(t.id, 'quota_exhausted');
+                if (quotaParking) {
+                    try {
+                        const result = await analyzeAndSend(ctx, task, gemini, ticktick, projects, autoConfig);
+                        if (result === 'supervised') supervised++;
+                        else if (result) autoApplied.push(result);
+                    } catch (err) {
+                        if (err.message === 'QUOTA_EXHAUSTED') {
+                            const remaining = batch.slice(batch.indexOf(task));
+                            for (const t of remaining) {
+                                await store.markTaskFailed(t.id, 'quota_exhausted');
+                            }
+                            failed += remaining.length;
+                            quotaHit = true;
+                            break;
                         }
-                        failed += remaining.length;
-                        quotaHit = true;
-                        break;
+                        await store.markTaskFailed(task.id, err.message);
+                        failed++;
                     }
-                    await store.markTaskFailed(task.id, err.message);
-                    failed++;
+                } else {
+                    await analyzeAndSend(ctx, task, gemini, ticktick, projects, autoConfig);
                 }
-                await sleep(3000);
+
+                await sleep(mode === 'scan' ? 3000 : 2500);
             }
 
-            let doneMsg = '';
-            if (supervised > 0) doneMsg += `✨ ${supervised} task(s) sent for your review.\n`;
-            if (autoApplied.length > 0) {
-                doneMsg += buildAutoApplyNotification(autoApplied);
+            if (mode === 'scan') {
+                let doneMsg = '';
+                if (supervised > 0) doneMsg += `✨ ${supervised} task(s) sent for your review.\n`;
+                if (autoApplied.length > 0) doneMsg += buildAutoApplyNotification(autoApplied);
+                if (quotaHit) {
+                    doneMsg += `\n⚠️ AI quota reached — ${failed} task(s) parked for retry in ~2 hours.`;
+                } else if (failed > 0) {
+                    doneMsg += `\n⚠️ ${failed} task(s) failed — parked for retry later.`;
+                }
+                if (!doneMsg) doneMsg = `✨ Batch done! ${batch.length} task(s) processed.`;
+                if (targetTasks.length > 5) {
+                    doneMsg += `\n\n📝 ${targetTasks.length - 5} more remain. Run /scan again for the next batch.`;
+                }
+                await ctx.reply(doneMsg.trim());
+            } else {
+                if (targetTasks.length > 5) {
+                    await ctx.reply(`📝 Sent ${batch.length} of ${targetTasks.length}. Run /review again for more.`);
+                }
             }
-            if (quotaHit) {
-                doneMsg += `\n⚠️ AI quota reached — ${failed} task(s) parked for retry in ~2 hours.`;
-            } else if (failed > 0) {
-                doneMsg += `\n⚠️ ${failed} task(s) failed — parked for retry later.`;
-            }
-            if (!doneMsg) doneMsg = `✨ Batch done! ${batch.length} task(s) processed.`;
-            if (newTasks.length > 5) {
-                doneMsg += `\n\n📝 ${newTasks.length - 5} more remain. Run /scan again for the next batch.`;
-            }
-            await ctx.reply(doneMsg.trim());
         } catch (err) {
-            console.error('Scan error:', err.message);
-            await ctx.reply(`❌ Scan error: ${err.message}`);
+            if (mode === 'scan') console.error('Scan error:', err.message);
+            await ctx.reply(mode === 'scan' ? `❌ Scan error: ${err.message}` : `❌ Review error: ${err.message}`);
         }
+    }
+
+    // ─── /scan — manual poll, BATCHED (5 at a time) ───────────
+    bot.command('scan', async (ctx) => {
+        await runTaskIntake(ctx, { mode: 'scan', pendingGate: false, quotaParking: true });
     });
 
     // ─── /pending — re-surface un-reviewed tasks ──────────────
@@ -254,36 +284,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
 
     // ─── /review ──────────────────────────────────────────────
     bot.command('review', async (ctx) => {
-        if (!await guardAccess(ctx)) return;
-        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
-
-        const pendingCount = store.getPendingCount();
-        if (pendingCount > 0) {
-            await ctx.reply(`⏳ You have ${pendingCount} task(s) pending review.\nRun /pending first, or /scan for new tasks.`);
-            return;
-        }
-
-        await ctx.reply('📋 Checking for unreviewed tasks...');
-        try {
-            const allTasks = await ticktick.getAllTasks();
-            const projects = ticktick.getLastFetchedProjects();
-            const unreviewed = allTasks.filter(t => !store.isTaskKnown(t.id));
-
-            if (unreviewed.length === 0) { await ctx.reply('✅ All tasks reviewed!'); return; }
-
-            const batch = unreviewed.slice(0, 5);
-            await ctx.reply(`📬 ${unreviewed.length} task(s) to review. Sending ${batch.length}...`);
-
-            for (const task of batch) {
-                await analyzeAndSend(ctx, task, gemini, ticktick, projects, { autoApplyLifeAdmin, autoApplyDrops });
-                await sleep(2500);
-            }
-            if (unreviewed.length > 5) {
-                await ctx.reply(`📝 Sent ${batch.length} of ${unreviewed.length}. Run /review again for more.`);
-            }
-        } catch (err) {
-            await ctx.reply(`❌ Review error: ${err.message}`);
-        }
+        await runTaskIntake(ctx, { mode: 'review', pendingGate: true, quotaParking: false });
     });
 
     // ─── Catch-all: free-form messages → Gemini ─────────────

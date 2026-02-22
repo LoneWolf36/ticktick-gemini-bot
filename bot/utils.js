@@ -350,3 +350,27 @@ function truncateMessage(text, limit = 3800) {
     if (text.length <= limit) return text;
     return text.slice(0, limit) + '\n\n... (truncated)';
 }
+
+// ─── Formatting Helpers ─────────────────────────────────────
+
+export function formatBriefingHeader({ kind }) {
+    if (kind === 'daily') {
+        return `🌅 MORNING BRIEFING\n${userTodayFormatted()}\n${'─'.repeat(24)}\n\n`;
+    }
+    if (kind === 'weekly') {
+        return `📊 WEEKLY ACCOUNTABILITY REVIEW\n${'─'.repeat(28)}\n\n`;
+    }
+    return '';
+}
+
+export function filterProcessedThisWeek(processedTasks, fallbackKeys = []) {
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const thisWeek = {};
+    for (const [id, data] of Object.entries(processedTasks)) {
+        const base = data.reviewedAt ?? fallbackKeys.map(k => data?.[k]).find(Boolean);
+        if (base && new Date(base) > oneWeekAgo) {
+            thisWeek[id] = data;
+        }
+    }
+    return thisWeek;
+}
