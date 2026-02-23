@@ -298,10 +298,15 @@ export class GeminiAnalyzer {
                 // Transient Rate Limit handling
                 const isRateLimit = err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429');
                 if (isRateLimit && transientAttempts < maxTransientRetries) {
-                    const match = err.message?.match(/retry in ([\d.]+)s/i);
-                    const waitSec = match ? Math.ceil(parseFloat(match[1])) + 2 : (transientBaseMs * (transientAttempts + 1));
-                    console.log(`⏳ Rate limited, waiting ${waitSec}s before retry ${transientAttempts + 1}/${maxTransientRetries}...`);
-                    await new Promise(r => setTimeout(r, waitSec * 1000));
+                    let dynamicBackoffMs = transientBaseMs;
+                    const match = err.message?.match(/Please retry in ([\d\.]+)s/);
+                    if (match && match[1]) {
+                        // Google gives us exactly how long to wait. Parse it and add 2s buffer.
+                        dynamicBackoffMs = parseFloat(match[1]) * 1000 + 2000;
+                    }
+                    const backoffMs = dynamicBackoffMs + Math.random() * 5000;
+                    console.error(`⏳ Rate limited, waiting ${Math.round(backoffMs / 1000)}s before retry ${transientAttempts + 1}/${maxTransientRetries}...`);
+                    await new Promise(r => setTimeout(r, backoffMs));
                     transientAttempts++;
                     continue;
                 }
