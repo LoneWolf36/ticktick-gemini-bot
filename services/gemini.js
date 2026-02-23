@@ -109,7 +109,7 @@ B) "coach" (Strategic questions, emotional/overwhelm venting, requests for advic
 C) "clarify" (Unclear task references where you must ask a follow-up)
 
 CRITICAL RULES:
-1. If the user refers to a task ambiguously, and multiple tasks could match, DO NOT GUESS. Mode = "clarify".
+1. If the user refers to a task ambiguously, DO NOT GUESS. Mode = "clarify". The bot has no chat memory. You must tell the user exactly what is ambiguous and ask them to send a completely NEW message containing the full task context.
 2. If requesting task creation, the action type MUST be "create".
 3. Infer priorities (0:none, 1:low, 3:medium, 5:high).
 `;
@@ -389,14 +389,9 @@ export class GeminiAnalyzer {
     async handleFreeform(message, tasks = [], projects = []) {
         const today = userTodayFormatted();
 
-        // Build concise task context
-        const taskList = tasks.slice(0, 50).map((t, i) => {
-            let line = `${i + 1}. [id:${t.id}] "${t.title}" [${t.projectName || 'Inbox'}] ${PRIORITY_EMOJI[t.priority] || ''}`;
-            if (t.dueDate) line += ` due:${t.dueDate}`;
-            return line;
-        }).join('\n');
-
-        const projectList = projects.map(p => `- ${p.name} (id:${p.id})`).join('\n');
+        // Build concise task context - compressing heavily to avoid token bloat
+        const taskList = tasks.slice(0, 50).map(t => `[id:${t.id}] "${t.title}"`).join(' | ');
+        const projectList = projects.map(p => `[id:${p.id}] ${p.name}`).join(' | ');
 
         const prompt = `Today is ${today}.\n\nUser's current tasks (${tasks.length} total):\n${taskList}\n\nAvailable projects:\n${projectList}\n\nUser message: "${message}"`;
 
