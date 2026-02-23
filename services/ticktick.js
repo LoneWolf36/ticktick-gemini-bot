@@ -86,12 +86,83 @@ export class TickTickClient {
 
     async updateTask(taskId, taskData) {
         this._invalidateCache();
-        return this._post(`/task/${taskId}`, taskData);
+
+        // Handle project moves by recreating the task in the new project and deleting the old one
+        if (taskData.projectId && taskData.originalProjectId && taskData.projectId !== taskData.originalProjectId) {
+            let fullTask;
+            try {
+                fullTask = await this.getTask(taskData.originalProjectId, taskId);
+            } catch (err) {
+                // Architectural Fix: Never proceed with partial data if getTask fails. It causes silent data loss.
+                throw new Error(`Move aborted: Failed to fetch original task data (${err.message})`);
+            }
+
+            const createPayload = { ...fullTask, ...taskData };
+            delete createPayload.id;
+            delete createPayload.originalProjectId;
+
+            let newTask;
+            try {
+                newTask = await this.createTask(createPayload);
+            } catch (err) {
+                throw new Error(`Move aborted: Failed to recreate task in target project (${err.message})`);
+            }
+
+            try {
+                await this.deleteTask(taskData.originalProjectId, taskId);
+            } catch (err) {
+                // Transactional Rollback: If we couldn't delete the old task, delete the newly created one so we don't have duplicates.
+                // Critical edge case: What if `deleteTask` timed out but ACTUALLY succeeded on TickTick's end?
+                // If we blindly delete the new task, we lose BOTH tasks (Data Loss).
+                try {
+                    // Check if original still exists
+                    await this.getTask(taskData.originalProjectId, taskId);
+
+                    // If it DOES still exist, it's safe to delete the new one to rollback
+                    await this.deleteTask(taskData.projectId, newTask.id);
+                    throw new Error(`Move aborted: Failed to delete original task. Changes rolled back. (${err.message})`);
+                } catch (verifyErr) {
+                    // If getTask throws, it might be 404 (deleted successfully)
+                    if (verifyErr.response?.status === 404 || verifyErr.response?.status === 400) {
+                        console.warn(`Original task ${taskId} already gone despite delete error. Accepting move as successful.`);
+                        return newTask;
+                    }
+                    console.error(`CRITICAL: Transaction state unknown! Duplicate task might exist. Old: ${taskId}, New: ${newTask.id}`);
+                    throw new Error(`Move aborted: Unknown state after delete failure. (${err.message})`);
+                }
+            }
+
+            return newTask; // Returns the new task with a new ID
+        }
+
+        const payload = { ...taskData };
+        delete payload.originalProjectId;
+        return this._post(`/task/${taskId}`, payload);
     }
 
     async completeTask(projectId, taskId) {
         this._invalidateCache();
         return this._post(`/project/${projectId}/task/${taskId}/complete`);
+    }
+
+    async deleteTask(projectId, taskId) {
+        this._invalidateCache();
+        try {
+            const resp = await axios.delete(`${API_BASE}/project/${projectId}/task/${taskId}`, {
+                headers: { Authorization: `Bearer ${this.accessToken}` },
+                timeout: 15000,
+            });
+            return resp.data;
+        } catch (err) {
+            if (err.response?.status === 401) {
+                this.accessToken = null;
+                this._invalidateCache();
+                const customErr = new Error('TICKTICK_TOKEN_EXPIRED');
+                customErr.isAuthError = true;
+                throw customErr;
+            }
+            throw err;
+        }
     }
 
     /** Returns cache age in seconds, or null if empty/invalidated */

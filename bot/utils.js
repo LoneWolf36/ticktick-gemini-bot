@@ -42,9 +42,10 @@ export async function guardAccess(ctx) {
 
 // ─── Undo Entry Builder ─────────────────────────────────────
 
-export function buildUndoEntry({ source, action, applied = {} }) {
+export function buildUndoEntry({ source, action, applied = {}, appliedTaskId = null }) {
     return {
-        taskId: source.id ?? source.taskId,
+        taskId: appliedTaskId || source.id || source.taskId,
+        originalTaskId: source.id || source.taskId,
         action,
         originalTitle: source.title ?? source.originalTitle,
         originalContent: source.content ?? source.originalContent ?? '',
@@ -54,6 +55,7 @@ export function buildUndoEntry({ source, action, applied = {} }) {
         appliedTitle: applied.title ?? null,
         appliedPriority: applied.priority ?? null,
         appliedProject: applied.project ?? null,
+        appliedProjectId: applied.projectId ?? null,
         appliedSchedule: applied.schedule ?? null,
     };
 }
@@ -178,7 +180,10 @@ function scheduleLabel(bucket) {
 // Single source of truth for what gets written to TickTick.
 
 export function buildTickTickUpdate(data) {
-    const update = { projectId: data.projectId }; // current project as base
+    const update = {
+        projectId: data.projectId,
+        originalProjectId: data.projectId // Required for ticktick.js to detect moves
+    };
 
     if (data.improvedTitle) update.title = data.improvedTitle;
     if (data.improvedContent) update.content = data.improvedContent;

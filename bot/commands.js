@@ -250,6 +250,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         try {
             // Restore original values to TickTick
             await ticktick.updateTask(last.taskId, {
+                originalProjectId: last.appliedProjectId || last.originalProjectId,
                 projectId: last.originalProjectId,
                 title: last.originalTitle,
                 content: last.originalContent,
@@ -422,21 +423,26 @@ async function executeActions(actions, ticktick, currentTasks) {
             }
 
             if (action.type === 'update' && action.changes) {
-                // Log for /undo before applying
+                const changes = {
+                    ...action.changes,
+                    projectId: action.changes.projectId || task.projectId,
+                    originalProjectId: task.projectId
+                };
+                const updatedTask = await ticktick.updateTask(task.id, changes);
+
+                // Log for /undo
                 await store.addUndoEntry(buildUndoEntry({
                     source: task,
                     action: 'freeform-update',
+                    appliedTaskId: updatedTask.id,
                     applied: {
                         title: action.changes.title ?? null,
                         project: null,
+                        projectId: (action.changes.projectId && action.changes.projectId !== task.projectId) ? action.changes.projectId : null,
                         schedule: action.changes.dueDate ?? null,
                     }
                 }));
 
-                await ticktick.updateTask(task.id, {
-                    projectId: action.changes.projectId || task.projectId,
-                    ...action.changes,
-                });
                 outcomes.push(`✅ Updated: "${task.title}"`);
                 hasUndoableActions = true;
             } else if (action.type === 'drop') {
@@ -496,17 +502,20 @@ export async function analyzeAndSend(ctx, task, gemini, ticktick, projects = [],
 
 async function autoApply(task, pendingData, analysis, ticktick) {
     const update = buildTickTickUpdate(pendingData);
-    await ticktick.updateTask(task.id, update);
+    const updatedTask = await ticktick.updateTask(task.id, update);
 
     // Log for /undo — include what was changed so undo can report it
     await store.addUndoEntry(buildUndoEntry({
         source: task,
         action: 'auto-apply',
+        appliedTaskId: updatedTask.id,
         applied: {
             title: pendingData.improvedTitle ?? null,
             priority: PRIORITY_LABEL[pendingData.suggestedPriority] ?? null,
             project: (pendingData.suggestedProjectId && pendingData.suggestedProjectId !== task.projectId)
                 ? pendingData.suggestedProject : null,
+            projectId: (pendingData.suggestedProjectId && pendingData.suggestedProjectId !== task.projectId)
+                ? pendingData.suggestedProjectId : null,
             schedule: pendingData.suggestedSchedule ?? null,
         }
     }));

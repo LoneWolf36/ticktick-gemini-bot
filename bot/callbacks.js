@@ -39,22 +39,24 @@ export function registerCallbacks(bot, ticktick, gemini) {
         }
 
         try {
-            // Use shared builder — applies title, description, priority, project, AND due date
             const update = buildTickTickUpdate(data);
+            const updatedTask = await ticktick.updateTask(taskId, update);
 
             await store.addUndoEntry(buildUndoEntry({
                 source: data, // `data` has taskId, originalTitle, etc.
                 action: 'approve',
+                appliedTaskId: updatedTask.id,
                 applied: {
                     title: data.improvedTitle ?? null,
                     priority: PRIORITY_LABEL[data.suggestedPriority] ?? null,
                     project: (data.suggestedProjectId && data.suggestedProjectId !== data.projectId)
                         ? data.suggestedProject : null,
+                    projectId: (data.suggestedProjectId && data.suggestedProjectId !== data.projectId)
+                        ? data.suggestedProjectId : null,
                     schedule: data.suggestedSchedule ?? null,
                 }
             }));
 
-            await ticktick.updateTask(taskId, update);
             await store.approveTask(taskId);
 
             const movedNote = (data.suggestedProjectId && data.suggestedProjectId !== data.projectId)
