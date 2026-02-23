@@ -159,7 +159,7 @@ export class GeminiAnalyzer {
         const genAI = new GoogleGenerativeAI(this._keys[this._activeKeyIndex]);
 
         this.analyzeModel = genAI.getGenerativeModel({
-            model: 'gemini-3-flash',
+            model: 'gemini-2.5-flash',
             systemInstruction: ANALYZE_PROMPT,
             generationConfig: {
                 temperature: 0.3,
@@ -169,7 +169,7 @@ export class GeminiAnalyzer {
         });
 
         this.briefingModel = genAI.getGenerativeModel({
-            model: 'gemini-3-flash',
+            model: 'gemini-2.5-flash',
             systemInstruction: BRIEFING_PROMPT,
             generationConfig: {
                 temperature: 0.8,
@@ -179,7 +179,7 @@ export class GeminiAnalyzer {
         });
 
         this.weeklyModel = genAI.getGenerativeModel({
-            model: 'gemini-3-flash',
+            model: 'gemini-2.5-flash',
             systemInstruction: WEEKLY_PROMPT,
             generationConfig: {
                 temperature: 0.8,
@@ -189,7 +189,7 @@ export class GeminiAnalyzer {
         });
 
         this.chatModel = genAI.getGenerativeModel({
-            model: 'gemini-3-flash',
+            model: 'gemini-2.5-flash',
             systemInstruction: CONVERSE_PROMPT,
             generationConfig: {
                 temperature: 0.8,
