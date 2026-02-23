@@ -47,6 +47,9 @@ Decide clearly:
 4. When should this realistically be done?
 Do NOT default everything to "today".
 
+CRITICAL DATA PRESERVATION RULE:
+If the original task contains URLs, links, or specific reference notes, you MUST repurpose and preserve them. Do not destroy the user's data. Extract them verbatim into the \`resources\` array.
+
 Respond ONLY in this JSON format:
 
 {
@@ -54,6 +57,7 @@ Respond ONLY in this JSON format:
   "analysis": "1–2 sentence judgment. Call out avoidance if present.",
   "description": "Concrete plan of execution",
   "sub_steps": ["Step 1", "Step 2"],
+  "resources": ["https://link.com - Context", "Raw note snippet to preserve"],
   "priority": "career-critical|important|life-admin|consider-dropping",
   "priority_emoji": "🔴|🟡|🟢|⚪",
   "needle_mover": true,
@@ -107,6 +111,7 @@ Output:
 Plain text formatted for Telegram.
 `;
 
+// ─── Free-form Conversation Prompt ───────────────────────
 const CONVERSE_PROMPT = `${USER_CONTEXT}
 
 Classify the user's message:
@@ -374,6 +379,7 @@ export class GeminiAnalyzer {
                 analysis: 'AI analysis received but could not be structured. Review this task manually.',
                 description: '',
                 sub_steps: [],
+                resources: [],
                 priority: 'important',
                 priority_emoji: '🟡',
                 needle_mover: false,

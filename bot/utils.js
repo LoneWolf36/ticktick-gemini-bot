@@ -263,6 +263,13 @@ export function buildTaskCard(task, analysis) {
         });
     }
 
+    if (analysis.resources?.length > 0) {
+        lines.push(`\n🔗 Context & Resources:`);
+        analysis.resources.forEach((r) => {
+            lines.push(`  - ${r}`);
+        });
+    }
+
     if (analysis.success_criteria) {
         lines.push(`\n🎯 Done when: ${analysis.success_criteria}`);
     }
@@ -283,6 +290,11 @@ export function buildImprovedContent(analysis) {
     if (analysis.sub_steps?.length > 0) {
         content += `📋 Action Steps:\n`;
         analysis.sub_steps.forEach((s, i) => { content += `${i + 1}. ${s}\n`; });
+        content += '\n';
+    }
+    if (analysis.resources?.length > 0) {
+        content += `🔗 Context & Resources:\n`;
+        analysis.resources.forEach((r) => { content += `- ${r}\n`; });
         content += '\n';
     }
     if (analysis.success_criteria) content += `🎯 Done when: ${analysis.success_criteria}\n\n`;
@@ -322,6 +334,7 @@ export function buildPendingData(task, analysis, projects = []) {
         priorityEmoji: analysis.priority_emoji,
         needleMover: analysis.needle_mover,
         subSteps: analysis.sub_steps,
+        resources: analysis.resources,
         successCriteria: analysis.success_criteria,
         callout: analysis.callout,
     };
@@ -339,6 +352,7 @@ export function pendingToAnalysis(data) {
         priority_emoji: data.priorityEmoji || '🟡',
         needle_mover: data.needleMover,
         sub_steps: data.subSteps || [],
+        resources: data.resources || [],
         success_criteria: data.successCriteria,
         callout: data.callout,
         suggested_project: data.suggestedProject,
