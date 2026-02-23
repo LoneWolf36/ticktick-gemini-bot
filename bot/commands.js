@@ -5,7 +5,7 @@ import {
     buildTaskCard, buildPendingData, pendingToAnalysis, buildTickTickUpdate,
     sleep, userLocaleString, isAuthorized, guardAccess, PRIORITY_LABEL, buildUndoEntry,
     formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage, buildAutoApplyNotification,
-    parseDateStringToTickTickISO, parseTelegramMarkdownToHTML
+    parseDateStringToTickTickISO, parseTelegramMarkdownToHTML, replyWithMarkdown, sendWithMarkdown
 } from './utils.js';
 
 export function registerCommands(bot, ticktick, gemini, config = {}) {
@@ -180,7 +180,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
                 if (targetTasks.length > 5) {
                     doneMsg += `\n\n📝 ${targetTasks.length - 5} more remain. Run /scan again for the next batch.`;
                 }
-                await ctx.reply(parseTelegramMarkdownToHTML(doneMsg.trim()), { parse_mode: 'HTML' });
+                await replyWithMarkdown(ctx, doneMsg.trim());
             } else {
                 if (targetTasks.length > 5) {
                     await ctx.reply(`📝 Sent ${batch.length} of ${targetTasks.length}. Run /review again for more.`);
@@ -229,7 +229,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         for (const [taskId, data] of batch) {
             const analysis = pendingToAnalysis(data);
             const card = buildTaskCard({ title: data.originalTitle, projectName: data.projectName }, analysis);
-            await ctx.reply(parseTelegramMarkdownToHTML(card), { reply_markup: taskReviewKeyboard(taskId), parse_mode: 'HTML' });
+            await replyWithMarkdown(ctx, card, { reply_markup: taskReviewKeyboard(taskId) });
             await sleep(1000);
         }
 
@@ -274,7 +274,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
                 lines.push(`  **Schedule:** removed (was: ${last.appliedSchedule})`);
             }
             lines.push('\n*Task restored to its original state.*');
-            await ctx.reply(parseTelegramMarkdownToHTML(lines.join('\n')), { parse_mode: 'HTML' });
+            await replyWithMarkdown(ctx, lines.join('\n'));
 
             console.log(`[UNDO] Reverted "${last.originalTitle}" (${last.action}) at ${new Date().toISOString()}`);
         } catch (err) {
@@ -295,7 +295,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         try {
             const tasks = await ticktick.getAllTasks();
             const briefing = await gemini.generateDailyBriefing(tasks);
-            await ctx.reply(parseTelegramMarkdownToHTML(formatBriefingHeader({ kind: 'daily' }) + briefing), { parse_mode: 'HTML' });
+            await replyWithMarkdown(ctx, formatBriefingHeader({ kind: 'daily' }) + briefing);
             await store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
@@ -320,7 +320,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             const processed = store.getProcessedTasks();
             const thisWeek = filterProcessedThisWeek(processed, ['processedAt']);
             const digest = await gemini.generateWeeklyDigest(tasks, thisWeek);
-            await ctx.reply(parseTelegramMarkdownToHTML(formatBriefingHeader({ kind: 'weekly' }) + digest), { parse_mode: 'HTML' });
+            await replyWithMarkdown(ctx, formatBriefingHeader({ kind: 'weekly' }) + digest);
             await store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
@@ -381,11 +381,11 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
                 if (hasUndoableActions) {
                     response += '\n\nRun /undo to revert the last change.';
                 }
-                await ctx.reply(parseTelegramMarkdownToHTML(response), { parse_mode: 'HTML' });
+                await replyWithMarkdown(ctx, response);
             } else if (result.mode === 'coach') {
-                await ctx.reply(parseTelegramMarkdownToHTML(result.response || 'I\'m here to help. Ask me anything about your tasks!'), { parse_mode: 'HTML' });
+                await replyWithMarkdown(ctx, result.response || 'I\'m here to help. Ask me anything about your tasks!');
             } else {
-                await ctx.reply(parseTelegramMarkdownToHTML(result.response || result.summary || 'Got it! Let me know if you need anything else.'), { parse_mode: 'HTML' });
+                await replyWithMarkdown(ctx, result.response || result.summary || 'Got it! Let me know if you need anything else.');
             }
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
@@ -510,10 +510,10 @@ export async function analyzeAndSend(ctx, task, gemini, ticktick, projects = [],
         const chatId = store.getChatId();
 
         if (ctx?.reply) {
-            await ctx.reply(parseTelegramMarkdownToHTML(card), { reply_markup: taskReviewKeyboard(task.id), parse_mode: 'HTML' });
+            await replyWithMarkdown(ctx, card, { reply_markup: taskReviewKeyboard(task.id) });
         } else if (ctx?.api && chatId) {
             // Called from scheduler — ctx is the bot object
-            await ctx.api.sendMessage(chatId, parseTelegramMarkdownToHTML(card), { reply_markup: taskReviewKeyboard(task.id), parse_mode: 'HTML' });
+            await sendWithMarkdown(ctx.api, chatId, card, { reply_markup: taskReviewKeyboard(task.id) });
         }
         return 'supervised';
     } catch (err) {

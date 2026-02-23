@@ -2,7 +2,7 @@
 // These move tasks from pendingTasks → processedTasks
 import { InlineKeyboard } from 'grammy';
 import * as store from '../services/store.js';
-import { buildTickTickUpdate, isAuthorized, buildUndoEntry, PRIORITY_LABEL, parseTelegramMarkdownToHTML } from './utils.js';
+import { buildTickTickUpdate, isAuthorized, buildUndoEntry, PRIORITY_LABEL, editWithMarkdown } from './utils.js';
 
 // ─── Build Keyboard for Task Review ─────────────────────────
 
@@ -65,10 +65,7 @@ export function registerCallbacks(bot, ticktick, gemini) {
                 ? ` Due: ${data.suggestedSchedule}.` : '';
 
             await ctx.answerCallbackQuery({ text: '✅ Applied to TickTick!' });
-            await ctx.editMessageText(
-                parseTelegramMarkdownToHTML(`✅ **Updated:** "${data.improvedTitle || data.originalTitle}"${movedNote}${dateNote}\n\n_Applied successfully._`),
-                { parse_mode: 'HTML' }
-            );
+            await editWithMarkdown(ctx, `✅ **Updated:** "${data.improvedTitle || data.originalTitle}"${movedNote}${dateNote}\n\n_Applied successfully._`);
         } catch (err) {
             console.error('Approve error:', err.message);
             await ctx.answerCallbackQuery({ text: `❌ ${err.message.slice(0, 50)}` });
@@ -90,7 +87,7 @@ export function registerCallbacks(bot, ticktick, gemini) {
 
         await store.skipTask(taskId);
         await ctx.answerCallbackQuery({ text: '⏭ Skipped' });
-        await ctx.editMessageText(parseTelegramMarkdownToHTML('⏭ **Skipped** — task left unchanged in TickTick.'), { parse_mode: 'HTML' });
+        await editWithMarkdown(ctx, '⏭ **Skipped** — task left unchanged in TickTick.');
     });
 
     // ─── Drop: move pending → processed, flag for removal ─────
@@ -108,9 +105,9 @@ export function registerCallbacks(bot, ticktick, gemini) {
 
         await store.dropTask(taskId);
         await ctx.answerCallbackQuery({ text: '⚪ Flagged for removal' });
-        await ctx.editMessageText(
-            parseTelegramMarkdownToHTML('⚪ **Consider dropping** — this task has been flagged.\n_Go to TickTick to delete it if you agree._'),
-            { parse_mode: 'HTML' }
+        await editWithMarkdown(
+            ctx,
+            '⚪ **Consider dropping** — this task has been flagged.\n_Go to TickTick to delete it if you agree._'
         );
     });
 }

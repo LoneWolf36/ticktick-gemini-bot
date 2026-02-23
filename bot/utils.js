@@ -405,7 +405,23 @@ export function parseTelegramMarkdownToHTML(text) {
 
     // Now safely convert **bold** to <b>bold</b>
     escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+    // Convert *italic* to <i>italic</i>
+    escaped = escaped.replace(/\*([^*]+)\*/g, '<i>$1</i>');
     return escaped;
+}
+
+// ─── Semantic Telegram Output Wrappers ──────────────────────
+
+export async function replyWithMarkdown(ctx, text, extra = {}) {
+    return ctx.reply(parseTelegramMarkdownToHTML(text), { ...extra, parse_mode: 'HTML' });
+}
+
+export async function editWithMarkdown(ctx, text, extra = {}) {
+    return ctx.editMessageText(parseTelegramMarkdownToHTML(text), { ...extra, parse_mode: 'HTML' });
+}
+
+export async function sendWithMarkdown(api, chatId, text, extra = {}) {
+    return api.sendMessage(chatId, parseTelegramMarkdownToHTML(text), { ...extra, parse_mode: 'HTML' });
 }
 
 export function formatBriefingHeader({ kind }) {
