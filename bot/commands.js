@@ -407,7 +407,14 @@ async function executeActions(actions, ticktick, currentTasks) {
         try {
             if (action.type === 'create') {
                 if (action.changes && action.changes.title) {
-                    await ticktick.createTask({ title: action.changes.title, ...action.changes });
+                    let safeDueDate = undefined;
+                    if (action.changes.dueDate) {
+                        safeDueDate = parseDateStringToTickTickISO(action.changes.dueDate) || undefined;
+                    }
+                    const createPayload = { ...action.changes, title: action.changes.title };
+                    if (safeDueDate) createPayload.dueDate = safeDueDate;
+
+                    await ticktick.createTask(createPayload);
                     outcomes.push(`✅ Created: "${action.changes.title}"`);
                 } else {
                     outcomes.push(`⚠️ Cannot create task: Missing title`);
