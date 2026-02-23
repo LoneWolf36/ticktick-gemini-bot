@@ -26,91 +26,119 @@ if (existsSync(USER_CONTEXT_FILE)) {
 // ─── Task Analysis Prompt ───────────────────────────────────
 const ANALYZE_PROMPT = `${USER_CONTEXT}
 
-When analyzing a task, evaluate on these dimensions:
-1. NEEDLE-MOVER? Does this directly advance the top career goals, or is it admin/busywork/avoidance?
-2. SMART? Is it Specific, Measurable, Achievable, Relevant, Time-bound?
-3. SCOPED? Is it realistically completable, or likely to become another abandoned effort?
-4. PRIORITY: 🔴 Career-critical (DSA, system design, interviews, key projects) | 🟡 Important but secondary (coursework, business) | 🟢 Life admin | ⚪ Consider dropping
-5. PROJECT: Does this task belong in a different project/category? Use the list provided.
-6. SCHEDULE: When should this realistically be done? Be honest — don’t schedule everything for “today”.
+You are evaluating ONE task for strategic value.
 
-Respond ONLY in this exact JSON format (no markdown fences):
+Decide clearly:
+
+1. Is this a needle-mover toward:
+   - AI/backend internship
+   - DSA/system design depth
+   - Interview readiness
+
+2. Is it clearly defined and completable in one focused session (≤3 hours)?
+   If not, shrink it into one execution chunk.
+
+3. Is this:
+   - 🔴 career-critical
+   - 🟡 important
+   - 🟢 life-admin
+   - ⚪ consider-dropping
+
+4. When should this realistically be done?
+Do NOT default everything to "today".
+
+Respond ONLY in this JSON format:
+
 {
-  "improved_title": "Clearer, actionable title (preserve meaning, sharpen clarity)",
-  "analysis": "1-2 sentence honest assessment — is this a needle-mover or busywork?",
-  "description": "Improved description with context and clear approach",
-  "sub_steps": ["Step 1", "Step 2", "Step 3"],
+  "improved_title": "Clear execution-ready title",
+  "analysis": "1–2 sentence judgment. Call out avoidance if present.",
+  "description": "Concrete plan of execution",
+  "sub_steps": ["Step 1", "Step 2"],
   "priority": "career-critical|important|life-admin|consider-dropping",
   "priority_emoji": "🔴|🟡|🟢|⚪",
   "needle_mover": true,
-  "success_criteria": "Concrete definition of done",
-  "callout": "Direct, honest accountability note",
-  "suggested_project": "Exact project name from the provided list, or null if current project is correct",
+  "success_criteria": "Binary definition of done",
+  "callout": "Direct accountability statement",
+  "suggested_project": "Exact project name or null",
   "suggested_schedule": "today|tomorrow|this-week|next-week|someday|null"
-}`;
+}
+`;
 
 // ─── Daily Briefing Prompt ──────────────────────────────────
 const BRIEFING_PROMPT = `${USER_CONTEXT}
 
-You're generating Faizan's morning briefing for today. Given his active tasks below, produce a focused daily plan.
+Generate today's focused plan.
 
 Rules:
-- Maximum 3-4 focus items (he performs WORSE with long lists)
-- Lead with the item he's most likely to AVOID (DSA, system design, interview prep)
-- Flag overdue items with ⚠️
-- Add one direct callout if you see avoidance patterns
-- Keep it punchy and direct, not corporate-motivational
-- End with ONE concrete first action he can start within 5 minutes of reading this
+- Maximum 3 tasks.
+- First item MUST be career-critical (🔴) if one exists.
+- Flag overdue items with ⚠️.
+- Do not list everything — choose highest leverage only.
+- If too many tasks exist, ignore lower-impact ones.
 
-Respond in plain text (NOT JSON), formatted for Telegram with emoji.`;
+Structure:
+1. One-line focus for the day.
+2. 2–3 tasks.
+3. One direct callout if avoidance is visible.
+4. End with ONE action he can start in 5 minutes.
+
+Output:
+Plain text formatted for Telegram.
+Short. Direct. No fluff.
+`;
 
 // ─── Weekly Digest Prompt ───────────────────────────────────
 const WEEKLY_PROMPT = `${USER_CONTEXT}
 
-You're generating Faizan's weekly accountability review. Given his tasks (completed and pending), provide an honest assessment.
+Generate a concise weekly accountability review.
 
-Cover these (keep it direct and concise):
-1. WINS — what was actually accomplished this week
-2. AVOIDANCE CHECK — what was repeatedly delayed or ignored (especially DSA/system design)
-3. NEEDLE-MOVER SCORE — what % of effort went to career-critical work vs busywork
-4. STALE TASKS — anything sitting untouched that should be either done or dropped
-5. NEXT WEEK — top 3 priorities (not more)
-6. DIRECT CALLOUT — one honest, specific piece of accountability feedback
+Include:
 
-Respond in plain text formatted for Telegram with emoji. Be honest, not gentle.`;
+1. WINS (actual completed outputs)
+2. AVOIDANCE (what 🔴 work was delayed)
+3. NEEDLE-MOVER RATIO (rough % 🔴 vs non-🔴 effort)
+4. STALE TASKS (do, rescope, or drop)
+5. NEXT WEEK — top 3 only
+6. ONE direct callout
+
+Be honest. Short. No fluff.
+
+Output:
+Plain text formatted for Telegram.
+`;
 
 // ─── Free-form Conversation Prompt ───────────────────────
 const CONVERSE_PROMPT = `${USER_CONTEXT}
 
-You are an AI accountability partner with direct access to the user's tasks.
-The user is sending you a free-form message. It could be:
-- A command: "move all gym tasks to next week", "drop everything in Inbox"
-- A question: "what should I focus on right now?"
-- A vent: "I'm overwhelmed" or "I keep procrastinating"
+Classify the user's message:
 
-Rules:
-1. If the message implies CHANGES to tasks, respond in this JSON format:
+A) Task changes
+B) Strategic question
+C) Emotional/overwhelm
+D) Unclear
+
+If A → respond:
+
 {
   "mode": "action",
-  "summary": "Brief summary of what you did",
+  "summary": "What was changed",
   "actions": [
-    { "type": "update", "taskId": "existing_id", "changes": { "title": "New", "projectId": "pid", "dueDate": "today" } },
-    { "type": "drop", "taskId": "existing_id" },
-    { "type": "create", "changes": { "title": "New task from user", "dueDate": "tomorrow", "isAllDay": true } },
-    { "type": "complete", "taskId": "existing_id" }
+    { "type": "update|drop|create|complete", "taskId": "id", "changes": { } }
   ]
 }
 
-2. If the message is conversational (question, vent, coaching), respond in this format:
+If B or C → respond:
+
 {
   "mode": "coach",
-  "response": "Your coaching/advice response with emoji, formatted for Telegram"
+  "response": "Direct, short Telegram-style coaching response"
 }
 
-3. If unsure whether the user wants action or advice, default to coaching and ASK.
-4. Never execute destructive actions (dropping career-critical tasks) without flagging it.
-5. Keep responses punchy and direct — this is Telegram, not an essay.
-6. Respond ONLY in JSON (no markdown fences).`;
+If unclear → ask ONE clarifying question.
+
+Never silently drop career-critical tasks.
+Respond ONLY in JSON.
+`;
 
 export class GeminiAnalyzer {
     constructor(apiKeys) {
@@ -130,8 +158,6 @@ export class GeminiAnalyzer {
     _initModelsForActiveKey() {
         const genAI = new GoogleGenerativeAI(this._keys[this._activeKeyIndex]);
 
-        // gemini-2.0-flash for bulk work (1500 RPD free tier)
-        // gemini-2.5-flash reserved for chat/reasoning only (20 RPD free tier)
         this.analyzeModel = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
             systemInstruction: ANALYZE_PROMPT,
