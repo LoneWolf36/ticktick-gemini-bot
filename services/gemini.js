@@ -109,18 +109,19 @@ B) "coach" (Strategic questions, emotional/overwhelm venting, requests for advic
 C) "clarify" (Unclear task references where you must ask a follow-up)
 
 CRITICAL RULES:
-1. Extract distinct, actionable steps from the user's message.
-2. Keep "title" under 10 words. Move all complex details (URLs, dates, locations) into "content".
-3. Avoid redundant repetition inside "content" blocks. Only include details highly relevant to that specific sub-step.
-4. Scale priority logically: (1: low, 3: medium, 5: high urgency).
+1. Strict Ambiguity: If the user refers to a task ambiguously, DO NOT GUESS. Mode = "clarify". The bot has no chat memory. You must tell the user exactly what is ambiguous and ask them to send a completely NEW message containing the full task context.
+2. If the user requests multiple independent tasks, or provides a dense block of text, you MUST intelligently break it down into multiple distinct "create" action objects. 
+3. Bundle ALL required attributes deeply into the primary "create" payload. NEVER append sequential "update" actions targeting newly created tasks.
+4. IF selecting "action" mode, act STRICTLY as a JSON parser. DO NOT write coaching monologues inside the title. Keep "title" under 10 words strictly as a concise summary. Place all verbose text, notes, and context exclusively into "content". Do not copy-paste repetitive block constraints into every sub-step's content.
+5. Infer priorities (0:none, 1:low, 3:medium, 5:high).
 
---- TASK DECOMPOSITION EXPECTATIONS ---
+<example_decomposition>
 Input: Flight FR123 to London departs Friday 6pm. I need to check in online, pack my bag, and book a taxi to the airport.
 Logic Mapping:
 - Task 1: Check-in for Flight FR123 (Content: Friday 6pm, FR123) [Priority: 5]
 - Task 2: Pack bag (Content: London trip) [Priority: 3]
 - Task 3: Book airport taxi (Content: Departs 6pm) [Priority: 3]
----------------------------------------
+</example_decomposition>
 `;
 
 export class GeminiAnalyzer {
