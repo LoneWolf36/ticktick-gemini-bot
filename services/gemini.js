@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import path from 'path';
 import { userTodayFormatted, PRIORITY_EMOJI } from '../bot/utils.js';
+import { analyzeSchema, converseSchema } from './schemas.js';
 
 // ─── User Context ────────────────────────────────────────────
 // Priority: 1) local user_context.js (gitignored), 2) USER_CONTEXT env var, 3) generic default
@@ -50,27 +51,9 @@ Do NOT default everything to "today".
 CRITICAL DATA PRESERVATION RULE:
 If the original task contains URLs, links, or specific reference notes, you MUST repurpose and preserve them. Do not destroy the user's data. Extract them verbatim into the \`resources\` array.
 
---- FEW-SHOT EXAMPLE ---
-User Task: "Do 15 puzzle problem"
-Output:
-{
-  "improved_title": "Solve 15-Puzzle Problem (A* Search Implementation)",
-  "analysis": "This is a direct needle-mover addressing a known weak area critical for interview preparation. It requires sustained deep work.",
-  "description": "Implement an optimal solution for the 15-Puzzle problem, focusing on understanding and applying the A* search algorithm with an appropriate heuristic (e.g., Manhattan distance).",
-  "sub_steps": [
-    "Dedicate a focused 2-3 hour block to research the problem and A* algorithm.",
-    "Outline state representation, heuristic, and priority queue.",
-    "Implement the solution in Python/Java and test edge cases."
-  ],
-  "resources": [],
-  "priority": "career-critical",
-  "priority_emoji": "🔴",
-  "needle_mover": true,
-  "success_criteria": "A fully functional and tested A* implementation demonstrating understanding.",
-  "callout": "This is exactly the type of delayed-reward, deep work task you struggle to start. Break it down, commit to a focused block tomorrow morning, and do not switch tasks until complete.",
-  "suggested_project": "🧠Growth & Learning",
-  "suggested_schedule": "today"
-}
+--- FEW-SHOT EXAMPLE NARRATIVE ---
+Task: "Do 15 puzzle problem"
+Output Mindset: You realize this is a direct needle-mover for interview prep. It needs 2-3 hours of deep work. You title it "Solve 15-Puzzle Problem (A* Search Implementation)". You assign it as career-critical (🔴). You tell the user to break it down and commit to a focused block tomorrow morning without switching tasks.
 ------------------------
 `;
 
@@ -106,7 +89,7 @@ Include:
 
 1. WINS (actual completed outputs)
 2. AVOIDANCE (what 🔴 work was delayed)
-3. NEEDLE-MOVER RATIO (Calculate this by first counting the total number of completed tasks, then counting the number of 🔴 tasks completed, and finally estimating a rough percentage of 🔴 vs non-🔴 effort).
+3. NEEDLE-MOVER RATIO: You MUST write your calculation explicitly. Format: "Needle-Mover Ratio: 🔴 Y out of X tasks (Z%)". 
 4. STALE TASKS (do, rescope, or drop)
 5. NEXT WEEK — top 3 only
 6. ONE direct callout
@@ -127,27 +110,8 @@ C) "clarify" (Unclear task references where you must ask a follow-up)
 
 CRITICAL RULES:
 1. If the user refers to a task ambiguously, and multiple tasks could match, DO NOT GUESS. Mode = "clarify".
-2. For dates in changes: If a specific day is requested (e.g., "Wednesday"), you MUST format "dueDate" as "YYYY-MM-DD".
-3. For creating tasks: Action type MUST be "create", taskId MUST be null, and "changes" MUST include a "title". Infer and assign "projectId", "priority" (0:none, 1:low, 3:medium, 5:high), and "dueDate" based on context.
-
-Respond ONLY with a valid JSON object matching this exact schema:
-{
-  "mode": "action|coach|clarify",
-  "summary": "Short summary of what was changed (Required if mode=action)",
-  "response": "Direct, short Telegram-style coaching response using **asterisks** for bold. (Required if mode=coach or clarify)",
-  "actions": [
-    {
-      "type": "update|drop|create|complete",
-      "taskId": "id (or null for create)",
-      "changes": {
-          "title": "New title",
-          "dueDate": "YYYY-MM-DD",
-          "projectId": "id of the best matching project",
-          "priority": 3
-      }
-    }
-  ]
-}
+2. If requesting task creation, the action type MUST be "create".
+3. Infer priorities (0:none, 1:low, 3:medium, 5:high).
 `;
 
 export class GeminiAnalyzer {
@@ -176,6 +140,7 @@ export class GeminiAnalyzer {
                 topP: 0.9,
                 maxOutputTokens: 4096,
                 responseMimeType: "application/json",
+                responseSchema: analyzeSchema,
             },
             thinkingConfig: { thinkingBudget: 1024 },
         });
@@ -208,6 +173,7 @@ export class GeminiAnalyzer {
                 topP: 0.9,
                 maxOutputTokens: 4096,
                 responseMimeType: "application/json",
+                responseSchema: converseSchema,
             },
             thinkingConfig: { thinkingBudget: 1024 },
         });
