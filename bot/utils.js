@@ -364,15 +364,15 @@ export function pendingToAnalysis(data) {
 
 export function buildAutoApplyNotification(results) {
     if (results.length === 0) return null;
-    const lines = [`⚡ Auto-applied ${results.length} task(s):`];
+    const lines = [`⚡ **Auto-applied ${results.length} task(s):**`];
     for (const r of results) {
         const parts = [];
         if (r.schedule) parts.push(`due ${r.schedule}`);
         if (r.movedTo) parts.push(`moved to ${r.movedTo}`);
         const detail = parts.length > 0 ? ` → ${parts.join(', ')}` : '';
-        lines.push(`• "${r.title}"${detail}`);
+        lines.push(`• **"${r.title}"**${detail}`);
     }
-    lines.push(`\nRun /undo to revert the last one.`);
+    lines.push(`\n*Run /undo to revert the last one.*`);
     return lines.join('\n');
 }
 

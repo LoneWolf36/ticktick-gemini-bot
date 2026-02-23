@@ -2,7 +2,7 @@
 // These move tasks from pendingTasks → processedTasks
 import { InlineKeyboard } from 'grammy';
 import * as store from '../services/store.js';
-import { buildTickTickUpdate, isAuthorized, buildUndoEntry, PRIORITY_LABEL } from './utils.js';
+import { buildTickTickUpdate, isAuthorized, buildUndoEntry, PRIORITY_LABEL, parseTelegramMarkdownToHTML } from './utils.js';
 
 // ─── Build Keyboard for Task Review ─────────────────────────
 
@@ -66,7 +66,8 @@ export function registerCallbacks(bot, ticktick, gemini) {
 
             await ctx.answerCallbackQuery({ text: '✅ Applied to TickTick!' });
             await ctx.editMessageText(
-                `✅ Updated: "${data.improvedTitle || data.originalTitle}"${movedNote}${dateNote}\n\nApplied successfully.`
+                parseTelegramMarkdownToHTML(`✅ **Updated:** "${data.improvedTitle || data.originalTitle}"${movedNote}${dateNote}\n\n_Applied successfully._`),
+                { parse_mode: 'HTML' }
             );
         } catch (err) {
             console.error('Approve error:', err.message);
@@ -89,7 +90,7 @@ export function registerCallbacks(bot, ticktick, gemini) {
 
         await store.skipTask(taskId);
         await ctx.answerCallbackQuery({ text: '⏭ Skipped' });
-        await ctx.editMessageText('⏭ Skipped — task left unchanged in TickTick.');
+        await ctx.editMessageText(parseTelegramMarkdownToHTML('⏭ **Skipped** — task left unchanged in TickTick.'), { parse_mode: 'HTML' });
     });
 
     // ─── Drop: move pending → processed, flag for removal ─────
@@ -108,7 +109,8 @@ export function registerCallbacks(bot, ticktick, gemini) {
         await store.dropTask(taskId);
         await ctx.answerCallbackQuery({ text: '⚪ Flagged for removal' });
         await ctx.editMessageText(
-            '⚪ Consider dropping — this task has been flagged.\nGo to TickTick to delete it if you agree.'
+            parseTelegramMarkdownToHTML('⚪ **Consider dropping** — this task has been flagged.\n_Go to TickTick to delete it if you agree._'),
+            { parse_mode: 'HTML' }
         );
     });
 }

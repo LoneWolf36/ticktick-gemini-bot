@@ -180,7 +180,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
                 if (targetTasks.length > 5) {
                     doneMsg += `\n\n📝 ${targetTasks.length - 5} more remain. Run /scan again for the next batch.`;
                 }
-                await ctx.reply(doneMsg.trim());
+                await ctx.reply(parseTelegramMarkdownToHTML(doneMsg.trim()), { parse_mode: 'HTML' });
             } else {
                 if (targetTasks.length > 5) {
                     await ctx.reply(`📝 Sent ${batch.length} of ${targetTasks.length}. Run /review again for more.`);
@@ -260,21 +260,21 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             await store.removeLastUndoEntry();
 
             // Build detailed context of what was reverted
-            const lines = [`↩️ Reverted: "${last.originalTitle}"`];
+            const lines = [`↩️ **Reverted:** "${last.originalTitle}"`];
             if (last.appliedTitle && last.appliedTitle !== last.originalTitle) {
-                lines.push(`  Title: "${last.appliedTitle}" → "${last.originalTitle}"`);
+                lines.push(`  **Title:** "${last.appliedTitle}" → "${last.originalTitle}"`);
             }
             if (last.appliedPriority) {
-                lines.push(`  Priority: ${last.appliedPriority} → original`);
+                lines.push(`  **Priority:** ${last.appliedPriority} → original`);
             }
             if (last.appliedProject) {
-                lines.push(`  Project: moved back from ${last.appliedProject}`);
+                lines.push(`  **Project:** moved back from ${last.appliedProject}`);
             }
             if (last.appliedSchedule) {
-                lines.push(`  Schedule: removed (was: ${last.appliedSchedule})`);
+                lines.push(`  **Schedule:** removed (was: ${last.appliedSchedule})`);
             }
-            lines.push('\nTask restored to its original state.');
-            await ctx.reply(lines.join('\n'));
+            lines.push('\n*Task restored to its original state.*');
+            await ctx.reply(parseTelegramMarkdownToHTML(lines.join('\n')), { parse_mode: 'HTML' });
 
             console.log(`[UNDO] Reverted "${last.originalTitle}" (${last.action}) at ${new Date().toISOString()}`);
         } catch (err) {
