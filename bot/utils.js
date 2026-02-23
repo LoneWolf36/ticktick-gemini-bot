@@ -392,10 +392,10 @@ function truncateMessage(text, limit = 3800) {
 
 export function formatBriefingHeader({ kind }) {
     if (kind === 'daily') {
-        return `🌅 MORNING BRIEFING\n${userTodayFormatted()}\n${'─'.repeat(24)}\n\n`;
+        return `<b>🌅 MORNING BRIEFING</b>\n<i>${userTodayFormatted()}</i>\n${'─'.repeat(24)}\n\n`;
     }
     if (kind === 'weekly') {
-        return `📊 WEEKLY ACCOUNTABILITY REVIEW\n${'─'.repeat(28)}\n\n`;
+        return `<b>📊 WEEKLY ACCOUNTABILITY REVIEW</b>\n${'─'.repeat(28)}\n\n`;
     }
     return '';
 }

@@ -295,7 +295,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         try {
             const tasks = await ticktick.getAllTasks();
             const briefing = await gemini.generateDailyBriefing(tasks);
-            await ctx.reply(formatBriefingHeader({ kind: 'daily' }) + briefing);
+            await ctx.reply(formatBriefingHeader({ kind: 'daily' }) + briefing, { parse_mode: 'HTML' });
             await store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
@@ -320,7 +320,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             const processed = store.getProcessedTasks();
             const thisWeek = filterProcessedThisWeek(processed, ['processedAt']);
             const digest = await gemini.generateWeeklyDigest(tasks, thisWeek);
-            await ctx.reply(formatBriefingHeader({ kind: 'weekly' }) + digest);
+            await ctx.reply(formatBriefingHeader({ kind: 'weekly' }) + digest, { parse_mode: 'HTML' });
             await store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
@@ -374,18 +374,18 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             if (result.mode === 'action' && result.actions?.length > 0) {
                 // Execute the actions Gemini suggested
                 const { outcomes, hasUndoableActions } = await executeActions(result.actions, ticktick, tasks);
-                let response = result.summary || '✅ Done.';
+                let response = result.summary ? `<b>${result.summary}</b>` : '✅ <b>Done.</b>';
                 if (outcomes.length > 0) {
                     response += '\n\n' + outcomes.join('\n');
                 }
                 if (hasUndoableActions) {
-                    response += '\n\nRun /undo to revert the last change.';
+                    response += '\n\n<i>Run /undo to revert the last change.</i>';
                 }
-                await ctx.reply(response);
+                await ctx.reply(response, { parse_mode: 'HTML' });
             } else if (result.mode === 'coach') {
-                await ctx.reply(result.response || 'I\'m here to help. Ask me anything about your tasks!');
+                await ctx.reply(result.response || 'I\'m here to help. Ask me anything about your tasks!', { parse_mode: 'HTML' });
             } else {
-                await ctx.reply(result.response || result.summary || 'Got it! Let me know if you need anything else.');
+                await ctx.reply(result.response || result.summary || 'Got it! Let me know if you need anything else.', { parse_mode: 'HTML' });
             }
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
