@@ -269,6 +269,10 @@ export class GeminiAnalyzer {
                 const result = await model.generateContent(prompt);
                 return result;
             } catch (err) {
+                const activeK = this._keys[this._activeKeyIndex];
+                const maskedKey = activeK ? `${activeK.slice(0, 4)}...${activeK.slice(-4)}` : 'undefined';
+                console.error(`[DIAGNOSTICS] Key ${this._activeKeyIndex + 1}/${this._keys.length} [${maskedKey}] exactly threw: [${err.status}] ${err.message}`);
+
                 if (this._isDailyQuotaError(err)) {
                     // Mark current key as exhausted
                     const resetMs = this._getQuotaResetMs();
