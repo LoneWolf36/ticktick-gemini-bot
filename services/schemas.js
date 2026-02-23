@@ -3,7 +3,7 @@ import { SchemaType } from '@google/generative-ai';
 export const analyzeSchema = {
     type: SchemaType.OBJECT,
     properties: {
-        improved_title: { type: SchemaType.STRING, description: "Clear execution-ready title" },
+        improved_title: { type: SchemaType.STRING, description: "Clear execution-ready title. Must be verb-first and concise." },
         analysis: { type: SchemaType.STRING, description: "Detailed judgment of why it is prioritized this way." },
         description: { type: SchemaType.STRING, description: "Actionable summary of how to execute the task." },
         sub_steps: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING }, description: "Step-by-step breakdown. Leave explicitly null if the task takes less than 15 minutes.", nullable: true },
@@ -28,7 +28,7 @@ export const converseSchema = {
         response: { type: SchemaType.STRING, description: "Direct, short Telegram-style coaching response using **asterisks** for bold. (Required if mode=coach or clarify)", nullable: true },
         actions: {
             type: SchemaType.ARRAY,
-            description: "List of updates to make to TickTick. Leave empty if no action needed.",
+            description: "List of commands. If the user asks for multiple completely different tasks, output multiple distinct 'create' actions. CRITICAL rules: For any individual task you create, you MUST populate the 'content' field with all verbose details! Do not bypass the 'content' field. NEVER try to update a task you just created.",
             items: {
                 type: SchemaType.OBJECT,
                 properties: {
@@ -37,9 +37,10 @@ export const converseSchema = {
                     changes: {
                         type: SchemaType.OBJECT,
                         properties: {
-                            title: { type: SchemaType.STRING, nullable: true },
-                            dueDate: { type: SchemaType.STRING, description: "YYYY-MM-DD", nullable: true },
-                            projectId: { type: SchemaType.STRING, nullable: true },
+                            title: { type: SchemaType.STRING, description: "Very short actionable title (e.g. 'Register for ABC', 'Buy milk'). Details go into the 'content' field.", nullable: true },
+                            content: { type: SchemaType.STRING, description: "Detailed task context, URLs, dates, locations, notes, or long-form coaching reasoning.", nullable: true },
+                            dueDate: { type: SchemaType.STRING, description: "YYYY-MM-DD string, inferred strictly relative to the Current Date context provided. Null if no date is implied.", nullable: true },
+                            projectId: { type: SchemaType.STRING, description: "The exact 24-character ID hash of the project from the provided list. Do NOT use the project name.", nullable: true },
                             priority: { type: SchemaType.INTEGER, description: "Must be exactly 0, 1, 3, or 5 if changing", nullable: true }
                         }
                     }

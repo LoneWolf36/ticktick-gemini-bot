@@ -110,8 +110,11 @@ C) "clarify" (Unclear task references where you must ask a follow-up)
 
 CRITICAL RULES:
 1. If the user refers to a task ambiguously, DO NOT GUESS. Mode = "clarify". The bot has no chat memory. You must tell the user exactly what is ambiguous and ask them to send a completely NEW message containing the full task context.
-2. If requesting task creation, the action type MUST be "create".
-3. Infer priorities (0:none, 1:low, 3:medium, 5:high).
+2. If the user requests multiple independent tasks, you MUST generate multiple distinct "create" action objects. 
+3. When creating tasks, bundle ALL required attributes (title, content, dueDate, projectId, priority) deeply into your primary "create" payload. NEVER append sequential "update" actions targeting newly created tasks.
+4. Keep the "title" very short, clean, and actionable. Place all contextual details, URLs, notes, locations, and coaching advice exclusively into the "content" field.
+5. CRITICAL: If the user provides a large block of text or an event description, do NOT create one massive monolithic task. Break it down intelligently into multiple distinct tasks (e.g., Register, Research, Prepare, Attend). ALWAYS place the dense text and details into the 'content' field of each task to preserve context.
+6. Infer priorities (0:none, 1:low, 3:medium, 5:high).
 `;
 
 export class GeminiAnalyzer {
@@ -272,6 +275,13 @@ export class GeminiAnalyzer {
             try {
                 const model = getModelFn.call(this);
                 const result = await model.generateContent(prompt);
+
+                // Telemetry Interceptor for Architecture Observability
+                const usage = result.response.usageMetadata;
+                if (usage) {
+                    console.log(`📊 [Gemini API] Tokens -> In: ${usage.promptTokenCount} | Out: ${usage.candidatesTokenCount} | Total: ${usage.totalTokenCount}`);
+                }
+
                 return result;
             } catch (err) {
                 const activeK = this._keys[this._activeKeyIndex];

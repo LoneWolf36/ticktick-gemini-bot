@@ -422,6 +422,11 @@ async function executeActions(actions, ticktick, currentTasks) {
                 continue;
             }
 
+            if (!action.taskId) {
+                outcomes.push(`⚠️ Skipped '${action.type}' action: AI did not provide a valid Task ID.`);
+                continue;
+            }
+
             const task = currentTasks.find(t => t.id === action.taskId);
             if (!task) {
                 outcomes.push(`⚠️ Task not found: ${action.taskId}`);

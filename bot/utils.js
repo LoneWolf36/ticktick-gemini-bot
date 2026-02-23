@@ -388,6 +388,33 @@ function truncateMessage(text, limit = 3800) {
     return text.slice(0, limit) + '\n\n... (truncated)';
 }
 
+/** Recursively break texts over maxLength. Splits natively on \n\n, then \n, then space. */
+export function chunkString(text, maxLength = 3900) {
+    if (!text) return [];
+    if (text.length <= maxLength) return [text];
+
+    let splitIndex = maxLength;
+    // Try to find a safe boundary
+    const doubleNewline = text.lastIndexOf('\n\n', maxLength);
+    if (doubleNewline > 0) {
+        splitIndex = doubleNewline;
+    } else {
+        const newline = text.lastIndexOf('\n', maxLength);
+        if (newline > 0) {
+            splitIndex = newline;
+        } else {
+            const space = text.lastIndexOf(' ', maxLength);
+            if (space > 0) splitIndex = space;
+        }
+    }
+
+    const chunk = text.slice(0, splitIndex).trim();
+    const rest = text.slice(splitIndex).trim();
+
+    if (!rest) return [chunk];
+    return [chunk, ...chunkString(rest, maxLength)];
+}
+
 // ─── Formatting Helpers ─────────────────────────────────────
 
 export function escapeHTML(str) {
@@ -400,7 +427,8 @@ export function escapeHTML(str) {
 
 export function parseTelegramMarkdownToHTML(text) {
     if (!text) return '';
-    // First, strictly escape everything so Telegram doesn't crash on < or &
+
+    // strictly escape everything so Telegram doesn't crash on < or &
     let escaped = escapeHTML(text);
 
     // Now safely convert **bold** to <b>bold</b>
@@ -413,15 +441,27 @@ export function parseTelegramMarkdownToHTML(text) {
 // ─── Semantic Telegram Output Wrappers ──────────────────────
 
 export async function replyWithMarkdown(ctx, text, extra = {}) {
-    return ctx.reply(parseTelegramMarkdownToHTML(text), { ...extra, parse_mode: 'HTML' });
+    const chunks = chunkString(text, 3900);
+    let lastMsg;
+    for (const chunk of chunks) {
+        lastMsg = await ctx.reply(parseTelegramMarkdownToHTML(chunk), { ...extra, parse_mode: 'HTML' });
+    }
+    return lastMsg;
 }
 
 export async function editWithMarkdown(ctx, text, extra = {}) {
-    return ctx.editMessageText(parseTelegramMarkdownToHTML(text), { ...extra, parse_mode: 'HTML' });
+    // Single message edits cannot be auto-paginated. Safe truncation applied natively.
+    const safeText = truncateMessage(text, 3900);
+    return ctx.editMessageText(parseTelegramMarkdownToHTML(safeText), { ...extra, parse_mode: 'HTML' });
 }
 
 export async function sendWithMarkdown(api, chatId, text, extra = {}) {
-    return api.sendMessage(chatId, parseTelegramMarkdownToHTML(text), { ...extra, parse_mode: 'HTML' });
+    const chunks = chunkString(text, 3900);
+    let lastMsg;
+    for (const chunk of chunks) {
+        lastMsg = await api.sendMessage(chatId, parseTelegramMarkdownToHTML(chunk), { ...extra, parse_mode: 'HTML' });
+    }
+    return lastMsg;
 }
 
 export function formatBriefingHeader({ kind }) {
