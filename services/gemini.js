@@ -50,22 +50,28 @@ Do NOT default everything to "today".
 CRITICAL DATA PRESERVATION RULE:
 If the original task contains URLs, links, or specific reference notes, you MUST repurpose and preserve them. Do not destroy the user's data. Extract them verbatim into the \`resources\` array.
 
-Respond ONLY in this JSON format:
-
+--- FEW-SHOT EXAMPLE ---
+User Task: "Do 15 puzzle problem"
+Output:
 {
-  "improved_title": "Clear execution-ready title",
-  "analysis": "1–2 sentence judgment. Call out avoidance if present.",
-  "description": "Concrete plan of execution",
-  "sub_steps": ["Step 1", "Step 2"],
-  "resources": ["https://link.com - Context", "Raw note snippet to preserve"],
-  "priority": "career-critical|important|life-admin|consider-dropping",
-  "priority_emoji": "🔴|🟡|🟢|⚪",
+  "improved_title": "Solve 15-Puzzle Problem (A* Search Implementation)",
+  "analysis": "This is a direct needle-mover addressing a known weak area critical for interview preparation. It requires sustained deep work.",
+  "description": "Implement an optimal solution for the 15-Puzzle problem, focusing on understanding and applying the A* search algorithm with an appropriate heuristic (e.g., Manhattan distance).",
+  "sub_steps": [
+    "Dedicate a focused 2-3 hour block to research the problem and A* algorithm.",
+    "Outline state representation, heuristic, and priority queue.",
+    "Implement the solution in Python/Java and test edge cases."
+  ],
+  "resources": [],
+  "priority": "career-critical",
+  "priority_emoji": "🔴",
   "needle_mover": true,
-  "success_criteria": "Binary definition of done",
-  "callout": "Direct accountability statement",
-  "suggested_project": "Exact project name or null",
-  "suggested_schedule": "today|tomorrow|this-week|next-week|someday|null"
+  "success_criteria": "A fully functional and tested A* implementation demonstrating understanding.",
+  "callout": "This is exactly the type of delayed-reward, deep work task you struggle to start. Break it down, commit to a focused block tomorrow morning, and do not switch tasks until complete.",
+  "suggested_project": "🧠Growth & Learning",
+  "suggested_schedule": "today"
 }
+------------------------
 `;
 
 // ─── Daily Briefing Prompt ──────────────────────────────────
@@ -100,7 +106,7 @@ Include:
 
 1. WINS (actual completed outputs)
 2. AVOIDANCE (what 🔴 work was delayed)
-3. NEEDLE-MOVER RATIO (rough % 🔴 vs non-🔴 effort)
+3. NEEDLE-MOVER RATIO (Calculate this by first counting the total number of completed tasks, then counting the number of 🔴 tasks completed, and finally estimating a rough percentage of 🔴 vs non-🔴 effort).
 4. STALE TASKS (do, rescope, or drop)
 5. NEXT WEEK — top 3 only
 6. ONE direct callout
@@ -114,48 +120,34 @@ Plain text formatted for Telegram. Use **asterisks** for bold emphasis.
 // ─── Free-form Conversation Prompt ───────────────────────
 const CONVERSE_PROMPT = `${USER_CONTEXT}
 
-Classify the user's message:
-
-A) Task changes
-B) Strategic question
-C) Emotional/overwhelm
-D) Unclear
+Classify the user's message into one of three modes:
+A) "action" (Task modifications, creations, deletions, or completion requests)
+B) "coach" (Strategic questions, emotional/overwhelm venting, requests for advice)
+C) "clarify" (Unclear task references where you must ask a follow-up)
 
 CRITICAL RULES:
-1. If the user refers to a task ambiguously, and multiple tasks could match, DO NOT GUESS. Classify as D (Unclear) and ask ONE clarifying question.
-2. For dates in changes: If a specific day is requested (e.g., "Wednesday"), you MUST format "dueDate" as "YYYY-MM-DD". Do NOT output text like "Wednesday" or "Feb 25".
-3. For creating tasks: Action type MUST be "create", taskId can be null, and "changes" MUST include a "title". You should also proactively infer and assign "projectId", "priority" (0:none, 1:low, 3:medium, 5:high), and "dueDate" based on the user's input.
+1. If the user refers to a task ambiguously, and multiple tasks could match, DO NOT GUESS. Mode = "clarify".
+2. For dates in changes: If a specific day is requested (e.g., "Wednesday"), you MUST format "dueDate" as "YYYY-MM-DD".
+3. For creating tasks: Action type MUST be "create", taskId MUST be null, and "changes" MUST include a "title". Infer and assign "projectId", "priority" (0:none, 1:low, 3:medium, 5:high), and "dueDate" based on context.
 
-If A → respond:
-
+Respond ONLY with a valid JSON object matching this exact schema:
 {
-  "mode": "action",
-  "summary": "What was changed",
+  "mode": "action|coach|clarify",
+  "summary": "Short summary of what was changed (Required if mode=action)",
+  "response": "Direct, short Telegram-style coaching response using **asterisks** for bold. (Required if mode=coach or clarify)",
   "actions": [
-    { 
-      "type": "update|drop|create|complete", 
-      "taskId": "id (or null for create)", 
-      "changes": { 
-          "title": "New title (required for create)",
+    {
+      "type": "update|drop|create|complete",
+      "taskId": "id (or null for create)",
+      "changes": {
+          "title": "New title",
           "dueDate": "YYYY-MM-DD",
           "projectId": "id of the best matching project",
           "priority": 3
-      } 
+      }
     }
   ]
 }
-
-If B or C → respond:
-
-{
-  "mode": "coach",
-  "response": "Direct, short Telegram-style coaching response. Use **asterisks** for bold."
-}
-
-If unclear → ask ONE clarifying question.
-
-Never silently drop career-critical tasks.
-Respond ONLY in JSON.
 `;
 
 export class GeminiAnalyzer {
@@ -183,7 +175,9 @@ export class GeminiAnalyzer {
                 temperature: 0.3,
                 topP: 0.9,
                 maxOutputTokens: 4096,
+                responseMimeType: "application/json",
             },
+            thinkingConfig: { thinkingBudget: 1024 },
         });
 
         this.briefingModel = genAI.getGenerativeModel({
@@ -213,6 +207,7 @@ export class GeminiAnalyzer {
                 temperature: 0.8,
                 topP: 0.9,
                 maxOutputTokens: 4096,
+                responseMimeType: "application/json",
             },
             thinkingConfig: { thinkingBudget: 1024 },
         });
@@ -369,19 +364,8 @@ export class GeminiAnalyzer {
     }
 
     _parseAnalysis(text, task) {
-
         try {
-            // Strip markdown fences and any surrounding text
-            let cleaned = text.replace(/^```json?\s*/i, '').replace(/\s*```$/i, '');
-
-            // Extract JSON object between first { and last } (handles Gemini wrapping in text)
-            const firstBrace = cleaned.indexOf('{');
-            const lastBrace = cleaned.lastIndexOf('}');
-            if (firstBrace !== -1 && lastBrace > firstBrace) {
-                cleaned = cleaned.slice(firstBrace, lastBrace + 1);
-            }
-
-            return JSON.parse(cleaned);
+            return JSON.parse(text);
         } catch {
             console.warn('⚠ Could not parse Gemini analysis as JSON, raw:', text.slice(0, 300));
             return {
@@ -453,12 +437,11 @@ export class GeminiAnalyzer {
         const result = await this._generateWithFailover(() => this.chatModel, prompt, { transientBaseMs: 10 });
         const raw = result.response.text().trim();
 
-        // Try to parse JSON
-        const cleaned = raw.replace(/```json\n?/g, '').replace(/```\n?/g, '').trim();
+        // Try to parse JSON natively since we enforced responseMimeType
         try {
-            return JSON.parse(cleaned);
+            return JSON.parse(raw);
         } catch {
-            // If Gemini didn't return valid JSON, treat as coaching response
+            // If Gemini failed strict JSON enforcement
             return { mode: 'coach', response: raw };
         }
     }
