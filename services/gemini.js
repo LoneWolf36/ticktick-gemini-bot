@@ -89,7 +89,7 @@ Include:
 
 1. WINS (actual completed outputs)
 2. AVOIDANCE (what 🔴 work was delayed)
-3. NEEDLE-MOVER RATIO: You MUST write your calculation explicitly. Format: "Needle-Mover Ratio: 🔴 Y out of X tasks (Z%)". 
+3. NEEDLE-MOVER RATIO: Format specifically as "🔴 Y out of X tasks (Z%)". Use your internal invisible reasoning to do the math flawlessly. Do not output the calculation steps.
 4. STALE TASKS (do, rescope, or drop)
 5. NEXT WEEK — top 3 only
 6. ONE direct callout
@@ -109,12 +109,18 @@ B) "coach" (Strategic questions, emotional/overwhelm venting, requests for advic
 C) "clarify" (Unclear task references where you must ask a follow-up)
 
 CRITICAL RULES:
-1. If the user refers to a task ambiguously, DO NOT GUESS. Mode = "clarify". The bot has no chat memory. You must tell the user exactly what is ambiguous and ask them to send a completely NEW message containing the full task context.
-2. If the user requests multiple independent tasks, you MUST generate multiple distinct "create" action objects. 
-3. When creating tasks, bundle ALL required attributes (title, content, dueDate, projectId, priority) deeply into your primary "create" payload. NEVER append sequential "update" actions targeting newly created tasks.
-4. Keep the "title" very short, clean, and actionable. Place all contextual details, URLs, notes, locations, and coaching advice exclusively into the "content" field.
-5. CRITICAL: If the user provides a large block of text or an event description, do NOT create one massive monolithic task. Break it down intelligently into multiple distinct tasks (e.g., Register, Research, Prepare, Attend). ALWAYS place the dense text and details into the 'content' field of each task to preserve context.
-6. Infer priorities (0:none, 1:low, 3:medium, 5:high).
+1. Extract distinct, actionable steps from the user's message.
+2. Keep "title" under 10 words. Move all complex details (URLs, dates, locations) into "content".
+3. Avoid redundant repetition inside "content" blocks. Only include details highly relevant to that specific sub-step.
+4. Scale priority logically: (1: low, 3: medium, 5: high urgency).
+
+--- TASK DECOMPOSITION EXPECTATIONS ---
+Input: Flight FR123 to London departs Friday 6pm. I need to check in online, pack my bag, and book a taxi to the airport.
+Logic Mapping:
+- Task 1: Check-in for Flight FR123 (Content: Friday 6pm, FR123) [Priority: 5]
+- Task 2: Pack bag (Content: London trip) [Priority: 3]
+- Task 3: Book airport taxi (Content: Departs 6pm) [Priority: 3]
+---------------------------------------
 `;
 
 export class GeminiAnalyzer {
@@ -156,6 +162,7 @@ export class GeminiAnalyzer {
                 topP: 0.9,
                 maxOutputTokens: 4096,
             },
+            thinkingConfig: { thinkingBudget: 1024 },
         });
 
         this.weeklyModel = genAI.getGenerativeModel({
@@ -166,19 +173,19 @@ export class GeminiAnalyzer {
                 topP: 0.9,
                 maxOutputTokens: 8192,
             },
+            thinkingConfig: { thinkingBudget: 1024 },
         });
 
         this.chatModel = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
             systemInstruction: CONVERSE_PROMPT,
             generationConfig: {
-                temperature: 0.8,
+                temperature: 0.4,
                 topP: 0.9,
                 maxOutputTokens: 4096,
                 responseMimeType: "application/json",
                 responseSchema: converseSchema,
             },
-            thinkingConfig: { thinkingBudget: 1024 },
         });
     }
 
