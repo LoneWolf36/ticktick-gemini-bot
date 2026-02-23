@@ -133,7 +133,7 @@ export class GeminiAnalyzer {
         // gemini-2.0-flash for bulk work (1500 RPD free tier)
         // gemini-2.5-flash reserved for chat/reasoning only (20 RPD free tier)
         this.analyzeModel = genAI.getGenerativeModel({
-            model: 'gemini-2.0-flash',
+            model: 'gemini-1.5-flash',
             systemInstruction: ANALYZE_PROMPT,
             generationConfig: {
                 temperature: 0.3,
@@ -143,7 +143,7 @@ export class GeminiAnalyzer {
         });
 
         this.briefingModel = genAI.getGenerativeModel({
-            model: 'gemini-2.0-flash',
+            model: 'gemini-1.5-flash',
             systemInstruction: BRIEFING_PROMPT,
             generationConfig: {
                 temperature: 0.8,
@@ -153,7 +153,7 @@ export class GeminiAnalyzer {
         });
 
         this.weeklyModel = genAI.getGenerativeModel({
-            model: 'gemini-2.0-flash',
+            model: 'gemini-1.5-flash',
             systemInstruction: WEEKLY_PROMPT,
             generationConfig: {
                 temperature: 0.8,
