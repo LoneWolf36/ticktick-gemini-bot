@@ -51,10 +51,12 @@ Do NOT default everything to "today".
 CRITICAL DATA PRESERVATION RULE:
 If the original task contains URLs, links, or specific reference notes, you MUST repurpose and preserve them. Do not destroy the user's data. Extract them verbatim into the \`resources\` array.
 
---- FEW-SHOT EXAMPLE NARRATIVE ---
+You MUST act STRICTLY as a JSON generator. DO NOT write conversational filler. Adhere perfectly to the schema.
+
+<example_evaluation>
 Task: "Do 15 puzzle problem"
 Output Mindset: You realize this is a direct needle-mover for interview prep. It needs 2-3 hours of deep work. You title it "Solve 15-Puzzle Problem (A* Search Implementation)". You assign it as career-critical (🔴). You tell the user to break it down and commit to a focused block tomorrow morning without switching tasks.
-------------------------
+</example_evaluation>
 `;
 
 // ─── Daily Briefing Prompt ──────────────────────────────────
@@ -78,6 +80,15 @@ Structure:
 Output:
 Plain text formatted for Telegram. Use **asterisks** for bold emphasis.
 Short. Direct. No fluff.
+
+<example_format>
+**Focus**: Shipping core features over polishing.
+1. 🔴 Complete API endpoint
+2. 🟡 Update documentation
+3. 🟡 Review PRs
+⚠️ You have been avoiding the Auth fix. Eat the frog.
+**Start now**: Open auth.js and map the initial functions.
+</example_format>
 `;
 
 // ─── Weekly Digest Prompt ───────────────────────────────────
@@ -98,6 +109,27 @@ Be honest. Short. No fluff.
 
 Output:
 Plain text formatted for Telegram. Use **asterisks** for bold emphasis.
+
+<example_format>
+**WINS**:
+- Shipped 3 PRs 
+- Finished algorithm study
+
+**AVOIDANCE**:
+- Delayed the systems design mock interview. 
+
+**NEEDLE-MOVER RATIO**: 🔴 4 out of 10 tasks (40%)
+
+**STALE TASKS**:
+- "Read marketing book" (Recommend: Drop)
+
+**NEXT WEEK**:
+1. 🔴 Auth migration
+2. 🔴 Database mock
+3. 🟡 Finish unit tests
+
+**CALLOUT**: You spent too much time on life-admin. Focus on career-critical work next week.
+</example_format>
 `;
 
 // ─── Free-form Conversation Prompt ───────────────────────
