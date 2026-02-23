@@ -124,6 +124,7 @@ D) Unclear
 CRITICAL RULES:
 1. If the user refers to a task ambiguously, and multiple tasks could match, DO NOT GUESS. Classify as D (Unclear) and ask ONE clarifying question.
 2. For dates in changes: If a specific day is requested (e.g., "Wednesday"), you MUST format "dueDate" as "YYYY-MM-DD". Do NOT output text like "Wednesday" or "Feb 25".
+3. For creating tasks: Action type MUST be "create", taskId can be null, and "changes" MUST include a "title".
 
 If A → respond:
 
@@ -131,7 +132,14 @@ If A → respond:
   "mode": "action",
   "summary": "What was changed",
   "actions": [
-    { "type": "update|drop|create|complete", "taskId": "id", "changes": { "dueDate": "YYYY-MM-DD" } }
+    { 
+      "type": "update|drop|create|complete", 
+      "taskId": "id (or null for create)", 
+      "changes": { 
+          "title": "New title (required for create)",
+          "dueDate": "YYYY-MM-DD" 
+      } 
+    }
   ]
 }
 

@@ -405,9 +405,13 @@ async function executeActions(actions, ticktick, currentTasks) {
     let hasUndoableActions = false;
     for (const action of actions) {
         try {
-            if (action.type === 'create' && action.changes && action.changes.title) {
-                await ticktick.createTask({ title: action.changes.title, ...action.changes });
-                outcomes.push(`✅ Created: "${action.changes.title}"`);
+            if (action.type === 'create') {
+                if (action.changes && action.changes.title) {
+                    await ticktick.createTask({ title: action.changes.title, ...action.changes });
+                    outcomes.push(`✅ Created: "${action.changes.title}"`);
+                } else {
+                    outcomes.push(`⚠️ Cannot create task: Missing title`);
+                }
                 continue;
             }
 
