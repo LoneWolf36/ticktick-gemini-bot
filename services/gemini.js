@@ -87,8 +87,8 @@ Structure:
 4. End with ONE action he can start in 5 minutes.
 
 Output:
-Telegram HTML format. Use <b>bold</b> for emphasis. Do NOT use markdown asterisks. 
-CRITICAL: You MUST escape any literal &, <, or > characters in task titles as &amp;, &lt;, and &gt; or Telegram will crash.
+Plain text formatted for Telegram. Use **asterisks** for bold emphasis.
+Short. Direct. No fluff.
 `;
 
 // ─── Weekly Digest Prompt ───────────────────────────────────
@@ -108,8 +108,7 @@ Include:
 Be honest. Short. No fluff.
 
 Output:
-Telegram HTML format. Use <b>bold</b> for emphasis. Do NOT use markdown asterisks.
-CRITICAL: You MUST escape any literal &, <, or > characters in task titles as &amp;, &lt;, and &gt; or Telegram will crash.
+Plain text formatted for Telegram. Use **asterisks** for bold emphasis.
 `;
 
 // ─── Free-form Conversation Prompt ───────────────────────
@@ -150,7 +149,7 @@ If B or C → respond:
 
 {
   "mode": "coach",
-  "response": "Direct, short Telegram HTML-formatted coaching response. Escape any &, <, > as &amp;, &lt;, &gt;"
+  "response": "Direct, short Telegram-style coaching response. Use **asterisks** for bold."
 }
 
 If unclear → ask ONE clarifying question.

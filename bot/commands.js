@@ -5,7 +5,7 @@ import {
     buildTaskCard, buildPendingData, pendingToAnalysis, buildTickTickUpdate,
     sleep, userLocaleString, isAuthorized, guardAccess, PRIORITY_LABEL, buildUndoEntry,
     formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage, buildAutoApplyNotification,
-    parseDateStringToTickTickISO
+    parseDateStringToTickTickISO, parseTelegramMarkdownToHTML
 } from './utils.js';
 
 export function registerCommands(bot, ticktick, gemini, config = {}) {
@@ -229,7 +229,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         for (const [taskId, data] of batch) {
             const analysis = pendingToAnalysis(data);
             const card = buildTaskCard({ title: data.originalTitle, projectName: data.projectName }, analysis);
-            await ctx.reply(card, { reply_markup: taskReviewKeyboard(taskId) });
+            await ctx.reply(parseTelegramMarkdownToHTML(card), { reply_markup: taskReviewKeyboard(taskId), parse_mode: 'HTML' });
             await sleep(1000);
         }
 
@@ -295,7 +295,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         try {
             const tasks = await ticktick.getAllTasks();
             const briefing = await gemini.generateDailyBriefing(tasks);
-            await ctx.reply(formatBriefingHeader({ kind: 'daily' }) + briefing, { parse_mode: 'HTML' });
+            await ctx.reply(parseTelegramMarkdownToHTML(formatBriefingHeader({ kind: 'daily' }) + briefing), { parse_mode: 'HTML' });
             await store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
@@ -320,7 +320,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             const processed = store.getProcessedTasks();
             const thisWeek = filterProcessedThisWeek(processed, ['processedAt']);
             const digest = await gemini.generateWeeklyDigest(tasks, thisWeek);
-            await ctx.reply(formatBriefingHeader({ kind: 'weekly' }) + digest, { parse_mode: 'HTML' });
+            await ctx.reply(parseTelegramMarkdownToHTML(formatBriefingHeader({ kind: 'weekly' }) + digest), { parse_mode: 'HTML' });
             await store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
@@ -374,18 +374,18 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             if (result.mode === 'action' && result.actions?.length > 0) {
                 // Execute the actions Gemini suggested
                 const { outcomes, hasUndoableActions } = await executeActions(result.actions, ticktick, tasks);
-                let response = result.summary ? `<b>${result.summary}</b>` : '✅ <b>Done.</b>';
+                let response = result.summary ? `**${result.summary}**` : '✅ **Done.**';
                 if (outcomes.length > 0) {
                     response += '\n\n' + outcomes.join('\n');
                 }
                 if (hasUndoableActions) {
-                    response += '\n\n<i>Run /undo to revert the last change.</i>';
+                    response += '\n\nRun /undo to revert the last change.';
                 }
-                await ctx.reply(response, { parse_mode: 'HTML' });
+                await ctx.reply(parseTelegramMarkdownToHTML(response), { parse_mode: 'HTML' });
             } else if (result.mode === 'coach') {
-                await ctx.reply(result.response || 'I\'m here to help. Ask me anything about your tasks!', { parse_mode: 'HTML' });
+                await ctx.reply(parseTelegramMarkdownToHTML(result.response || 'I\'m here to help. Ask me anything about your tasks!'), { parse_mode: 'HTML' });
             } else {
-                await ctx.reply(result.response || result.summary || 'Got it! Let me know if you need anything else.', { parse_mode: 'HTML' });
+                await ctx.reply(parseTelegramMarkdownToHTML(result.response || result.summary || 'Got it! Let me know if you need anything else.'), { parse_mode: 'HTML' });
             }
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
@@ -510,10 +510,10 @@ export async function analyzeAndSend(ctx, task, gemini, ticktick, projects = [],
         const chatId = store.getChatId();
 
         if (ctx?.reply) {
-            await ctx.reply(card, { reply_markup: taskReviewKeyboard(task.id) });
+            await ctx.reply(parseTelegramMarkdownToHTML(card), { reply_markup: taskReviewKeyboard(task.id), parse_mode: 'HTML' });
         } else if (ctx?.api && chatId) {
             // Called from scheduler — ctx is the bot object
-            await ctx.api.sendMessage(chatId, card, { reply_markup: taskReviewKeyboard(task.id) });
+            await ctx.api.sendMessage(chatId, parseTelegramMarkdownToHTML(card), { reply_markup: taskReviewKeyboard(task.id), parse_mode: 'HTML' });
         }
         return 'supervised';
     } catch (err) {

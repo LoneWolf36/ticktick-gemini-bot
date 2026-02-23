@@ -390,12 +390,30 @@ function truncateMessage(text, limit = 3800) {
 
 // ─── Formatting Helpers ─────────────────────────────────────
 
+export function escapeHTML(str) {
+    if (!str) return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+export function parseTelegramMarkdownToHTML(text) {
+    if (!text) return '';
+    // First, strictly escape everything so Telegram doesn't crash on < or &
+    let escaped = escapeHTML(text);
+
+    // Now safely convert **bold** to <b>bold</b>
+    escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+    return escaped;
+}
+
 export function formatBriefingHeader({ kind }) {
     if (kind === 'daily') {
-        return `<b>🌅 MORNING BRIEFING</b>\n<i>${userTodayFormatted()}</i>\n${'─'.repeat(24)}\n\n`;
+        return `**🌅 MORNING BRIEFING**\n${userTodayFormatted()}\n${'─'.repeat(24)}\n\n`;
     }
     if (kind === 'weekly') {
-        return `<b>📊 WEEKLY ACCOUNTABILITY REVIEW</b>\n${'─'.repeat(28)}\n\n`;
+        return `**📊 WEEKLY ACCOUNTABILITY REVIEW**\n${'─'.repeat(28)}\n\n`;
     }
     return '';
 }
