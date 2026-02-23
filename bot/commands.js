@@ -4,7 +4,7 @@ import { taskReviewKeyboard } from './callbacks.js';
 import {
     buildTaskCard, buildPendingData, pendingToAnalysis, buildTickTickUpdate,
     sleep, userLocaleString, isAuthorized, guardAccess, PRIORITY_LABEL, buildUndoEntry,
-    formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage
+    formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage, buildAutoApplyNotification
 } from './utils.js';
 
 export function registerCommands(bot, ticktick, gemini, config = {}) {
