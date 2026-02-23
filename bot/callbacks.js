@@ -65,7 +65,7 @@ export function registerCallbacks(bot, ticktick, gemini) {
                 ? ` Due: ${data.suggestedSchedule}.` : '';
 
             await ctx.answerCallbackQuery({ text: '✅ Applied to TickTick!' });
-            await editWithMarkdown(ctx, `✅ **Updated:** "${data.improvedTitle || data.originalTitle}"${movedNote}${dateNote}\n\n_Applied successfully._`);
+            await editWithMarkdown(ctx, `✅ **Updated:** "${data.improvedTitle || data.originalTitle}"${movedNote}${dateNote}\n\n*Applied successfully.*`);
         } catch (err) {
             console.error('Approve error:', err.message);
             await ctx.answerCallbackQuery({ text: `❌ ${err.message.slice(0, 50)}` });
@@ -107,7 +107,7 @@ export function registerCallbacks(bot, ticktick, gemini) {
         await ctx.answerCallbackQuery({ text: '⚪ Flagged for removal' });
         await editWithMarkdown(
             ctx,
-            '⚪ **Consider dropping** — this task has been flagged.\n_Go to TickTick to delete it if you agree._'
+            '⚪ **Consider dropping** — this task has been flagged.\n*Go to TickTick to delete it if you agree.*'
         );
     });
 }
