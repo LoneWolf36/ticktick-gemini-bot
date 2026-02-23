@@ -4,7 +4,8 @@ import { taskReviewKeyboard } from './callbacks.js';
 import {
     buildTaskCard, buildPendingData, pendingToAnalysis, buildTickTickUpdate,
     sleep, userLocaleString, isAuthorized, guardAccess, PRIORITY_LABEL, buildUndoEntry,
-    formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage, buildAutoApplyNotification
+    formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage, buildAutoApplyNotification,
+    parseDateStringToTickTickISO
 } from './utils.js';
 
 export function registerCommands(bot, ticktick, gemini, config = {}) {
@@ -423,11 +424,24 @@ async function executeActions(actions, ticktick, currentTasks) {
             }
 
             if (action.type === 'update' && action.changes) {
+                // If Gemini provided a due date, safely format it for TickTick
+                let safeDueDate = undefined;
+                if (action.changes.dueDate) {
+                    safeDueDate = parseDateStringToTickTickISO(action.changes.dueDate) || undefined;
+                }
+
                 const changes = {
                     ...action.changes,
+                    dueDate: safeDueDate ?? action.changes.dueDate, // Try parsed, fallback to original to let API error rather than silently drop if it's completely alien
                     projectId: action.changes.projectId || task.projectId,
                     originalProjectId: task.projectId
                 };
+                // Remove raw dueDate if we safely parsed it
+                if (safeDueDate) changes.dueDate = safeDueDate;
+
+                // If it was meant to be cleared... 
+                if (action.changes.dueDate === null) changes.dueDate = null;
+
                 const updatedTask = await ticktick.updateTask(task.id, changes);
 
                 // Log for /undo
@@ -439,7 +453,7 @@ async function executeActions(actions, ticktick, currentTasks) {
                         title: action.changes.title ?? null,
                         project: null,
                         projectId: (action.changes.projectId && action.changes.projectId !== task.projectId) ? action.changes.projectId : null,
-                        schedule: action.changes.dueDate ?? null,
+                        schedule: changes.dueDate ?? null,
                     }
                 }));
 

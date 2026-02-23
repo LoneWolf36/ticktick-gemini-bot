@@ -129,6 +129,24 @@ function endOfDayISO(year, month, day) {
     return `${year}-${mm}-${dd}T23:59:00.000${tzOffset}`;
 }
 
+/** 
+ * Safely parse a YYYY-MM-DD string into a TickTick ISO string with the current user's timezone offset
+ * following Postel's Law to shield against messy LLM output. 
+ */
+export function parseDateStringToTickTickISO(dateStr) {
+    if (!dateStr || typeof dateStr !== 'string') return null;
+
+    // Attempt to extract YYYY-MM-DD, ignoring extra text Gemini might have hallucinated
+    const match = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return null;
+
+    const year = parseInt(match[1]);
+    const month = parseInt(match[2]) - 1; // 0-indexed month for Date
+    const day = parseInt(match[3]);
+
+    return endOfDayISO(year, month, day);
+}
+
 
 export function scheduleToDate(bucket) {
     if (!bucket || bucket === 'someday' || bucket === 'null') return null;
