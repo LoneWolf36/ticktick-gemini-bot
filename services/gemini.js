@@ -439,7 +439,21 @@ export class GeminiAnalyzer {
         const today = userTodayFormatted();
 
         // Build concise task context - compressing heavily to avoid token bloat
-        const taskList = tasks.slice(0, 50).map(t => `[id:${t.id}] "${t.title}"`).join(' | ');
+        // Sort tasks logically so those with due dates appear BEFORE slicing limit!
+        const sortedTasks = [...tasks].sort((a, b) => {
+            if (a.dueDate && !b.dueDate) return -1;
+            if (!a.dueDate && b.dueDate) return 1;
+            return 0;
+        });
+
+        const taskList = sortedTasks.slice(0, 50).map(t => {
+            let label = `[id:${t.id}] "${t.title}"`;
+            if (t.dueDate) {
+                // Keep context absolutely concise. 2026-02-24T23:59:00 -> 2026-02-24
+                label += ` (Due: ${t.dueDate.split('T')[0]})`;
+            }
+            return label;
+        }).join(' | ');
         const projectList = projects.map(p => `[id:${p.id}] ${p.name}`).join(' | ');
 
         const prompt = `Today is ${today}.

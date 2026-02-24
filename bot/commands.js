@@ -5,7 +5,7 @@ import {
     buildTaskCard, buildPendingData, pendingToAnalysis, buildTickTickUpdate,
     sleep, userLocaleString, isAuthorized, guardAccess, PRIORITY_LABEL, buildUndoEntry,
     formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage, buildAutoApplyNotification,
-    parseDateStringToTickTickISO, parseTelegramMarkdownToHTML, replyWithMarkdown, sendWithMarkdown
+    parseDateStringToTickTickISO, parseTelegramMarkdownToHTML, replyWithMarkdown, sendWithMarkdown, truncateMessage
 } from './utils.js';
 
 export function registerCommands(bot, ticktick, gemini, config = {}) {
@@ -381,11 +381,11 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
                 if (hasUndoableActions) {
                     response += '\n\nRun /undo to revert the last change.';
                 }
-                await replyWithMarkdown(ctx, response);
+                await replyWithMarkdown(ctx, truncateMessage(response, 4000));
             } else if (result.mode === 'coach') {
-                await replyWithMarkdown(ctx, result.response || 'I\'m here to help. Ask me anything about your tasks!');
+                await replyWithMarkdown(ctx, truncateMessage(result.response || 'I\'m here to help. Ask me anything about your tasks!', 4000));
             } else {
-                await replyWithMarkdown(ctx, result.response || result.summary || 'Got it! Let me know if you need anything else.');
+                await replyWithMarkdown(ctx, truncateMessage(result.response || result.summary || 'Got it! Let me know if you need anything else.', 4000));
             }
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
@@ -400,7 +400,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
 
 // ─── Execute Gemini-suggested actions against TickTick ────────
 
-async function executeActions(actions, ticktick, currentTasks) {
+export async function executeActions(actions, ticktick, currentTasks) {
     const outcomes = [];
     let hasUndoableActions = false;
     for (const action of actions) {
@@ -439,24 +439,40 @@ async function executeActions(actions, ticktick, currentTasks) {
                 continue;
             }
 
-            if (action.type === 'update' && action.changes) {
+            if (action.type === 'update') {
+                let changesPayload = action.changes;
+
+                // Defensive Whitelist: Fallback to root object if LLM flat-mapped properties missing .changes
+                if (!changesPayload || typeof changesPayload !== 'object') {
+                    const extracted = {};
+                    const allowedKeys = ['title', 'content', 'dueDate', 'projectId', 'priority'];
+                    for (const key of allowedKeys) {
+                        if (action[key] !== undefined) extracted[key] = action[key];
+                    }
+                    if (Object.keys(extracted).length === 0) {
+                        outcomes.push(`⚠️ Skipped invalid/unsupported action: update (No valid schema changes found)`);
+                        continue;
+                    }
+                    changesPayload = extracted;
+                }
+
                 // If Gemini provided a due date, safely format it for TickTick
                 let safeDueDate = undefined;
-                if (action.changes.dueDate) {
-                    safeDueDate = parseDateStringToTickTickISO(action.changes.dueDate) || undefined;
+                if (changesPayload.dueDate) {
+                    safeDueDate = parseDateStringToTickTickISO(changesPayload.dueDate) || undefined;
                 }
 
                 const changes = {
-                    ...action.changes,
-                    dueDate: safeDueDate ?? action.changes.dueDate, // Try parsed, fallback to original to let API error rather than silently drop if it's completely alien
-                    projectId: action.changes.projectId || task.projectId,
+                    ...changesPayload,
+                    dueDate: safeDueDate ?? changesPayload.dueDate, // Try parsed, fallback to original to let API error rather than silently drop if it's completely alien
+                    projectId: changesPayload.projectId || task.projectId,
                     originalProjectId: task.projectId
                 };
                 // Remove raw dueDate if we safely parsed it
                 if (safeDueDate) changes.dueDate = safeDueDate;
 
                 // If it was meant to be cleared... 
-                if (action.changes.dueDate === null) changes.dueDate = null;
+                if (changesPayload.dueDate === null) changes.dueDate = null;
 
                 const updatedTask = await ticktick.updateTask(task.id, changes);
 
@@ -466,9 +482,9 @@ async function executeActions(actions, ticktick, currentTasks) {
                     action: 'freeform-update',
                     appliedTaskId: updatedTask.id,
                     applied: {
-                        title: action.changes.title ?? null,
+                        title: changesPayload.title ?? null,
                         project: null,
-                        projectId: (action.changes.projectId && action.changes.projectId !== task.projectId) ? action.changes.projectId : null,
+                        projectId: (changesPayload.projectId && changesPayload.projectId !== task.projectId) ? changesPayload.projectId : null,
                         schedule: changes.dueDate ?? null,
                     }
                 }));

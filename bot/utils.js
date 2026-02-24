@@ -383,7 +383,7 @@ export function sleep(ms) {
 }
 
 /** Truncate message to stay under Telegram's 4096 char limit */
-function truncateMessage(text, limit = 3800) {
+export function truncateMessage(text, limit = 3800) {
     if (text.length <= limit) return text;
     return text.slice(0, limit) + '\n\n... (truncated)';
 }
