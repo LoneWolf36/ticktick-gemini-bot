@@ -144,8 +144,9 @@ CRITICAL RULES:
 1. Strict Ambiguity: If the user refers to a task ambiguously, DO NOT GUESS. Mode = "clarify". The bot has no chat memory. You must tell the user exactly what is ambiguous and ask them to send a completely NEW message containing the full task context.
 2. If the user requests multiple independent tasks, or provides a dense block of text, you MUST intelligently break it down into multiple distinct "create" action objects. 
 3. Bundle ALL required attributes deeply into the primary "create" payload. NEVER append sequential "update" actions targeting newly created tasks.
-4. IF selecting "action" mode, act STRICTLY as a JSON parser. DO NOT write coaching monologues inside the title. Keep "title" under 10 words strictly as a concise summary. Place all verbose text, notes, and context exclusively into "content". Do not copy-paste repetitive block constraints into every sub-step's content.
+4. DO NOT write coaching monologues inside the title. Keep "title" under 10 words strictly as a concise summary. Place all verbose text, notes, and context exclusively into "content". Do not copy-paste repetitive block constraints into every sub-step's content.
 5. Infer priorities (0:none, 1:low, 3:medium, 5:high).
+6. IF the user asks to ADD, CREATE, or MODIFY a task, YOU MUST STRICTLY select "action" mode. NEVER output task creation data inside the "response" string field under "coach" mode.
 
 <example_decomposition>
 Input: Flight FR123 to London departs Friday 6pm. I need to check in online, pack my bag, and book a taxi to the airport.
@@ -210,15 +211,13 @@ export class GeminiAnalyzer {
         });
 
         this.chatModel = genAI.getGenerativeModel({
-            model: 'gemini-2.5-flash',
+            model: "gemini-2.5-flash",
             systemInstruction: CONVERSE_PROMPT,
             generationConfig: {
-                temperature: 0.4,
-                topP: 0.9,
-                maxOutputTokens: 4096,
                 responseMimeType: "application/json",
                 responseSchema: converseSchema,
-            },
+                temperature: 0.1
+            }
         });
     }
 
@@ -443,7 +442,20 @@ export class GeminiAnalyzer {
         const taskList = tasks.slice(0, 50).map(t => `[id:${t.id}] "${t.title}"`).join(' | ');
         const projectList = projects.map(p => `[id:${p.id}] ${p.name}`).join(' | ');
 
-        const prompt = `Today is ${today}.\n\nUser's current tasks (${tasks.length} total):\n${taskList}\n\nAvailable projects:\n${projectList}\n\nUser message: "${message}"`;
+        const prompt = `Today is ${today}.
+
+Primary User Message (Evaluate and action this explicitly):
+"""
+${message}
+"""
+
+--- ACCOUNT CONTEXT (For ID matching and reference only) ---
+User's current tasks (${tasks.length} total):
+${taskList}
+
+Available projects:
+${projectList}
+------------------------------------------------------------`;
 
         const result = await this._generateWithFailover(() => this.chatModel, prompt, { transientBaseMs: 10 });
         const raw = result.response.text().trim();

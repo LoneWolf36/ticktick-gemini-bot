@@ -23,9 +23,9 @@ export const analyzeSchema = {
 export const converseSchema = {
     type: SchemaType.OBJECT,
     properties: {
-        mode: { type: SchemaType.STRING, enum: ["action", "coach", "clarify"] },
+        mode: { type: SchemaType.STRING, enum: ["action", "coach", "clarify"], description: "CRITICAL: If the user specifically asks to 'add to task list', 'create', or 'remind me', you MUST select 'action' mode, even if they also ask for advice or tips." },
         summary: { type: SchemaType.STRING, description: "A simple 1-line technical confirmation of execution (e.g. 'Parsed 3 tasks.'). Do NOT provide coaching or advice here.", nullable: true },
-        response: { type: SchemaType.STRING, description: "Direct, short Telegram-style response without repetition. MAX 3 SENTENCES. (Required if mode=coach or clarify)", nullable: true },
+        response: { type: SchemaType.STRING, description: "Direct, short Telegram-style response without repetition. MAX 3 SENTENCES. DO NOT output stringified JSON or task arrays here. (Required if mode=coach or clarify)", nullable: true },
         actions: {
             type: SchemaType.ARRAY,
             description: "List of commands. If the user asks for multiple completely different tasks, output multiple distinct 'create' actions. CRITICAL rules: For any individual task you create, you MUST populate the 'content' field with all verbose details! Do not bypass the 'content' field. NEVER try to update a task you just created.",
@@ -37,7 +37,7 @@ export const converseSchema = {
                     changes: {
                         type: SchemaType.OBJECT,
                         properties: {
-                            title: { type: SchemaType.STRING, description: "Very short actionable title (MAX 100 CHARS). DO NOT WRITE COACHING MONOLOGUES HERE.", nullable: true },
+                            title: { type: SchemaType.STRING, description: "Max 10 words. Concise action title. NEVER dump context or notes here. DO NOT repeat constraints.", nullable: true },
                             content: { type: SchemaType.STRING, description: "Detailed task context, URLs, dates, locations, notes, or long-form coaching reasoning.", nullable: true },
                             dueDate: { type: SchemaType.STRING, description: "YYYY-MM-DD string, inferred strictly relative to the Current Date context provided. Null if no date is implied.", nullable: true },
                             projectId: { type: SchemaType.STRING, description: "The exact 24-character ID hash of the project from the provided list. Do NOT use the project name.", nullable: true },

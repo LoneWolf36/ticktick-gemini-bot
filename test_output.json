@@ -1,0 +1,46 @@
+{
+  "mode": "action",
+  "actions": [
+    {
+      "type": "create",
+      "changes": {
+        "content": "Register for \"The Festival of AI and AI for Business\" networking event. It's first come, first serve, and places are limited. Event details: Tuesday 3rd March, 12-1.30 pm, The Atrium, Main Campus NCI.",
+        "dueDate": "2026-02-25",
+        "priority": 5,
+        "projectId": "64bfabcd",
+        "title": "Register for AI Festival Event"
+      }
+    },
+    {
+      "type": "create",
+      "changes": {
+        "content": "Research the following companies attending \"The Festival of AI and AI for Business\" networking event: BearingPoint Ireland, ETH Dublin 2026, Skillwell, CeADAR | Ireland's Centre for AI, BNY | Global Financial Services - APAC Region, PFH Technology Group. Focus on their AI initiatives, recruitment, and technologies.",
+        "dueDate": "2026-03-02",
+        "priority": 5,
+        "projectId": "64bfabcd",
+        "title": "Research AI Festival Companies"
+      }
+    },
+    {
+      "type": "create",
+      "changes": {
+        "content": "Prepare questions for employers at \"The Festival of AI and AI for Business\" networking event. Topics to cover: recruitment, technologies used, how AI is driving their business, tips on how to stand out as a fresher/graduate.",
+        "dueDate": "2026-03-02",
+        "priority": 5,
+        "projectId": "64bfabcd",
+        "title": "Prepare Questions for AI Festival"
+      }
+    },
+    {
+      "type": "create",
+      "changes": {
+        "content": "Attend \"The Festival of AI and AI for Business\" round table networking event with employers. Date: Tuesday 3rd March, Time: 12-1.30 pm, Location: The Atrium, Main Campus NCI.",
+        "dueDate": "2026-03-03",
+        "priority": 5,
+        "projectId": "64bfabcd",
+        "title": "Attend AI Festival Networking Event"
+      }
+    }
+  ],
+  "summary": "Parsed 4 tasks."
+}
