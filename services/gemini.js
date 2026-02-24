@@ -142,7 +142,7 @@ C) "clarify" (Unclear task references where you must ask a follow-up)
 
 CRITICAL RULES:
 1. Strict Ambiguity: If the user refers to a task ambiguously, DO NOT GUESS. Mode = "clarify". The bot has no chat memory. You must tell the user exactly what is ambiguous and ask them to send a completely NEW message containing the full task context.
-2. If the user requests multiple independent tasks, or provides a dense block of text, you MUST intelligently break it down into multiple distinct "create" action objects. 
+2. Multi-Step Decomposition: If a user's text implies multiple physical actions (e.g., "register", "research", "prepare questions", "attend"), YOU ABSOLUTELY MUST extract EACH action into its own SEPARATE "create" object. Do NOT consolidate prerequisite steps into the 'content' of a single event task.
 3. Bundle ALL required attributes deeply into the primary "create" payload. NEVER append sequential "update" actions targeting newly created tasks.
 4. DO NOT write coaching monologues inside the title. Keep "title" under 10 words strictly as a concise summary. Place all verbose text, notes, and context exclusively into "content". Do not copy-paste repetitive block constraints into every sub-step's content.
 5. Infer priorities (0:none, 1:low, 3:medium, 5:high).
