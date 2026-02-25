@@ -45,7 +45,7 @@ export const converseSchema = {
                         }
                     }
                 },
-                required: ["type"]
+                required: ["type", "changes"]
             },
             nullable: true
         }

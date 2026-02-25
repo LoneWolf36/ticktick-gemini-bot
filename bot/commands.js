@@ -442,8 +442,8 @@ export async function executeActions(actions, ticktick, currentTasks) {
             if (action.type === 'update') {
                 let changesPayload = action.changes;
 
-                // Defensive Whitelist: Fallback to root object if LLM flat-mapped properties missing .changes
-                if (!changesPayload || typeof changesPayload !== 'object') {
+                // Defensive Whitelist: Fallback to root object if LLM flat-mapped properties missing .changes or provided an empty {}
+                if (!changesPayload || typeof changesPayload !== 'object' || Object.keys(changesPayload).length === 0) {
                     const extracted = {};
                     const allowedKeys = ['title', 'content', 'dueDate', 'projectId', 'priority'];
                     for (const key of allowedKeys) {

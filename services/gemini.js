@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import path from 'path';
-import { userTodayFormatted, PRIORITY_EMOJI } from '../bot/utils.js';
+import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from '../bot/utils.js';
 import { analyzeSchema, converseSchema } from './schemas.js';
 
 // ─── User Context ────────────────────────────────────────────
@@ -147,6 +147,7 @@ CRITICAL RULES:
 4. DO NOT write coaching monologues inside the title. Keep "title" under 10 words strictly as a concise summary. Place all verbose text, notes, and context exclusively into "content". Do not copy-paste repetitive block constraints into every sub-step's content.
 5. Infer priorities (0:none, 1:low, 3:medium, 5:high).
 6. IF the user asks to ADD, CREATE, or MODIFY a task, YOU MUST STRICTLY select "action" mode. NEVER output task creation data inside the "response" string field under "coach" mode.
+7. Updates & Modifications: When processing an 'update' action, you MUST place the modified data (e.g., the new title or timeline) explicitly entirely inside the nested 'changes' object property. NEVER leave 'changes' empty.
 
 <example_decomposition>
 Input: Flight FR123 to London departs Friday 6pm. I need to check in online, pack my bag, and book a taxi to the airport.
@@ -154,6 +155,10 @@ Logic Mapping:
 - Task 1: Check-in for Flight FR123 (Content: Friday 6pm, FR123) [Priority: 5]
 - Task 2: Pack bag (Content: London trip) [Priority: 3]
 - Task 3: Book airport taxi (Content: Departs 6pm) [Priority: 3]
+
+Input: Move the 'Review marketing copy' task to tomorrow and rename it to 'Finalize ad copy'.
+Logic Mapping:
+- Task 1 (Update): Target Task ID -> Extract Title & DueDate explicitly into the 'changes' mapping block securely.
 </example_decomposition>
 `;
 
@@ -425,7 +430,7 @@ export class GeminiAnalyzer {
             .join('\n');
 
         const processed = Object.entries(processedThisWeek)
-            .map(([_, d]) => `- "${d.originalTitle}" → ${d.approved ? '✅ Approved' : d.skipped ? '⏭ Skipped' : '⏳ Pending'}`)
+            .map(([_, d]) => formatProcessedTask(d))
             .join('\n');
 
         const prompt = `Current active tasks (${allTasks.length}):\n${taskList}\n\nTasks analyzed this week:\n${processed || 'None'}`;
