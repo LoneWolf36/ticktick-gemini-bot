@@ -12,9 +12,10 @@ export async function startScheduler(bot, ticktick, gemini, config) {
         timezone = 'Europe/Dublin',
         autoApplyLifeAdmin = false,
         autoApplyDrops = false,
+        autoApplyMode = 'metadata-only',
     } = config;
 
-    const autoConfig = { autoApplyLifeAdmin, autoApplyDrops };
+    const autoConfig = { autoApplyLifeAdmin, autoApplyDrops, autoApplyMode };
 
     console.log(`📅 Scheduler starting (timezone: ${timezone})`);
     console.log(`   🌅 Daily briefing: ${dailyHour}:00`);

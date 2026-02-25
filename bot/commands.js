@@ -1,18 +1,62 @@
 // Bot command handlers — /start, /status, /scan, /briefing, /weekly, /review, /pending, /undo
 import * as store from '../services/store.js';
+import { InlineKeyboard } from 'grammy';
 import { taskReviewKeyboard } from './callbacks.js';
 import {
     buildTaskCard, buildPendingData, pendingToAnalysis, buildTickTickUpdate,
     sleep, userLocaleString, isAuthorized, guardAccess, PRIORITY_LABEL, buildUndoEntry,
     formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage, buildAutoApplyNotification,
-    parseDateStringToTickTickISO, parseTelegramMarkdownToHTML, replyWithMarkdown, sendWithMarkdown, truncateMessage, scheduleToDate
+    parseDateStringToTickTickISO, parseTelegramMarkdownToHTML, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent
 } from './utils.js';
 
 export function registerCommands(bot, ticktick, gemini, config = {}) {
     const {
         autoApplyLifeAdmin = false,
         autoApplyDrops = false,
+        autoApplyMode = 'metadata-only',
     } = config;
+
+    const menuKeyboard = () => new InlineKeyboard()
+        .text('🔍 Scan', 'menu:scan')
+        .text('⏳ Pending', 'menu:pending')
+        .row()
+        .text('🌅 Briefing', 'menu:briefing')
+        .text('📊 Weekly', 'menu:weekly')
+        .row()
+        .text('🧭 Reorg', 'menu:reorg')
+        .text('📈 Status', 'menu:status');
+
+    const reorgKeyboard = () => new InlineKeyboard()
+        .text('✅ Apply Reorg', 'reorg:apply')
+        .text('🛠️ Refine', 'reorg:refine')
+        .row()
+        .text('❌ Cancel', 'reorg:cancel');
+
+    const summarizeReorg = (proposal, tasks = []) => {
+        const byId = new Map(tasks.map(t => [t.id, t.title]));
+        const lines = [];
+        lines.push(`**🧭 Reorg Proposal**`);
+        lines.push(proposal.summary || 'System cleanup proposal generated.');
+        const actions = Array.isArray(proposal.actions) ? proposal.actions : [];
+        lines.push(`\nActions: ${actions.length}`);
+        actions.slice(0, 10).forEach((a, idx) => {
+            const title = a.taskId ? (byId.get(a.taskId) || a.taskId) : (a.changes?.title || 'New Task');
+            lines.push(`${idx + 1}. ${a.type} → ${title}`);
+        });
+        if (actions.length > 10) lines.push(`...and ${actions.length - 10} more`);
+        const questions = Array.isArray(proposal.questions) ? proposal.questions : [];
+        if (questions.length > 0) {
+            lines.push(`\nClarifications needed:`);
+            questions.slice(0, 3).forEach((q, i) => lines.push(`${i + 1}. ${q}`));
+        }
+        return lines.join('\n');
+    };
+
+    const buildAiUnavailableMessage = () => {
+        const quotaResume = gemini.quotaResumeTime?.();
+        if (quotaResume) return buildQuotaExhaustedMessage(gemini);
+        return '⚠️ AI is temporarily unavailable (keys expired/invalid/quota-limited). Update GEMINI_API_KEYS or retry shortly.';
+    };
 
     // ─── /start ───────────────────────────────────────────────
     bot.command('start', async (ctx) => {
@@ -30,8 +74,41 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             `/review — Walk through all unreviewed tasks\n` +
             `/undo — Revert last auto-applied change\n` +
             `/reset — Wipe all bot data and start fresh\n` +
-            `/status — Bot status and stats`
+            `/status — Bot status and stats`,
+            { reply_markup: menuKeyboard() }
         );
+    });
+
+    bot.command('menu', async (ctx) => {
+        if (!await guardAccess(ctx)) return;
+        await replyWithMarkdown(
+            ctx,
+            `**Quick Actions**\nTap a shortcut below or type a command.`,
+            { reply_markup: menuKeyboard() }
+        );
+    });
+
+    bot.command('reorg', async (ctx) => {
+        if (!await guardAccess(ctx)) return;
+        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
+        if (gemini.isQuotaExhausted()) {
+            await ctx.reply(buildQuotaExhaustedMessage(gemini));
+            return;
+        }
+        await ctx.reply('🧭 Building reorganization proposal...');
+        try {
+            const tasks = await ticktick.getAllTasksCached(60000);
+            const projects = ticktick.getLastFetchedProjects();
+            const proposal = await gemini.generateReorgProposal(tasks, projects);
+            await store.setPendingReorg({
+                ...proposal,
+                awaitingRefine: false,
+                createdAt: new Date().toISOString(),
+            });
+            await replyWithMarkdown(ctx, summarizeReorg(proposal, tasks), { reply_markup: reorgKeyboard() });
+        } catch (err) {
+            await ctx.reply(`❌ Reorg failed: ${err.message}`);
+        }
     });
 
     // ─── /reset ──────────────────────────────────────────────
@@ -65,6 +142,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             `⏭ Skipped: ${stats.tasksSkipped}`,
             `⏳ Pending Review: ${pendingCount}`,
             `\n🤖 Auto-apply life-admin: ${autoApplyLifeAdmin ? 'ON' : 'OFF'}`,
+            `🤖 Auto-apply mode: ${autoApplyMode}`,
         ];
         if (stats.lastDailyBriefing) {
             lines.push(`🌅 Last Briefing: ${userLocaleString(stats.lastDailyBriefing)}`);
@@ -88,8 +166,76 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             lines.push(`🔑 Gemini Key: ${keyInfo.index}/${keyInfo.total}`);
         }
 
-        lines.push('\nCommands: /scan | /pending | /undo | /briefing | /weekly');
+        lines.push('\nCommands: /menu | /scan | /pending | /reorg | /undo | /briefing | /weekly');
         await ctx.reply(lines.join('\n'));
+    });
+
+    bot.callbackQuery(/^menu:(.+)$/, async (ctx) => {
+        if (!isAuthorized(ctx)) {
+            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            return;
+        }
+        const cmd = ctx.match[1];
+        await ctx.answerCallbackQuery();
+        const map = {
+            scan: '/scan',
+            pending: '/pending',
+            briefing: '/briefing',
+            weekly: '/weekly',
+            reorg: '/reorg',
+            status: '/status',
+        };
+        const typed = map[cmd];
+        if (!typed) return;
+        await ctx.reply(`Run ${typed}`);
+    });
+
+    bot.callbackQuery(/^reorg:(apply|refine|cancel)$/, async (ctx) => {
+        if (!isAuthorized(ctx)) {
+            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            return;
+        }
+        const action = ctx.match[1];
+        const pending = store.getPendingReorg();
+        if (!pending) {
+            await ctx.answerCallbackQuery({ text: 'No active reorg proposal.' });
+            return;
+        }
+        if (action === 'cancel') {
+            await store.clearPendingReorg();
+            await ctx.answerCallbackQuery({ text: 'Reorg canceled.' });
+            await editWithMarkdown(ctx, '❌ **Reorg canceled.**');
+            return;
+        }
+        if (action === 'refine') {
+            await store.setPendingReorg({ ...pending, awaitingRefine: true });
+            await ctx.answerCallbackQuery({ text: 'Send your refinement in chat.' });
+            await ctx.reply('🛠️ Send refinement instructions (e.g., "keep admin tasks in evening, no merges for personal notes").');
+            return;
+        }
+        if (action === 'apply') {
+            await ctx.answerCallbackQuery({ text: 'Applying proposal...' });
+            try {
+                const tasks = await ticktick.getAllTasksCached(60000);
+                const projects = ticktick.getLastFetchedProjects();
+                const { outcomes, hasUndoableActions } = await executeActions(
+                    pending.actions || [],
+                    ticktick,
+                    tasks,
+                    {
+                        enforcePolicySweep: true,
+                        projects,
+                        policyScopeTaskIds: (pending.actions || []).map((a) => a?.taskId).filter(Boolean),
+                    }
+                );
+                await store.clearPendingReorg();
+                let msg = `✅ **Reorg applied.**\n\n${outcomes.join('\n') || 'No actions were applied.'}`;
+                if (hasUndoableActions) msg += '\n\nRun /undo to revert the last change.';
+                await replyWithMarkdown(ctx, truncateMessage(msg, 4000));
+            } catch (err) {
+                await ctx.reply(`❌ Failed to apply reorg: ${err.message}`);
+            }
+        }
     });
 
     async function runTaskIntake(ctx, { mode, pendingGate, quotaParking }) {
@@ -138,8 +284,8 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             );
 
             let supervised = 0, autoApplied = [], failed = 0;
-            const autoConfig = { autoApplyLifeAdmin, autoApplyDrops };
-            let quotaHit = false;
+            const autoConfig = { autoApplyLifeAdmin, autoApplyDrops, autoApplyMode };
+            let aiUnavailable = false;
 
             for (const task of batch) {
                 if (quotaParking) {
@@ -148,13 +294,13 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
                         if (result === 'supervised') supervised++;
                         else if (result) autoApplied.push(result);
                     } catch (err) {
-                        if (err.message === 'QUOTA_EXHAUSTED') {
+                        if (err.message === 'QUOTA_EXHAUSTED' || err.message === 'API_KEYS_UNAVAILABLE') {
                             const remaining = batch.slice(batch.indexOf(task));
                             for (const t of remaining) {
                                 await store.markTaskFailed(t.id, 'quota_exhausted');
                             }
                             failed += remaining.length;
-                            quotaHit = true;
+                            aiUnavailable = true;
                             break;
                         }
                         await store.markTaskFailed(task.id, err.message);
@@ -171,8 +317,8 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
                 let doneMsg = '';
                 if (supervised > 0) doneMsg += `✨ ${supervised} task(s) sent for your review.\n`;
                 if (autoApplied.length > 0) doneMsg += buildAutoApplyNotification(autoApplied);
-                if (quotaHit) {
-                    doneMsg += `\n⚠️ AI quota reached — ${failed} task(s) parked for retry in ~2 hours.`;
+                if (aiUnavailable) {
+                    doneMsg += `\n${buildAiUnavailableMessage()} ${failed} task(s) parked for retry.`;
                 } else if (failed > 0) {
                     doneMsg += `\n⚠️ ${failed} task(s) failed — parked for retry later.`;
                 }
@@ -354,6 +500,29 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         const userMessage = ctx.message.text.trim();
         if (!userMessage) return;
 
+        const pendingReorg = store.getPendingReorg();
+        if (pendingReorg?.awaitingRefine) {
+            if (gemini.isQuotaExhausted()) {
+                await ctx.reply(buildQuotaExhaustedMessage(gemini));
+                return;
+            }
+            await ctx.reply('🛠️ Refining reorg proposal...');
+            try {
+                const tasks = await ticktick.getAllTasksCached(60000);
+                const projects = ticktick.getLastFetchedProjects();
+                const refined = await gemini.generateReorgProposal(tasks, projects, userMessage, pendingReorg.actions || []);
+                await store.setPendingReorg({
+                    ...refined,
+                    awaitingRefine: false,
+                    createdAt: pendingReorg.createdAt || new Date().toISOString(),
+                });
+                await replyWithMarkdown(ctx, summarizeReorg(refined, tasks), { reply_markup: reorgKeyboard() });
+            } catch (err) {
+                await ctx.reply(`❌ Reorg refinement failed: ${err.message}`);
+            }
+            return;
+        }
+
         if (gemini.isQuotaExhausted()) {
             await ctx.reply(buildQuotaExhaustedMessage(gemini));
             return;
@@ -400,38 +569,156 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
 
 // ─── Execute Gemini-suggested actions against TickTick ────────
 
-export async function executeActions(actions, ticktick, currentTasks) {
+export async function executeActions(actions, ticktick, currentTasks, options = {}) {
     const outcomes = [];
     let hasUndoableActions = false;
 
-    const resolveDueDate = (value) => {
+    const inferPriorityLabel = (task, explicitPriority = undefined) => {
+        const normalizedPriority = explicitPriority ?? task?.priority;
+        if (normalizedPriority === 5) return 'career-critical';
+        if (normalizedPriority === 1) return 'life-admin';
+        if (normalizedPriority === 3) return 'important';
+
+        const haystack = `${task?.title || ''} ${task?.projectName || ''}`.toLowerCase();
+        if (/\b(system design|dsa|interview|resume|leetcode|backend|career|study|assignment|exam)\b/i.test(haystack)) {
+            return 'career-critical';
+        }
+        if (/\b(bank|bill|grocery|admin|errand|password|credential|home|apartment|rent|insurance)\b/i.test(haystack)) {
+            return 'life-admin';
+        }
+        return 'important';
+    };
+
+    const normalizeActionType = (action) => {
+        const rawType = action?.type ?? action?.action ?? action?.operation ?? action?.intent;
+        if (typeof rawType !== 'string') return null;
+        const normalized = rawType.trim().toLowerCase();
+        if (['update', 'drop', 'create', 'complete'].includes(normalized)) return normalized;
+        if (normalized === 'delete') return 'drop';
+        if (normalized === 'done') return 'complete';
+        if (normalized === 'add') return 'create';
+        return null;
+    };
+
+    const normalizeTaskId = (action) =>
+        action?.taskId ??
+        action?.task_id ??
+        action?.id ??
+        action?.targetTaskId ??
+        action?.target_task_id ??
+        action?.targetId ??
+        action?.target_id ??
+        null;
+
+    const resolveDueDate = (value, { task, explicitPriority } = {}) => {
+        const priorityLabel = inferPriorityLabel(task, explicitPriority);
         if (value === null) return null;
+        if (typeof value === 'object') {
+            const bucketCandidate =
+                value.scheduleBucket ??
+                value.schedule_bucket ??
+                value.bucket ??
+                value.value ??
+                value.relative;
+            if (typeof bucketCandidate === 'string') {
+                const bucketDate = scheduleToDate(bucketCandidate.trim().toLowerCase());
+                if (bucketDate) return bucketDate;
+            }
+            const absoluteCandidate =
+                value.dueDate ??
+                value.due_date ??
+                value.date ??
+                value.dateString ??
+                value.datetime;
+            if (typeof absoluteCandidate === 'string') {
+                const parsedAbsolute = parseDateStringToTickTickISO(absoluteCandidate, {
+                    slotMode: 'priority',
+                    priorityLabel,
+                });
+                if (parsedAbsolute) return parsedAbsolute;
+            }
+            return undefined;
+        }
         if (typeof value !== 'string') return undefined;
         const normalized = value.trim().toLowerCase();
-        const bucketToDate = scheduleToDate(normalized);
+        const bucketToDate = scheduleToDate(normalized, { priorityLabel });
         if (bucketToDate) return bucketToDate;
-        return parseDateStringToTickTickISO(value) || undefined;
+        return parseDateStringToTickTickISO(value, {
+            slotMode: 'priority',
+            priorityLabel,
+        }) || undefined;
     };
 
     const normalizeActionChanges = (action) => {
         const extracted = {};
         const source = (action && typeof action.changes === 'object') ? action.changes : {};
         const nested = (action && typeof action.payload === 'object') ? action.payload : {};
+        const updateLike = (action && typeof action.update === 'object') ? action.update : {};
+        const fieldsLike = (action && typeof action.fields === 'object') ? action.fields : {};
+
+        const firstDefined = (...values) => values.find(v => v !== undefined);
 
         // Canonical schema keys
         const canonicalKeys = ['title', 'content', 'projectId', 'priority'];
         for (const key of canonicalKeys) {
             if (source[key] !== undefined) extracted[key] = source[key];
         }
+        if (extracted.title === undefined) {
+            extracted.title = firstDefined(
+                source.name,
+                source.newTitle,
+                source.new_title,
+                nested.title,
+                nested.name,
+                updateLike.title,
+                updateLike.name,
+                fieldsLike.title,
+                fieldsLike.name
+            );
+        }
+        if (extracted.content === undefined) {
+            extracted.content = firstDefined(
+                source.description,
+                source.notes,
+                source.note,
+                source.details,
+                source.comment,
+                nested.content,
+                nested.description,
+                nested.details,
+                nested.note,
+                updateLike.content,
+                updateLike.description,
+                updateLike.details,
+                fieldsLike.content,
+                fieldsLike.description,
+                fieldsLike.details
+            );
+        }
+        if (extracted.priority === undefined) {
+            extracted.priority = firstDefined(
+                source.priorityLevel,
+                source.priority_level,
+                source.priority,
+                nested.priority,
+                updateLike.priority,
+                fieldsLike.priority
+            );
+        }
 
         // Common LLM aliases for project and due date
         if (extracted.projectId === undefined) {
             extracted.projectId =
                 source.project_id ??
+                source.project ??
                 source.suggestedProjectId ??
                 source.suggested_project_id ??
                 nested.projectId ??
                 nested.project_id ??
+                updateLike.projectId ??
+                updateLike.project_id ??
+                fieldsLike.projectId ??
+                fieldsLike.project_id ??
                 action.projectId ??
                 action.project_id;
         }
@@ -443,24 +730,64 @@ export async function executeActions(actions, ticktick, currentTasks) {
             source.new_due_date ??
             source.date ??
             source.when ??
+            source.due ??
+            source.deadline ??
+            source.due_on ??
             source.schedule ??
             source.scheduleBucket ??
             source.suggested_schedule ??
+            source.suggestedSchedule ??
+            source.newSchedule ??
+            source.new_schedule ??
+            source.schedule_bucket ??
             nested.dueDate ??
             nested.due_date ??
             nested.newDueDate ??
             nested.new_due_date ??
             nested.date ??
             nested.when ??
+            nested.due ??
+            nested.deadline ??
             nested.schedule ??
             nested.scheduleBucket ??
             nested.suggested_schedule ??
+            nested.suggestedSchedule ??
+            nested.newSchedule ??
+            nested.new_schedule ??
+            updateLike.dueDate ??
+            updateLike.due_date ??
+            updateLike.newDueDate ??
+            updateLike.new_due_date ??
+            updateLike.date ??
+            updateLike.when ??
+            updateLike.due ??
+            updateLike.deadline ??
+            updateLike.schedule ??
+            updateLike.scheduleBucket ??
+            updateLike.suggested_schedule ??
+            updateLike.suggestedSchedule ??
+            updateLike.newSchedule ??
+            updateLike.new_schedule ??
+            fieldsLike.dueDate ??
+            fieldsLike.due_date ??
+            fieldsLike.newDueDate ??
+            fieldsLike.new_due_date ??
+            fieldsLike.date ??
+            fieldsLike.when ??
+            fieldsLike.due ??
+            fieldsLike.deadline ??
+            fieldsLike.schedule ??
+            fieldsLike.scheduleBucket ??
+            fieldsLike.suggested_schedule ??
+            fieldsLike.suggestedSchedule ??
             action.dueDate ??
             action.due_date ??
             action.newDueDate ??
             action.new_due_date ??
             action.date ??
             action.when ??
+            action.due ??
+            action.deadline ??
             action.schedule ??
             action.scheduleBucket ??
             action.suggested_schedule;
@@ -475,22 +802,184 @@ export async function executeActions(actions, ticktick, currentTasks) {
             if (extracted[key] === undefined && action[key] !== undefined) extracted[key] = action[key];
         }
 
+        if (typeof extracted.priority === 'string') {
+            const p = extracted.priority.trim().toLowerCase();
+            if (p === 'high' || p === 'p1' || p === 'career-critical') extracted.priority = 5;
+            else if (p === 'medium' || p === 'p2' || p === 'important') extracted.priority = 3;
+            else if (p === 'low' || p === 'p3' || p === 'life-admin') extracted.priority = 1;
+            else if (p === 'none' || p === 'p4' || p === 'consider-dropping') extracted.priority = 0;
+        }
+
+        if (typeof extracted.priority === 'number' && ![0, 1, 3, 5].includes(extracted.priority)) {
+            delete extracted.priority;
+        }
+
         return extracted;
     };
 
-    for (const action of actions) {
+    const normalizeAndDedupeActions = (inputActions = []) => {
+        const updateByTaskId = new Map();
+        const terminalByTaskId = new Map();
+        const creates = [];
+        const seenCreates = new Set();
+
+        for (const raw of inputActions) {
+            const action = raw && typeof raw === 'object' ? { ...raw } : {};
+            action.type = normalizeActionType(action);
+            action.taskId = normalizeTaskId(action);
+            if (!action.type) continue;
+
+            if (action.type === 'create') {
+                const c = normalizeActionChanges(action);
+                const key = `${(c.title || '').trim().toLowerCase()}|${c.projectId || ''}|${c.dueDate || ''}`;
+                if (!c.title || seenCreates.has(key)) continue;
+                seenCreates.add(key);
+                creates.push({ type: 'create', changes: c });
+                continue;
+            }
+
+            if (!action.taskId) continue;
+
+            if (action.type === 'update' || action.type === 'drop') {
+                const c = normalizeActionChanges(action);
+                const prior = updateByTaskId.get(action.taskId) || {};
+                const merged = { ...prior, ...c };
+                const nextType = action.type === 'drop' ? 'drop' : (prior.__type === 'drop' ? 'drop' : 'update');
+                merged.__type = nextType;
+                updateByTaskId.set(action.taskId, merged);
+                continue;
+            }
+
+            if (action.type === 'complete') {
+                terminalByTaskId.set(action.taskId, { type: 'complete', taskId: action.taskId, changes: {} });
+            }
+        }
+
+        const deduped = [];
+        for (const [taskId, payload] of updateByTaskId.entries()) {
+            if (terminalByTaskId.has(taskId)) continue;
+            const type = payload.__type || 'update';
+            delete payload.__type;
+            deduped.push({ type, taskId, changes: payload });
+        }
+        deduped.push(...terminalByTaskId.values());
+        deduped.push(...creates);
+        return deduped;
+    };
+
+    const inferPriorityForPolicy = (task) => {
+        const label = inferPriorityLabel(task);
+        if (label === 'career-critical') return 5;
+        if (label === 'life-admin') return 1;
+        return 3;
+    };
+
+    const inferProjectIdForPolicy = (task, projects = []) => {
+        if (!Array.isArray(projects) || projects.length === 0) return null;
+        const text = `${task?.title || ''} ${task?.projectName || ''} ${task?.content || ''}`.toLowerCase();
+        const byFragment = (fragment) =>
+            projects.find((p) => (p.name || '').toLowerCase().includes(fragment))?.id || null;
+        if (/\b(system design|dsa|interview|resume|backend|career|study|college|assignment|exam)\b/.test(text)) {
+            return byFragment('career') || byFragment('study') || null;
+        }
+        if (/\b(bank|bill|grocery|get |print|admin|errand|shopping|passport|visa|password|credential|wifi|home)\b/.test(text)) {
+            return byFragment('admin') || byFragment('personal') || null;
+        }
+        return byFragment('admin') || byFragment('personal') || null;
+    };
+
+    const buildPolicySweepActions = (planned, tasks, projects = [], scopeTaskIds = null, sweepAllActive = false) => {
+        const actionByTask = new Map();
+        const completeOrDrop = new Set();
+        for (const action of planned) {
+            if (!action?.taskId) continue;
+            if (action.type === 'complete' || action.type === 'drop') {
+                completeOrDrop.add(action.taskId);
+            }
+            if (action.type === 'update') {
+                actionByTask.set(action.taskId, action);
+            }
+        }
+
+        const overlays = [];
+        for (const task of tasks) {
+            if (!task || (task.status !== 0 && task.status !== undefined)) continue;
+            if (completeOrDrop.has(task.id)) continue;
+            const currentProjectName = (task.projectName || '').toLowerCase();
+            const inInbox = currentProjectName === 'inbox';
+            if (!sweepAllActive && scopeTaskIds && scopeTaskIds.size > 0 && !scopeTaskIds.has(task.id) && !inInbox) {
+                continue;
+            }
+            if (!sweepAllActive && (!scopeTaskIds || scopeTaskIds.size === 0) && !inInbox) {
+                continue;
+            }
+
+            const pendingUpdate = actionByTask.get(task.id);
+            const fix = {};
+
+            const plannedPriority = pendingUpdate?.changes?.priority;
+            const hasValidPlannedPriority = [1, 3, 5].includes(plannedPriority);
+            const hasValidCurrentPriority = [1, 3, 5].includes(task.priority);
+            if (!hasValidPlannedPriority && !hasValidCurrentPriority) {
+                fix.priority = inferPriorityForPolicy(task);
+            } else if (plannedPriority === 0) {
+                fix.priority = inferPriorityForPolicy(task);
+            }
+
+            if (inInbox && !pendingUpdate?.changes?.projectId) {
+                const targetProjectId = inferProjectIdForPolicy(task, projects);
+                if (targetProjectId && targetProjectId !== task.projectId) {
+                    fix.projectId = targetProjectId;
+                }
+            }
+
+            if (Object.keys(fix).length > 0) {
+                overlays.push({ type: 'update', taskId: task.id, changes: fix });
+            }
+        }
+        return overlays;
+    };
+
+    let plannedActions = normalizeAndDedupeActions(actions);
+    if (options.enforcePolicySweep) {
+        const scopeIds = new Set(
+            Array.isArray(options.policyScopeTaskIds)
+                ? options.policyScopeTaskIds.filter((id) => typeof id === 'string' && id.trim())
+                : []
+        );
+        const overlays = buildPolicySweepActions(
+            plannedActions,
+            Array.isArray(currentTasks) ? currentTasks : [],
+            Array.isArray(options.projects) ? options.projects : [],
+            scopeIds,
+            options.sweepAllActive === true
+        );
+        if (overlays.length > 0) {
+            plannedActions = normalizeAndDedupeActions([...plannedActions, ...overlays]);
+            outcomes.push(`🛡️ Policy sweep appended ${overlays.length} action(s).`);
+        }
+    }
+
+    for (const rawAction of plannedActions) {
+        const action = rawAction && typeof rawAction === 'object' ? { ...rawAction } : {};
+        action.type = normalizeActionType(action);
+        action.taskId = normalizeTaskId(action);
+
         try {
             if (action.type === 'create') {
-                if (action.changes && action.changes.title) {
+                const createChanges = normalizeActionChanges(action);
+                if (createChanges && createChanges.title) {
                     let safeDueDate = undefined;
-                    if (action.changes.dueDate) {
-                        safeDueDate = resolveDueDate(action.changes.dueDate);
+                    if (createChanges.dueDate) {
+                        safeDueDate = resolveDueDate(createChanges.dueDate, {
+                            explicitPriority: createChanges.priority,
+                        });
                     }
-                    const createPayload = { ...action.changes, title: action.changes.title };
+                    const createPayload = { ...createChanges, title: createChanges.title };
                     if (safeDueDate) createPayload.dueDate = safeDueDate;
 
                     await ticktick.createTask(createPayload);
-                    outcomes.push(`✅ Created: "${action.changes.title}"`);
+                    outcomes.push(`✅ Created: "${createChanges.title}"`);
                 } else {
                     outcomes.push(`⚠️ Cannot create task: Missing title`);
                 }
@@ -526,7 +1015,10 @@ export async function executeActions(actions, ticktick, currentTasks) {
                 // If Gemini provided a due date, safely format it for TickTick
                 let safeDueDate = undefined;
                 if (changesPayload.dueDate) {
-                    safeDueDate = resolveDueDate(changesPayload.dueDate);
+                    safeDueDate = resolveDueDate(changesPayload.dueDate, {
+                        task,
+                        explicitPriority: changesPayload.priority,
+                    });
                 }
 
                 const changes = {
@@ -535,6 +1027,10 @@ export async function executeActions(actions, ticktick, currentTasks) {
                     projectId: changesPayload.projectId || task.projectId,
                     originalProjectId: task.projectId
                 };
+                if (changes.content !== undefined && containsSensitiveContent(task.content || '')) {
+                    delete changes.content;
+                    outcomes.push(`⚠️ Preserved sensitive content for "${task.title}" (content rewrite blocked)`);
+                }
                 // Remove raw dueDate if we safely parsed it
                 if (safeDueDate) changes.dueDate = safeDueDate;
 
@@ -559,13 +1055,43 @@ export async function executeActions(actions, ticktick, currentTasks) {
                 outcomes.push(`✅ Updated: "${task.title}"`);
                 hasUndoableActions = true;
             } else if (action.type === 'drop') {
-                // Flag as dropped but DON'T delete — too risky
+                const dropChanges = normalizeActionChanges(action);
+                const hasTickTickMutation =
+                    dropChanges.projectId !== undefined ||
+                    dropChanges.priority !== undefined ||
+                    dropChanges.title !== undefined ||
+                    dropChanges.content !== undefined ||
+                    dropChanges.dueDate !== undefined;
+
+                if (hasTickTickMutation) {
+                    const safeDueDate = dropChanges.dueDate
+                        ? resolveDueDate(dropChanges.dueDate, {
+                            task,
+                            explicitPriority: dropChanges.priority ?? 0,
+                        })
+                        : undefined;
+                    const updatePayload = {
+                        projectId: dropChanges.projectId || task.projectId,
+                        originalProjectId: task.projectId,
+                        priority: dropChanges.priority ?? 0,
+                    };
+                    if (dropChanges.title !== undefined) updatePayload.title = dropChanges.title;
+                    if (dropChanges.content !== undefined && !containsSensitiveContent(task.content || '')) {
+                        updatePayload.content = dropChanges.content;
+                    }
+                    if (safeDueDate !== undefined) updatePayload.dueDate = safeDueDate;
+                    await ticktick.updateTask(task.id, updatePayload);
+                    outcomes.push(`⚪ Demoted as drop-candidate: "${task.title}"`);
+                } else {
+                    // Flag as dropped but DON'T delete — too risky
+                    outcomes.push(`⚪ Flagged for dropping: "${task.title}" (not deleted — mark complete in TickTick if you agree)`);
+                }
+
                 await store.markTaskProcessed(task.id, {
                     originalTitle: task.title,
                     dropped: true,
                     droppedByFreeform: true,
                 });
-                outcomes.push(`⚪ Flagged for dropping: "${task.title}" (not deleted — mark complete in TickTick if you agree)`);
             } else {
                 outcomes.push(`⚠️ Skipped invalid/unsupported action: ${action.type}`);
             }
@@ -583,13 +1109,16 @@ export async function analyzeAndSend(ctx, task, gemini, ticktick, projects = [],
     try {
         const analysis = await gemini.analyzeTask(task, projects);
         const pendingData = buildPendingData(task, analysis, projects);
+        const hasSensitiveContent = containsSensitiveContent(task.content || '');
+        const hasExistingRichContent = (task.content || '').trim().length > 40;
+        const safeAutoApply = !hasSensitiveContent && !hasExistingRichContent;
 
         const shouldAutoApply =
             (analysis.priority === 'life-admin' && config.autoApplyLifeAdmin) ||
             (analysis.priority === 'consider-dropping' && config.autoApplyDrops);
 
-        if (shouldAutoApply) {
-            return await autoApply(task, pendingData, analysis, ticktick);
+        if (shouldAutoApply && safeAutoApply) {
+            return await autoApply(task, pendingData, analysis, ticktick, config);
         }
 
         // Supervised: send card with buttons
@@ -605,7 +1134,7 @@ export async function analyzeAndSend(ctx, task, gemini, ticktick, projects = [],
         }
         return 'supervised';
     } catch (err) {
-        if (err.message === 'QUOTA_EXHAUSTED') throw err; // Let caller handle quota abort
+        if (err.message === 'QUOTA_EXHAUSTED' || err.message === 'API_KEYS_UNAVAILABLE') throw err; // Let caller handle AI unavailability
         console.error(`Failed to analyze "${task.title}":`, err.message);
         return false;
     }
@@ -613,8 +1142,9 @@ export async function analyzeAndSend(ctx, task, gemini, ticktick, projects = [],
 
 // ─── Auto-apply: update TickTick directly, no user approval ─
 
-async function autoApply(task, pendingData, analysis, ticktick) {
-    const update = buildTickTickUpdate(pendingData);
+async function autoApply(task, pendingData, analysis, ticktick, config = {}) {
+    const applyMode = config.autoApplyMode || 'metadata-only';
+    const update = buildTickTickUpdate(pendingData, { applyMode, priorityLabel: analysis.priority || 'important' });
     const updatedTask = await ticktick.updateTask(task.id, update);
 
     // Log for /undo — include what was changed so undo can report it

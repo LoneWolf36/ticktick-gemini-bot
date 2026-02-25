@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import path from 'path';
 import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from '../bot/utils.js';
-import { analyzeSchema, converseSchema } from './schemas.js';
+import { analyzeSchema, converseSchema, reorgSchema } from './schemas.js';
 
 // ─── User Context ────────────────────────────────────────────
 // Priority: 1) local user_context.js (gitignored), 2) USER_CONTEXT env var, 3) generic default
@@ -151,6 +151,9 @@ CRITICAL RULES:
 6. IF the user asks to ADD, CREATE, or MODIFY a task, YOU MUST STRICTLY select "action" mode. NEVER output task creation data inside the "response" string field under "coach" mode.
 7. Updates: When the user asks to modify an existing task, you MUST extract the new properties (like a new title or new date) and place them explicitly inside the 'changes' schema object.
 8. For date updates, set changes.dueDate as 'YYYY-MM-DD' whenever possible. If the user uses relative phrasing, use changes.scheduleBucket with one of: today, tomorrow, this-week, next-week, someday.
+9. For update actions, ALWAYS include taskId and at least one valid field in changes from: title, content, dueDate, scheduleBucket, projectId, priority. Never return an empty changes object.
+10. Use ONLY these action type values: update, create, complete, drop. Do not invent aliases.
+11. Output plain JSON only. No markdown, no code fences, no headings.
 
 <example_decomposition>
 Input: Flight FR123 to London departs Friday 6pm. I need to check in online, pack my bag, and book a taxi to the airport.
@@ -161,8 +164,38 @@ Logic Mapping:
 
 Input: Move the 'Review marketing copy' task to tomorrow and rename it to 'Finalize ad copy'.
 Logic Mapping:
-- Task 1 (Update): Target Task ID -> mapped changes: title becomes "Finalize ad copy", dueDate becomes "TOMORROW".
+- Task 1 (Update): Target Task ID -> mapped changes: title becomes "Finalize ad copy", scheduleBucket becomes "tomorrow".
 </example_decomposition>
+`;
+
+const REORG_PROMPT = `${USER_CONTEXT}
+
+You are reorganizing the user's entire TickTick system.
+
+Output must be strict JSON using schema.
+
+Goals:
+1. Reduce inbox/garbage clutter.
+   - Inbox should not retain tasks unless explicitly unavoidable.
+2. Group related errands into clearer tasks when appropriate.
+3. Move tasks to relevant categories/projects.
+4. Prioritize all tasks (0,1,3,5) based on impact/urgency.
+5. Improve vague task wording while preserving critical original meaning.
+6. Respect privacy/sensitive data - never paraphrase credentials or secrets.
+7. If task meaning is unclear, ask clarifying questions instead of guessing.
+8. Return practical actions, not theory. Usually produce at least 3 actions when tasks exist.
+9. Do not emit duplicate actions for the same task.
+
+Scheduling policy:
+- Career/study tasks -> morning/afternoon biased scheduling.
+- Admin tasks -> later slots unless urgent/time-bound.
+- For uncertainty, include a clarifying question instead of guessing.
+
+Output constraints:
+- Max 30 actions.
+- Each update action must include taskId and at least one concrete field in changes.
+- Each create action must include title and priority in changes.
+- Return compact plain JSON only (no markdown, no code fences, no prose).
 `;
 
 export class GeminiAnalyzer {
@@ -175,6 +208,7 @@ export class GeminiAnalyzer {
 
         this._activeKeyIndex = 0;
         this._exhaustedUntilByKey = new Array(this._keys.length).fill(null);
+        this._keyUnavailableReason = new Array(this._keys.length).fill(null);
         this._rotationPromise = null;
 
         this._initModelsForActiveKey();
@@ -227,6 +261,18 @@ export class GeminiAnalyzer {
                 temperature: 0.1
             }
         });
+
+        this.reorgModel = genAI.getGenerativeModel({
+            model: "gemini-2.5-flash",
+            systemInstruction: REORG_PROMPT,
+            generationConfig: {
+                responseMimeType: "application/json",
+                responseSchema: reorgSchema,
+                temperature: 0.2,
+                maxOutputTokens: 4096,
+            },
+            thinkingConfig: { thinkingBudget: 512 },
+        });
     }
 
     activeKeyInfo() {
@@ -254,12 +300,46 @@ export class GeminiAnalyzer {
         return isRateLimit && isDailyQuota;
     }
 
+    _isInvalidApiKeyError(err) {
+        const status = err?.status;
+        if (![400, 401, 403].includes(status)) return false;
+        const msg = (err?.message || '').toLowerCase();
+        return (
+            msg.includes('api key expired') ||
+            msg.includes('api_key_invalid') ||
+            msg.includes('invalid api key') ||
+            msg.includes('key not valid') ||
+            msg.includes('reported as leaked')
+        );
+    }
+
+    _markActiveKeyUnavailable(reason, untilMs) {
+        this._exhaustedUntilByKey[this._activeKeyIndex] = untilMs;
+        this._keyUnavailableReason[this._activeKeyIndex] = reason;
+    }
+
+    _isKeyAvailable(index) {
+        const until = this._exhaustedUntilByKey[index];
+        if (!until) return true;
+        if (Date.now() > until) {
+            this._exhaustedUntilByKey[index] = null;
+            this._keyUnavailableReason[index] = null;
+            return true;
+        }
+        return false;
+    }
+
+    _areAllKeysUnavailable() {
+        for (let i = 0; i < this._keys.length; i++) {
+            if (this._isKeyAvailable(i)) return false;
+        }
+        return true;
+    }
+
     _findNextAvailableKeyIndex() {
-        const now = Date.now();
         for (let i = 1; i <= this._keys.length; i++) {
             const idx = (this._activeKeyIndex + i) % this._keys.length;
-            const exhaustedUntil = this._exhaustedUntilByKey[idx];
-            if (!exhaustedUntil || now > exhaustedUntil) {
+            if (this._isKeyAvailable(idx)) {
                 return idx;
             }
         }
@@ -269,9 +349,7 @@ export class GeminiAnalyzer {
     async _rotateToNextKeyIfAvailable() {
         if (this._rotationPromise) {
             await this._rotationPromise;
-            const now = Date.now();
-            const exhaustedUntil = this._exhaustedUntilByKey[this._activeKeyIndex];
-            return !exhaustedUntil || now > exhaustedUntil;
+            return this._isKeyAvailable(this._activeKeyIndex);
         }
 
         const rotate = async () => {
@@ -297,19 +375,28 @@ export class GeminiAnalyzer {
     /** Returns the Date when quota will reset (null if not exhausted) */
     quotaResumeTime() {
         if (!this.isQuotaExhausted()) return null;
-        const nonNulls = this._exhaustedUntilByKey.filter(t => t !== null);
+        const nonNulls = this._exhaustedUntilByKey.filter(
+            (t, idx) => t !== null && this._keyUnavailableReason[idx] === 'daily_quota'
+        );
         return nonNulls.length ? new Date(Math.min(...nonNulls)) : null;
     }
 
     /** Check if we've hit the daily quota wall */
     isQuotaExhausted() {
-        const now = Date.now();
-        return this._exhaustedUntilByKey.every(t => t !== null && now <= t);
+        for (let i = 0; i < this._keys.length; i++) {
+            const until = this._exhaustedUntilByKey[i];
+            if (!until || Date.now() > until) return false;
+            if (this._keyUnavailableReason[i] !== 'daily_quota') return false;
+        }
+        return true;
     }
 
     async _generateWithFailover(getModelFn, prompt, { transientBaseMs = 15 } = {}) {
         if (this.isQuotaExhausted()) {
             throw new Error('QUOTA_EXHAUSTED');
+        }
+        if (this._areAllKeysUnavailable()) {
+            throw new Error('API_KEYS_UNAVAILABLE');
         }
 
         const maxTransientRetries = 2; // For transient 429s
@@ -335,10 +422,22 @@ export class GeminiAnalyzer {
                 const maskedKey = activeK ? `${activeK.slice(0, 4)}...${activeK.slice(-4)}` : 'undefined';
                 console.error(`[DIAGNOSTICS] Key ${this._activeKeyIndex + 1}/${this._keys.length} [${maskedKey}] exactly threw: [${err.status}] ${err.message}`);
 
+                if (this._isInvalidApiKeyError(err)) {
+                    // Expired/leaked keys should be sidelined for longer than daily quota windows.
+                    const disableMs = Date.now() + (7 * 24 * 60 * 60 * 1000);
+                    this._markActiveKeyUnavailable('invalid_key', disableMs);
+                    console.error(`🚫 Key ${this._activeKeyIndex + 1}/${this._keys.length} marked unavailable (invalid/leaked).`);
+                    if (rotations < maxRotations && await this._rotateToNextKeyIfAvailable()) {
+                        rotations++;
+                        continue;
+                    }
+                    throw new Error('API_KEYS_UNAVAILABLE');
+                }
+
                 if (this._isDailyQuotaError(err)) {
                     // Mark current key as exhausted
                     const resetMs = this._getQuotaResetMs();
-                    this._exhaustedUntilByKey[this._activeKeyIndex] = Date.now() + resetMs;
+                    this._markActiveKeyUnavailable('daily_quota', Date.now() + resetMs);
 
                     if (rotations < maxRotations && await this._rotateToNextKeyIfAvailable()) {
                         rotations++;
@@ -353,7 +452,7 @@ export class GeminiAnalyzer {
                         } else {
                             console.error(`⚠️ Daily quota hit across ${rotations + 1} attempted keys in one call. Aborting request to prevent runaway cascade.`);
                         }
-                        throw new Error('QUOTA_EXHAUSTED');
+                        throw new Error(this._areAllKeysUnavailable() ? 'API_KEYS_UNAVAILABLE' : 'QUOTA_EXHAUSTED');
                     }
                 }
 
@@ -489,6 +588,304 @@ ${projectList}
             // If Gemini failed strict JSON enforcement
             return { mode: 'coach', response: raw };
         }
+    }
+
+    async generateReorgProposal(tasks = [], projects = [], refinement = null, existingActions = []) {
+        const compactTasks = this._compactReorgTasks(tasks);
+        const projectList = projects.map(p => `[id:${p.id}] ${p.name}`).join(' | ');
+        const taskList = compactTasks.map(t => {
+            const parts = [`[id:${t.id}] "${t.title}"`];
+            if (t.projectName) parts.push(`project=${t.projectName}`);
+            if (t.priority !== undefined) parts.push(`priority=${t.priority}`);
+            if (t.dueDate) parts.push(`due=${t.dueDate.split('T')[0]}`);
+            if (t.content) parts.push(`content=${t.content.slice(0, 120)}`);
+            return parts.join(' | ');
+        }).join('\n');
+
+        let prompt = `Current tasks (${tasks.length} total, ${compactTasks.length} included in context):\n${taskList}\n\nProjects:\n${projectList}\n`;
+        if (existingActions?.length > 0) {
+            const existingSummary = existingActions
+                .slice(0, 30)
+                .map((a, i) => `${i + 1}. ${a.type}${a.taskId ? `:${a.taskId}` : ''}`)
+                .join('\n');
+            prompt += `\nExisting proposal actions (summary):\n${existingSummary}\n`;
+        }
+        if (refinement) {
+            prompt += `\nUser refinement request:\n${refinement}\n`;
+        } else {
+            prompt += `\nCreate a new reorganization proposal.`; 
+        }
+
+        const result = await this._generateWithFailover(() => this.reorgModel, prompt, { transientBaseMs: 12 });
+        const raw = result.response.text().trim();
+        const parsed = this._safeParseJson(raw);
+        if (parsed) return this._safeNormalizeReorgProposal(parsed, tasks, projects);
+        return this._safeNormalizeReorgProposal(this._buildFallbackReorgProposal(tasks, projects), tasks, projects);
+    }
+
+    _safeParseJson(raw = '') {
+        if (!raw || typeof raw !== 'string') return null;
+        const attempts = [];
+        attempts.push(raw);
+        const fenced = raw.match(/```json\s*([\s\S]*?)```/i)?.[1];
+        if (fenced) attempts.push(fenced);
+        const firstBrace = raw.indexOf('{');
+        const lastBrace = raw.lastIndexOf('}');
+        if (firstBrace !== -1 && lastBrace !== -1 && lastBrace > firstBrace) {
+            attempts.push(raw.slice(firstBrace, lastBrace + 1));
+        }
+
+        for (const candidate of attempts) {
+            try {
+                return JSON.parse(candidate);
+            } catch {
+                const normalized = candidate
+                    .replace(/,\s*([}\]])/g, '$1')
+                    .replace(/[“”]/g, '"')
+                    .replace(/[‘’]/g, "'")
+                    .replace(/[\u0000-\u001F]+/g, ' ');
+                try {
+                    return JSON.parse(normalized);
+                } catch {
+                    const repaired = normalized
+                        .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3')
+                        .replace(/'([^'\\]*(?:\\.[^'\\]*)*)'/g, (_, value) => `"${value.replace(/"/g, '\\"')}"`)
+                        .replace(/,\s*([}\]])/g, '$1');
+                    try {
+                        return JSON.parse(repaired);
+                    } catch {
+                        // continue
+                    }
+                }
+            }
+        }
+        return null;
+    }
+
+    _buildFallbackReorgProposal(tasks = [], projects = []) {
+        const fallbackTasks = this._compactReorgTasks(tasks, 40);
+        const projectsByLower = new Map((projects || []).map(p => [(p.name || '').toLowerCase(), p.id]));
+        const findProjectId = (task) => {
+            const text = `${task.title || ''} ${task.projectName || ''} ${task.content || ''}`.toLowerCase();
+            if (/\b(system design|dsa|interview|resume|backend|career|study|college|assignment|exam)\b/.test(text)) {
+                return [...projectsByLower.entries()].find(([k]) => k.includes('career'))?.[1]
+                    || [...projectsByLower.entries()].find(([k]) => k.includes('study'))?.[1]
+                    || null;
+            }
+            return [...projectsByLower.entries()].find(([k]) => k.includes('admin'))?.[1]
+                || [...projectsByLower.entries()].find(([k]) => k.includes('personal'))?.[1]
+                || null;
+        };
+        const inferPriority = (task) => {
+            const text = `${task.title || ''} ${task.projectName || ''} ${task.content || ''}`.toLowerCase();
+            if (/\b(system design|dsa|interview|resume|backend|study|exam)\b/.test(text)) return 5;
+            if (/\b(bank|bill|grocery|get |print|admin|errand|shopping|password|credential|wifi)\b/.test(text)) return 1;
+            return 3;
+        };
+
+        const actions = [];
+        for (const task of fallbackTasks) {
+            if (task.status !== 0 && task.status !== undefined) continue;
+            const changes = {};
+            if (![1, 3, 5].includes(task.priority)) {
+                changes.priority = inferPriority(task);
+            }
+            if ((task.projectName || '').toLowerCase() === 'inbox') {
+                const candidate = findProjectId(task);
+                if (candidate && candidate !== task.projectId) changes.projectId = candidate;
+            }
+            if (Object.keys(changes).length > 0) {
+                actions.push({ type: 'update', taskId: task.id, changes });
+            }
+            if (actions.length >= 30) break;
+        }
+        return {
+            summary: 'Generated deterministic fallback proposal due malformed model output.',
+            questions: [],
+            actions,
+        };
+    }
+
+    _safeNormalizeReorgProposal(parsed, tasks, projects) {
+        try {
+            return this._normalizeReorgProposal(parsed, tasks, projects);
+        } catch {
+            return this._normalizeReorgProposal(this._buildFallbackReorgProposal(tasks, projects), tasks, projects);
+        }
+    }
+
+    _compactReorgTasks(tasks = [], limit = 80) {
+        const withoutCompleted = (tasks || []).filter(t => t.status === 0 || t.status === undefined);
+        const scored = withoutCompleted.map(t => {
+            let score = 0;
+            if ((t.projectName || '').toLowerCase() === 'inbox') score += 20;
+            if (t.priority === 5) score += 12;
+            if (t.priority === 0) score += 6;
+            if (!t.dueDate) score += 3;
+            if ((t.content || '').length === 0) score += 2;
+            return { task: t, score };
+        });
+        scored.sort((a, b) => b.score - a.score);
+        return scored.slice(0, limit).map(s => s.task);
+    }
+
+    _normalizeReorgProposal(proposal = {}, tasks = [], projects = []) {
+        const cleaned = {
+            summary: typeof proposal.summary === 'string' && proposal.summary.trim()
+                ? proposal.summary.trim()
+                : 'Reorganization proposal generated.',
+            questions: Array.isArray(proposal.questions)
+                ? proposal.questions.filter(q => typeof q === 'string' && q.trim()).slice(0, 8)
+                : [],
+            actions: Array.isArray(proposal.actions) ? proposal.actions : [],
+        };
+
+        const validTypes = new Set(['update', 'drop', 'create', 'complete']);
+        const mergedByTask = new Map();
+        const terminalByTask = new Map();
+        const createSeen = new Set();
+        const normalizedActions = [];
+        const taskById = new Map(tasks.map(t => [t.id, t]));
+
+        const nonInboxProjects = projects.filter(p => (p.name || '').toLowerCase() !== 'inbox');
+        const defaultProjectId = nonInboxProjects[0]?.id || projects[0]?.id || null;
+
+        const inferProjectForTask = (task) => {
+            const text = `${task?.title || ''} ${task?.projectName || ''} ${task?.content || ''}`.toLowerCase();
+            const byName = (fragment) => projects.find(p => (p.name || '').toLowerCase().includes(fragment))?.id;
+            if (/\b(system design|dsa|interview|resume|backend|career|study|college|assignment|exam)\b/.test(text)) {
+                return byName('career') || byName('study') || defaultProjectId;
+            }
+            if (/\b(bank|bill|grocery|get |print|admin|errand|shopping|passport|visa|password|credential|wifi)\b/.test(text)) {
+                return byName('admin') || byName('personal') || defaultProjectId;
+            }
+            return defaultProjectId;
+        };
+
+        const inferPriority = (task) => {
+            if ([1, 3, 5].includes(task?.priority)) return task.priority;
+            const text = `${task?.title || ''} ${task?.projectName || ''} ${task?.content || ''}`.toLowerCase();
+            if (/\b(system design|dsa|interview|resume|backend|study|exam)\b/.test(text)) return 5;
+            if (/\b(bank|bill|grocery|get |print|admin|errand|shopping|password|credential|wifi)\b/.test(text)) return 1;
+            return 3;
+        };
+
+        for (const raw of cleaned.actions.slice(0, 60)) {
+            const action = raw && typeof raw === 'object' ? { ...raw } : null;
+            if (!action || !validTypes.has(action.type)) continue;
+            const taskId = action.taskId || null;
+            const changes = (action.changes && typeof action.changes === 'object') ? { ...action.changes } : {};
+
+            if (action.type === 'create') {
+                if (!changes.title || typeof changes.title !== 'string') continue;
+                if (![0, 1, 3, 5].includes(changes.priority)) changes.priority = 1;
+                if (!changes.projectId && defaultProjectId) changes.projectId = defaultProjectId;
+                const key = `${changes.title.trim().toLowerCase()}|${changes.projectId || ''}|${changes.scheduleBucket || changes.dueDate || ''}`;
+                if (createSeen.has(key)) continue;
+                createSeen.add(key);
+                normalizedActions.push({ type: 'create', changes });
+                continue;
+            }
+
+            if (!taskId || !taskById.has(taskId)) continue;
+            if (action.type === 'complete') {
+                terminalByTask.set(taskId, { type: 'complete', taskId, changes: {} });
+                continue;
+            }
+
+            const prior = mergedByTask.get(taskId) || {};
+            const merged = { ...prior, ...changes };
+            merged.__type = action.type === 'drop' ? 'drop' : (prior.__type === 'drop' ? 'drop' : 'update');
+            mergedByTask.set(taskId, merged);
+        }
+
+        for (const [taskId, merged] of mergedByTask.entries()) {
+            if (terminalByTask.has(taskId)) continue;
+            const task = taskById.get(taskId);
+            const type = merged.__type || 'update';
+            delete merged.__type;
+
+            if (![0, 1, 3, 5].includes(merged.priority)) merged.priority = inferPriority(task);
+            if (!merged.projectId && (task.projectName || '').toLowerCase() === 'inbox') {
+                merged.projectId = inferProjectForTask(task);
+            }
+            if (type === 'drop') {
+                // Non-destructive demotion path: keep as drop but include metadata changes.
+                if (!merged.projectId) merged.projectId = inferProjectForTask(task);
+                merged.priority = 0;
+            }
+            if (Object.keys(merged).length === 0) continue;
+            normalizedActions.push({ type, taskId, changes: merged });
+        }
+
+        for (const completeAction of terminalByTask.values()) {
+            normalizedActions.push(completeAction);
+        }
+
+        // Hard policy: avoid leaving active tasks in Inbox.
+        const touched = new Set(
+            normalizedActions
+                .filter(a => a.taskId)
+                .map(a => a.taskId)
+        );
+        const inboxActive = tasks.filter(t => (t.status === 0 || t.status === undefined) && (t.projectName || '').toLowerCase() === 'inbox');
+        for (const task of inboxActive) {
+            if (touched.has(task.id)) continue;
+            const inferredProjectId = inferProjectForTask(task);
+            if (!inferredProjectId || inferredProjectId === task.projectId) continue;
+            normalizedActions.push({
+                type: 'update',
+                taskId: task.id,
+                changes: {
+                    projectId: inferredProjectId,
+                    priority: inferPriority(task),
+                },
+            });
+        }
+
+        cleaned.actions = normalizedActions.slice(0, 30);
+        if (cleaned.actions.length === 0 && tasks.length > 0) {
+            const fallback = [];
+            for (const task of tasks.slice(0, 10)) {
+                if ((task.status !== 0 && task.status !== undefined)) continue;
+                fallback.push({
+                    type: 'update',
+                    taskId: task.id,
+                    changes: {
+                        priority: inferPriority(task),
+                        projectId: (task.projectName || '').toLowerCase() === 'inbox' ? inferProjectForTask(task) : undefined,
+                    },
+                });
+            }
+            cleaned.actions = fallback
+                .map(a => ({
+                    ...a,
+                    changes: Object.fromEntries(Object.entries(a.changes).filter(([, v]) => v !== undefined)),
+                }))
+                .filter(a => Object.keys(a.changes).length > 0);
+        }
+
+        const vagueQuestions = [];
+        const isVague = (title = '') => {
+            const t = title.trim().toLowerCase();
+            if (!t) return true;
+            const words = t.split(/\s+/);
+            if (words.length <= 2) return true;
+            if (words.length <= 3 && /\b(get|buy|print|call|check|fix|do|send|make)\b/.test(words[0])) return true;
+            return /\b(task|todo|stuff|thing|misc|later|check|work on|some docs|letter|paperwork)\b/.test(t);
+        };
+        for (const t of tasks) {
+            if ((t.status !== 0 && t.status !== undefined)) continue;
+            if (isVague(t.title) || (!t.content && !t.dueDate)) {
+                vagueQuestions.push(`Can you clarify what success looks like for "${t.title}"?`);
+            }
+            if (vagueQuestions.length >= 5) break;
+        }
+        if (cleaned.questions.length === 0 && vagueQuestions.length > 0) {
+            cleaned.questions = vagueQuestions;
+        }
+
+        return cleaned;
     }
 
     // ─── Helpers ──────────────────────────────────────────────

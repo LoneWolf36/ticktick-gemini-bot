@@ -16,6 +16,7 @@ const REDIS_KEY = 'ticktick-bot:state';
 const DEFAULT_STATE = {
     chatId: null,
     pendingTasks: {},    // Analyzed + sent to Telegram, awaiting user review
+    pendingReorg: null,  // Proposed global reorg plan awaiting apply/refine/cancel
     processedTasks: {},  // User has clicked approve/skip/drop
     failedTasks: {},     // AI analysis failed (rate limit) — parked to prevent re-polling
     undoLog: [],
@@ -71,6 +72,7 @@ async function loadFromRedis() {
                 ...parsed,
                 stats: { ...DEFAULT_STATE.stats, ...parsed.stats },
                 pendingTasks: parsed.pendingTasks || {},
+                pendingReorg: parsed.pendingReorg || null,
                 processedTasks: parsed.processedTasks || {},
                 undoLog: parsed.undoLog || [],
             };
@@ -136,6 +138,7 @@ function loadFromFile() {
             ...parsed,
             stats: { ...DEFAULT_STATE.stats, ...parsed.stats },
             pendingTasks: parsed.pendingTasks || {},
+            pendingReorg: parsed.pendingReorg || null,
             processedTasks: parsed.processedTasks || {},
             undoLog: parsed.undoLog || [],
         };
@@ -307,6 +310,24 @@ export function getPendingTasks() {
 
 export function getPendingCount() {
     return Object.keys(state.pendingTasks).length;
+}
+
+// Reorg proposal state
+export function getPendingReorg() {
+    return state.pendingReorg;
+}
+
+export async function setPendingReorg(data) {
+    state.pendingReorg = {
+        ...data,
+        updatedAt: new Date().toISOString(),
+    };
+    await save();
+}
+
+export async function clearPendingReorg() {
+    state.pendingReorg = null;
+    await save();
 }
 
 // ─── Undo Log ────────────────────────────────────────────────

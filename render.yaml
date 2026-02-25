@@ -35,5 +35,7 @@ services:
         value: "true"
       - key: AUTO_APPLY_DROPS
         value: "false"
+      - key: AUTO_APPLY_MODE
+        value: metadata-only
       - key: PORT
         value: "10000"   # Render uses port 10000 by default

@@ -106,11 +106,11 @@ export function userTimeString() {
     return new Date().toLocaleTimeString('en-IE', { timeZone: USER_TZ });
 }
 
-/** Build an ISO date string for TickTick, with correct timezone offset */
-function endOfDayISO(year, month, day) {
-    // Create a Date at 23:59 on the target day in the user's timezone
+/** Build an ISO datetime string for TickTick, with correct timezone offset */
+function atTimeISO(year, month, day, hour = 23, minute = 59) {
+    // Create a Date at target local time in the user's timezone
     // We use Intl to find the UTC offset, then construct the ISO string
-    const targetDate = new Date(year, month, day, 23, 59, 0);
+    const targetDate = new Date(year, month, day, hour, minute, 0);
     const formatter = new Intl.DateTimeFormat('en-CA', {
         timeZone: USER_TZ,
         timeZoneName: 'shortOffset',
@@ -126,14 +126,21 @@ function endOfDayISO(year, month, day) {
 
     const mm = String(month + 1).padStart(2, '0');
     const dd = String(day).padStart(2, '0');
-    return `${year}-${mm}-${dd}T23:59:00.000${tzOffset}`;
+    const hh = String(hour).padStart(2, '0');
+    const min = String(minute).padStart(2, '0');
+    return `${year}-${mm}-${dd}T${hh}:${min}:00.000${tzOffset}`;
+}
+
+/** Build an ISO date string at end-of-day */
+function endOfDayISO(year, month, day) {
+    return atTimeISO(year, month, day, 23, 59);
 }
 
 /** 
  * Safely parse a YYYY-MM-DD string into a TickTick ISO string with the current user's timezone offset
  * following Postel's Law to shield against messy LLM output. 
  */
-export function parseDateStringToTickTickISO(dateStr) {
+export function parseDateStringToTickTickISO(dateStr, options = {}) {
     if (!dateStr || typeof dateStr !== 'string') return null;
 
     // Attempt to extract YYYY-MM-DD, ignoring extra text Gemini might have hallucinated
@@ -144,42 +151,71 @@ export function parseDateStringToTickTickISO(dateStr) {
     const month = parseInt(match[2]) - 1; // 0-indexed month for Date
     const day = parseInt(match[3]);
 
+    const slotMode = options.slotMode || 'end-of-day';
+    if (slotMode === 'priority') {
+        const priorityLabel = options.priorityLabel || 'important';
+        const slot = priorityLabel === 'career-critical' ? { hour: 9, minute: 30 }
+            : priorityLabel === 'important' ? { hour: 13, minute: 0 }
+                : { hour: 17, minute: 30 };
+        return atTimeISO(year, month, day, slot.hour, slot.minute);
+    }
+
+    if (slotMode === 'custom' && typeof options.hour === 'number' && typeof options.minute === 'number') {
+        return atTimeISO(year, month, day, options.hour, options.minute);
+    }
+
     return endOfDayISO(year, month, day);
 }
 
+/** Conservative sensitive-content detector to prevent destructive rewrites */
+export function containsSensitiveContent(text = '') {
+    if (!text || typeof text !== 'string') return false;
+    const probes = [
+        /password|passcode|otp|pin|secret|api\s*key|token|credential/i,
+        /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/,
+        /[A-Za-z0-9_!@#$%^&*()\-+=]{10,}/,
+    ];
+    return probes.some((re) => re.test(text));
+}
 
-export function scheduleToDate(bucket) {
+/** Slot-based scheduling for better day planning (instead of default end-of-day) */
+export function scheduleToDateTime(bucket, { priorityLabel = 'important' } = {}) {
     if (!bucket || bucket === 'someday' || bucket === 'null') return null;
-
     const now = userNow();
-    // Helper to add days to the user's current date
     const addDays = (n) => {
         const d = new Date(now.year, now.month, now.day + n);
         return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate() };
     };
 
+    // Career-focused work earlier, admin later by default.
+    const slot = priorityLabel === 'career-critical' ? { hour: 9, minute: 30 }
+        : priorityLabel === 'important' ? { hour: 13, minute: 0 }
+            : { hour: 17, minute: 30 };
+
     switch (bucket) {
         case 'today':
-            return endOfDayISO(now.year, now.month, now.day);
+            return atTimeISO(now.year, now.month, now.day, slot.hour, slot.minute);
         case 'tomorrow': {
             const t = addDays(1);
-            return endOfDayISO(t.year, t.month, t.day);
+            return atTimeISO(t.year, t.month, t.day, slot.hour, slot.minute);
         }
         case 'this-week': {
-            // Next Friday (or today if it's Friday)
             const daysUntilFriday = (5 - now.dayOfWeek + 7) % 7 || 7;
             const f = addDays(daysUntilFriday);
-            return endOfDayISO(f.year, f.month, f.day);
+            return atTimeISO(f.year, f.month, f.day, slot.hour, slot.minute);
         }
         case 'next-week': {
-            // Next Monday
             const daysUntilMonday = (8 - now.dayOfWeek) % 7 || 7;
             const m = addDays(daysUntilMonday);
-            return endOfDayISO(m.year, m.month, m.day);
+            return atTimeISO(m.year, m.month, m.day, slot.hour, slot.minute);
         }
         default:
             return null;
     }
+}
+
+export function scheduleToDate(bucket, options = {}) {
+    return scheduleToDateTime(bucket, { priorityLabel: options.priorityLabel || 'important' });
 }
 
 function scheduleLabel(bucket) {
@@ -197,14 +233,17 @@ function scheduleLabel(bucket) {
 // Used by BOTH callbacks.js (manual ✅ Approve) and autoApply().
 // Single source of truth for what gets written to TickTick.
 
-export function buildTickTickUpdate(data) {
+export function buildTickTickUpdate(data, options = {}) {
+    const { applyMode = 'full', priorityLabel = 'important' } = options;
     const update = {
         projectId: data.projectId,
         originalProjectId: data.projectId // Required for ticktick.js to detect moves
     };
 
-    if (data.improvedTitle) update.title = data.improvedTitle;
-    if (data.improvedContent) update.content = data.improvedContent;
+    if (applyMode !== 'metadata-only') {
+        if (data.improvedTitle) update.title = data.improvedTitle;
+        if (data.improvedContent) update.content = data.improvedContent;
+    }
     if (data.suggestedPriority !== undefined) update.priority = data.suggestedPriority;
 
     // Move to a different project if Gemini suggested one
@@ -214,7 +253,7 @@ export function buildTickTickUpdate(data) {
 
     // Apply due date if schedule is set and not vague
     if (data.suggestedSchedule && data.suggestedSchedule !== 'someday' && data.suggestedSchedule !== 'null') {
-        const dueDate = scheduleToDate(data.suggestedSchedule);
+        const dueDate = scheduleToDateTime(data.suggestedSchedule, { priorityLabel });
         if (dueDate) update.dueDate = dueDate;
     }
 
