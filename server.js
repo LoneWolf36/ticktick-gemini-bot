@@ -16,7 +16,7 @@ const {
     GEMINI_API_KEYS,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
-    USER_TIMEZONE = 'America/Los_Angeles',
+    USER_TIMEZONE = 'Europe/Dublin',
     DAILY_BRIEFING_HOUR = '8',
     WEEKLY_DIGEST_DAY = '0',
     POLL_INTERVAL_MINUTES = '5',

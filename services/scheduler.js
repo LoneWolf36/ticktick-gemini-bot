@@ -9,7 +9,7 @@ export async function startScheduler(bot, ticktick, gemini, config) {
         dailyHour = 8,
         weeklyDay = 0,
         pollMinutes = 5,
-        timezone = 'America/Los_Angeles',
+        timezone = 'Europe/Dublin',
         autoApplyLifeAdmin = false,
         autoApplyDrops = false,
     } = config;

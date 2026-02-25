@@ -79,6 +79,7 @@ Structure:
 
 Output:
 Plain text formatted for Telegram. Use **asterisks** for bold emphasis.
+Do not use markdown headings (#, ##, ###) or separator lines made of hashes.
 Short. Direct. No fluff.
 
 <example_format>
@@ -109,6 +110,7 @@ Be honest. Short. No fluff.
 
 Output:
 Plain text formatted for Telegram. Use **asterisks** for bold emphasis.
+Do not use markdown headings (#, ##, ###) or separator lines made of hashes.
 
 <example_format>
 **WINS**:
@@ -148,6 +150,7 @@ CRITICAL RULES:
 5. Infer priorities (0:none, 1:low, 3:medium, 5:high).
 6. IF the user asks to ADD, CREATE, or MODIFY a task, YOU MUST STRICTLY select "action" mode. NEVER output task creation data inside the "response" string field under "coach" mode.
 7. Updates: When the user asks to modify an existing task, you MUST extract the new properties (like a new title or new date) and place them explicitly inside the 'changes' schema object.
+8. For date updates, set changes.dueDate as 'YYYY-MM-DD' whenever possible. If the user uses relative phrasing, use changes.scheduleBucket with one of: today, tomorrow, this-week, next-week, someday.
 
 <example_decomposition>
 Input: Flight FR123 to London departs Friday 6pm. I need to check in online, pack my bag, and book a taxi to the airport.

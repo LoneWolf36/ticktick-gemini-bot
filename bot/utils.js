@@ -64,7 +64,7 @@ export function buildUndoEntry({ source, action, applied = {}, appliedTaskId = n
 // ALL date formatting in the entire app must use these helpers.
 // Never call new Date().toLocaleDateString() without passing USER_TZ.
 
-export const USER_TZ = process.env.USER_TIMEZONE || 'America/Los_Angeles';
+export const USER_TZ = process.env.USER_TIMEZONE || 'Europe/Dublin';
 
 /** Get the user's "now" as date components in their timezone */
 export function userNow() {
