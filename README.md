@@ -8,10 +8,10 @@ An AI-powered Telegram bot that connects to your TickTick task manager and acts 
 - **Project reassignment** — suggests moving tasks to the right TickTick project
 - **Smart scheduling** — assigns due dates (today / tomorrow / this-week / next-week / someday) based on urgency and your patterns
 - **Native TickTick priority flags** — maps to 🔴🟡🔵 priority levels
-- **Autonomous mode** — auto-applies low-risk changes (life-admin tasks) without needing your tap. Supports `metadata-only` or `full` application modes. One compact notification per batch
-- **Gemini API Failover** — supply multiple comma-separated Gemini API keys to automatically handle rate limits and quota exhaustion seamlessly
-- **Content Protection** — sensitive information (like passwords) within existing task descriptions is detected and safely preserved during AI rewrites
+- **Autonomous mode** — auto-applies low-risk changes (life-admin tasks) without needing your tap. One compact notification per batch
 - **Free-form instructions** — send natural language messages like *"move all gym tasks to next week"* or *"what should I focus on today?"*
+- **Quick command menu** — use `/menu` to access inline shortcuts and avoid command discovery friction
+- **Guided full-system reorg** — use `/reorg` to generate a proposal, refine it, and apply it safely
 - **Daily morning briefing** — 3-4 prioritized focus items, leading with what you've been avoiding
 - **Weekly accountability digest** — honest review of wins, avoidance patterns, and next week's top 3
 - **Proactive polling** — detects new tasks every 5 minutes and notifies you
@@ -81,10 +81,12 @@ Open your bot in Telegram and send `/start`.
 | Command | Description |
 |---------|-------------|
 | `/scan` | Analyze new tasks (batched, 5 at a time) |
+| `/menu` | Show command shortcuts |
 | `/pending` | Re-surface tasks awaiting review |
 | `/briefing` | Get today's prioritized morning plan |
 | `/weekly` | Weekly accountability digest |
 | `/review` | Walk through all unreviewed tasks |
+| `/reorg` | Build a full task reorganization proposal (apply/refine/cancel) |
 | `/undo` | Revert last applied change |
 | `/reset` | Wipe all bot data and start fresh (requires `/reset CONFIRM`) |
 | `/status` | Bot status, stats, and auto-apply mode |
@@ -122,8 +124,7 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 |----------|-------|
 | `TELEGRAM_BOT_TOKEN` | Your bot token |
 | `TELEGRAM_CHAT_ID` | Your Telegram chat ID |
-| `GEMINI_API_KEY` | Your Gemini API key(s) (comma-separated for failover) |
-| `AUTO_APPLY_MODE` | `metadata-only` or `full` |
+| `GEMINI_API_KEY` | Your Gemini API key |
 | `TICKTICK_CLIENT_ID` | Your TickTick app client ID |
 | `TICKTICK_CLIENT_SECRET` | Your TickTick app secret |
 | `TICKTICK_ACCESS_TOKEN` | OAuth token (run locally first, copy from console) |
