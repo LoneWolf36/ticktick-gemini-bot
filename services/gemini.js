@@ -147,7 +147,7 @@ CRITICAL RULES:
 4. DO NOT write coaching monologues inside the title. Keep "title" under 10 words strictly as a concise summary. Place all verbose text, notes, and context exclusively into "content". Do not copy-paste repetitive block constraints into every sub-step's content.
 5. Infer priorities (0:none, 1:low, 3:medium, 5:high).
 6. IF the user asks to ADD, CREATE, or MODIFY a task, YOU MUST STRICTLY select "action" mode. NEVER output task creation data inside the "response" string field under "coach" mode.
-7. Updates & Modifications: When processing an 'update' action, you MUST place the modified data (e.g., the new title or timeline) explicitly entirely inside the nested 'changes' object property. NEVER leave 'changes' empty.
+7. Updates: When the user asks to modify an existing task, you MUST extract the new properties (like a new title or new date) and place them explicitly inside the 'changes' schema object.
 
 <example_decomposition>
 Input: Flight FR123 to London departs Friday 6pm. I need to check in online, pack my bag, and book a taxi to the airport.
@@ -158,7 +158,7 @@ Logic Mapping:
 
 Input: Move the 'Review marketing copy' task to tomorrow and rename it to 'Finalize ad copy'.
 Logic Mapping:
-- Task 1 (Update): Target Task ID -> Extract Title & DueDate explicitly into the 'changes' mapping block securely.
+- Task 1 (Update): Target Task ID -> mapped changes: title becomes "Finalize ad copy", dueDate becomes "TOMORROW".
 </example_decomposition>
 `;
 
