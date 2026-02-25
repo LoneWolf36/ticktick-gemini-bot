@@ -5,7 +5,7 @@ import {
     buildTaskCard, buildPendingData, pendingToAnalysis, buildTickTickUpdate,
     sleep, userLocaleString, isAuthorized, guardAccess, PRIORITY_LABEL, buildUndoEntry,
     formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage, buildAutoApplyNotification,
-    parseDateStringToTickTickISO, parseTelegramMarkdownToHTML, replyWithMarkdown, sendWithMarkdown, truncateMessage
+    parseDateStringToTickTickISO, parseTelegramMarkdownToHTML, replyWithMarkdown, sendWithMarkdown, truncateMessage, scheduleToDate
 } from './utils.js';
 
 export function registerCommands(bot, ticktick, gemini, config = {}) {
@@ -403,13 +403,88 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
 export async function executeActions(actions, ticktick, currentTasks) {
     const outcomes = [];
     let hasUndoableActions = false;
+
+    const resolveDueDate = (value) => {
+        if (value === null) return null;
+        if (typeof value !== 'string') return undefined;
+        const normalized = value.trim().toLowerCase();
+        const bucketToDate = scheduleToDate(normalized);
+        if (bucketToDate) return bucketToDate;
+        return parseDateStringToTickTickISO(value) || undefined;
+    };
+
+    const normalizeActionChanges = (action) => {
+        const extracted = {};
+        const source = (action && typeof action.changes === 'object') ? action.changes : {};
+        const nested = (action && typeof action.payload === 'object') ? action.payload : {};
+
+        // Canonical schema keys
+        const canonicalKeys = ['title', 'content', 'projectId', 'priority'];
+        for (const key of canonicalKeys) {
+            if (source[key] !== undefined) extracted[key] = source[key];
+        }
+
+        // Common LLM aliases for project and due date
+        if (extracted.projectId === undefined) {
+            extracted.projectId =
+                source.project_id ??
+                source.suggestedProjectId ??
+                source.suggested_project_id ??
+                nested.projectId ??
+                nested.project_id ??
+                action.projectId ??
+                action.project_id;
+        }
+
+        const rawDueDate =
+            source.dueDate ??
+            source.due_date ??
+            source.newDueDate ??
+            source.new_due_date ??
+            source.date ??
+            source.when ??
+            source.schedule ??
+            source.scheduleBucket ??
+            source.suggested_schedule ??
+            nested.dueDate ??
+            nested.due_date ??
+            nested.newDueDate ??
+            nested.new_due_date ??
+            nested.date ??
+            nested.when ??
+            nested.schedule ??
+            nested.scheduleBucket ??
+            nested.suggested_schedule ??
+            action.dueDate ??
+            action.due_date ??
+            action.newDueDate ??
+            action.new_due_date ??
+            action.date ??
+            action.when ??
+            action.schedule ??
+            action.scheduleBucket ??
+            action.suggested_schedule;
+
+        if (rawDueDate !== undefined) {
+            const parsed = resolveDueDate(rawDueDate);
+            if (parsed !== undefined) extracted.dueDate = parsed;
+        }
+
+        // Root-level fallback for historically flat-mapped model output
+        for (const key of ['title', 'content', 'priority']) {
+            if (extracted[key] === undefined && action[key] !== undefined) extracted[key] = action[key];
+        }
+
+        return extracted;
+    };
+
     for (const action of actions) {
         try {
             if (action.type === 'create') {
                 if (action.changes && action.changes.title) {
                     let safeDueDate = undefined;
                     if (action.changes.dueDate) {
-                        safeDueDate = parseDateStringToTickTickISO(action.changes.dueDate) || undefined;
+                        safeDueDate = resolveDueDate(action.changes.dueDate);
                     }
                     const createPayload = { ...action.changes, title: action.changes.title };
                     if (safeDueDate) createPayload.dueDate = safeDueDate;
@@ -440,26 +515,18 @@ export async function executeActions(actions, ticktick, currentTasks) {
             }
 
             if (action.type === 'update') {
-                let changesPayload = action.changes;
-
-                // Defensive Whitelist: Fallback to root object if LLM flat-mapped properties missing .changes or provided an empty {}
-                if (!changesPayload || typeof changesPayload !== 'object' || Object.keys(changesPayload).length === 0) {
-                    const extracted = {};
-                    const allowedKeys = ['title', 'content', 'dueDate', 'projectId', 'priority'];
-                    for (const key of allowedKeys) {
-                        if (action[key] !== undefined) extracted[key] = action[key];
-                    }
-                    if (Object.keys(extracted).length === 0) {
-                        outcomes.push(`⚠️ Skipped invalid/unsupported action: update (No valid schema changes found)`);
-                        continue;
-                    }
-                    changesPayload = extracted;
+                const changesPayload = normalizeActionChanges(action);
+                if (Object.keys(changesPayload).length === 0) {
+                    const actionKeys = Object.keys(action || {});
+                    const changeKeys = (action && typeof action.changes === 'object') ? Object.keys(action.changes) : [];
+                    outcomes.push(`⚠️ Skipped invalid/unsupported action: update (No valid schema changes found; action keys: ${actionKeys.join(', ') || 'none'}; changes keys: ${changeKeys.join(', ') || 'none'})`);
+                    continue;
                 }
 
                 // If Gemini provided a due date, safely format it for TickTick
                 let safeDueDate = undefined;
                 if (changesPayload.dueDate) {
-                    safeDueDate = parseDateStringToTickTickISO(changesPayload.dueDate) || undefined;
+                    safeDueDate = resolveDueDate(changesPayload.dueDate);
                 }
 
                 const changes = {

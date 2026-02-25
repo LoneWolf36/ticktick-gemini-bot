@@ -64,7 +64,7 @@ export function buildUndoEntry({ source, action, applied = {}, appliedTaskId = n
 // ALL date formatting in the entire app must use these helpers.
 // Never call new Date().toLocaleDateString() without passing USER_TZ.
 
-export const USER_TZ = process.env.USER_TIMEZONE || 'Europe/Dublin';
+export const USER_TZ = process.env.USER_TIMEZONE || 'America/Los_Angeles';
 
 /** Get the user's "now" as date components in their timezone */
 export function userNow() {
@@ -400,8 +400,14 @@ export function escapeHTML(str) {
 
 export function parseTelegramMarkdownToHTML(text) {
     if (!text) return '';
+    // Normalize unsupported Markdown constructs before HTML escaping.
+    // Telegram HTML doesn't understand heading/hash syntax directly.
+    let normalized = text.replace(/\r\n/g, '\n');
+    normalized = normalized.replace(/^\s{0,3}#{1,6}\s+(.+)$/gm, '**$1**');
+    normalized = normalized.replace(/^\s*#{3,}\s*$/gm, '────────');
+
     // First, strictly escape everything so Telegram doesn't crash on < or &
-    let escaped = escapeHTML(text);
+    let escaped = escapeHTML(normalized);
 
     // Now safely convert **bold** to <b>bold</b>
     escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');

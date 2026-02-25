@@ -30,7 +30,7 @@ services:
       - key: WEBHOOK_URL
         sync: false      # Set to your Render URL: https://ticktick-gemini-bot.onrender.com
       - key: USER_TIMEZONE
-        value: Europe/Dublin
+        value: America/Los_Angeles
       - key: AUTO_APPLY_LIFE_ADMIN
         value: "true"
       - key: AUTO_APPLY_DROPS

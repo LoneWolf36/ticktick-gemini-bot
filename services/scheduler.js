@@ -1,8 +1,7 @@
 // Scheduler — cron jobs for daily briefing, weekly digest, and task polling
 import cron from 'node-cron';
 import * as store from './store.js';
-import { buildAutoApplyNotification } from '../bot/utils.js';
-import { userTimeString, formatBriefingHeader, filterProcessedThisWeek } from '../bot/utils.js';
+import { buildAutoApplyNotification, userTimeString, formatBriefingHeader, filterProcessedThisWeek, sendWithMarkdown } from '../bot/utils.js';
 import { analyzeAndSend } from '../bot/commands.js';
 
 export async function startScheduler(bot, ticktick, gemini, config) {
@@ -10,7 +9,7 @@ export async function startScheduler(bot, ticktick, gemini, config) {
         dailyHour = 8,
         weeklyDay = 0,
         pollMinutes = 5,
-        timezone = 'Europe/Dublin',
+        timezone = 'America/Los_Angeles',
         autoApplyLifeAdmin = false,
         autoApplyDrops = false,
     } = config;
@@ -36,7 +35,7 @@ export async function startScheduler(bot, ticktick, gemini, config) {
                 const chatId = store.getChatId();
                 if (chatId) {
                     try {
-                        await bot.api.sendMessage(chatId,
+                        await sendWithMarkdown(bot.api, chatId,
                             '🔑 TickTick token has expired!\n\n' +
                             'The bot can no longer access your tasks. To reconnect:\n' +
                             `1. Visit: ${ticktick.getAuthUrl()}\n` +
@@ -60,7 +59,7 @@ export async function startScheduler(bot, ticktick, gemini, config) {
             console.log(`⏸️  Skipping poll — ${pendingCount} tasks already pending review.`);
             if (!pendingSuppressionSent) {
                 try {
-                    await bot.api.sendMessage(chatId, `⏳ You have ${pendingCount} pending task(s). Run /pending to review; background scanning paused to save your API quota.`);
+                    await sendWithMarkdown(bot.api, chatId, `⏳ You have ${pendingCount} pending task(s). Run /pending to review; background scanning paused to save your API quota.`);
                     pendingSuppressionSent = true;
                 } catch (err) {
                     console.error('Failed to send pending suppression notice:', err.message);
@@ -120,7 +119,7 @@ export async function startScheduler(bot, ticktick, gemini, config) {
             // Send one compact batch notification for auto-applied tasks
             if (autoApplied.length > 0) {
                 const notification = buildAutoApplyNotification(autoApplied);
-                if (notification) await bot.api.sendMessage(chatId, notification);
+                if (notification) await sendWithMarkdown(bot.api, chatId, notification);
             }
 
             if (quotaHit && !quotaNotificationSent) {
@@ -131,7 +130,7 @@ export async function startScheduler(bot, ticktick, gemini, config) {
                         timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit'
                     }) + ' PT'
                     : '~midnight PT';
-                await bot.api.sendMessage(chatId,
+                await sendWithMarkdown(bot.api, chatId,
                     `⚠️ AI daily quota exhausted — ${newTasks.length} tasks parked.\n` +
                     `Quota resets at ~${resumeStr}. Bot will auto-resume then.\n` +
                     `Or run /scan manually after reset.`
@@ -172,7 +171,7 @@ export async function startScheduler(bot, ticktick, gemini, config) {
                 msg += `\n\n⏳ ${pendingCount} task(s) pending your review. Run /pending.`;
             }
 
-            await bot.api.sendMessage(chatId, msg);
+            await sendWithMarkdown(bot.api, chatId, msg);
             await store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         } catch (err) {
             console.error('Daily briefing error:', err.message);
@@ -195,7 +194,7 @@ export async function startScheduler(bot, ticktick, gemini, config) {
             const processed = store.getProcessedTasks();
             const thisWeek = filterProcessedThisWeek(processed, ['sentAt']);
             const digest = await gemini.generateWeeklyDigest(tasks, thisWeek);
-            await bot.api.sendMessage(chatId, formatBriefingHeader({ kind: 'weekly' }) + digest);
+            await sendWithMarkdown(bot.api, chatId, formatBriefingHeader({ kind: 'weekly' }) + digest);
             await store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         } catch (err) {
             console.error('Weekly digest error:', err.message);

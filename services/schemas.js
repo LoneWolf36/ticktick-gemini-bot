@@ -39,7 +39,9 @@ export const converseSchema = {
                         properties: {
                             title: { type: SchemaType.STRING, description: "Concise action title (Max 10 words). Extract clear task names even from shorthand (e.g. 'uber'). Do not include extraneous context or notes.", nullable: true },
                             content: { type: SchemaType.STRING, description: "Detailed task context, URLs, dates, locations, notes, or long-form coaching reasoning.", nullable: true },
-                            dueDate: { type: SchemaType.STRING, description: "YYYY-MM-DD string, inferred strictly relative to the Current Date context provided. Null if no date is implied.", nullable: true },
+                            dueDate: { type: SchemaType.STRING, description: "Due date. Prefer YYYY-MM-DD. Relative buckets like 'today', 'tomorrow', 'this-week', 'next-week' are also accepted.", nullable: true },
+                            scheduleBucket: { type: SchemaType.STRING, enum: ["today", "tomorrow", "this-week", "next-week", "someday"], nullable: true },
+                            suggested_schedule: { type: SchemaType.STRING, enum: ["today", "tomorrow", "this-week", "next-week", "someday"], nullable: true },
                             projectId: { type: SchemaType.STRING, description: "The exact 24-character ID hash of the project from the provided list. Do NOT use the project name.", nullable: true },
                             priority: { type: SchemaType.INTEGER, description: "Must be exactly 0, 1, 3, or 5 if changing", nullable: true }
                         }
