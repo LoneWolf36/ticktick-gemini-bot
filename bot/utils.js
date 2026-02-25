@@ -456,3 +456,16 @@ export function buildQuotaExhaustedMessage(gemini) {
     }
     return `⚠️ AI quota exhausted. Try again in ~2 hours or after midnight PT.`;
 }
+
+export function formatProcessedTask(task) {
+    const action = task.approved ? '✅ Approved' : task.skipped ? '⏭ Skipped' : task.dropped ? '⚪ Dropped' : '⏳ Pending';
+
+    let badge = '';
+    if (task.priorityEmoji && task.priority) {
+        badge = `${task.priorityEmoji} ${task.priority}`;
+    } else {
+        badge = PRIORITY_LABEL[task.suggestedPriority ?? 3] || '🟡 important';
+    }
+
+    return `- "${task.originalTitle}" -> ${action} [${badge}]`;
+}

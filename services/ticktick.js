@@ -15,6 +15,8 @@ export class TickTickClient {
         this.clientSecret = clientSecret;
         this.redirectUri = redirectUri;
         this.accessToken = null;
+        this.refreshToken = null;
+        this._refreshPromise = null;
         this._cachedProjects = [];
         this._loadToken();
     }
@@ -49,6 +51,7 @@ export class TickTickClient {
             }
         );
         this.accessToken = resp.data.access_token;
+        this.refreshToken = resp.data.refresh_token || this.refreshToken;
         this._saveToken(resp.data);
 
         // Log token for cloud deployments (Render, Railway) where filesystem is ephemeral
@@ -147,22 +150,7 @@ export class TickTickClient {
 
     async deleteTask(projectId, taskId) {
         this._invalidateCache();
-        try {
-            const resp = await axios.delete(`${API_BASE}/project/${projectId}/task/${taskId}`, {
-                headers: { Authorization: `Bearer ${this.accessToken}` },
-                timeout: 15000,
-            });
-            return resp.data;
-        } catch (err) {
-            if (err.response?.status === 401) {
-                this.accessToken = null;
-                this._invalidateCache();
-                const customErr = new Error('TICKTICK_TOKEN_EXPIRED');
-                customErr.isAuthError = true;
-                throw customErr;
-            }
-            throw err;
-        }
+        return this._requestWithRetry('DELETE', `/project/${projectId}/task/${taskId}`);
     }
 
     /** Returns cache age in seconds, or null if empty/invalidated */
@@ -220,41 +208,103 @@ export class TickTickClient {
 
     // ─── Internal ──────────────────────────────────────────────
 
-    async _get(endpoint) {
+    async _get(endpoint) { return this._requestWithRetry('GET', endpoint); }
+    async _post(endpoint, data = {}) { return this._requestWithRetry('POST', endpoint, data); }
+
+    async _refreshAccessToken() {
+        if (!this.refreshToken) {
+            console.error('🔑 Refresh attempted but no refresh_token exists locally.');
+            throw new Error('No refresh token available');
+        }
+        console.log('🔄 Attempting ticktick OAuth token refresh natively...');
         try {
-            const resp = await axios.get(`${API_BASE}${endpoint}`, {
-                headers: { Authorization: `Bearer ${this.accessToken}` },
-                timeout: 15000,
-            });
-            return resp.data;
-        } catch (err) {
-            if (err.response?.status === 401) {
-                this.accessToken = null; // Clear so isAuthenticated() returns false
-                this._invalidateCache();
-                console.error('🔑 TickTick token expired — re-authorize at the /health endpoint or re-run OAuth.');
-                const customErr = new Error('TICKTICK_TOKEN_EXPIRED');
-                customErr.isAuthError = true;
-                throw customErr;
+            const credentials = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
+            const resp = await axios.post(
+                `${OAUTH_BASE}/token`,
+                new URLSearchParams({
+                    refresh_token: this.refreshToken,
+                    grant_type: 'refresh_token',
+                }).toString(),
+                {
+                    headers: {
+                        'Content-Type': 'application/x-www-form-urlencoded',
+                        Authorization: `Basic ${credentials}`,
+                    },
+                    timeout: 15000,
+                }
+            );
+            this.accessToken = resp.data.access_token;
+            if (resp.data.refresh_token) {
+                this.refreshToken = resp.data.refresh_token;
             }
-            throw err;
+            // CRITICAL FIX: Ensure refresh_token is ALWAYS correctly persisted so reboot doesn't erase it
+            this._saveToken({
+                ...resp.data,
+                access_token: this.accessToken,
+                refresh_token: this.refreshToken
+            });
+            console.log('✅ TickTick token refreshed successfully.');
+            return this.accessToken;
+        } catch (err) {
+            console.error('🛑 TickTick OAuth refresh failed natively. Wiping local auth state.', err.message);
+            this.accessToken = null;
+            this.refreshToken = null;
+            this._invalidateCache();
+            const customErr = new Error('TICKTICK_TOKEN_EXPIRED');
+            customErr.isAuthError = true;
+            throw customErr;
         }
     }
 
-    async _post(endpoint, data = {}) {
-        try {
-            const resp = await axios.post(`${API_BASE}${endpoint}`, data, {
-                headers: {
-                    Authorization: `Bearer ${this.accessToken}`,
-                    'Content-Type': 'application/json',
-                },
+    async _requestWithRetry(method, endpoint, data = null) {
+        const makeReq = async () => {
+            const config = {
+                method,
+                url: `${API_BASE}${endpoint}`,
+                headers: { Authorization: `Bearer ${this.accessToken}` },
                 timeout: 15000,
-            });
+            };
+            if (data) {
+                config.data = data;
+                config.headers['Content-Type'] = 'application/json';
+            }
+            const resp = await axios(config);
             return resp.data;
+        };
+
+        try {
+            return await makeReq();
         } catch (err) {
+            if (err.response?.status === 401 && this.refreshToken) {
+                if (!this._refreshPromise) {
+                    this._refreshPromise = this._refreshAccessToken().finally(() => {
+                        this._refreshPromise = null;
+                    });
+                }
+                // Wait for ongoing refresh
+                await this._refreshPromise;
+                // Retry requested once cleanly
+                try {
+                    return await makeReq();
+                } catch (retryErr) {
+                    if (retryErr.response?.status === 401) {
+                        this.accessToken = null;
+                        this.refreshToken = null;
+                        this._invalidateCache();
+                        console.error('🔑 TickTick token expired (retry rejected token) — re-authorize at /health');
+                        const customErr = new Error('TICKTICK_TOKEN_EXPIRED');
+                        customErr.isAuthError = true;
+                        throw customErr;
+                    }
+                    throw retryErr;
+                }
+            }
+
             if (err.response?.status === 401) {
                 this.accessToken = null;
+                this.refreshToken = null;
                 this._invalidateCache();
-                console.error('🔑 TickTick token expired — re-authorize at the /health endpoint or re-run OAuth.');
+                console.error('🔑 TickTick token expired (refresh failed/missing) — re-authorize at /health');
                 const customErr = new Error('TICKTICK_TOKEN_EXPIRED');
                 customErr.isAuthError = true;
                 throw customErr;
@@ -277,6 +327,9 @@ export class TickTickClient {
         // Priority 1: Environment variable (for cloud deployments with ephemeral FS)
         if (process.env.TICKTICK_ACCESS_TOKEN) {
             this.accessToken = process.env.TICKTICK_ACCESS_TOKEN;
+            if (process.env.TICKTICK_REFRESH_TOKEN) {
+                this.refreshToken = process.env.TICKTICK_REFRESH_TOKEN;
+            }
             return;
         }
         // Priority 2: Local token file (for local dev)
@@ -284,6 +337,7 @@ export class TickTickClient {
             if (fs.existsSync(TOKEN_FILE)) {
                 const data = JSON.parse(fs.readFileSync(TOKEN_FILE, 'utf-8'));
                 this.accessToken = data.access_token;
+                this.refreshToken = data.refresh_token || null;
             }
         } catch { /* no token yet */ }
     }
