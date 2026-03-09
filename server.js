@@ -71,13 +71,23 @@ try {
     process.exit(1);
 }
 
+import { TickTickAdapter } from './services/ticktick-adapter.js';
+import { createAxIntent } from './services/ax-intent.js';
+import * as normalizer from './services/normalizer.js';
+import { createPipeline } from './services/pipeline.js';
+
 const botConfig = {
     autoApplyLifeAdmin: AUTO_APPLY_LIFE_ADMIN === 'true',
     autoApplyDrops: AUTO_APPLY_DROPS === 'true',
     autoApplyMode: AUTO_APPLY_MODE,
 };
 
-const bot = createBot(TELEGRAM_BOT_TOKEN, ticktick, gemini, botConfig);
+// Initialize new pipeline context
+const adapter = new TickTickAdapter(ticktick);
+const axIntent = createAxIntent(gemini); // Uses gemini strictly as a key manager
+const pipeline = createPipeline({ axIntent, normalizer, adapter });
+
+const bot = createBot(TELEGRAM_BOT_TOKEN, ticktick, gemini, adapter, pipeline, botConfig);
 const app = express();
 
 app.get('/health', (req, res) => res.json({ status: 'ok', authenticated: ticktick.isAuthenticated() }));

@@ -487,7 +487,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         finally { store.releaseIntakeLock(); }
     });
 
-    // ─── Catch-all: free-form messages → Gemini ─────────────
+    // ─── Catch-all: free-form messages → Pipeline ─────────────
     bot.on('message:text', async (ctx) => {
         if (!isAuthorized(ctx)) return;
         // Skip commands (Grammy routes them first, but just in case)
@@ -523,45 +523,39 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
             return;
         }
 
-        if (gemini.isQuotaExhausted()) {
-            await ctx.reply(buildQuotaExhaustedMessage(gemini));
-            return;
-        }
-
-        await ctx.reply('🤔 Thinking...');
+        // New pipeline path. Note: we leave gemini check in for the coach fallback optionally.
+        await ctx.reply('🤔 Processing...');
 
         try {
-            const tasks = await ticktick.getAllTasksCached(60000);
-            const projects = ticktick.getLastFetchedProjects();
-            const result = await gemini.handleFreeform(userMessage, tasks, projects);
+            const result = await pipeline.processMessage(userMessage, {
+                timezone: process.env.USER_TIMEZONE || 'Europe/Dublin'
+            });
 
-            if (!result) {
-                await ctx.reply('Sorry, I couldn\'t process that. Try again?');
-                return;
-            }
-
-            if (result.mode === 'action' && result.actions?.length > 0) {
-                // Execute the actions Gemini suggested
-                const { outcomes, hasUndoableActions } = await executeActions(result.actions, ticktick, tasks);
-                let response = result.summary ? `**${result.summary}**` : '✅ **Done.**';
-                if (outcomes.length > 0) {
-                    response += '\n\n' + outcomes.join('\n');
+            if (result.type === 'task') {
+                await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+            } else if (result.type === 'non-task') {
+                // Fall back to conversational handling if no intent extracted
+                if (gemini.isQuotaExhausted()) {
+                    await ctx.reply(buildQuotaExhaustedMessage(gemini));
+                    return;
                 }
-                if (hasUndoableActions) {
-                    response += '\n\nRun /undo to revert the last change.';
+                const tasks = await ticktick.getAllTasksCached(60000);
+                const projects = ticktick.getLastFetchedProjects();
+                const fallbackResult = await gemini.handleFreeform(userMessage, tasks, projects);
+                if (fallbackResult) {
+                    await replyWithMarkdown(ctx, truncateMessage(fallbackResult.response || fallbackResult.summary || 'Got it!', 4000));
+                } else {
+                    await ctx.reply('Sorry, no tasks found to act upon, and the coach didn\'t have a response.');
                 }
-                await replyWithMarkdown(ctx, truncateMessage(response, 4000));
-            } else if (result.mode === 'coach') {
-                await replyWithMarkdown(ctx, truncateMessage(result.response || 'I\'m here to help. Ask me anything about your tasks!', 4000));
-            } else {
-                await replyWithMarkdown(ctx, truncateMessage(result.response || result.summary || 'Got it! Let me know if you need anything else.', 4000));
+            } else if (result.type === 'error') {
+                await ctx.reply(result.confirmationText + '\n\n' + result.errors.join('\n'));
             }
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
                 await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
                 return;
             }
-            console.error('Freeform error:', err.message);
+            console.error('Pipeline error:', err.message);
             await ctx.reply(`❌ Error: ${err.message}`);
         }
     });

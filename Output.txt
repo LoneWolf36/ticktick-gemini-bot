@@ -1,0 +1,222 @@
+Here is the conversation with the ticktick bot over the past week.
+
+Faizan:
+/reorg
+
+TickTick AI Coach:
+🧭 Building reorganization proposal...
+
+❌ Reorg canceled.
+
+Comments about the following: I need it to be able to create recurring events if possible and keep it in the right category
+Faizan:
+I have an interview on Wednesday in the upcoming week and all I need to do is system design daily up until then and a bit of DSA
+
+TickTick AI Coach:
+🤔 Thinking...
+
+✅ Done.
+
+✅ Created: "Daily System Design Prep (Feb 26th Interview Focus) - Day 1/6 (SD Focus: Requirements & Scale Estimation for a specific system like Uber/Netflix/Messaging Queue/URL Shortener/Social Media Feed Component.) - Priority 5 - Career & Job Search Project - Due: 2026-02-26 - Content: Dedicated session for system design interview preparation. Choose a specific system or component to design (e.g., a messaging queue, a URL shortener, or a specific part of a social media feed). Focus on requirements, scale estimation, API design, and component breakdown. This is a high-priority task for your upcoming interview. - Suggested Schedule: today - Project ID: 6722031ac71c710000000429 - Priority: 5 - Due Date: 2026-02-26 - Content: Dedicated session for system design interview preparation. Choose a specific system or component to design (e.g., a messaging queue, a URL shortener, or a specific part of a social media feed). Focus on requirements, scale estimation, API design, and component breakdown. This is a high-priority task for your upcoming interview."
+
+🌅 MORNING BRIEFING
+Friday 27 February 2026
+────────────────────────
+
+Focus: Concrete action on career leverage and overdue deep work.
+
+1.  🔴 Research Target Employers for AI Festival (due 2026-03-01) // Can we represent date better here?
+2.  ⚠️ Design Core Netflix Video Streaming Architecture (overdue)
+3.  ⚠️ Daily Job/Internship & Networking Scan (30 min) (overdue)
+
+You have been consistently avoiding sustained deep work on System Design. This is critical for your internship goal.
+
+Start now: Open a new document and list the top 3 functional requirements for the Netflix streaming system.
+
+Comments about the following conversation: It didn't exactly manage creating the tasks properly, analyze the issue and address its behaviour to be able to do this as expected.
+Faizan:
+I need to complete an assignment that was given I class today before next weeks class, it was basically a real world problem that sir solved using dfs and bfs
+I need to write a paragraph of my understanding on it and go through the code and understand it throughly
+
+TickTick AI Coach:
+🤔 Thinking...
+
+🤔 Thinking...
+
+🤔 Thinking...
+
+Parsed 3 tasks.
+
+✅ Created: "Understand DFS/BFS Assignment Problem & Solution (Class Today Feb 27, 2026) (Due: 2026-03-05) (Priority: 3) (Project: Studies) (Content: Understand the real-world problem presented in class today (Feb 27, 2026) and how it was solved using DFS and BFS algorithms. Focus on the core concepts and application.)"
+✅ Created: "Review & Understand DFS/BFS Assignment Code (Due: 2026-03-05) (Priority: 3) (Project: Studies) (Content: Thoroughly go through the provided code for the DFS/BFS assignment. Ensure complete understanding of its implementation details and how it reflects the problem solution.)"
+✅ Created: "Write DFS/BFS Assignment Understanding Paragraph (Due: 2026-03-05) (Priority: 3) (Project: Studies) (Content: Write a paragraph summarizing your understanding of the DFS/BFS assignment, covering the problem, solution, and code. This is the final deliverable for the assignment.)"
+
+{
+  "mode": "action",
+  "actions": [
+    {
+      "type": "create",
+      "changes": {
+        "title": "Understand DFS/BFS assignment problem & solution concept (NCI class today's assignment - real world problem using dfs and bfs.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studies) (Content: Review the real-world problem presented in class and the application of DFS/BFS to solve it.) (Due: 2026-03-04) (Priority: 5) (Project: Studie
+
+... (truncated)
+
+{
+  "mode": "action",
+  "actions": [
+    {
+      "type": "create",
+      "changes": {
+        "title": "Understand DFS/BFS Assignment Problem (Class Today Feb 27, 2026) (MSc AI NCI Dublin, Ireland GMT timezone, wakes 6–8am, Stamp 2 visa holder, applying for internships in Ireland, 5 years prior software development experience, transitioning to AI/backend roles, runs an online fitness & nutrition coaching business on the side, chose not to take part-time work — prioritizing long-term career leverage, Over-invests in planning/tooling instead of sustained execution, Struggles with sustained deep work on delayed-reward tasks (DSA, system design), Defaults to task-switching or easier work when overwhelmed or uncertain, Starts plans/courses without finishing them — fragmented effort, Performs well on structured, visible, short-cycle tasks, Learns best through concrete examples before abstraction, Functions best with external structure: checklists, deadlines, clear deliverables, Cognitive sharpness highest in morning/early afternoon, Direct callouts — don't sugarcoat when avoiding hard work, Small number of clearly defined priorities, not everything at once, Explicit follow-ups when delaying or avoiding uncomfortable but important tasks, Structured weekly reviews with visible progress tracking, Gentle nudges are fine, but too many dilute impact, Secure an AI engineer or backend SWE internship/role in Ireland, Build real depth in system design and DSA (weakest, most avoided areas), Manage MSc coursework effectively without it consuming all bandwidth, Maintain fitness coaching business without it consuming primary focus, MSc in Artificial Intelligence at NCI, Dublin (January intake)) (MSc AI NCI Dublin, Ireland GMT timezone, wakes 6–8am, Stamp 2 visa holder, applying for internships in Ireland, 5 years prior software development experience, transitioning to AI/backend roles, runs an online fitness & nutrition coaching business on the side, chose not to take part-time work — prioritizing long-term career leverage, Over-invests in planning/tooling instead of sustained execution, Struggles with sustained deep work on delayed-reward tasks (DSA, system design), Defaults to task-switching or easier work when overwhelmed or uncertain, Starts plans/courses without finishing them — fragmented effort, Performs well on structured, visible, short-cycle tasks, Learns best through concrete examples before abstraction, Functions best with external structure: checklists, deadlines, clear deliverables, Cognitive sharpness highest in morning/early afternoon, Direct callouts — don't sugarcoat when avoiding hard work, Small number of clearly defined priorities, not everything at once, Explicit follow-ups when delaying or avoiding uncomfortable but important tasks, Structured weekly reviews with visible progress tracking, Gentle nudges are fine, but too many dilute impact, Secure an AI engineer or backend SWE internship/role in Ireland, Build real depth in system design and DSA (weakest, most avoided areas), Manage MSc coursework effectively without it consuming all bandwidth, Maintain fitness coaching business without it consuming primary focus, MSc in Artificial Intelligence at NCI, Dublin (January intake)) (MSc AI NCI Dublin, Ireland GMT timezone, wakes 6–8am, Stamp 2 visa holder, applying for internships in Ireland, 5 years prior software development experience, transitioning to AI/backend roles, runs an online fitness & nutrition coaching business on the side, chose not to take part-time work — prioritizing long-term career leverage, Over-invests in planning/tooling instead of sustained execution, Struggles with sustained deep work on delayed-reward tasks (DSA, system design), Defaults to task-switching or easier work when overwhelmed or uncertain, Starts plans/courses without finishing them — fragmented effort, Performs well on structured, visible, short-cycle tasks, Learns best through concrete examples before abstraction, Functions best with extern
+
+... (truncated)
+
+// Lot of truncated output above, find the root cause and fix it, not piecemeal
+
+🌅 MORNING BRIEFING
+Saturday 28 February 2026
+────────────────────────
+
+Focus: Concrete progress on System Design, DSA, and immediate career opportunities.
+
+1.  ⚠️🔴 Design Core Netflix Video Streaming Architecture
+2.  🔴 Prepare for NCI AI Networking Event: Research Target Employers & Formulate Questions (due 2026-03-01)
+3.  ⚠️🔴 Implement 15 Puzzle (A* Search) Core Logic
+
+⚠️ You have been consistently delaying System Design tasks. It's time to break that pattern and dive into Netflix.
+Start now: Open a blank document and list 3 core components of a video streaming system for Netflix.
+
+🌅 MORNING BRIEFING
+Sunday 1 March 2026
+────────────────────────
+
+Focus: Concrete action today to leverage tomorrow's networking event.
+
+1.  🔴 Prep for AI Networking Event: Research 3 target employers & draft 2 specific questions for each. (Combines #12, #13)
+2.  ⚠️ 🔴 Design Core Netflix Video Streaming Architecture (Start with high-level components & data flow)
+3.  ⚠️ 🔴 Finalize Shivom Project Details & Update Resume
+
+⚠️ You have a significant backlog of overdue, high-leverage tasks in System Design and DSA. The pattern of avoidance is clear.
+Start now: Open the NCI AI Networking Event page and identify the first company you want to research.
+
+// I am not totally sure whether the Weekly Accountability was done properly, I hadn't completed the shivom task or 15 puzzle or google summer of code and many more from the wins list.
+📊 WEEKLY ACCOUNTABILITY REVIEW
+────────────────────────────
+
+WINS:
+- Applied to jobs/internships & checked meetups.
+- Discussed Shivom project details.
+- Completed Netflix System Design.
+- Attended NCI AI Networking Event, researched employers, & prepared questions.
+- Completed 15 Puzzle (A* Search) core logic.
+- Completed Moodle Data Analytics (Weeks 1 & 2).
+- Looked into Google Summer of Code.
+- Goal setting with Huzefa.
+- Called Bahman for international coaching quote.
+
+AVOIDANCE:
+- Delayed deep work on DSA practice (Sudoku, Product Except Self, Longest Consecutive Sequence).
+- Did not implement the Basic RAG Pipeline.
+- Skipped asking Aditya for System Design interview prep tips.
+- Did not complete Intro to Databases on Moodle.
+- Did not refine Q1/Q2 career & learning goals.
+
+NEEDLE-MOVER RATIO: 🔴 5 out of 10 tasks (50%)
+
+STALE TASKS:
+- "Check out these websites for self hosted setups" (Recommend: Drop)
+- "[INFS Live Session Links]" (Recommend: Rescope or Drop)
+- "Important character changes" (Recommend: Drop)
+
+NEXT WEEK:
+1. 🔴 DSA Practice: Sudoku Solver, Product Except Self, Longest Consecutive Sequence
+2. 🔴 Implement a Basic RAG Pipeline (from video concepts)
+3. 🔴 Ask Aditya for System Design interview prep tips
+
+CALLOUT: You completed several career-critical tasks, but the most challenging ones for DSA and system design were consistently avoided. This pattern needs to break.
+
+🔍 New Task Detected
+// I find the task descriptions and task titles quite verbose and text heavy, can we make it more actionable and to the point?
+📂 Project: 👜Career & Job Search
+📝 Original: Prepare resume technical
+
+✨ Suggested: Refine Resume Technical Section for AI/Backend Roles
+
+🔴 Priority: career-critical
+🎯 Needle-mover: Yes ✅
+
+📊 Analysis: This task is a direct, high-leverage needle-mover for securing an AI/backend internship (Goal 1). It's a concrete, short-cycle task that aligns with your strength in performing well on structured, visible work. Procrastinating on this, or getting lost in 'planning' instead of 'doing', will directly delay your job search. This needs focused execution to ensure your resume effectively communicates your transition and relevant skills to recruiters.
+
+📝 Update and tailor the technical skills, projects, and experience sections of your resume to strongly align with AI engineer and backend SWE roles. Focus on quantifying achievements and using keywords from target job descriptions.
+
+📋 Action Steps:
+  1. Review 2-3 target AI/Backend internship job descriptions to identify key technical skills and keywords.
+  2. Update your 'Skills' section to prominently feature relevant AI/ML frameworks, backend technologies, and programming languages.
+  3. Rewrite 3-5 bullet points in your 'Experience' section to highlight AI/backend relevance and quantify impact (e.g., 'Developed X using Y, resulting in Z% improvement').
+  4. Add 1-2 relevant MSc projects or coursework to your 'Projects' section, detailing your AI/backend contributions and technologies used.
+  5. Proofread the entire technical section for clarity, conciseness, and any typos.
+
+🎯 Done when: The resume's technical section (skills, experience bullets, projects) is updated, explicitly tailored for AI/backend roles, includes 3-5 quantified achievements, and is free of errors, ready for application submission.
+
+💬 Accountability: This isn't just 'preparing', it's executing on a critical step. Don't get lost in perfectionism or switch tasks. Focus for 2-3 hours and get this done. Your applications depend on it.
+
+⏳ You have 1 pending task(s). Run /pending to review; background scanning paused to save your API quota.
+
+🌅 MORNING BRIEFING
+Monday 2 March 2026
+────────────────────────
+
+Focus: Leverage today's networking opportunity and address critical career prep.
+1. 🔴 Attend NCI AI Networking Event
+2. ⚠️ Research Target Employers & Formulate Targeted Questions for AI Event
+3. ⚠️ Ask Aditya for System Design interview prep tips
+
+You've explicitly avoided critical prep for today's networking event, despite it being a top priority. This is exactly the kind of planning-to-avoid-execution loop you fall into.
+Start now: Open the event details and identify 3 companies you want to speak with.
+
+⏳ 1 task(s) pending your review. Run /pending.
+
+🌅 MORNING BRIEFING
+Tuesday 3 March 2026
+────────────────────────
+
+Focus: Unblocking your internship search by tackling critical skill gaps and resume updates.
+
+1. 🔴 Finalize Shivom Project Details & Update Resume ⚠️
+2. 🔴 Ask Aditya for System Design interview prep tips ⚠️
+3. 🔴 Implement 15 Puzzle (A* Search) Core Logic ⚠️
+
+⚠️ You have been consistently avoiding DSA and System Design tasks for weeks. These are direct blockers for your primary goal.
+Start now: Open your resume document and the Shivom project details.
+
+⏳ 1 task(s) pending your review. Run /pending.
+
+🌅 MORNING BRIEFING
+Wednesday 4 March 2026
+────────────────────────
+
+Focus: Break the avoidance cycle on critical career leverage.
+
+1.  🔴 Ask Aditya for System Design interview prep tips ⚠️
+2.  🔴 Daily Job/Internship & Networking Scan (30 min) ⚠️
+3.  🔴 Implement 15 Puzzle (A* Search) Core Logic ⚠️
+
+⚠️ You've been consistently pushing back critical DSA and System Design tasks. This isn't planning; it's avoidance.
+Start now: Open your IDE and create the project folder for 15 Puzzle. Just the folder.
+
+⏳ 1 task(s) pending your review. Run /pending.
+
+🌅 MORNING BRIEFING
+Thursday 5 March 2026
+────────────────────────
+
+Focus: Tackle the core technical challenges holding back your internship search.
+
+1.  🔴⚠️ Implement 15 Puzzle (A Search) Core Logic
+2.  ⚠️ Finalize Shivom Project Details & Update Resume
+3.  🔴 Daily Job/Internship & Networking Scan (30 min)
+
+⚠️ You've been avoiding the hard DSA/algorithm work. This is the biggest leverage point for your career goal. Stop switching to easier tasks.
+Start now: Open your 15 Puzzle project and review the A search algorithm steps.
+
+⏳ 1 task(s) pending your review. Run /pending.
