@@ -88,10 +88,10 @@
 **Requirement Refs**: FR-003, FR-006, FR-007, FR-008
 
 **Included Subtasks**:
-- [ ] **T013** — Create `services/normalizer.js` module structure with `normalizeAction(intentAction)` entry point
-- [ ] **T014** [P] — Implement title normalization: truncation to limit, verb-led cleaning, strip dates/priorities/project names/leaked context
-- [ ] **T015** [P] — Implement content normalization: strip motivational filler & coaching prose, preserve URLs/locations/instructions, preserve existing task content during updates (FR-007)
-- [ ] **T016** [P] — Implement `repeatHint` → `repeatFlag` (RRULE string) conversion for recurring tasks (daily, weekdays, weekly, every-X)
+- [x] **T012**: Create `services/normalizer.js` with module structure.
+- [x] **T013**: Implement `_normalizeTitle` (cleaning, verb prefix, casing).
+- [x] **T014**: Implement `_normalizeContent` (preserving sensible existing descriptions without rewriting).
+- [x] **T015**: Implement `_convertRepeatHint` (hint to strict `RRULE` mapping using date-fns or static map).
 
 **Implementation Sketch**:
 1. Module exports `normalizeAction(intent, options)` and `normalizeActions(intents, options)`

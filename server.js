@@ -6,6 +6,10 @@ import { TickTickClient } from './services/ticktick.js';
 import { GeminiAnalyzer } from './services/gemini.js';
 import { startScheduler } from './services/scheduler.js';
 import { createBot } from './bot/index.js';
+import { TickTickAdapter } from './services/ticktick-adapter.js';
+import { createAxIntent } from './services/ax-intent.js';
+import * as normalizer from './services/normalizer.js';
+import { createPipeline } from './services/pipeline.js';
 
 const {
     TICKTICK_CLIENT_ID,
@@ -70,11 +74,6 @@ try {
     console.error(chalk.red(err.message));
     process.exit(1);
 }
-
-import { TickTickAdapter } from './services/ticktick-adapter.js';
-import { createAxIntent } from './services/ax-intent.js';
-import * as normalizer from './services/normalizer.js';
-import { createPipeline } from './services/pipeline.js';
 
 const botConfig = {
     autoApplyLifeAdmin: AUTO_APPLY_LIFE_ADMIN === 'true',
