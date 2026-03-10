@@ -1,9 +1,11 @@
 ---
 work_package_id: "WP01"
 title: "TickTick Adapter Module"
-lane: "for_review"
+lane: "doing"
 dependencies: []
 subtasks: ["T001", "T002", "T003", "T004", "T005", "T006", "T007", "T008"]
+agent: "Gemini"
+shell_pid: "20788"
 history:
   - date: "2026-03-09"
     action: "created"
@@ -274,3 +276,4 @@ spec-kitty implement WP01
 ## Activity Log
 
 - 2026-03-10T14:38:56Z – unknown – lane=for_review – Moved to for_review
+- 2026-03-10T14:39:22Z – Gemini – shell_pid=20788 – lane=doing – Started review via workflow command
