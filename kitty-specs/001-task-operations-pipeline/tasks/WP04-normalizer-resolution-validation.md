@@ -8,6 +8,7 @@ base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
 created_at: '2026-03-10T15:24:28.423102+00:00'
 subtasks: [T017, T018, T019, T020]
 shell_pid: "26124"
+agent: "Gemini"
 history:
 - date: '2026-03-09'
   action: created
@@ -219,3 +220,7 @@ spec-kitty implement WP04 --base WP01
 - Verify multi-day splitting produces correct number of tasks
 - Check that validation prevents bad data from reaching TickTick API
 - Ensure project resolution gracefully falls back rather than crashing
+
+## Activity Log
+
+- 2026-03-10T15:24:37Z – Gemini – shell_pid=26124 – lane=doing – Assigned agent via workflow command
