@@ -1,13 +1,13 @@
 ---
 work_package_id: WP04
 title: 'Normalizer: Project Resolution, Dates & Validation'
-lane: "for_review"
+lane: "doing"
 dependencies: [WP01, WP03]
 base_branch: 001-task-operations-pipeline-WP04-merge-base
 base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
 created_at: '2026-03-10T15:24:28.423102+00:00'
 subtasks: [T017, T018, T019, T020]
-shell_pid: "26124"
+shell_pid: "25632"
 agent: "Gemini"
 history:
 - date: '2026-03-09'
@@ -225,3 +225,4 @@ spec-kitty implement WP04 --base WP01
 
 - 2026-03-10T15:24:37Z – Gemini – shell_pid=26124 – lane=doing – Assigned agent via workflow command
 - 2026-03-10T15:24:59Z – Gemini – shell_pid=26124 – lane=for_review – Moved to for_review
+- 2026-03-10T15:25:13Z – Gemini – shell_pid=25632 – lane=doing – Started review via workflow command
