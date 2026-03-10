@@ -1,13 +1,17 @@
 ---
-work_package_id: "WP03"
-title: "Normalizer: Title, Content & Recurrence"
-lane: "planned"
+work_package_id: WP03
+title: 'Normalizer: Title, Content & Recurrence'
+lane: "doing"
 dependencies: []
-subtasks: ["T013", "T014", "T015", "T016"]
+base_branch: master
+base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
+created_at: '2026-03-10T15:08:33.444300+00:00'
+subtasks: [T013, T014, T015, T016]
+shell_pid: "14756"
 history:
-  - date: "2026-03-09"
-    action: "created"
-    by: "spec-kitty.tasks"
+- date: '2026-03-09'
+  action: created
+  by: spec-kitty.tasks
 ---
 
 # WP03 — Normalizer: Title, Content & Recurrence
