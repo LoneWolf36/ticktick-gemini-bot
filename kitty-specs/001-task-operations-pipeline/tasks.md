@@ -21,14 +21,14 @@
 **Requirement Refs**: FR-004, FR-005, FR-014, FR-015, FR-016
 
 **Included Subtasks**:
-- [ ] **T001** [P] — Create `services/ticktick-adapter.js` class wrapping existing `TickTickClient`
-- [ ] **T002** [P] — Implement `listProjects()` with result caching for the project map
-- [ ] **T003** [P] — Implement `findProjectByName(name)` with deterministic + fuzzy matching
-- [ ] **T004** [P] — Implement `createTask(normalizedAction)` mapping normalised fields to TickTick API format
-- [ ] **T005** [P] — Implement `createTasksBatch(normalizedActions)` with per-item error handling
-- [ ] **T006** [P] — Implement `updateTask(taskId, normalizedAction)` with content preservation (FR-007)
-- [ ] **T007** [P] — Implement `completeTask(taskId)` and `deleteTask(taskId)`
-- [ ] **T008** — Add structured pipeline logging for all adapter operations (FR-014)
+- [x] **T001** [P] — Create `services/ticktick-adapter.js` class wrapping existing `TickTickClient`
+- [x] **T002** [P] — Implement `listProjects()` with result caching for the project map
+- [x] **T003** [P] — Implement `findProjectByName(name)` with deterministic + fuzzy matching
+- [x] **T004** [P] — Implement `createTask(normalizedAction)` mapping normalised fields to TickTick API format
+- [x] **T005** [P] — Implement `createTasksBatch(normalizedActions)` with per-item error handling
+- [x] **T006** [P] — Implement `updateTask(taskId, normalizedAction)` with content preservation (FR-007)
+- [x] **T007** [P] — Implement `completeTask(taskId)` and `deleteTask(taskId)`
+- [x] **T008** — Add structured pipeline logging for all adapter operations (FR-014)
 
 **Implementation Sketch**:
 1. Create `TickTickAdapter` class that takes a `TickTickClient` instance in constructor
@@ -58,10 +58,10 @@
 **Requirement Refs**: FR-001, FR-002
 
 **Included Subtasks**:
-- [ ] **T009** — Add `@ax-llm/ax` to project dependencies
-- [ ] **T010** — Create `services/ax-intent.js` with AX + Gemini provider configured via `apiKey` callback for key rotation
-- [ ] **T011** — Define AX signature matching Intent Action spec: `type`, `title`, `content`, `priority`, `projectHint`, `dueDate`, `repeatHint`, `splitStrategy`, `confidence`
-- [ ] **T012** — Add quota-exhaustion error handler: on AX failure after retries, mark key unavailable and rotate
+- [x] **T009** — Add `@ax-llm/ax` to project dependencies
+- [x] **T010** — Create `services/ax-intent.js` with AX + Gemini provider configured via `apiKey` callback for key rotation
+- [x] **T011** — Define AX signature matching Intent Action spec: `type`, `title`, `content`, `priority`, `projectHint`, `dueDate`, `repeatHint`, `splitStrategy`, `confidence`
+- [x] **T012** — Add quota-exhaustion error handler: on AX failure after retries, mark key unavailable and rotate
 
 **Implementation Sketch**:
 1. Install AX, create module that initialises AxAI with Gemini provider
@@ -117,10 +117,10 @@
 **Requirement Refs**: FR-003, FR-009, FR-010, FR-013
 
 **Included Subtasks**:
-- [ ] **T017** — Implement `projectHint` → `projectId` resolution using cached project list from adapter
-- [ ] **T018** [P] — Implement `dueDate` expansion: relative dates (today, tomorrow, next Thursday) → absolute ISO dates
-- [ ] **T019** — Implement `splitStrategy` handling: multi-task splitting and multi-day splitting (FR-009)
-- [ ] **T020** — Implement validation gate: reject actions with invalid fields, low confidence, malformed data (FR-013)
+- [x] **T017** — Implement `projectHint` → `projectId` resolution using cached project list from adapter
+- [x] **T018** [P] — Implement `dueDate` expansion: relative dates (today, tomorrow, next Thursday) → absolute ISO dates
+- [x] **T019** — Implement `splitStrategy` handling: multi-task splitting and multi-day splitting (FR-009)
+- [x] **T020** — Implement validation gate: reject actions with invalid fields, low confidence, malformed data (FR-013)
 
 **Implementation Sketch**:
 1. Project resolution: fuzzy match `projectHint` against project names, fall back to default
@@ -148,10 +148,10 @@
 **Requirement Refs**: FR-004, FR-011, FR-012, FR-014, FR-016
 
 **Included Subtasks**:
-- [ ] **T021** — Create `services/pipeline.js` orchestrator: message → AX → normalise → adapter → result
-- [ ] **T022** — Integrate pipeline with Telegram DM handler in `bot/index.js` (replace legacy `converse` path)
-- [ ] **T026** — Implement graceful API failure handling (FR-016): preserve parsed intent on TickTick unavailability, notify user
-- [ ] **T027** — Wire terse confirmation responses (FR-011): replace verbose analysis with short confirmations
+- [x] **T021** — Create `services/pipeline.js` orchestrator: message → AX → normalise → adapter → result
+- [x] **T022** — Integrate pipeline with Telegram DM handler in `bot/index.js` (replace legacy `converse` path)
+- [x] **T026** — Implement graceful API failure handling (FR-016): preserve parsed intent on TickTick unavailability, notify user
+- [x] **T027** — Wire terse confirmation responses (FR-011): replace verbose analysis with short confirmations
 
 **Implementation Sketch**:
 1. `pipeline.js` exports `processMessage(userMessage, { ticktickAdapter, axIntent, normalizer })`
@@ -178,9 +178,9 @@
 **Requirement Refs**: FR-004, FR-005
 
 **Included Subtasks**:
-- [ ] **T023** — Migrate `/scan` command to use new pipeline (replace `runTaskIntake` legacy path)
-- [ ] **T024** — Migrate `/review` command to use new pipeline
-- [ ] **T025** — Hook `autoApply` and inline callback actions to use `TickTickAdapter` instead of direct client calls
+- [x] **T023** — Migrate `/scan` command to use new pipeline (replace `runTaskIntake` legacy path)
+- [x] **T024** — Migrate `/review` command to use new pipeline
+- [x] **T025** — Hook `autoApply` and inline callback actions to use `TickTickAdapter` instead of direct client calls
 
 **Implementation Sketch**:
 1. `/scan`: Replace `runTaskIntake` call with pipeline invocation for each unreviewed task
@@ -208,10 +208,10 @@
 **Requirement Refs**: FR-005
 
 **Included Subtasks**:
-- [ ] **T028** — Remove legacy `converseSchema` and `gemini.converse()` task creation logic
-- [ ] **T029** — Remove legacy `ANALYZE_PROMPT` usage where replaced by AX
-- [ ] **T030** — Remove `executeActions` inline normalisation functions now handled by `normalizer.js`
-- [ ] **T031** — Clean up `bot/commands.js`: remove dead imports, unused helpers, stale comments
+- [x] **T028** — Remove legacy `converseSchema` and `gemini.converse()` task creation logic
+- [x] **T029** — Remove legacy `ANALYZE_PROMPT` usage where replaced by AX
+- [x] **T030** — Remove `executeActions` inline normalisation functions now handled by `normalizer.js`
+- [x] **T031** — Clean up `bot/commands.js`: remove dead imports, unused helpers, stale comments
 
 **Implementation Sketch**:
 1. Identify all `converseSchema` references → remove from `schemas.js` and `gemini.js`

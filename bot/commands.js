@@ -3,13 +3,13 @@ import * as store from '../services/store.js';
 import { InlineKeyboard } from 'grammy';
 import { taskReviewKeyboard } from './callbacks.js';
 import {
-    buildTaskCard, buildPendingData, pendingToAnalysis, buildTickTickUpdate,
-    sleep, userLocaleString, isAuthorized, guardAccess, PRIORITY_LABEL, buildUndoEntry,
-    formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage, buildAutoApplyNotification,
+    buildTaskCard,
+    sleep, userLocaleString, isAuthorized, guardAccess, buildUndoEntry,
+    formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage,
     parseDateStringToTickTickISO, parseTelegramMarkdownToHTML, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent
 } from './utils.js';
 
-export function registerCommands(bot, ticktick, gemini, config = {}) {
+export function registerCommands(bot, ticktick, gemini, adapter, pipeline, config = {}) {
     const {
         autoApplyLifeAdmin = false,
         autoApplyDrops = false,
@@ -220,7 +220,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
                 const projects = ticktick.getLastFetchedProjects();
                 const { outcomes, hasUndoableActions } = await executeActions(
                     pending.actions || [],
-                    ticktick,
+                    adapter,
                     tasks,
                     {
                         enforcePolicySweep: true,
@@ -238,109 +238,6 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         }
     });
 
-    async function runTaskIntake(ctx, { mode, pendingGate, quotaParking }) {
-        if (!await guardAccess(ctx)) return;
-        if (!ticktick.isAuthenticated()) {
-            await ctx.reply(mode === 'scan'
-                ? '🔴 TickTick not connected. Run the OAuth flow first.'
-                : '🔴 TickTick not connected.'
-            );
-            return;
-        }
-
-        if (pendingGate) {
-            const pendingCount = store.getPendingCount();
-            if (pendingCount > 0) {
-                await ctx.reply(`⏳ You have ${pendingCount} task(s) pending review.\nRun /pending first, or /scan for new tasks.`);
-                return;
-            }
-        }
-
-        await ctx.reply(mode === 'scan' ? '🔍 Scanning for new tasks...' : '📋 Checking for unreviewed tasks...');
-
-        try {
-            const allTasks = await ticktick.getAllTasks();
-            const projects = ticktick.getLastFetchedProjects();
-            const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
-
-            if (targetTasks.length === 0) {
-                if (mode === 'scan') {
-                    const pendingCount = store.getPendingCount();
-                    let msg = '✅ No new tasks found.';
-                    if (pendingCount > 0) {
-                        msg += `\n\n⏳ You have ${pendingCount} task(s) pending review. Run /pending to see them.`;
-                    }
-                    await ctx.reply(msg);
-                } else {
-                    await ctx.reply('✅ All tasks reviewed!');
-                }
-                return;
-            }
-
-            const batch = targetTasks.slice(0, 5);
-            await ctx.reply(mode === 'scan'
-                ? `📬 Found ${targetTasks.length} new task(s). Analyzing first ${batch.length}...`
-                : `📬 ${targetTasks.length} task(s) to review. Sending ${batch.length}...`
-            );
-
-            let supervised = 0, autoApplied = [], failed = 0;
-            const autoConfig = { autoApplyLifeAdmin, autoApplyDrops, autoApplyMode };
-            let aiUnavailable = false;
-
-            for (const task of batch) {
-                if (quotaParking) {
-                    try {
-                        const result = await analyzeAndSend(ctx, task, gemini, ticktick, projects, autoConfig);
-                        if (result === 'supervised') supervised++;
-                        else if (result) autoApplied.push(result);
-                    } catch (err) {
-                        if (err.message === 'QUOTA_EXHAUSTED' || err.message === 'API_KEYS_UNAVAILABLE') {
-                            const remaining = batch.slice(batch.indexOf(task));
-                            for (const t of remaining) {
-                                await store.markTaskFailed(t.id, 'quota_exhausted');
-                            }
-                            failed += remaining.length;
-                            aiUnavailable = true;
-                            break;
-                        }
-                        await store.markTaskFailed(task.id, err.message);
-                        failed++;
-                    }
-                } else {
-                    await analyzeAndSend(ctx, task, gemini, ticktick, projects, autoConfig);
-                }
-
-                await sleep(mode === 'scan' ? 3000 : 2500);
-            }
-
-            if (mode === 'scan') {
-                let doneMsg = '';
-                if (supervised > 0) doneMsg += `✨ ${supervised} task(s) sent for your review.\n`;
-                if (autoApplied.length > 0) doneMsg += buildAutoApplyNotification(autoApplied);
-                if (aiUnavailable) {
-                    doneMsg += `\n${buildAiUnavailableMessage()} ${failed} task(s) parked for retry.`;
-                } else if (failed > 0) {
-                    doneMsg += `\n⚠️ ${failed} task(s) failed — parked for retry later.`;
-                }
-                if (!doneMsg) doneMsg = `✨ Batch done! ${batch.length} task(s) processed.`;
-                if (targetTasks.length > 5) {
-                    doneMsg += `\n\n📝 ${targetTasks.length - 5} more remain. Run /scan again for the next batch.`;
-                }
-                await replyWithMarkdown(ctx, doneMsg.trim());
-            } else {
-                if (targetTasks.length > 5) {
-                    await ctx.reply(`📝 Sent ${batch.length} of ${targetTasks.length}. Run /review again for more.`);
-                }
-            }
-        } catch (err) {
-            if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
-                await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
-                return;
-            }
-            if (mode === 'scan') console.error('Scan error:', err.message);
-            await ctx.reply(mode === 'scan' ? `❌ Scan error: ${err.message}` : `❌ Review error: ${err.message}`);
-        }
-    }
 
     // ─── /scan — manual poll, BATCHED (5 at a time) ───────────
     bot.command('scan', async (ctx) => {
@@ -354,8 +251,77 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         }
 
         if (!store.tryAcquireIntakeLock()) { await ctx.reply('⏳ A scan or poll is already running.'); return; }
-        try { await runTaskIntake(ctx, { mode: 'scan', pendingGate: false, quotaParking: true }); }
-        finally { store.releaseIntakeLock(); }
+
+        try {
+            await ctx.reply('🔍 Scanning for new tasks...');
+            const allTasks = await ticktick.getAllTasks();
+            const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
+
+            if (targetTasks.length === 0) {
+                await ctx.reply('✅ No new tasks found.');
+                return;
+            }
+
+            const batch = targetTasks.slice(0, 5);
+            await ctx.reply(`📬 Found ${targetTasks.length} new task(s). Processing first ${batch.length} through pipeline...`);
+
+            let confirmations = [];
+            let failed = 0;
+
+            for (const task of batch) {
+                try {
+                    // Pass to pipeline with existing task context so it emits an 'update'
+                    const userMessage = task.title + (task.content ? `\n${task.content}` : '');
+
+                    const result = await pipeline.processMessage(userMessage, {
+                        existingTask: task,
+                        timezone: process.env.USER_TIMEZONE || 'Europe/Dublin'
+                    });
+
+                    if (result.type === 'error') {
+                        failed++;
+                        confirmations.push(`❌ ${task.title}: ${result.errors.join(', ')}`);
+                    } else if (result.type === 'task') {
+                        // Mark as known since pipeline modified it directly
+                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: true });
+                        confirmations.push(`✨ ${result.confirmationText.replace(/\n\n/g, ' | ')}`);
+                    } else {
+                        // It was non-task, pipeline ignored it
+                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                        confirmations.push(`💭 Ignored (not actionable): ${task.title}`);
+                    }
+                } catch (err) {
+                    if (err.message.includes('quota') || err.message === 'All API keys exhausted') {
+                        failed += (batch.length - batch.indexOf(task));
+                        confirmations.push(`\n⚠️ AI Quota exhausted. Stopping batch.`);
+                        break;
+                    }
+                    failed++;
+                    confirmations.push(`❌ Failed processing ${task.title}: ${err.message}`);
+                }
+                await sleep(3000); // Respect rate limits
+            }
+
+            let doneMsg = confirmations.join('\n');
+            if (failed > 0) {
+                doneMsg += `\n\n⚠️ ${failed} task(s) failed or parked for retry.`;
+            }
+            if (targetTasks.length > 5) {
+                doneMsg += `\n\n📝 ${targetTasks.length - 5} more remain. Run /scan again for the next batch.`;
+            }
+
+            await replyWithMarkdown(ctx, doneMsg.trim());
+
+        } catch (err) {
+            if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
+                await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
+            } else {
+                console.error('Scan error:', err.message);
+                await ctx.reply(`❌ Scan error: ${err.message}`);
+            }
+        } finally {
+            store.releaseIntakeLock();
+        }
     });
 
     // ─── /pending — re-surface un-reviewed tasks ──────────────
@@ -395,8 +361,8 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         }
 
         try {
-            // Restore original values to TickTick
-            await ticktick.updateTask(last.taskId, {
+            // Restore original values via adapter
+            await adapter.updateTask(last.taskId, {
                 originalProjectId: last.appliedProjectId || last.originalProjectId,
                 projectId: last.originalProjectId,
                 title: last.originalTitle,
@@ -482,9 +448,80 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
 
+        const pendingCount = store.getPendingCount();
+        if (pendingCount > 0) {
+            await ctx.reply(`⏳ You have ${pendingCount} task(s) pending review.\nRun /pending first, or /scan for new tasks.`);
+            return;
+        }
+
         if (!store.tryAcquireIntakeLock()) { await ctx.reply('⏳ A scan or poll is already running.'); return; }
-        try { await runTaskIntake(ctx, { mode: 'review', pendingGate: true, quotaParking: false }); }
-        finally { store.releaseIntakeLock(); }
+
+        try {
+            await ctx.reply('📋 Checking for unreviewed tasks...');
+            const allTasks = await ticktick.getAllTasks();
+            const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
+
+            if (targetTasks.length === 0) {
+                await ctx.reply('✅ All tasks reviewed!');
+                return;
+            }
+
+            const batch = targetTasks.slice(0, 5);
+            await ctx.reply(`📬 ${targetTasks.length} task(s) to review. Processing ${batch.length} through pipeline...`);
+
+            let confirmations = [];
+            let failed = 0;
+
+            for (const task of batch) {
+                try {
+                    const userMessage = task.title + (task.content ? `\n${task.content}` : '');
+                    const result = await pipeline.processMessage(userMessage, {
+                        existingTask: task,
+                        timezone: process.env.USER_TIMEZONE || 'Europe/Dublin'
+                    });
+
+                    if (result.type === 'error') {
+                        failed++;
+                        confirmations.push(`❌ ${task.title}: ${result.errors.join(', ')}`);
+                    } else if (result.type === 'task') {
+                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: true });
+                        confirmations.push(`✨ ${result.confirmationText.replace(/\n\n/g, ' | ')}`);
+                    } else {
+                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                        confirmations.push(`💭 Ignored (not actionable): ${task.title}`);
+                    }
+                } catch (err) {
+                    if (err.message.includes('quota') || err.message === 'All API keys exhausted') {
+                        failed += (batch.length - batch.indexOf(task));
+                        confirmations.push(`\n⚠️ AI Quota exhausted. Stopping batch.`);
+                        break;
+                    }
+                    failed++;
+                    confirmations.push(`❌ Failed processing ${task.title}: ${err.message}`);
+                }
+                await sleep(2500); // Respect rate limits
+            }
+
+            let doneMsg = confirmations.join('\n');
+            if (failed > 0) {
+                doneMsg += `\n\n⚠️ ${failed} task(s) failed or parked for retry.`;
+            }
+            if (targetTasks.length > 5) {
+                doneMsg += `\n\n📝 ${targetTasks.length - 5} more remain. Run /review again for more.`;
+            }
+
+            await replyWithMarkdown(ctx, doneMsg.trim());
+
+        } catch (err) {
+            if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
+                await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
+            } else {
+                console.error('Review error:', err.message);
+                await ctx.reply(`❌ Review error: ${err.message}`);
+            }
+        } finally {
+            store.releaseIntakeLock();
+        }
     });
 
     // ─── Catch-all: free-form messages → Pipeline ─────────────
@@ -540,13 +577,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
                     return;
                 }
                 const tasks = await ticktick.getAllTasksCached(60000);
-                const projects = ticktick.getLastFetchedProjects();
-                const fallbackResult = await gemini.handleFreeform(userMessage, tasks, projects);
-                if (fallbackResult) {
-                    await replyWithMarkdown(ctx, truncateMessage(fallbackResult.response || fallbackResult.summary || 'Got it!', 4000));
-                } else {
-                    await ctx.reply('Sorry, no tasks found to act upon, and the coach didn\'t have a response.');
-                }
+                await ctx.reply('Got it — no actionable tasks detected.');
             } else if (result.type === 'error') {
                 await ctx.reply(result.confirmationText + '\n\n' + result.errors.join('\n'));
             }
@@ -563,7 +594,7 @@ export function registerCommands(bot, ticktick, gemini, config = {}) {
 
 // ─── Execute Gemini-suggested actions against TickTick ────────
 
-export async function executeActions(actions, ticktick, currentTasks, options = {}) {
+export async function executeActions(actions, adapter, currentTasks, options = {}) {
     const outcomes = [];
     let hasUndoableActions = false;
 
@@ -581,284 +612,6 @@ export async function executeActions(actions, ticktick, currentTasks, options = 
             return 'life-admin';
         }
         return 'important';
-    };
-
-    const normalizeActionType = (action) => {
-        const rawType = action?.type ?? action?.action ?? action?.operation ?? action?.intent;
-        if (typeof rawType !== 'string') return null;
-        const normalized = rawType.trim().toLowerCase();
-        if (['update', 'drop', 'create', 'complete'].includes(normalized)) return normalized;
-        if (normalized === 'delete') return 'drop';
-        if (normalized === 'done') return 'complete';
-        if (normalized === 'add') return 'create';
-        return null;
-    };
-
-    const normalizeTaskId = (action) =>
-        action?.taskId ??
-        action?.task_id ??
-        action?.id ??
-        action?.targetTaskId ??
-        action?.target_task_id ??
-        action?.targetId ??
-        action?.target_id ??
-        null;
-
-    const resolveDueDate = (value, { task, explicitPriority } = {}) => {
-        const priorityLabel = inferPriorityLabel(task, explicitPriority);
-        if (value === null) return null;
-        if (typeof value === 'object') {
-            const bucketCandidate =
-                value.scheduleBucket ??
-                value.schedule_bucket ??
-                value.bucket ??
-                value.value ??
-                value.relative;
-            if (typeof bucketCandidate === 'string') {
-                const bucketDate = scheduleToDate(bucketCandidate.trim().toLowerCase());
-                if (bucketDate) return bucketDate;
-            }
-            const absoluteCandidate =
-                value.dueDate ??
-                value.due_date ??
-                value.date ??
-                value.dateString ??
-                value.datetime;
-            if (typeof absoluteCandidate === 'string') {
-                const parsedAbsolute = parseDateStringToTickTickISO(absoluteCandidate, {
-                    slotMode: 'priority',
-                    priorityLabel,
-                });
-                if (parsedAbsolute) return parsedAbsolute;
-            }
-            return undefined;
-        }
-        if (typeof value !== 'string') return undefined;
-        const normalized = value.trim().toLowerCase();
-        const bucketToDate = scheduleToDate(normalized, { priorityLabel });
-        if (bucketToDate) return bucketToDate;
-        return parseDateStringToTickTickISO(value, {
-            slotMode: 'priority',
-            priorityLabel,
-        }) || undefined;
-    };
-
-    const normalizeActionChanges = (action) => {
-        const extracted = {};
-        const source = (action && typeof action.changes === 'object') ? action.changes : {};
-        const nested = (action && typeof action.payload === 'object') ? action.payload : {};
-        const updateLike = (action && typeof action.update === 'object') ? action.update : {};
-        const fieldsLike = (action && typeof action.fields === 'object') ? action.fields : {};
-
-        const firstDefined = (...values) => values.find(v => v !== undefined);
-
-        // Canonical schema keys
-        const canonicalKeys = ['title', 'content', 'projectId', 'priority'];
-        for (const key of canonicalKeys) {
-            if (source[key] !== undefined) extracted[key] = source[key];
-        }
-        if (extracted.title === undefined) {
-            extracted.title = firstDefined(
-                source.name,
-                source.newTitle,
-                source.new_title,
-                nested.title,
-                nested.name,
-                updateLike.title,
-                updateLike.name,
-                fieldsLike.title,
-                fieldsLike.name
-            );
-        }
-        if (extracted.content === undefined) {
-            extracted.content = firstDefined(
-                source.description,
-                source.notes,
-                source.note,
-                source.details,
-                source.comment,
-                nested.content,
-                nested.description,
-                nested.details,
-                nested.note,
-                updateLike.content,
-                updateLike.description,
-                updateLike.details,
-                fieldsLike.content,
-                fieldsLike.description,
-                fieldsLike.details
-            );
-        }
-        if (extracted.priority === undefined) {
-            extracted.priority = firstDefined(
-                source.priorityLevel,
-                source.priority_level,
-                source.priority,
-                nested.priority,
-                updateLike.priority,
-                fieldsLike.priority
-            );
-        }
-
-        // Common LLM aliases for project and due date
-        if (extracted.projectId === undefined) {
-            extracted.projectId =
-                source.project_id ??
-                source.project ??
-                source.suggestedProjectId ??
-                source.suggested_project_id ??
-                nested.projectId ??
-                nested.project_id ??
-                updateLike.projectId ??
-                updateLike.project_id ??
-                fieldsLike.projectId ??
-                fieldsLike.project_id ??
-                action.projectId ??
-                action.project_id;
-        }
-
-        const rawDueDate =
-            source.dueDate ??
-            source.due_date ??
-            source.newDueDate ??
-            source.new_due_date ??
-            source.date ??
-            source.when ??
-            source.due ??
-            source.deadline ??
-            source.due_on ??
-            source.schedule ??
-            source.scheduleBucket ??
-            source.suggested_schedule ??
-            source.suggestedSchedule ??
-            source.newSchedule ??
-            source.new_schedule ??
-            source.schedule_bucket ??
-            nested.dueDate ??
-            nested.due_date ??
-            nested.newDueDate ??
-            nested.new_due_date ??
-            nested.date ??
-            nested.when ??
-            nested.due ??
-            nested.deadline ??
-            nested.schedule ??
-            nested.scheduleBucket ??
-            nested.suggested_schedule ??
-            nested.suggestedSchedule ??
-            nested.newSchedule ??
-            nested.new_schedule ??
-            updateLike.dueDate ??
-            updateLike.due_date ??
-            updateLike.newDueDate ??
-            updateLike.new_due_date ??
-            updateLike.date ??
-            updateLike.when ??
-            updateLike.due ??
-            updateLike.deadline ??
-            updateLike.schedule ??
-            updateLike.scheduleBucket ??
-            updateLike.suggested_schedule ??
-            updateLike.suggestedSchedule ??
-            updateLike.newSchedule ??
-            updateLike.new_schedule ??
-            fieldsLike.dueDate ??
-            fieldsLike.due_date ??
-            fieldsLike.newDueDate ??
-            fieldsLike.new_due_date ??
-            fieldsLike.date ??
-            fieldsLike.when ??
-            fieldsLike.due ??
-            fieldsLike.deadline ??
-            fieldsLike.schedule ??
-            fieldsLike.scheduleBucket ??
-            fieldsLike.suggested_schedule ??
-            fieldsLike.suggestedSchedule ??
-            action.dueDate ??
-            action.due_date ??
-            action.newDueDate ??
-            action.new_due_date ??
-            action.date ??
-            action.when ??
-            action.due ??
-            action.deadline ??
-            action.schedule ??
-            action.scheduleBucket ??
-            action.suggested_schedule;
-
-        if (rawDueDate !== undefined) {
-            const parsed = resolveDueDate(rawDueDate);
-            if (parsed !== undefined) extracted.dueDate = parsed;
-        }
-
-        // Root-level fallback for historically flat-mapped model output
-        for (const key of ['title', 'content', 'priority']) {
-            if (extracted[key] === undefined && action[key] !== undefined) extracted[key] = action[key];
-        }
-
-        if (typeof extracted.priority === 'string') {
-            const p = extracted.priority.trim().toLowerCase();
-            if (p === 'high' || p === 'p1' || p === 'career-critical') extracted.priority = 5;
-            else if (p === 'medium' || p === 'p2' || p === 'important') extracted.priority = 3;
-            else if (p === 'low' || p === 'p3' || p === 'life-admin') extracted.priority = 1;
-            else if (p === 'none' || p === 'p4' || p === 'consider-dropping') extracted.priority = 0;
-        }
-
-        if (typeof extracted.priority === 'number' && ![0, 1, 3, 5].includes(extracted.priority)) {
-            delete extracted.priority;
-        }
-
-        return extracted;
-    };
-
-    const normalizeAndDedupeActions = (inputActions = []) => {
-        const updateByTaskId = new Map();
-        const terminalByTaskId = new Map();
-        const creates = [];
-        const seenCreates = new Set();
-
-        for (const raw of inputActions) {
-            const action = raw && typeof raw === 'object' ? { ...raw } : {};
-            action.type = normalizeActionType(action);
-            action.taskId = normalizeTaskId(action);
-            if (!action.type) continue;
-
-            if (action.type === 'create') {
-                const c = normalizeActionChanges(action);
-                const key = `${(c.title || '').trim().toLowerCase()}|${c.projectId || ''}|${c.dueDate || ''}`;
-                if (!c.title || seenCreates.has(key)) continue;
-                seenCreates.add(key);
-                creates.push({ type: 'create', changes: c });
-                continue;
-            }
-
-            if (!action.taskId) continue;
-
-            if (action.type === 'update' || action.type === 'drop') {
-                const c = normalizeActionChanges(action);
-                const prior = updateByTaskId.get(action.taskId) || {};
-                const merged = { ...prior, ...c };
-                const nextType = action.type === 'drop' ? 'drop' : (prior.__type === 'drop' ? 'drop' : 'update');
-                merged.__type = nextType;
-                updateByTaskId.set(action.taskId, merged);
-                continue;
-            }
-
-            if (action.type === 'complete') {
-                terminalByTaskId.set(action.taskId, { type: 'complete', taskId: action.taskId, changes: {} });
-            }
-        }
-
-        const deduped = [];
-        for (const [taskId, payload] of updateByTaskId.entries()) {
-            if (terminalByTaskId.has(taskId)) continue;
-            const type = payload.__type || 'update';
-            delete payload.__type;
-            deduped.push({ type, taskId, changes: payload });
-        }
-        deduped.push(...terminalByTaskId.values());
-        deduped.push(...creates);
-        return deduped;
     };
 
     const inferPriorityForPolicy = (task) => {
@@ -934,7 +687,9 @@ export async function executeActions(actions, ticktick, currentTasks, options = 
         return overlays;
     };
 
-    let plannedActions = normalizeAndDedupeActions(actions);
+    // We assume incoming actions for reorg are already cleanly shaped
+    let plannedActions = [...(actions || [])].map(a => ({ ...a, changes: { ...(a.changes || {}) } }));
+
     if (options.enforcePolicySweep) {
         const scopeIds = new Set(
             Array.isArray(options.policyScopeTaskIds)
@@ -948,32 +703,42 @@ export async function executeActions(actions, ticktick, currentTasks, options = 
             scopeIds,
             options.sweepAllActive === true
         );
+
         if (overlays.length > 0) {
-            plannedActions = normalizeAndDedupeActions([...plannedActions, ...overlays]);
+            const map = new Map();
+            for (const act of plannedActions) {
+                if (act.taskId && act.type === 'update') map.set(act.taskId, act);
+            }
+            for (const overlay of overlays) {
+                if (map.has(overlay.taskId)) {
+                    map.get(overlay.taskId).changes = { ...map.get(overlay.taskId).changes, ...overlay.changes };
+                } else {
+                    plannedActions.push(overlay);
+                }
+            }
             outcomes.push(`🛡️ Policy sweep appended ${overlays.length} action(s).`);
         }
     }
 
-    for (const rawAction of plannedActions) {
-        const action = rawAction && typeof rawAction === 'object' ? { ...rawAction } : {};
-        action.type = normalizeActionType(action);
-        action.taskId = normalizeTaskId(action);
+    const resolveDueDate = (value, task, explicitPriority) => {
+        if (!value) return null;
+        let priorityLabel = inferPriorityLabel(task, explicitPriority);
+        return scheduleToDate(value, { priorityLabel }) || parseDateStringToTickTickISO(value, { priorityLabel, slotMode: 'priority' });
+    };
+
+    for (const action of plannedActions) {
+        if (!action || typeof action !== 'object' || !action.type) continue;
 
         try {
             if (action.type === 'create') {
-                const createChanges = normalizeActionChanges(action);
-                if (createChanges && createChanges.title) {
-                    let safeDueDate = undefined;
-                    if (createChanges.dueDate) {
-                        safeDueDate = resolveDueDate(createChanges.dueDate, {
-                            explicitPriority: createChanges.priority,
-                        });
-                    }
-                    const createPayload = { ...createChanges, title: createChanges.title };
+                const changes = action.changes || {};
+                if (changes.title) {
+                    let safeDueDate = resolveDueDate(changes.dueDate, {}, changes.priority);
+                    const createPayload = { ...changes, title: changes.title };
                     if (safeDueDate) createPayload.dueDate = safeDueDate;
 
-                    await ticktick.createTask(createPayload);
-                    outcomes.push(`✅ Created: "${createChanges.title}"`);
+                    await adapter.createTask(createPayload);
+                    outcomes.push(`✅ Created: "${changes.title}"`);
                 } else {
                     outcomes.push(`⚠️ Cannot create task: Missing title`);
                 }
@@ -992,64 +757,50 @@ export async function executeActions(actions, ticktick, currentTasks, options = 
             }
 
             if (action.type === 'complete') {
-                await ticktick.completeTask(task.projectId, task.id);
+                await adapter.completeTask(task.id, task.projectId);
                 outcomes.push(`✅ Marked complete: "${task.title}"`);
                 continue;
             }
 
             if (action.type === 'update') {
-                const changesPayload = normalizeActionChanges(action);
-                if (Object.keys(changesPayload).length === 0) {
-                    const actionKeys = Object.keys(action || {});
-                    const changeKeys = (action && typeof action.changes === 'object') ? Object.keys(action.changes) : [];
-                    outcomes.push(`⚠️ Skipped invalid/unsupported action: update (No valid schema changes found; action keys: ${actionKeys.join(', ') || 'none'}; changes keys: ${changeKeys.join(', ') || 'none'})`);
+                const changes = action.changes || {};
+                if (Object.keys(changes).length === 0) {
+                    outcomes.push(`⚠️ Skipped invalid/unsupported action: update (No valid schema changes found)`);
                     continue;
                 }
 
-                // If Gemini provided a due date, safely format it for TickTick
-                let safeDueDate = undefined;
-                if (changesPayload.dueDate) {
-                    safeDueDate = resolveDueDate(changesPayload.dueDate, {
-                        task,
-                        explicitPriority: changesPayload.priority,
-                    });
-                }
+                let safeDueDate = resolveDueDate(changes.dueDate, task, changes.priority);
 
-                const changes = {
-                    ...changesPayload,
-                    dueDate: safeDueDate ?? changesPayload.dueDate, // Try parsed, fallback to original to let API error rather than silently drop if it's completely alien
-                    projectId: changesPayload.projectId || task.projectId,
+                const updatePayload = {
+                    ...changes,
+                    projectId: changes.projectId || task.projectId,
                     originalProjectId: task.projectId
                 };
-                if (changes.content !== undefined && containsSensitiveContent(task.content || '')) {
-                    delete changes.content;
+                if (safeDueDate) updatePayload.dueDate = safeDueDate;
+                if (changes.dueDate === null) updatePayload.dueDate = null;
+
+                if (updatePayload.content !== undefined && containsSensitiveContent(task.content || '')) {
+                    delete updatePayload.content;
                     outcomes.push(`⚠️ Preserved sensitive content for "${task.title}" (content rewrite blocked)`);
                 }
-                // Remove raw dueDate if we safely parsed it
-                if (safeDueDate) changes.dueDate = safeDueDate;
 
-                // If it was meant to be cleared... 
-                if (changesPayload.dueDate === null) changes.dueDate = null;
+                const updatedTask = await adapter.updateTask(task.id, updatePayload);
 
-                const updatedTask = await ticktick.updateTask(task.id, changes);
-
-                // Log for /undo
                 await store.addUndoEntry(buildUndoEntry({
                     source: task,
-                    action: 'freeform-update',
+                    action: 'reorg-update',
                     appliedTaskId: updatedTask.id,
                     applied: {
-                        title: changesPayload.title ?? null,
-                        project: null,
-                        projectId: (changesPayload.projectId && changesPayload.projectId !== task.projectId) ? changesPayload.projectId : null,
-                        schedule: changes.dueDate ?? null,
+                        title: changes.title ?? null,
+                        projectId: (changes.projectId && changes.projectId !== task.projectId) ? changes.projectId : null,
+                        schedule: updatePayload.dueDate ?? null,
                     }
                 }));
 
                 outcomes.push(`✅ Updated: "${task.title}"`);
                 hasUndoableActions = true;
             } else if (action.type === 'drop') {
-                const dropChanges = normalizeActionChanges(action);
+                const dropChanges = action.changes || {};
                 const hasTickTickMutation =
                     dropChanges.projectId !== undefined ||
                     dropChanges.priority !== undefined ||
@@ -1058,12 +809,7 @@ export async function executeActions(actions, ticktick, currentTasks, options = 
                     dropChanges.dueDate !== undefined;
 
                 if (hasTickTickMutation) {
-                    const safeDueDate = dropChanges.dueDate
-                        ? resolveDueDate(dropChanges.dueDate, {
-                            task,
-                            explicitPriority: dropChanges.priority ?? 0,
-                        })
-                        : undefined;
+                    const safeDueDate = resolveDueDate(dropChanges.dueDate, task, 0);
                     const updatePayload = {
                         projectId: dropChanges.projectId || task.projectId,
                         originalProjectId: task.projectId,
@@ -1074,17 +820,16 @@ export async function executeActions(actions, ticktick, currentTasks, options = 
                         updatePayload.content = dropChanges.content;
                     }
                     if (safeDueDate !== undefined) updatePayload.dueDate = safeDueDate;
-                    await ticktick.updateTask(task.id, updatePayload);
+                    await adapter.updateTask(task.id, updatePayload);
                     outcomes.push(`⚪ Demoted as drop-candidate: "${task.title}"`);
                 } else {
-                    // Flag as dropped but DON'T delete — too risky
                     outcomes.push(`⚪ Flagged for dropping: "${task.title}" (not deleted — mark complete in TickTick if you agree)`);
                 }
 
                 await store.markTaskProcessed(task.id, {
                     originalTitle: task.title,
                     dropped: true,
-                    droppedByFreeform: true,
+                    droppedByReorg: true,
                 });
             } else {
                 outcomes.push(`⚠️ Skipped invalid/unsupported action: ${action.type}`);
@@ -1096,78 +841,4 @@ export async function executeActions(actions, ticktick, currentTasks, options = 
     return { outcomes, hasUndoableActions };
 }
 
-// ─── Core: Analyze a task, then auto-apply or send card ─────
-// Returns: 'supervised' if card sent, auto-apply result object if auto-applied, false if failed
 
-export async function analyzeAndSend(ctx, task, gemini, ticktick, projects = [], config = {}) {
-    try {
-        const analysis = await gemini.analyzeTask(task, projects);
-        const pendingData = buildPendingData(task, analysis, projects);
-        const hasSensitiveContent = containsSensitiveContent(task.content || '');
-        const hasExistingRichContent = (task.content || '').trim().length > 40;
-        const safeAutoApply = !hasSensitiveContent && !hasExistingRichContent;
-
-        const shouldAutoApply =
-            (analysis.priority === 'life-admin' && config.autoApplyLifeAdmin) ||
-            (analysis.priority === 'consider-dropping' && config.autoApplyDrops);
-
-        if (shouldAutoApply && safeAutoApply) {
-            return await autoApply(task, pendingData, analysis, ticktick, config);
-        }
-
-        // Supervised: send card with buttons
-        await store.markTaskPending(task.id, pendingData);
-        const card = buildTaskCard(task, analysis);
-        const chatId = store.getChatId();
-
-        if (ctx?.reply) {
-            await replyWithMarkdown(ctx, card, { reply_markup: taskReviewKeyboard(task.id) });
-        } else if (ctx?.api && chatId) {
-            // Called from scheduler — ctx is the bot object
-            await sendWithMarkdown(ctx.api, chatId, card, { reply_markup: taskReviewKeyboard(task.id) });
-        }
-        return 'supervised';
-    } catch (err) {
-        if (err.message === 'QUOTA_EXHAUSTED' || err.message === 'API_KEYS_UNAVAILABLE') throw err; // Let caller handle AI unavailability
-        console.error(`Failed to analyze "${task.title}":`, err.message);
-        return false;
-    }
-}
-
-// ─── Auto-apply: update TickTick directly, no user approval ─
-
-async function autoApply(task, pendingData, analysis, ticktick, config = {}) {
-    const applyMode = config.autoApplyMode || 'metadata-only';
-    const update = buildTickTickUpdate(pendingData, { applyMode, priorityLabel: analysis.priority || 'important' });
-    const updatedTask = await ticktick.updateTask(task.id, update);
-
-    // Log for /undo — include what was changed so undo can report it
-    await store.addUndoEntry(buildUndoEntry({
-        source: task,
-        action: 'auto-apply',
-        appliedTaskId: updatedTask.id,
-        applied: {
-            title: pendingData.improvedTitle ?? null,
-            priority: PRIORITY_LABEL[pendingData.suggestedPriority] ?? null,
-            project: (pendingData.suggestedProjectId && pendingData.suggestedProjectId !== task.projectId)
-                ? pendingData.suggestedProject : null,
-            projectId: (pendingData.suggestedProjectId && pendingData.suggestedProjectId !== task.projectId)
-                ? pendingData.suggestedProjectId : null,
-            schedule: pendingData.suggestedSchedule ?? null,
-        }
-    }));
-
-    await store.markTaskProcessed(task.id, { ...pendingData, autoApplied: true });
-    await store.updateStats({ tasksAutoApplied: (store.getStats().tasksAutoApplied || 0) + 1 });
-
-    console.log(`[AUTO-APPLY] "${task.title}" → ${analysis.priority} | sched: ${pendingData.suggestedSchedule || 'none'} | project: ${pendingData.suggestedProject || 'same'}`);
-
-    // Build summary for batch notification
-    const schedLabel = { today: 'today', tomorrow: 'tomorrow', 'this-week': 'this week', 'next-week': 'next week' };
-    return {
-        title: pendingData.improvedTitle || task.title,
-        schedule: schedLabel[pendingData.suggestedSchedule] || null,
-        movedTo: (pendingData.suggestedProjectId && pendingData.suggestedProjectId !== task.projectId)
-            ? pendingData.suggestedProject : null,
-    };
-}

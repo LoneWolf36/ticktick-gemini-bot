@@ -83,7 +83,26 @@ const botConfig = {
 
 // Initialize new pipeline context
 const adapter = new TickTickAdapter(ticktick);
-const axIntent = createAxIntent(gemini); // Uses gemini strictly as a key manager
+
+// KeyManager adapter — bridges GeminiAnalyzer's internal key rotation into
+// the { getActiveKey, markKeyUnavailable, rotateKey } interface AX expects.
+const keyManager = {
+    getActiveKey() {
+        if (gemini._areAllKeysUnavailable()) {
+            throw new Error('All API keys exhausted');
+        }
+        return gemini._keys[gemini._activeKeyIndex];
+    },
+    markKeyUnavailable(reason) {
+        const resetMs = gemini._getQuotaResetMs();
+        gemini._markActiveKeyUnavailable(reason, Date.now() + resetMs);
+    },
+    async rotateKey() {
+        return gemini._rotateToNextKeyIfAvailable();
+    }
+};
+
+const axIntent = createAxIntent(keyManager);
 const pipeline = createPipeline({ axIntent, normalizer, adapter });
 
 const bot = createBot(TELEGRAM_BOT_TOKEN, ticktick, gemini, adapter, pipeline, botConfig);
@@ -165,7 +184,7 @@ app.listen(parseInt(PORT), async () => {
         console.log(chalk.cyan(`   ${authUrl}\n`));
     }
 
-    await startScheduler(bot, ticktick, gemini, {
+    await startScheduler(bot, ticktick, gemini, adapter, pipeline, {
         dailyHour: parseInt(DAILY_BRIEFING_HOUR),
         weeklyDay: parseInt(WEEKLY_DIGEST_DAY),
         pollMinutes: parseInt(POLL_INTERVAL_MINUTES),

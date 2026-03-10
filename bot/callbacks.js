@@ -18,7 +18,7 @@ export function taskReviewKeyboard(taskId) {
 
 // ─── Register Callback Handlers ─────────────────────────────
 
-export function registerCallbacks(bot, ticktick, gemini) {
+export function registerCallbacks(bot, ticktick, gemini, adapter) {
 
     // ─── Approve: move pending → processed, update TickTick ───
     bot.callbackQuery(/^a:(.+)$/, async (ctx) => {
@@ -40,7 +40,7 @@ export function registerCallbacks(bot, ticktick, gemini) {
 
         try {
             const update = buildTickTickUpdate(data);
-            const updatedTask = await ticktick.updateTask(taskId, update);
+            const updatedTask = await adapter.updateTask(taskId, update);
 
             await store.addUndoEntry(buildUndoEntry({
                 source: data, // `data` has taskId, originalTitle, etc.
@@ -97,6 +97,7 @@ export function registerCallbacks(bot, ticktick, gemini) {
             return;
         }
         const taskId = ctx.match[1];
+        const data = store.getPendingTasks()[taskId];
 
         if (!store.isTaskPending(taskId)) {
             await ctx.answerCallbackQuery({ text: '✅ Already handled' });
@@ -104,10 +105,14 @@ export function registerCallbacks(bot, ticktick, gemini) {
         }
 
         await store.dropTask(taskId);
-        await ctx.answerCallbackQuery({ text: '⚪ Flagged for removal' });
-        await editWithMarkdown(
-            ctx,
-            '⚪ **Consider dropping** — this task has been flagged.\n*Go to TickTick to delete it if you agree.*'
-        );
+        try {
+            const projectId = data?.projectId || data?.originalProjectId || null;
+            await adapter.deleteTask(taskId, projectId);
+            await ctx.answerCallbackQuery({ text: '⚪ Deleted from TickTick' });
+            await editWithMarkdown(ctx, '⚪ **Deleted** — task was removed from TickTick.');
+        } catch (err) {
+            console.error('Drop error:', err.message);
+            await ctx.answerCallbackQuery({ text: `❌ Delete failed: ${err.message}` });
+        }
     });
 }

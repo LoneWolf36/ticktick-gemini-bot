@@ -1,5 +1,7 @@
 import { TickTickClient } from './ticktick.js';
 
+const PROJECT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
 export class TickTickAdapter {
     constructor(client) {
         if (!(client instanceof TickTickClient)) {
@@ -25,7 +27,7 @@ export class TickTickAdapter {
         this._log('listProjects', { forceRefresh });
         try {
             const now = Date.now();
-            if (!forceRefresh && this._projectCache && (now - this._projectCacheTs < 5 * 60 * 1000)) {
+            if (!forceRefresh && this._projectCache && (now - this._projectCacheTs < PROJECT_CACHE_TTL_MS)) {
                 const elapsed = Date.now() - start;
                 this._log('listProjects', `SUCCESS { cached: true, ${elapsed}ms }`);
                 return this._projectCache;
@@ -161,17 +163,23 @@ export class TickTickAdapter {
 
             // Handle content merge (FR-007)
             if (normalizedAction.content !== undefined) {
-                if (existingTask.content) {
-                    if (existingTask.content === normalizedAction.content) {
-                        // Exact same, no op needed for content
-                    } else if (existingTask.content.includes(normalizedAction.content)) {
-                        // New content already present in existing
+                const newContent = normalizedAction.content || '';
+                const oldContent = existingTask.content || '';
+
+                if (oldContent) {
+                    if (oldContent === newContent || newContent === '') {
+                        // No change or clearing content (though intent usually has something)
+                    } else if (newContent.includes(oldContent)) {
+                        // Already merged by normalizer or caller
+                        updatePayload.content = newContent;
+                    } else if (oldContent.includes(newContent)) {
+                        // New content already part of old content
                     } else {
-                        // Append new content
-                        updatePayload.content = `${existingTask.content}\n\n${normalizedAction.content}`;
+                        // Append new content with standard separator
+                        updatePayload.content = `${oldContent}\n---\n${newContent}`;
                     }
                 } else {
-                    updatePayload.content = normalizedAction.content;
+                    updatePayload.content = newContent;
                 }
             }
 

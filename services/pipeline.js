@@ -16,9 +16,9 @@ export function createPipeline({ axIntent, normalizer, adapter }) {
             console.log(`[Pipeline] Processing message: "${userMessage.substring(0, 50)}..."`);
 
             // Phase 1: Intent Extraction (AX)
-            const axResult = await axIntent.extractIntents(userMessage, options);
+            const intents = await axIntent.extractIntents(userMessage, options);
 
-            if (!axResult || axResult.intents.length === 0) {
+            if (!intents || intents.length === 0) {
                 console.log(`[Pipeline] No intents extracted. Routing as non-task.`);
                 return { type: 'non-task', results: [], errors: [] };
             }
@@ -35,7 +35,7 @@ export function createPipeline({ axIntent, normalizer, adapter }) {
                 existingTaskContent: options.existingTask?.content || null
             };
 
-            const normalizedActions = normalizer.normalizeActions(axResult.intents, normOptions);
+            const normalizedActions = normalizer.normalizeActions(intents, normOptions);
 
             const validActions = normalizedActions.filter(a => a.valid);
             const invalidActions = normalizedActions.filter(a => !a.valid);
@@ -99,10 +99,10 @@ export function createPipeline({ axIntent, normalizer, adapter }) {
                         result = await adapter.updateTask(action.taskId, action);
                         break;
                     case 'complete':
-                        result = await adapter.completeTask(action.taskId);
+                        result = await adapter.completeTask(action.taskId, action.projectId);
                         break;
                     case 'delete':
-                        result = await adapter.deleteTask(action.taskId);
+                        result = await adapter.deleteTask(action.taskId, action.projectId);
                         break;
                     default:
                         throw new Error(`Unsupported action type: ${action.type}`);

@@ -2,9 +2,8 @@
 import cron from 'node-cron';
 import * as store from './store.js';
 import { buildAutoApplyNotification, userTimeString, formatBriefingHeader, filterProcessedThisWeek, sendWithMarkdown } from '../bot/utils.js';
-import { analyzeAndSend } from '../bot/commands.js';
 
-export async function startScheduler(bot, ticktick, gemini, config) {
+export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, config) {
     const {
         dailyHour = 8,
         weeklyDay = 0,
@@ -95,8 +94,32 @@ export async function startScheduler(bot, ticktick, gemini, config) {
 
             for (const task of batch) {
                 try {
-                    const result = await analyzeAndSend(bot, task, gemini, ticktick, projects, autoConfig);
-                    if (result && result !== 'supervised') autoApplied.push(result);
+                    const userMessage = task.title + (task.content ? `\n${task.content}` : '');
+                    const result = await pipeline.processMessage(userMessage, {
+                        existingTask: task,
+                        timezone
+                    });
+
+                    if (result.type === 'error') {
+                        if (result.errors.some(e => e.includes('QUOTA_EXHAUSTED') || e.includes('All API keys exhausted') || e.includes('quota'))) {
+                            throw new Error('QUOTA_EXHAUSTED');
+                        }
+                        await store.markTaskFailed(task.id, result.errors.join(', '));
+                        console.error(`  ❌ Failed: "${task.title}": ${result.errors.join(', ')}`);
+                    } else if (result.type === 'task') {
+                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: true });
+                        for (const action of result.actions) {
+                            if (action.type !== 'drop') {
+                                autoApplied.push({
+                                    title: action.title || task.title,
+                                    schedule: action.dueDate ? action.dueDate.split('T')[0] : null,
+                                    movedTo: action.projectId && action.projectId !== task.projectId ? action.projectId : null
+                                });
+                            }
+                        }
+                    } else {
+                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                    }
                 } catch (err) {
                     if (err.message === 'QUOTA_EXHAUSTED') {
                         // Park ALL new tasks (not just this batch) — none can be processed

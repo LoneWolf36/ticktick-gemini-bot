@@ -69,16 +69,7 @@ async function run() {
     console.error(err.message);
   }
 
-  try {
-    const geminiSource = readFileSync('services/gemini.js', 'utf8');
-    assert.ok(geminiSource.includes("For date updates, set changes.dueDate as 'YYYY-MM-DD'"));
-    assert.ok(geminiSource.includes('scheduleBucket'));
-    console.log('PASS converse prompt defines strict update date contract');
-  } catch (err) {
-    failures++;
-    console.error('FAIL converse prompt defines strict update date contract');
-    console.error(err.message);
-  }
+
 
   try {
     const input = '**Start now**: Do the task\n\n#######';
@@ -92,31 +83,7 @@ async function run() {
     console.error(err.message);
   }
 
-  try {
-    const calls = [];
-    const ticktick = {
-      updateTask: async (taskId, changes) => {
-        calls.push({ taskId, changes });
-        return { id: taskId };
-      },
-      completeTask: async () => {},
-      createTask: async () => {}
-    };
 
-    const currentTasks = [{ id: 'task-1', title: 'Netflix task', projectId: 'p-1' }];
-    const actions = [{ type: 'update', taskId: 'task-1', changes: { suggested_schedule: 'today' } }];
-
-    const result = await executeActions(actions, ticktick, currentTasks);
-
-    assert.ok(result.outcomes[0].includes('Updated: "Netflix task"'));
-    assert.equal(typeof calls[0].changes.dueDate, 'string');
-    assert.ok(!calls[0].changes.dueDate.includes('T23:59:00.000'));
-    console.log('PASS update action supports suggested_schedule alias');
-  } catch (err) {
-    failures++;
-    console.error('FAIL update action supports suggested_schedule alias');
-    console.error(err.message);
-  }
 
   try {
     const calls = [];
@@ -125,102 +92,8 @@ async function run() {
         calls.push({ taskId, changes });
         return { id: taskId };
       },
-      completeTask: async () => {},
-      createTask: async () => {}
-    };
-
-    const currentTasks = [{ id: 'task-3', title: 'Netflix system design', projectId: 'p-1' }];
-    const actions = [
-      { type: 'update', taskId: 'task-3', changes: { dueDate: '2026-03-01' } },
-      { type: 'update', taskId: 'task-3', changes: { priority: 5 } },
-    ];
-
-    const result = await executeActions(actions, ticktick, currentTasks);
-
-    assert.ok(result.outcomes.some(o => o.includes('Updated: "Netflix system design"')));
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].changes.priority, 5);
-    assert.ok(typeof calls[0].changes.dueDate === 'string');
-    assert.ok(!calls[0].changes.dueDate.includes('T23:59:00.000'));
-    console.log('PASS duplicate updates are merged and absolute dates use slot-based time');
-  } catch (err) {
-    failures++;
-    console.error('FAIL duplicate updates are merged and absolute dates use slot-based time');
-    console.error(err.message);
-  }
-
-  try {
-    const calls = [];
-    const ticktick = {
-      updateTask: async (taskId, changes) => {
-        calls.push({ taskId, changes });
-        return { id: taskId };
-      },
-      completeTask: async () => {},
-      createTask: async () => {}
-    };
-
-    const currentTasks = [{ id: 'task-2', title: 'Netflix system design', projectId: 'p-1' }];
-    const actions = [{
-      action: 'update',
-      task_id: 'task-2',
-      update: { deadline: { bucket: 'today' } }
-    }];
-
-    const result = await executeActions(actions, ticktick, currentTasks);
-
-    assert.ok(result.outcomes[0].includes('Updated: "Netflix system design"'));
-    assert.equal(typeof calls[0].changes.dueDate, 'string');
-    console.log('PASS update action normalization handles action/task_id/nested deadline bucket');
-  } catch (err) {
-    failures++;
-    console.error('FAIL update action normalization handles action/task_id/nested deadline bucket');
-    console.error(err.message);
-  }
-
-  try {
-    const calls = [];
-    const ticktick = {
-      updateTask: async () => { throw new Error('should not be called'); },
-      completeTask: async () => {},
-      createTask: async (changes) => {
-        calls.push(changes);
-      }
-    };
-
-    const currentTasks = [];
-    const actions = [{
-      action: 'add',
-      payload: {
-        name: 'Buy groceries',
-        details: 'Chicken and onions',
-        new_schedule: 'tomorrow',
-        priority: 'low'
-      }
-    }];
-
-    const result = await executeActions(actions, ticktick, currentTasks);
-
-    assert.ok(result.outcomes[0].includes('Created: "Buy groceries"'));
-    assert.equal(calls.length, 1);
-    assert.equal(calls[0].priority, 1);
-    assert.equal(typeof calls[0].dueDate, 'string');
-    console.log('PASS create action normalization handles add/payload aliases');
-  } catch (err) {
-    failures++;
-    console.error('FAIL create action normalization handles add/payload aliases');
-    console.error(err.message);
-  }
-
-  try {
-    const calls = [];
-    const ticktick = {
-      updateTask: async (taskId, changes) => {
-        calls.push({ taskId, changes });
-        return { id: taskId };
-      },
-      completeTask: async () => {},
-      createTask: async () => {}
+      completeTask: async () => { },
+      createTask: async () => { }
     };
 
     const currentTasks = [

@@ -4,7 +4,7 @@ import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import path from 'path';
 import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from '../bot/utils.js';
-import { analyzeSchema, converseSchema, reorgSchema } from './schemas.js';
+import { reorgSchema } from './schemas.js';
 
 // ─── User Context ────────────────────────────────────────────
 // Priority: 1) local user_context.js (gitignored), 2) USER_CONTEXT env var, 3) generic default
@@ -24,40 +24,6 @@ if (existsSync(USER_CONTEXT_FILE)) {
 
 
 
-// ─── Task Analysis Prompt ───────────────────────────────────
-const ANALYZE_PROMPT = `${USER_CONTEXT}
-
-You are evaluating ONE task for strategic value.
-
-Decide clearly:
-
-1. Is this a needle-mover toward:
-   - AI/backend internship
-   - DSA/system design depth
-   - Interview readiness
-
-2. Is it clearly defined and completable in one focused session (≤3 hours)?
-   If not, shrink it into one execution chunk.
-
-3. Is this:
-   - 🔴 career-critical
-   - 🟡 important
-   - 🟢 life-admin
-   - ⚪ consider-dropping
-
-4. When should this realistically be done?
-Do NOT default everything to "today".
-
-CRITICAL DATA PRESERVATION RULE:
-If the original task contains URLs, links, or specific reference notes, you MUST repurpose and preserve them. Do not destroy the user's data. Extract them verbatim into the \`resources\` array.
-
-You MUST act STRICTLY as a JSON generator. DO NOT write conversational filler. Adhere perfectly to the schema.
-
-<example_evaluation>
-Task: "Do 15 puzzle problem"
-Output Mindset: You realize this is a direct needle-mover for interview prep. It needs 2-3 hours of deep work. You title it "Solve 15-Puzzle Problem (A* Search Implementation)". You assign it as career-critical (🔴). You tell the user to break it down and commit to a focused block tomorrow morning without switching tasks.
-</example_evaluation>
-`;
 
 // ─── Daily Briefing Prompt ──────────────────────────────────
 const BRIEFING_PROMPT = `${USER_CONTEXT}
@@ -134,39 +100,7 @@ Do not use markdown headings (#, ##, ###) or separator lines made of hashes.
 </example_format>
 `;
 
-// ─── Free-form Conversation Prompt ───────────────────────
-const CONVERSE_PROMPT = `${USER_CONTEXT}
 
-Classify the user's message into one of three modes:
-A) "action" (Task modifications, creations, deletions, or completion requests)
-B) "coach" (Strategic questions, emotional/overwhelm venting, requests for advice)
-C) "clarify" (Unclear task references where you must ask a follow-up)
-
-CRITICAL RULES:
-1. Strict Ambiguity: If the user refers to a task ambiguously, DO NOT GUESS. Mode = "clarify". The bot has no chat memory. You must tell the user exactly what is ambiguous and ask them to send a completely NEW message containing the full task context.
-2. Multi-Step Decomposition: If a user's text implies multiple physical actions (e.g., "register", "research", "prepare questions", "attend"), YOU ABSOLUTELY MUST extract EACH action into its own SEPARATE "create" object. Do NOT consolidate prerequisite steps into the 'content' of a single event task.
-3. Bundle ALL required attributes deeply into the primary "create" payload. NEVER append sequential "update" actions targeting newly created tasks.
-4. DO NOT write coaching monologues inside the title. Keep "title" under 10 words strictly as a concise summary. Place all verbose text, notes, and context exclusively into "content". Do not copy-paste repetitive block constraints into every sub-step's content.
-5. Infer priorities (0:none, 1:low, 3:medium, 5:high).
-6. IF the user asks to ADD, CREATE, or MODIFY a task, YOU MUST STRICTLY select "action" mode. NEVER output task creation data inside the "response" string field under "coach" mode.
-7. Updates: When the user asks to modify an existing task, you MUST extract the new properties (like a new title or new date) and place them explicitly inside the 'changes' schema object.
-8. For date updates, set changes.dueDate as 'YYYY-MM-DD' whenever possible. If the user uses relative phrasing, use changes.scheduleBucket with one of: today, tomorrow, this-week, next-week, someday.
-9. For update actions, ALWAYS include taskId and at least one valid field in changes from: title, content, dueDate, scheduleBucket, projectId, priority. Never return an empty changes object.
-10. Use ONLY these action type values: update, create, complete, drop. Do not invent aliases.
-11. Output plain JSON only. No markdown, no code fences, no headings.
-
-<example_decomposition>
-Input: Flight FR123 to London departs Friday 6pm. I need to check in online, pack my bag, and book a taxi to the airport.
-Logic Mapping:
-- Task 1: Check-in for Flight FR123 (Content: Friday 6pm, FR123) [Priority: 5]
-- Task 2: Pack bag (Content: London trip) [Priority: 3]
-- Task 3: Book airport taxi (Content: Departs 6pm) [Priority: 3]
-
-Input: Move the 'Review marketing copy' task to tomorrow and rename it to 'Finalize ad copy'.
-Logic Mapping:
-- Task 1 (Update): Target Task ID -> mapped changes: title becomes "Finalize ad copy", scheduleBucket becomes "tomorrow".
-</example_decomposition>
-`;
 
 const REORG_PROMPT = `${USER_CONTEXT}
 
@@ -217,19 +151,6 @@ export class GeminiAnalyzer {
     _initModelsForActiveKey() {
         const genAI = new GoogleGenerativeAI(this._keys[this._activeKeyIndex]);
 
-        this.analyzeModel = genAI.getGenerativeModel({
-            model: 'gemini-2.5-flash',
-            systemInstruction: ANALYZE_PROMPT,
-            generationConfig: {
-                temperature: 0.3,
-                topP: 0.9,
-                maxOutputTokens: 4096,
-                responseMimeType: "application/json",
-                responseSchema: analyzeSchema,
-            },
-            thinkingConfig: { thinkingBudget: 1024 },
-        });
-
         this.briefingModel = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
             systemInstruction: BRIEFING_PROMPT,
@@ -252,15 +173,7 @@ export class GeminiAnalyzer {
             thinkingConfig: { thinkingBudget: 1024 },
         });
 
-        this.chatModel = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
-            systemInstruction: CONVERSE_PROMPT,
-            generationConfig: {
-                responseMimeType: "application/json",
-                responseSchema: converseSchema,
-                temperature: 0.1
-            }
-        });
+
 
         this.reorgModel = genAI.getGenerativeModel({
             model: "gemini-2.5-flash",
@@ -477,33 +390,7 @@ export class GeminiAnalyzer {
         }
     }
 
-    // ─── Analyze a single task (with smart retry) ───────────────
 
-    async analyzeTask(task, projectList = []) {
-        const prompt = this._buildTaskPrompt(task, projectList);
-        const result = await this._generateWithFailover(() => this.analyzeModel, prompt, { transientBaseMs: 15 });
-        return this._parseAnalysis(result.response.text().trim(), task);
-    }
-
-    _parseAnalysis(text, task) {
-        try {
-            return JSON.parse(text);
-        } catch {
-            console.warn('⚠ Could not parse Gemini analysis as JSON, raw:', text.slice(0, 300));
-            return {
-                improved_title: task.title,
-                analysis: 'AI analysis received but could not be structured. Review this task manually.',
-                description: '',
-                sub_steps: [],
-                resources: [],
-                priority: 'important',
-                priority_emoji: '🟡',
-                needle_mover: false,
-                success_criteria: 'Complete the task as described',
-                callout: 'The AI had trouble formatting its response for this one. Give it a look yourself.',
-            };
-        }
-    }
 
     // ─── Generate daily briefing ──────────────────────────────
 
@@ -540,55 +427,7 @@ export class GeminiAnalyzer {
         return result.response.text().trim();
     }
 
-    // ─── Free-form conversation / instruction handling ─────────
 
-    async handleFreeform(message, tasks = [], projects = []) {
-        const today = userTodayFormatted();
-
-        // Build concise task context - compressing heavily to avoid token bloat
-        // Sort tasks logically so those with due dates appear BEFORE slicing limit!
-        const sortedTasks = [...tasks].sort((a, b) => {
-            if (a.dueDate && !b.dueDate) return -1;
-            if (!a.dueDate && b.dueDate) return 1;
-            return 0;
-        });
-
-        const taskList = sortedTasks.slice(0, 50).map(t => {
-            let label = `[id:${t.id}] "${t.title}"`;
-            if (t.dueDate) {
-                // Keep context absolutely concise. 2026-02-24T23:59:00 -> 2026-02-24
-                label += ` (Due: ${t.dueDate.split('T')[0]})`;
-            }
-            return label;
-        }).join(' | ');
-        const projectList = projects.map(p => `[id:${p.id}] ${p.name}`).join(' | ');
-
-        const prompt = `Today is ${today}.
-
-Primary User Message (Evaluate and action this explicitly):
-"""
-${message}
-"""
-
---- ACCOUNT CONTEXT (For ID matching and reference only) ---
-User's current tasks (${tasks.length} total):
-${taskList}
-
-Available projects:
-${projectList}
-------------------------------------------------------------`;
-
-        const result = await this._generateWithFailover(() => this.chatModel, prompt, { transientBaseMs: 10 });
-        const raw = result.response.text().trim();
-
-        // Try to parse JSON natively since we enforced responseMimeType
-        try {
-            return JSON.parse(raw);
-        } catch {
-            // If Gemini failed strict JSON enforcement
-            return { mode: 'coach', response: raw };
-        }
-    }
 
     async generateReorgProposal(tasks = [], projects = [], refinement = null, existingActions = []) {
         const compactTasks = this._compactReorgTasks(tasks);
@@ -613,7 +452,7 @@ ${projectList}
         if (refinement) {
             prompt += `\nUser refinement request:\n${refinement}\n`;
         } else {
-            prompt += `\nCreate a new reorganization proposal.`; 
+            prompt += `\nCreate a new reorganization proposal.`;
         }
 
         const result = await this._generateWithFailover(() => this.reorgModel, prompt, { transientBaseMs: 12 });
@@ -888,28 +727,4 @@ ${projectList}
         return cleaned;
     }
 
-    // ─── Helpers ──────────────────────────────────────────────
-
-    _buildTaskPrompt(task, projectList = []) {
-        const today = userTodayFormatted();
-
-        let prompt = `Today is ${today}.\n`;
-        prompt += `Analyze this task:\nTitle: "${task.title}"`;
-        if (task.content) prompt += `\nDescription: "${task.content}"`;
-        if (task.dueDate) {
-            prompt += `\nExisting due date: ${task.dueDate} (respect this — set suggested_schedule to null if already dated)`;
-        }
-        if (task.projectName) prompt += `\nCurrent project: ${task.projectName}`;
-        if (task.tags?.length) prompt += `\nTags: ${task.tags.join(', ')}`;
-        const pMap = { 0: 'None', 1: 'Low', 3: 'Medium', 5: 'High' };
-        if (task.priority !== undefined) prompt += `\nCurrent priority: ${pMap[task.priority] || 'Unknown'}`;
-
-        if (projectList.length > 0) {
-            prompt += `\n\nAvailable projects (use exact names):\n`;
-            prompt += projectList.map(p => `- ${p.name}`).join('\n');
-            prompt += `\nSet suggested_project to null if the current project is already correct.`;
-        }
-
-        return prompt;
-    }
 }

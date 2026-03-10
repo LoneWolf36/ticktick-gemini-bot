@@ -373,6 +373,16 @@ function _parseDateList(dueDateString) {
 }
 
 /**
+ * Resolves the action type, auto-switching to 'update' if an existing task is provided.
+ */
+function _resolveActionType(intentAction, existingTask) {
+    if (existingTask && (intentAction.type === 'create' || !intentAction.type)) {
+        return 'update';
+    }
+    return intentAction.type || 'create';
+}
+
+/**
  * Normalizes a single intent action.
  */
 export function normalizeAction(intentAction, options = {}) {
@@ -385,9 +395,10 @@ export function normalizeAction(intentAction, options = {}) {
     } = options;
 
     const normalized = {
-        type: intentAction.type || 'create',
+        type: _resolveActionType(intentAction, options.existingTask),
         confidence: intentAction.confidence !== undefined ? intentAction.confidence : 1.0,
-        taskId: intentAction.taskId || null,
+        taskId: intentAction.taskId || options.existingTask?.id || null,
+        originalProjectId: options.existingTask?.projectId || null,
         title: _normalizeTitle(intentAction.title, maxTitleLength),
         content: _normalizeContent(intentAction.content, existingTaskContent),
         priority: [0, 1, 3, 5].includes(intentAction.priority) ? intentAction.priority : null,

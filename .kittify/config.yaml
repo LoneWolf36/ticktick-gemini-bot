@@ -2,4 +2,7 @@ vcs:
   type: git
 agents:
   available:
+  - claude
   - gemini
+  - opencode
+  - codex
