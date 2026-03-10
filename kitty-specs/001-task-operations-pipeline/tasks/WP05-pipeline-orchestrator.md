@@ -1,13 +1,17 @@
 ---
-work_package_id: "WP05"
-title: "Pipeline Orchestrator & Telegram Integration"
-lane: "planned"
-dependencies: ["WP01", "WP02", "WP03", "WP04"]
-subtasks: ["T021", "T022", "T026", "T027"]
+work_package_id: WP05
+title: Pipeline Orchestrator & Telegram Integration
+lane: "doing"
+dependencies: [WP01, WP02, WP03, WP04]
+base_branch: 001-task-operations-pipeline-WP05-merge-base
+base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
+created_at: '2026-03-10T15:26:18.435625+00:00'
+subtasks: [T021, T022, T026, T027]
+shell_pid: "5544"
 history:
-  - date: "2026-03-09"
-    action: "created"
-    by: "spec-kitty.tasks"
+- date: '2026-03-09'
+  action: created
+  by: spec-kitty.tasks
 ---
 
 # WP05 — Pipeline Orchestrator & Telegram Integration
