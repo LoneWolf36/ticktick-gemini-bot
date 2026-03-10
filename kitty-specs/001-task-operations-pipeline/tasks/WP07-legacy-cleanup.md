@@ -1,13 +1,13 @@
 ---
 work_package_id: WP07
 title: Legacy Cleanup
-lane: "for_review"
+lane: "doing"
 dependencies: [WP06]
 base_branch: 001-task-operations-pipeline-WP06
 base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
 created_at: '2026-03-10T15:40:35.840514+00:00'
 subtasks: [T028, T029, T030, T031]
-shell_pid: "14764"
+shell_pid: "21884"
 agent: "Gemini"
 history:
 - date: '2026-03-09'
@@ -146,3 +146,4 @@ After WP01-06, the new pipeline handles all task mutations. Legacy code for task
 
 - 2026-03-10T15:40:37Z – Gemini – shell_pid=14764 – lane=doing – Assigned agent via workflow command
 - 2026-03-10T15:41:02Z – Gemini – shell_pid=14764 – lane=for_review – Moved to for_review
+- 2026-03-10T15:41:19Z – Gemini – shell_pid=21884 – lane=doing – Started review via workflow command
