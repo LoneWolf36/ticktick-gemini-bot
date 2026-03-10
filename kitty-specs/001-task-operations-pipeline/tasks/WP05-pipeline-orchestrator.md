@@ -8,6 +8,7 @@ base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
 created_at: '2026-03-10T15:26:18.435625+00:00'
 subtasks: [T021, T022, T026, T027]
 shell_pid: "5544"
+agent: "Gemini"
 history:
 - date: '2026-03-09'
   action: created
@@ -140,3 +141,7 @@ spec-kitty implement WP05 --base WP04
 - Test with spec acceptance scenarios end-to-end
 - Verify non-task messages don't create tasks
 - Check error messages are user-friendly
+
+## Activity Log
+
+- 2026-03-10T15:26:20Z – Gemini – shell_pid=5544 – lane=doing – Assigned agent via workflow command
