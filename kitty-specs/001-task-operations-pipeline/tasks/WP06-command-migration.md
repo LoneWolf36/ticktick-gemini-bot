@@ -1,7 +1,7 @@
 ---
 work_package_id: WP06
 title: 'Command Migration: /scan & /review'
-lane: "doing"
+lane: "done"
 dependencies: [WP05]
 base_branch: 001-task-operations-pipeline-WP05
 base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
@@ -9,6 +9,8 @@ created_at: '2026-03-10T15:31:50.991733+00:00'
 subtasks: [T023, T024, T025]
 shell_pid: "19860"
 agent: "Gemini"
+reviewed_by: "TickTick Bot"
+review_status: "approved"
 history:
 - date: '2026-03-09'
   action: created
@@ -136,3 +138,4 @@ spec-kitty implement WP06 --base WP05
 - 2026-03-10T15:31:55Z – Gemini – shell_pid=25736 – lane=doing – Assigned agent via workflow command
 - 2026-03-10T15:32:27Z – Gemini – shell_pid=25736 – lane=for_review – Moved to for_review
 - 2026-03-10T15:32:48Z – Gemini – shell_pid=19860 – lane=doing – Started review via workflow command
+- 2026-03-10T15:33:19Z – Gemini – shell_pid=19860 – lane=done – Review passed: /scan and /review migrated to pipeline. autoApply and callbacks hooked to adapter. No direct API calls remain outside adapter.
