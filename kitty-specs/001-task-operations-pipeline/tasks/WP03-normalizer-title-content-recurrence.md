@@ -8,6 +8,7 @@ base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
 created_at: '2026-03-10T15:08:33.444300+00:00'
 subtasks: [T013, T014, T015, T016]
 shell_pid: "14756"
+agent: "Gemini"
 history:
 - date: '2026-03-09'
   action: created
@@ -250,3 +251,7 @@ const FILLER_PATTERNS = [
 - Test title normalisation with real user messages from production logs
 - Verify RRULE output matches what TickTick actually accepts
 - Check content preservation scenarios: existing content + new useful content, existing + noise, existing + duplicate
+
+## Activity Log
+
+- 2026-03-10T15:08:38Z – Gemini – shell_pid=14756 – lane=doing – Assigned agent via workflow command
