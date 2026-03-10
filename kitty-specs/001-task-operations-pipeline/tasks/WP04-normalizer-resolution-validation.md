@@ -1,13 +1,17 @@
 ---
-work_package_id: "WP04"
-title: "Normalizer: Project Resolution, Dates & Validation"
-lane: "planned"
-dependencies: ["WP01", "WP03"]
-subtasks: ["T017", "T018", "T019", "T020"]
+work_package_id: WP04
+title: 'Normalizer: Project Resolution, Dates & Validation'
+lane: "doing"
+dependencies: [WP01, WP03]
+base_branch: 001-task-operations-pipeline-WP04-merge-base
+base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
+created_at: '2026-03-10T15:24:28.423102+00:00'
+subtasks: [T017, T018, T019, T020]
+shell_pid: "26124"
 history:
-  - date: "2026-03-09"
-    action: "created"
-    by: "spec-kitty.tasks"
+- date: '2026-03-09'
+  action: created
+  by: spec-kitty.tasks
 ---
 
 # WP04 — Normalizer: Project Resolution, Dates & Validation
