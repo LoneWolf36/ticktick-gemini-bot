@@ -1,13 +1,17 @@
 ---
-work_package_id: "WP07"
-title: "Legacy Cleanup"
-lane: "planned"
-dependencies: ["WP06"]
-subtasks: ["T028", "T029", "T030", "T031"]
+work_package_id: WP07
+title: Legacy Cleanup
+lane: "doing"
+dependencies: [WP06]
+base_branch: 001-task-operations-pipeline-WP06
+base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
+created_at: '2026-03-10T15:40:35.840514+00:00'
+subtasks: [T028, T029, T030, T031]
+shell_pid: "14764"
 history:
-  - date: "2026-03-09"
-    action: "created"
-    by: "spec-kitty.tasks"
+- date: '2026-03-09'
+  action: created
+  by: spec-kitty.tasks
 ---
 
 # WP07 — Legacy Cleanup
