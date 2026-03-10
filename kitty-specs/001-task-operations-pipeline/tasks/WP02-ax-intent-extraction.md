@@ -1,13 +1,17 @@
 ---
-work_package_id: "WP02"
-title: "AX Setup & Intent Extraction"
-lane: "planned"
+work_package_id: WP02
+title: AX Setup & Intent Extraction
+lane: "doing"
 dependencies: []
-subtasks: ["T009", "T010", "T011", "T012"]
+base_branch: master
+base_commit: 3e20ce79dbdc55b31b87b5b6a086204d766a45ef
+created_at: '2026-03-10T14:44:32.241030+00:00'
+subtasks: [T009, T010, T011, T012]
+shell_pid: "9964"
 history:
-  - date: "2026-03-09"
-    action: "created"
-    by: "spec-kitty.tasks"
+- date: '2026-03-09'
+  action: created
+  by: spec-kitty.tasks
 ---
 
 # WP02 — AX Setup & Intent Extraction
