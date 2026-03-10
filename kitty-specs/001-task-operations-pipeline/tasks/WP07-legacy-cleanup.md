@@ -8,6 +8,7 @@ base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
 created_at: '2026-03-10T15:40:35.840514+00:00'
 subtasks: [T028, T029, T030, T031]
 shell_pid: "14764"
+agent: "Gemini"
 history:
 - date: '2026-03-09'
   action: created
@@ -140,3 +141,7 @@ After WP01-06, the new pipeline handles all task mutations. Legacy code for task
 - Run all commands manually after cleanup
 - Grep for: `analyzeTask`, `converse`, `converseSchema`, `ANALYZE_PROMPT`, `normalizeActionChanges`
 - Verify zero hits outside of comments/documentation
+
+## Activity Log
+
+- 2026-03-10T15:40:37Z – Gemini – shell_pid=14764 – lane=doing – Assigned agent via workflow command
