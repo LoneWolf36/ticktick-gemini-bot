@@ -1,7 +1,7 @@
 ---
 work_package_id: WP05
 title: Pipeline Orchestrator & Telegram Integration
-lane: "doing"
+lane: "for_review"
 dependencies: [WP01, WP02, WP03, WP04]
 base_branch: 001-task-operations-pipeline-WP05-merge-base
 base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
@@ -145,3 +145,4 @@ spec-kitty implement WP05 --base WP04
 ## Activity Log
 
 - 2026-03-10T15:26:20Z – Gemini – shell_pid=5544 – lane=doing – Assigned agent via workflow command
+- 2026-03-10T15:26:56Z – Gemini – shell_pid=5544 – lane=for_review – Moved to for_review
