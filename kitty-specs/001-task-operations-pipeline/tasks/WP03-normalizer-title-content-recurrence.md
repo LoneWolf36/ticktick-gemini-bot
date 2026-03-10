@@ -1,13 +1,13 @@
 ---
 work_package_id: WP03
 title: 'Normalizer: Title, Content & Recurrence'
-lane: "for_review"
+lane: "doing"
 dependencies: []
 base_branch: master
 base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
 created_at: '2026-03-10T15:08:33.444300+00:00'
 subtasks: [T013, T014, T015, T016]
-shell_pid: "14756"
+shell_pid: "25264"
 agent: "Gemini"
 history:
 - date: '2026-03-09'
@@ -256,3 +256,4 @@ const FILLER_PATTERNS = [
 
 - 2026-03-10T15:08:38Z – Gemini – shell_pid=14756 – lane=doing – Assigned agent via workflow command
 - 2026-03-10T15:09:07Z – Gemini – shell_pid=14756 – lane=for_review – Moved to for_review
+- 2026-03-10T15:11:34Z – Gemini – shell_pid=25264 – lane=doing – Started review via workflow command
