@@ -1,13 +1,13 @@
 ---
 work_package_id: WP02
 title: AX Setup & Intent Extraction
-lane: "for_review"
+lane: "doing"
 dependencies: []
 base_branch: master
 base_commit: 3e20ce79dbdc55b31b87b5b6a086204d766a45ef
 created_at: '2026-03-10T14:44:32.241030+00:00'
 subtasks: [T009, T010, T011, T012]
-shell_pid: "9964"
+shell_pid: "20752"
 agent: "Gemini"
 history:
 - date: '2026-03-09'
@@ -203,3 +203,4 @@ spec-kitty implement WP02
 
 - 2026-03-10T14:44:39Z – Gemini – shell_pid=9964 – lane=doing – Assigned agent via workflow command
 - 2026-03-10T15:04:24Z – Gemini – shell_pid=9964 – lane=for_review – Moved to for_review
+- 2026-03-10T15:05:05Z – Gemini – shell_pid=20752 – lane=doing – Started review via workflow command
