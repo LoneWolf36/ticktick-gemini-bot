@@ -8,6 +8,7 @@ base_commit: 3e20ce79dbdc55b31b87b5b6a086204d766a45ef
 created_at: '2026-03-10T14:44:32.241030+00:00'
 subtasks: [T009, T010, T011, T012]
 shell_pid: "9964"
+agent: "Gemini"
 history:
 - date: '2026-03-09'
   action: created
@@ -197,3 +198,7 @@ spec-kitty implement WP02
 - Check that the AX signature produces well-structured output for the acceptance scenarios in spec.md
 - Verify key rotation doesn't leak keys or create race conditions
 - Ensure the signature instructions clearly distinguish recurrence vs multi-day
+
+## Activity Log
+
+- 2026-03-10T14:44:39Z – Gemini – shell_pid=9964 – lane=doing – Assigned agent via workflow command
