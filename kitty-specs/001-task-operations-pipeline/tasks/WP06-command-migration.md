@@ -8,6 +8,7 @@ base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
 created_at: '2026-03-10T15:31:50.991733+00:00'
 subtasks: [T023, T024, T025]
 shell_pid: "25736"
+agent: "Gemini"
 history:
 - date: '2026-03-09'
   action: created
@@ -129,3 +130,7 @@ spec-kitty implement WP06 --base WP05
 - Grep for remaining direct `ticktick.createTask`, `ticktick.updateTask` etc. — there should be none outside adapter
 - Verify `/briefing` and `/weekly` still work (they must NOT be touched)
 - Test `/scan` with a real task list to verify batch processing
+
+## Activity Log
+
+- 2026-03-10T15:31:55Z – Gemini – shell_pid=25736 – lane=doing – Assigned agent via workflow command
