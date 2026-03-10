@@ -1,7 +1,7 @@
 ---
 work_package_id: "WP01"
 title: "TickTick Adapter Module"
-lane: "planned"
+lane: "done"
 dependencies: []
 subtasks: ["T001", "T002", "T003", "T004", "T005", "T006", "T007", "T008"]
 agent: "Gemini"
@@ -304,3 +304,4 @@ Subtask ID T012 is used in both WP02 ("Add quota-exhaustion error handler") and 
 - 2026-03-10T14:38:56Z – unknown – lane=for_review – Moved to for_review
 - 2026-03-10T14:39:22Z – Gemini – shell_pid=20788 – lane=doing – Started review via workflow command
 - 2026-03-10T14:43:52Z – Gemini – shell_pid=20788 – lane=planned – Moved to planned
+- 2026-03-10T15:35:57Z – Gemini – shell_pid=20788 – lane=done – Review passed: Fixed content merge separator and improved duplication prevention logic.
