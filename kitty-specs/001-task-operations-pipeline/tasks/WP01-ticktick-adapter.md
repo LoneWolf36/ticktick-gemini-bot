@@ -1,7 +1,7 @@
 ---
 work_package_id: "WP01"
 title: "TickTick Adapter Module"
-lane: "planned"
+lane: "for_review"
 dependencies: []
 subtasks: ["T001", "T002", "T003", "T004", "T005", "T006", "T007", "T008"]
 history:
@@ -270,3 +270,7 @@ spec-kitty implement WP01
 - Verify content preservation logic by reviewing merge scenarios
 - Check that all public methods follow the same error/logging pattern
 - Confirm no direct `axios` or API calls — everything goes through `this._client`
+
+## Activity Log
+
+- 2026-03-10T14:38:56Z – unknown – lane=for_review – Moved to for_review
