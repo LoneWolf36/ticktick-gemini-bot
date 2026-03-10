@@ -1,11 +1,14 @@
 ---
 work_package_id: "WP01"
 title: "TickTick Adapter Module"
-lane: "doing"
+lane: "planned"
 dependencies: []
 subtasks: ["T001", "T002", "T003", "T004", "T005", "T006", "T007", "T008"]
 agent: "Gemini"
 shell_pid: "20788"
+review_status: "has_feedback"
+reviewed_by: "TickTick Bot"
+review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP01.md"
 history:
   - date: "2026-03-09"
     action: "created"
@@ -273,7 +276,31 @@ spec-kitty implement WP01
 - Check that all public methods follow the same error/logging pattern
 - Confirm no direct `axios` or API calls — everything goes through `this._client`
 
+## Review Feedback
+
+**Reviewed by**: TickTick Bot
+**Status**: ❌ Changes Requested
+**Date**: 2026-03-10
+**Feedback file**: `C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP01.md`
+
+﻿**Issue 1: Content Merge Separator Mismatch (FR-007)**
+The implementation in services/ticktick-adapter.js uses \n\n as a separator when merging content in updateTask:
+updatePayload.content = "$(.content)\n\n$(.content)";
+However, the spec for WP01 (and WP03) explicitly requires \n---\n as the separator. This inconsistency will lead to formatting issues.
+
+**Issue 2: Redundant and Conflicting Merge Logic**
+Both services/normalizer.js (WP03) and services/ticktick-adapter.js (WP01) implement content merge logic. 
+- normalizer.js merges if existingTaskContent is provided in options.
+- adapter.updateTask merges by fetching the existing task from the API.
+If pipeline.js passes the already-merged content to adapter.updateTask, the adapter will see that the new content is different from the existing (API) content and append it again, resulting in duplicated content (e.g., OLD \n\n OLD \n---\n NEW).
+We should decide on a single source of truth for merging. Given the adapter has direct access to the latest state via API, it might be the safer place, but the normalizer is currently doing it too.
+
+**Issue 3: Duplicate Subtask ID in Spec**
+Subtask ID T012 is used in both WP02 ("Add quota-exhaustion error handler") and WP03 ("Create services/normalizer.js"). This causes confusion in task tracking. (Note: This is a spec issue, not an implementation issue).
+
+
 ## Activity Log
 
 - 2026-03-10T14:38:56Z – unknown – lane=for_review – Moved to for_review
 - 2026-03-10T14:39:22Z – Gemini – shell_pid=20788 – lane=doing – Started review via workflow command
+- 2026-03-10T14:43:52Z – Gemini – shell_pid=20788 – lane=planned – Moved to planned
