@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: AI Prompt Augmentation
-lane: "planned"
+lane: "done"
 dependencies:
 - WP01
 base_branch: 008-work-style-and-urgent-mode-WP01
@@ -116,3 +116,4 @@ Use language identifiers in code blocks: ````python`, ````bash`
 - 2026-03-11T13:51:40Z – codex-wp03 – shell_pid=26664 – lane=for_review – Ready for review: urgent-aware Gemini prompts, state resolution, and ranking adjustments
 - 2026-03-11T15:03:57Z – codex – shell_pid=14884 – lane=doing – Started review via workflow command
 - 2026-03-11T15:07:57Z – codex – shell_pid=14884 – lane=planned – Moved to planned
+- 2026-03-11T15:23:28Z – codex – shell_pid=14884 – lane=done – Review passed: urgent-mode prompt weighting depends on the completed WP01 store contract, metadata now declares that dependency, and master regression coverage is green
