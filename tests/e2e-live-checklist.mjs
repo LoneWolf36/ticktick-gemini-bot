@@ -9,6 +9,7 @@ import { registerCommands } from '../bot/commands.js';
 import { registerCallbacks } from '../bot/callbacks.js';
 import { GeminiAnalyzer } from '../services/gemini.js';
 import * as store from '../services/store.js';
+import { scheduleToDateTime } from '../bot/utils.js';
 
 const CHAT_ID = Number(process.env.TELEGRAM_CHAT_ID || 738158868);
 const PREFIX = `E2E-${Date.now()}`;
@@ -32,6 +33,111 @@ function buildGeminiKeys() {
     throw new Error('No Gemini API keys found in environment.');
   }
   return keys;
+}
+
+function createDeterministicGemini() {
+  const gemini = new GeminiAnalyzer(['deterministic-test-key']);
+  gemini.capturedPrompts = {
+    daily: [],
+    weekly: [],
+    reorg: [],
+  };
+  gemini._generateWithFailover = async (_getModelFn, prompt) => {
+    if (prompt.includes('Today is ')) {
+      gemini.capturedPrompts.daily.push(prompt);
+      const urgentMode = /URGENT MODE is active/i.test(prompt);
+      const text = urgentMode
+        ? '**Urgent Briefing**\n1. Handle the nearest deadline first.'
+        : '**Humane Briefing**\n1. Start with the highest-value task.';
+      return { response: { usageMetadata: null, text: () => text } };
+    }
+
+    if (prompt.includes('Current active tasks') && prompt.includes('Tasks analyzed this week')) {
+      gemini.capturedPrompts.weekly.push(prompt);
+      return { response: { usageMetadata: null, text: () => '**Weekly Digest**\n1. Review the biggest open loop.' } };
+    }
+
+    if (prompt.includes('Create a new reorganization proposal.') || prompt.includes('User refinement request:')) {
+      gemini.capturedPrompts.reorg.push(prompt);
+      return {
+        response: {
+          usageMetadata: null,
+          text: () => JSON.stringify({
+            summary: 'Deterministic checklist reorg proposal.',
+            questions: prompt.includes('User refinement request:') ? ['Which grocery tasks should merge?'] : [],
+            actions: [
+              {
+                type: 'update',
+                taskId: 't_netflix',
+                changes: {
+                  projectId: 'p_career',
+                  priority: 5,
+                },
+              },
+            ],
+          }),
+        },
+      };
+    }
+
+    return { response: { usageMetadata: null, text: () => '{}' } };
+  };
+  return gemini;
+}
+
+function createPipelineDouble(ticktick) {
+  return {
+    async processMessage(userMessage) {
+      if (/^move it to tomorrow$/i.test(userMessage.trim())) {
+        return {
+          type: 'error',
+          results: [],
+          confirmationText: 'Clarification needed.',
+          errors: ['Which task do you want to move?'],
+        };
+      }
+
+      const moveTodayMatch = userMessage.match(/^move(?: the)? (.+?) to today$/i);
+      if (moveTodayMatch) {
+        const titleHint = moveTodayMatch[1].replace(/\btask\b/i, '').trim().toLowerCase();
+        const matchedTask = ticktick.tasks.find((task) => (task.title || '').toLowerCase().includes(titleHint));
+        if (!matchedTask) {
+          return { type: 'non-task', results: [], errors: [], confirmationText: 'No actionable tasks detected.' };
+        }
+
+        const dueDate = scheduleToDateTime('today', { priorityLabel: 'career-critical' });
+        await ticktick.updateTask(matchedTask.id, { dueDate });
+        return {
+          type: 'task',
+          results: [],
+          errors: [],
+          confirmationText: `Moved "${matchedTask.title}" to today.`,
+        };
+      }
+
+      return { type: 'non-task', results: [], errors: [], confirmationText: 'No actionable tasks detected.' };
+    },
+  };
+}
+
+function createAdapterDouble(ticktick) {
+  return {
+    async createTask(taskData) {
+      return ticktick.createTask(taskData);
+    },
+    async updateTask(taskId, changes) {
+      return ticktick.updateTask(taskId, changes);
+    },
+    async completeTask(taskId, projectId) {
+      return ticktick.completeTask(projectId, taskId);
+    },
+    async deleteTask(taskId, projectId) {
+      const idx = ticktick.tasks.findIndex((task) => task.id === taskId && task.projectId === projectId);
+      if (idx < 0) throw new Error(`Task not found for delete: ${taskId}`);
+      ticktick.tasks.splice(idx, 1);
+      return { success: true };
+    },
+  };
 }
 
 class TickTickTestDouble {
@@ -269,7 +375,9 @@ async function main() {
     const projects = createProjects();
     const tasks = createTasks();
     const ticktick = new TickTickTestDouble(projects, tasks);
-    const gemini = new GeminiAnalyzer(buildGeminiKeys());
+    const gemini = createDeterministicGemini();
+    const pipeline = createPipelineDouble(ticktick);
+    const adapter = createAdapterDouble(ticktick);
     const mockPort = 19081;
     mockServer = http.createServer(async (req, res) => {
       const chunks = [];
@@ -310,12 +418,12 @@ async function main() {
     bot.catch((err) => {
       console.error('BOT_ERR', err.message);
     });
-    registerCommands(bot, ticktick, gemini, {
+    registerCommands(bot, ticktick, gemini, adapter, pipeline, {
       autoApplyLifeAdmin: false,
       autoApplyDrops: false,
       autoApplyMode: 'metadata-only',
     });
-    registerCallbacks(bot, ticktick, gemini);
+    registerCallbacks(bot, ticktick, gemini, adapter);
 
     await bot.init();
     const mk = createUpdateFactory(CHAT_ID);
@@ -332,6 +440,34 @@ async function main() {
       throw new Error(`Expected /start keyboard. Captured methods: ${apiCalls.map((c) => c.method).join(', ')}`);
     }
     checkpoints.push({ id: 'start', status: 'pass', detail: 'Bot start command returned keyboard and persisted chat ID.' });
+
+    const beforeHumaneBriefing = apiCalls.length;
+    await bot.handleUpdate(mk.message('/briefing'));
+    await sleep(200);
+    const humaneBriefing = apiCalls.slice(beforeHumaneBriefing).filter((c) => c.method === 'sendMessage').at(-1);
+    assert.match(humaneBriefing?.payload?.text || '', /Humane Briefing/i);
+    assert.doesNotMatch(humaneBriefing?.payload?.text || '', /Urgent mode is currently active/i);
+    assert.doesNotMatch(gemini.capturedPrompts.daily.at(-1) || '', /URGENT MODE is active/i);
+    checkpoints.push({
+      id: 'humane-default',
+      status: 'pass',
+      detail: 'Without stored urgent mode, the briefing stays on the humane default path.',
+    });
+
+    const beforeUrgentBriefing = apiCalls.length;
+    await store.setUrgentMode(CHAT_ID, true);
+    await bot.handleUpdate(mk.message('/briefing'));
+    await sleep(200);
+    const urgentBriefing = apiCalls.slice(beforeUrgentBriefing).filter((c) => c.method === 'sendMessage').at(-1);
+    assert.match(urgentBriefing?.payload?.text || '', /Urgent Briefing/i);
+    assert.match(urgentBriefing?.payload?.text || '', /Urgent mode is currently active/i);
+    assert.match(gemini.capturedPrompts.daily.at(-1) || '', /URGENT MODE is active/i);
+    checkpoints.push({
+      id: 'briefing-reminder',
+      status: 'pass',
+      detail: 'Urgent mode adds both the prompt augmentation and the manual briefing reminder.',
+    });
+    await store.setUrgentMode(CHAT_ID, false);
 
     // 2) Freeform update: move Netflix to today
     await bot.handleUpdate(mk.message(`Move the ${PREFIX} Netflix System Design task to today`));

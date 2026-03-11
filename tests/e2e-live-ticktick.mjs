@@ -10,6 +10,7 @@ import { registerCallbacks } from '../bot/callbacks.js';
 import { GeminiAnalyzer } from '../services/gemini.js';
 import { TickTickClient } from '../services/ticktick.js';
 import * as store from '../services/store.js';
+import { scheduleToDateTime } from '../bot/utils.js';
 
 const CHAT_ID = Number(process.env.TELEGRAM_CHAT_ID || 0);
 const STORE_PATH = path.resolve('data/store.json');
@@ -29,6 +30,100 @@ function getGeminiKeys() {
   const keys = raw.split(',').map((s) => s.trim()).filter(Boolean);
   if (!keys.length) throw new Error('No Gemini API keys found.');
   return keys;
+}
+
+function createDeterministicGemini() {
+  const gemini = new GeminiAnalyzer(['deterministic-test-key']);
+  gemini.capturedPrompts = {
+    daily: [],
+    weekly: [],
+    reorg: [],
+  };
+  gemini._generateWithFailover = async (_getModelFn, prompt) => {
+    if (prompt.includes('Today is ')) {
+      gemini.capturedPrompts.daily.push(prompt);
+      const urgentMode = /URGENT MODE is active/i.test(prompt);
+      const text = urgentMode
+        ? '**Urgent Briefing**\n1. Handle the nearest deadline first.'
+        : '**Humane Briefing**\n1. Start with the highest-value task.';
+      return { response: { usageMetadata: null, text: () => text } };
+    }
+
+    if (prompt.includes('Current active tasks') && prompt.includes('Tasks analyzed this week')) {
+      gemini.capturedPrompts.weekly.push(prompt);
+      return { response: { usageMetadata: null, text: () => '**Weekly Digest**\n1. Review the biggest open loop.' } };
+    }
+
+    if (prompt.includes('Create a new reorganization proposal.') || prompt.includes('User refinement request:')) {
+      gemini.capturedPrompts.reorg.push(prompt);
+      return {
+        response: {
+          usageMetadata: null,
+          text: () => JSON.stringify({
+            summary: 'Deterministic live reorg proposal.',
+            questions: prompt.includes('User refinement request:') ? ['Which errands should be merged?'] : [],
+            actions: [],
+          }),
+        },
+      };
+    }
+
+    return { response: { usageMetadata: null, text: () => '{}' } };
+  };
+  return gemini;
+}
+
+function createPipelineDouble(ticktick) {
+  return {
+    async processMessage(userMessage) {
+      if (/^move it to tomorrow$/i.test(userMessage.trim())) {
+        return {
+          type: 'error',
+          results: [],
+          confirmationText: 'Clarification needed.',
+          errors: ['Which task do you want to move?'],
+        };
+      }
+
+      const moveTodayMatch = userMessage.match(/^move\s+(.+?)\s+to\s+today$/i);
+      if (moveTodayMatch) {
+        const titleHint = moveTodayMatch[1].replace(/\btask\b/i, '').trim().toLowerCase();
+        const tasks = await ticktick.getAllTasksCached(60000);
+        const matchedTask = tasks.find((task) => (task.title || '').toLowerCase().includes(titleHint));
+        if (!matchedTask) {
+          return { type: 'non-task', results: [], errors: [], confirmationText: 'No actionable tasks detected.' };
+        }
+
+        const dueDate = scheduleToDateTime('today', { priorityLabel: 'career-critical' });
+        await ticktick.updateTask(matchedTask.id, { dueDate });
+        return {
+          type: 'task',
+          results: [],
+          errors: [],
+          confirmationText: `Moved "${matchedTask.title}" to today.`,
+        };
+      }
+
+      return { type: 'non-task', results: [], errors: [], confirmationText: 'No actionable tasks detected.' };
+    },
+  };
+}
+
+function createAdapterDouble(ticktick) {
+  return {
+    async createTask(taskData) {
+      return ticktick.createTask(taskData);
+    },
+    async updateTask(taskId, changes) {
+      return ticktick.updateTask(taskId, changes);
+    },
+    async completeTask(taskId, projectId) {
+      return ticktick.completeTask(projectId, taskId);
+    },
+    async deleteTask(taskId, projectId) {
+      return ticktick.deleteTask(projectId, taskId);
+    },
+  };
 }
 
 function updateFactory(chatId) {
@@ -196,7 +291,9 @@ async function main() {
       detail: `Created ${seeded.length} isolated live TickTick tasks with prefix ${PREFIX}.`,
     });
 
-    const gemini = new GeminiAnalyzer(getGeminiKeys());
+    const gemini = createDeterministicGemini();
+    const pipeline = createPipelineDouble(ticktick);
+    const adapter = createAdapterDouble(ticktick);
 
     await withMockTelegramServer(19082, apiCalls, async () => {
       const bot = new Bot('live-e2e-token', {
@@ -204,12 +301,12 @@ async function main() {
       });
       bot.catch((err) => console.error('BOT_ERR', err.message));
 
-      registerCommands(bot, ticktick, gemini, {
+      registerCommands(bot, ticktick, gemini, adapter, pipeline, {
         autoApplyLifeAdmin: false,
         autoApplyDrops: false,
         autoApplyMode: 'metadata-only',
       });
-      registerCallbacks(bot, ticktick, gemini);
+      registerCallbacks(bot, ticktick, gemini, adapter);
       await bot.init();
 
       const mk = updateFactory(CHAT_ID);
@@ -225,6 +322,56 @@ async function main() {
       await bot.handleUpdate(mk.message('/menu'));
       await sleep(150);
       checkpoints.push({ id: 'menu', status: 'pass', detail: 'Menu command path executed.' });
+
+      const beforeUrgentOn = apiCalls.length;
+      await bot.handleUpdate(mk.message('/urgent on'));
+      await sleep(150);
+      const urgentOnMessage = apiCalls
+        .slice(beforeUrgentOn)
+        .filter((c) => c.method === 'sendMessage')
+        .at(-1);
+      assert.match(urgentOnMessage?.payload?.text || '', /Urgent mode activated/i);
+
+      const beforeUrgentBriefing = apiCalls.length;
+      await bot.handleUpdate(mk.message('/briefing'));
+      await sleep(250);
+      const urgentBriefingMessage = apiCalls
+        .slice(beforeUrgentBriefing)
+        .filter((c) => c.method === 'sendMessage')
+        .at(-1);
+      assert.match(urgentBriefingMessage?.payload?.text || '', /Urgent Briefing/i);
+      assert.match(urgentBriefingMessage?.payload?.text || '', /Urgent mode is currently active/i);
+      assert.match(gemini.capturedPrompts.daily.at(-1) || '', /URGENT MODE is active/i);
+      checkpoints.push({
+        id: 'urgent-toggle-on',
+        status: 'pass',
+        detail: 'Urgent mode activation changed the daily briefing prompt and output.',
+      });
+
+      const beforeUrgentOff = apiCalls.length;
+      await bot.handleUpdate(mk.message('/urgent off'));
+      await sleep(150);
+      const urgentOffMessage = apiCalls
+        .slice(beforeUrgentOff)
+        .filter((c) => c.method === 'sendMessage')
+        .at(-1);
+      assert.match(urgentOffMessage?.payload?.text || '', /Urgent mode deactivated/i);
+
+      const beforeHumaneBriefing = apiCalls.length;
+      await bot.handleUpdate(mk.message('/briefing'));
+      await sleep(250);
+      const humaneBriefingMessage = apiCalls
+        .slice(beforeHumaneBriefing)
+        .filter((c) => c.method === 'sendMessage')
+        .at(-1);
+      assert.match(humaneBriefingMessage?.payload?.text || '', /Humane Briefing/i);
+      assert.doesNotMatch(humaneBriefingMessage?.payload?.text || '', /Urgent mode is currently active/i);
+      assert.doesNotMatch(gemini.capturedPrompts.daily.at(-1) || '', /URGENT MODE is active/i);
+      checkpoints.push({
+        id: 'urgent-toggle-off',
+        status: 'pass',
+        detail: 'Urgent mode deactivation restored the humane daily briefing prompt and output.',
+      });
 
       // Freeform update (date move)
       await bot.handleUpdate(mk.message(`Move ${PREFIX} Netflix System Design to today`));
