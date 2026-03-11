@@ -1,7 +1,7 @@
 ---
 work_package_id: WP01
 title: Canonical Pipeline Context Foundation
-lane: "doing"
+lane: "for_review"
 dependencies: []
 base_branch: master
 base_commit: 8c54eceaa745a46db9622848e7ddf85b8336c0d6
@@ -183,3 +183,4 @@ Suggested commands for later verification:
 
 - 2026-03-11T17:18:05Z - system - lane=planned - Prompt created.
 - 2026-03-11T18:06:51Z – Codex – shell_pid=23616 – lane=doing – Assigned agent via workflow command
+- 2026-03-11T18:16:23Z – Codex – shell_pid=23616 – lane=for_review – Ready for review: added canonical pipeline context builder with validation and aligned AX/normalizer inputs
