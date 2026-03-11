@@ -60,6 +60,15 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         return '⚠️ AI is temporarily unavailable (keys expired/invalid/quota-limited). Update GEMINI_API_KEYS or retry shortly.';
     };
 
+    const formatPipelineFailure = (result, { compact = false } = {}) => {
+        if (!result) return '⚠️ Pipeline failed.';
+        const diagnostics = result.isDevMode && Array.isArray(result.diagnostics) && result.diagnostics.length > 0
+            ? `\n\n${result.diagnostics.join('\n')}`
+            : '';
+        const message = `${result.confirmationText || '⚠️ Pipeline failed.'}${diagnostics}`;
+        return compact ? message.replace(/\n+/g, ' | ') : message;
+    };
+
     // ─── /start ───────────────────────────────────────────────
     bot.command('start', async (ctx) => {
         if (!await guardAccess(ctx)) return;
@@ -333,8 +342,13 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     });
 
                     if (result.type === 'error') {
+                        if (result.failure?.class === 'quota') {
+                            failed += (batch.length - batch.indexOf(task));
+                            confirmations.push(`\n⚠️ AI quota exhausted. Stopping batch.`);
+                            break;
+                        }
                         failed++;
-                        confirmations.push(`❌ ${task.title}: ${result.errors.join(', ')}`);
+                        confirmations.push(`❌ ${task.title}: ${formatPipelineFailure(result, { compact: true })}`);
                     } else if (result.type === 'task') {
                         // Mark as known since pipeline modified it directly
                         await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: true });
@@ -347,7 +361,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 } catch (err) {
                     if (err.message.includes('quota') || err.message === 'All API keys exhausted') {
                         failed += (batch.length - batch.indexOf(task));
-                        confirmations.push(`\n⚠️ AI Quota exhausted. Stopping batch.`);
+                        confirmations.push(`\n⚠️ AI quota exhausted. Stopping batch.`);
                         break;
                     }
                     failed++;
@@ -542,8 +556,13 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     });
 
                     if (result.type === 'error') {
+                        if (result.failure?.class === 'quota') {
+                            failed += (batch.length - batch.indexOf(task));
+                            confirmations.push(`\n⚠️ AI quota exhausted. Stopping batch.`);
+                            break;
+                        }
                         failed++;
-                        confirmations.push(`❌ ${task.title}: ${result.errors.join(', ')}`);
+                        confirmations.push(`❌ ${task.title}: ${formatPipelineFailure(result, { compact: true })}`);
                     } else if (result.type === 'task') {
                         await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: true });
                         confirmations.push(`✨ ${result.confirmationText.replace(/\n\n/g, ' | ')}`);
@@ -554,7 +573,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 } catch (err) {
                     if (err.message.includes('quota') || err.message === 'All API keys exhausted') {
                         failed += (batch.length - batch.indexOf(task));
-                        confirmations.push(`\n⚠️ AI Quota exhausted. Stopping batch.`);
+                        confirmations.push(`\n⚠️ AI quota exhausted. Stopping batch.`);
                         break;
                     }
                     failed++;
@@ -645,9 +664,9 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     return;
                 }
                 const tasks = await ticktick.getAllTasksCached(60000);
-                await ctx.reply('Got it — no actionable tasks detected.');
+                await ctx.reply(result.confirmationText || 'Got it — no actionable tasks detected.');
             } else if (result.type === 'error') {
-                await ctx.reply(result.confirmationText + '\n\n' + result.errors.join('\n'));
+                await ctx.reply(formatPipelineFailure(result));
             }
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {

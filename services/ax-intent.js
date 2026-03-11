@@ -70,7 +70,7 @@ Instructions:
     confidence: number (0.0 to 1.0)
   }`);
 
-    async function extractIntents(userMessage, { currentDate, availableProjects } = {}) {
+    async function extractIntents(userMessage, { currentDate, availableProjects, requestId } = {}) {
         const input = {
             userMessage,
             currentDate,
@@ -84,19 +84,31 @@ Instructions:
             return res.actions || [];
         };
 
-        try {
-            return await tryGenerate();
-        } catch (err) {
-            if (isDailyQuotaError(err)) {
-                keyManager.markKeyUnavailable('quota');
-                const rotated = await keyManager.rotateKey();
-                if (rotated) {
-                    // Retry once with new key
-                    return await tryGenerate();
+        const keyCount = typeof keyManager.getKeyCount === 'function' ? keyManager.getKeyCount() : 1;
+        const maxRotations = Math.max(0, keyCount - 1);
+        let rotations = 0;
+
+        while (true) {
+            try {
+                return await tryGenerate();
+            } catch (err) {
+                if (isDailyQuotaError(err)) {
+                    keyManager.markKeyUnavailable('daily_quota');
+                    const rotated = rotations < maxRotations
+                        ? await keyManager.rotateKey()
+                        : false;
+
+                    if (rotated) {
+                        rotations++;
+                        const prefix = requestId ? `[AX:${requestId}]` : '[AX]';
+                        console.warn(`${prefix} Daily quota hit; rotated key (${rotations}/${maxRotations}).`);
+                        continue;
+                    }
+
+                    throw new QuotaExhaustedError('All API keys exhausted');
                 }
-                throw new QuotaExhaustedError('All API keys exhausted');
+                throw err;
             }
-            throw err;
         }
     }
 

@@ -93,6 +93,9 @@ const keyManager = {
         }
         return gemini._keys[gemini._activeKeyIndex];
     },
+    getKeyCount() {
+        return Array.isArray(gemini._keys) ? gemini._keys.length : 0;
+    },
     markKeyUnavailable(reason) {
         const resetMs = gemini._getQuotaResetMs();
         gemini._markActiveKeyUnavailable(reason, Date.now() + resetMs);
