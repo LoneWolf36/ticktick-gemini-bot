@@ -1,7 +1,7 @@
 ---
 work_package_id: WP02
 title: Entry-Point Context Wiring
-lane: "doing"
+lane: "for_review"
 dependencies:
 - WP01
 base_branch: 003-pipeline-hardening-and-regression-WP01
@@ -154,3 +154,4 @@ Verification commands:
 - 2026-03-11T17:18:05Z - system - lane=planned - Prompt created.
 - 2026-03-11T17:50:00Z - codex - lane=planned - Reframed as pure caller wiring to open a parallel test-harness track.
 - 2026-03-11T19:39:31Z – Codex – shell_pid=19636 – lane=doing – Assigned agent via workflow command
+- 2026-03-11T19:50:34Z – Codex – shell_pid=19636 – lane=for_review – Ready for review: unified pipeline context wiring + project reuse
