@@ -469,6 +469,11 @@ export async function sendWithMarkdown(api, chatId, text, extra = {}) {
     return api.sendMessage(chatId, parseTelegramMarkdownToHTML(text), { ...extra, parse_mode: 'HTML' });
 }
 
+export function appendUrgentModeReminder(text, urgentMode) {
+    if (urgentMode !== true) return text;
+    return `${text}\n\n**Urgent mode is currently active.**`;
+}
+
 export function formatBriefingHeader({ kind }) {
     if (kind === 'daily') {
         return `**🌅 MORNING BRIEFING**\n${userTodayFormatted()}\n${'─'.repeat(24)}\n\n`;

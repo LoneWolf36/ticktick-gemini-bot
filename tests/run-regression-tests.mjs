@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseTelegramMarkdownToHTML, containsSensitiveContent, buildTickTickUpdate, scheduleToDateTime } from '../bot/utils.js';
+import { appendUrgentModeReminder, parseTelegramMarkdownToHTML, containsSensitiveContent, buildTickTickUpdate, scheduleToDateTime } from '../bot/utils.js';
 import { executeActions, registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer, buildUrgentModePromptNote } from '../services/gemini.js';
 import { detectUrgentModeIntent } from '../services/ax-intent.js';
@@ -135,6 +135,16 @@ async function run() {
   } catch (err) {
     failures++;
     console.error('FAIL ax intent detects urgent mode toggle phrases');
+    console.error(err.message);
+  }
+
+  try {
+    assert.equal(appendUrgentModeReminder('Base briefing', false), 'Base briefing');
+    assert.match(appendUrgentModeReminder('Base briefing', true), /Urgent mode is currently active/i);
+    console.log('PASS urgent reminder helper only appends when urgent mode is active');
+  } catch (err) {
+    failures++;
+    console.error('FAIL urgent reminder helper only appends when urgent mode is active');
     console.error(err.message);
   }
 

@@ -2,7 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { parseTelegramMarkdownToHTML } from '../bot/utils.js';
+import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../bot/utils.js';
 import { executeActions, registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer, buildUrgentModePromptNote } from '../services/gemini.js';
 import { detectUrgentModeIntent } from '../services/ax-intent.js';
@@ -63,6 +63,11 @@ test('ax intent detects urgent mode toggle phrases', () => {
     value: false,
   });
   assert.equal(detectUrgentModeIntent('buy groceries tonight'), null);
+});
+
+test('appendUrgentModeReminder only appends reminder text when urgent mode is active', () => {
+  assert.equal(appendUrgentModeReminder('Base briefing', false), 'Base briefing');
+  assert.match(appendUrgentModeReminder('Base briefing', true), /Urgent mode is currently active/i);
 });
 
 test('registerCommands wires /urgent to the urgent mode store contract', async () => {
