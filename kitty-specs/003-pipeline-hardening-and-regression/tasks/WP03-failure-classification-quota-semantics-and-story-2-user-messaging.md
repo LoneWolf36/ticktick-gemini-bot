@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: Failure Classification, Quota Semantics, and Story 2 User Messaging
-lane: "for_review"
+lane: "doing"
 dependencies:
 - WP01
 base_branch: 003-pipeline-hardening-and-regression-WP01
@@ -14,7 +14,7 @@ subtasks:
 phase: Phase 3 - Failure Semantics
 assignee: ''
 agent: "codex"
-shell_pid: "16852"
+shell_pid: "30336"
 review_status: "has_feedback"
 reviewed_by: "TickTick Bot"
 review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP03.md"
@@ -179,3 +179,4 @@ In `services/pipeline.js`, `buildFailureResult` only includes `details.diagnosti
 - 2026-03-11T19:52:41Z – codex – shell_pid=21012 – lane=planned – Moved to planned
 - 2026-03-11T20:07:56Z – codex – shell_pid=16852 – lane=doing – Started implementation via workflow command
 - 2026-03-11T20:08:44Z – codex – shell_pid=16852 – lane=for_review – Ready for review: added dev-mode validation/adapter diagnostics
+- 2026-03-11T20:10:06Z – codex – shell_pid=30336 – lane=doing – Started review via workflow command
