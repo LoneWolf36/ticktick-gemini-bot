@@ -1,7 +1,7 @@
 ---
 work_package_id: WP02
 title: Telegram Bot Interface
-lane: "planned"
+lane: "doing"
 dependencies: []
 base_branch: 008-work-style-and-urgent-mode-WP01
 base_commit: 048768441e961fd93cb481a838bec21993dfc2d2
@@ -118,3 +118,4 @@ Use language identifiers in code blocks: ````python`, ````bash`
 - 2026-03-11T13:51:13Z – codex-wp02 – shell_pid=26188 – lane=for_review – Ready for review: added /urgent command, natural-language toggle detection, and regression coverage
 - 2026-03-11T14:06:58Z – codex – shell_pid=27136 – lane=doing – Started review via workflow command
 - 2026-03-11T14:09:51Z – codex – shell_pid=27136 – lane=planned – Moved to planned
+- 2026-03-11T14:23:11Z – codex – shell_pid=27136 – lane=doing – Addressing review feedback: unauthenticated free-form urgent toggle path and dependency metadata
