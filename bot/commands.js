@@ -769,7 +769,7 @@ export async function executeActions(actions, adapter, currentTasks, options = {
                     continue;
                 }
 
-                let safeDueDate = resolveDueDate(changes.dueDate, task, changes.priority);
+                let safeDueDate = resolveDueDate(changes.dueDate || changes.suggested_schedule, task, changes.priority);
 
                 const updatePayload = {
                     ...changes,
