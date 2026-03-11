@@ -102,9 +102,9 @@ description: "Work package task list template for feature implementation"
 **Requirements Refs**: FR-006, FR-007, FR-008, SC-002
 
 ### Included Subtasks
-- [ ] T010 [P] Fetch `urgent_mode` state in `services/scheduler.js` (daily/weekly jobs).
-- [ ] T011 [P] Append a reminder string (e.g., "⚠️ Urgent mode is currently active.") to the briefing payload if true.
-- [ ] T012 [P] Ensure manual `/briefing` commands in `bot/commands.js` also include the reminder.
+- [x] T010 [P] Fetch `urgent_mode` state in `services/scheduler.js` (daily/weekly jobs).
+- [x] T011 [P] Append a reminder string (e.g., "⚠️ Urgent mode is currently active.") to the briefing payload if true.
+- [x] T012 [P] Ensure manual `/briefing` commands in `bot/commands.js` also include the reminder.
 
 ### Implementation Notes
 - The reminder should be prominent but not disruptive.
