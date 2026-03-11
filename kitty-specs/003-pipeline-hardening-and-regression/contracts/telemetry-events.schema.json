@@ -1,0 +1,120 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://ticktick-gemini.local/contracts/003-pipeline-hardening-and-regression/telemetry-events.schema.json",
+  "title": "PipelineTelemetryEvent",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "eventType",
+    "timestamp",
+    "requestId",
+    "entryPoint",
+    "step",
+    "status"
+  ],
+  "properties": {
+    "eventType": {
+      "type": "string",
+      "enum": [
+        "pipeline.request.received",
+        "pipeline.ax.completed",
+        "pipeline.ax.failed",
+        "pipeline.normalize.completed",
+        "pipeline.execute.succeeded",
+        "pipeline.execute.failed",
+        "pipeline.rollback.succeeded",
+        "pipeline.rollback.failed",
+        "pipeline.request.completed",
+        "pipeline.request.failed"
+      ]
+    },
+    "timestamp": {
+      "type": "string",
+      "format": "date-time"
+    },
+    "requestId": {
+      "type": "string"
+    },
+    "entryPoint": {
+      "type": "string",
+      "enum": [
+        "telegram_message",
+        "telegram_review",
+        "scheduler",
+        "manual_command"
+      ]
+    },
+    "step": {
+      "type": "string",
+      "enum": [
+        "request",
+        "ax",
+        "normalize",
+        "execute",
+        "rollback",
+        "result"
+      ]
+    },
+    "status": {
+      "type": "string",
+      "enum": [
+        "start",
+        "success",
+        "failure"
+      ]
+    },
+    "durationMs": {
+      "type": [
+        "number",
+        "null"
+      ],
+      "minimum": 0
+    },
+    "failureClass": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "quota",
+        "malformed_ax",
+        "validation",
+        "adapter",
+        "rollback",
+        "unexpected",
+        null
+      ]
+    },
+    "actionType": {
+      "type": [
+        "string",
+        "null"
+      ],
+      "enum": [
+        "create",
+        "update",
+        "complete",
+        "delete",
+        null
+      ]
+    },
+    "attempt": {
+      "type": [
+        "integer",
+        "null"
+      ],
+      "minimum": 1,
+      "maximum": 2
+    },
+    "rolledBack": {
+      "type": [
+        "boolean",
+        "null"
+      ]
+    },
+    "metadata": {
+      "type": "object",
+      "additionalProperties": true
+    }
+  }
+}

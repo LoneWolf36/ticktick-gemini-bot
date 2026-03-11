@@ -1,0 +1,339 @@
+openapi: 3.1.0
+info:
+  title: Internal Pipeline Contract
+  version: 0.1.0
+  description: >
+    Internal planning contract for the hardened task pipeline. This models the
+    process surface used by Telegram, scheduler, and manual command entry
+    points before implementation-specific wiring.
+servers:
+  - url: https://internal.ticktick-gemini.local
+paths:
+  /pipeline/process:
+    post:
+      operationId: processPipelineMessage
+      summary: Process one user message through AX, normalization, execution, and rollback handling
+      tags:
+        - pipeline
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ProcessMessageRequest'
+      responses:
+        '200':
+          description: Request processed successfully or routed as non-task
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessMessageResponse'
+        '409':
+          description: Request failed after retry and rollback orchestration
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessMessageResponse'
+        '429':
+          description: No configured Gemini key could satisfy the request
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ProcessMessageResponse'
+components:
+  schemas:
+    ProcessMessageRequest:
+      type: object
+      additionalProperties: false
+      required:
+        - requestId
+        - entryPoint
+        - mode
+        - userMessage
+        - currentDate
+        - timezone
+        - availableProjects
+      properties:
+        requestId:
+          type: string
+        entryPoint:
+          type: string
+          enum:
+            - telegram_message
+            - telegram_review
+            - scheduler
+            - manual_command
+        mode:
+          type: string
+          enum:
+            - user
+            - dev
+        userMessage:
+          type: string
+        currentDate:
+          type: string
+          description: ISO date or timestamp used for relative-date resolution before AX extraction
+        timezone:
+          type: string
+          description: Canonical timezone from stored user context
+        availableProjects:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProjectRef'
+        existingTask:
+          anyOf:
+            - $ref: '#/components/schemas/ExistingTaskSnapshot'
+            - type: 'null'
+    ProjectRef:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - name
+      properties:
+        id:
+          type: string
+        name:
+          type: string
+    ExistingTaskSnapshot:
+      type: object
+      additionalProperties: false
+      required:
+        - id
+        - title
+      properties:
+        id:
+          type: string
+        projectId:
+          type:
+            - string
+            - 'null'
+        title:
+          type: string
+        content:
+          type:
+            - string
+            - 'null'
+        priority:
+          type:
+            - integer
+            - 'null'
+          enum:
+            - 0
+            - 1
+            - 3
+            - 5
+            - null
+        dueDate:
+          type:
+            - string
+            - 'null'
+        repeatFlag:
+          type:
+            - string
+            - 'null'
+        status:
+          type:
+            - integer
+            - 'null'
+    NormalizedPipelineAction:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - valid
+        - validationErrors
+      properties:
+        type:
+          type: string
+          enum:
+            - create
+            - update
+            - complete
+            - delete
+        taskId:
+          type:
+            - string
+            - 'null'
+        originalProjectId:
+          type:
+            - string
+            - 'null'
+        title:
+          type:
+            - string
+            - 'null'
+        content:
+          type:
+            - string
+            - 'null'
+        priority:
+          type:
+            - integer
+            - 'null'
+          enum:
+            - 0
+            - 1
+            - 3
+            - 5
+            - null
+        projectId:
+          type:
+            - string
+            - 'null'
+        dueDate:
+          type:
+            - string
+            - 'null'
+        repeatFlag:
+          type:
+            - string
+            - 'null'
+        valid:
+          type: boolean
+        validationErrors:
+          type: array
+          items:
+            type: string
+    RollbackStep:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - targetTaskId
+        - sourceActionIndex
+        - payload
+      properties:
+        type:
+          type: string
+          enum:
+            - delete_created
+            - restore_updated
+            - uncomplete_task
+            - recreate_deleted
+        targetTaskId:
+          type: string
+        targetProjectId:
+          type:
+            - string
+            - 'null'
+        sourceActionIndex:
+          type: integer
+          minimum: 0
+        payload:
+          type: object
+          additionalProperties: true
+    ActionExecutionRecord:
+      type: object
+      additionalProperties: false
+      required:
+        - index
+        - action
+        - attempts
+        - status
+        - failureClass
+      properties:
+        index:
+          type: integer
+          minimum: 0
+        action:
+          $ref: '#/components/schemas/NormalizedPipelineAction'
+        attempts:
+          type: integer
+          minimum: 1
+          maximum: 2
+        status:
+          type: string
+          enum:
+            - succeeded
+            - failed
+            - rolled_back
+            - rollback_failed
+        result:
+          type:
+            - object
+            - 'null'
+          additionalProperties: true
+        errorMessage:
+          type:
+            - string
+            - 'null'
+        failureClass:
+          type: string
+          enum:
+            - none
+            - validation
+            - adapter
+            - rollback
+        rollbackStep:
+          anyOf:
+            - $ref: '#/components/schemas/RollbackStep'
+            - type: 'null'
+    PipelineFailure:
+      type: object
+      additionalProperties: false
+      required:
+        - failureClass
+        - userMessage
+        - requestId
+        - retryable
+        - rolledBack
+      properties:
+        failureClass:
+          type: string
+          enum:
+            - quota
+            - malformed_ax
+            - validation
+            - adapter
+            - rollback
+            - unexpected
+        userMessage:
+          type: string
+        developerMessage:
+          type:
+            - string
+            - 'null'
+        requestId:
+          type: string
+        retryable:
+          type: boolean
+        rolledBack:
+          type: boolean
+    ProcessMessageResponse:
+      type: object
+      additionalProperties: false
+      required:
+        - type
+        - requestId
+        - actions
+        - results
+        - errors
+        - confirmationText
+      properties:
+        type:
+          type: string
+          enum:
+            - task
+            - non-task
+            - error
+        requestId:
+          type: string
+        actions:
+          type: array
+          items:
+            $ref: '#/components/schemas/NormalizedPipelineAction'
+        results:
+          type: array
+          items:
+            $ref: '#/components/schemas/ActionExecutionRecord'
+        errors:
+          type: array
+          items:
+            type: string
+        confirmationText:
+          type: string
+        failure:
+          anyOf:
+            - $ref: '#/components/schemas/PipelineFailure'
+            - type: 'null'
