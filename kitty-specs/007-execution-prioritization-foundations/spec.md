@@ -2,7 +2,7 @@
 
 **Feature Branch**: `007-execution-prioritization-foundations`  
 **Created**: 2026-03-10  
-**Status**: Draft  
+**Status**: Accepted  
 **Mission**: software-dev  
 **Input**: Product-direction reset for an ADHD-oriented execution layer on top of TickTick. The system should optimize for meaningful progress without becoming paternalistic or admin-first.
 

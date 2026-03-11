@@ -2,7 +2,7 @@
 
 **Feature Branch**: `008-work-style-and-urgent-mode`  
 **Created**: 2026-03-10  
-**Status**: Draft  
+**Status**: In Review  
 **Mission**: software-dev  
 **Input**: Define the explicit user-state model for recommendations: a single humane work-style mode, manual urgent-mode toggle, and weak inference fallback that never escalates intervention on its own.
 

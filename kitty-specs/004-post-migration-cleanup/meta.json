@@ -1,0 +1,10 @@
+{
+  "feature_number": "004",
+  "slug": "004-post-migration-cleanup",
+  "feature_slug": "004-post-migration-cleanup",
+  "friendly_name": "Post-Migration Cleanup",
+  "mission": "software-dev",
+  "target_branch": "master",
+  "source_description": "Reconcile stale docs, plan artifacts, and retained legacy paths after the task-operations pipeline migration.",
+  "vcs": "git"
+}

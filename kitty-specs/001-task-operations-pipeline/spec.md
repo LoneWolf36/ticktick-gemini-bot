@@ -2,7 +2,7 @@
 
 **Feature Branch**: `001-task-operations-pipeline`
 **Created**: 2026-03-08
-**Status**: Draft
+**Status**: Accepted
 **Mission**: software-dev
 **Input**: Revised Implementation Plan - replace prompt-heavy freeform task logic with AX + deterministic normalization + direct REST API TickTick adapter pipeline
 

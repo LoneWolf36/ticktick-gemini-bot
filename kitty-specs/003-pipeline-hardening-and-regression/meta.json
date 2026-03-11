@@ -1,0 +1,10 @@
+{
+  "feature_number": "003",
+  "slug": "003-pipeline-hardening-and-regression",
+  "feature_slug": "003-pipeline-hardening-and-regression",
+  "friendly_name": "Core Pipeline Hardening and Regression",
+  "mission": "software-dev",
+  "target_branch": "master",
+  "source_description": "Harden the structured task pipeline with clearer contracts, failure handling, and regression coverage for the new architecture.",
+  "vcs": "git"
+}

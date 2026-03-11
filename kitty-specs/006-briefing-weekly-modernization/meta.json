@@ -1,0 +1,10 @@
+{
+  "feature_number": "006",
+  "slug": "006-briefing-weekly-modernization",
+  "feature_slug": "006-briefing-weekly-modernization",
+  "friendly_name": "Briefing and Weekly Pipeline Modernization",
+  "mission": "software-dev",
+  "target_branch": "master",
+  "source_description": "Move /briefing and /weekly off the legacy Gemini path and onto shared structured modules with deterministic formatting.",
+  "vcs": "git"
+}

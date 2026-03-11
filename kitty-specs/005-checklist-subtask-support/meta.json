@@ -1,0 +1,10 @@
+{
+  "feature_number": "005",
+  "slug": "005-checklist-subtask-support",
+  "feature_slug": "005-checklist-subtask-support",
+  "friendly_name": "Checklist Creation Support",
+  "mission": "software-dev",
+  "target_branch": "master",
+  "source_description": "Add create-time checklist extraction so structured task creation can produce sub-steps without opening full checklist editing scope.",
+  "vcs": "git"
+}
