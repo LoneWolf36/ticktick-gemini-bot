@@ -1,7 +1,7 @@
 ---
 work_package_id: WP06
 title: Failure, Rollback, and Burst Regression Finalization
-lane: "planned"
+lane: "for_review"
 dependencies:
 - WP03
 - WP04
@@ -205,3 +205,4 @@ How to fix:
 - 2026-03-11T22:27:56Z – Codex – shell_pid=30416 – lane=for_review – Ready for review: finalized direct failure-path, rollback, telemetry, and burst-concurrency regressions; updated pipeline harness and live doubles for hardened result compatibility.
 - 2026-03-11T22:30:58Z – Codex – shell_pid=15804 – lane=doing – Started review via workflow command
 - 2026-03-11T22:32:05Z – Codex – shell_pid=15804 – lane=planned – Moved to planned
+- 2026-03-11T22:36:03Z – Codex – shell_pid=15804 – lane=for_review – Dependency gate satisfied after merging WP05 into master; re-entering review.
