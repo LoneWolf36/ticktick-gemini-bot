@@ -1,0 +1,11 @@
+evidence_id,source_id,location,claim,implication,confidence
+EV-001,SRC-001,spec.md:64-73,The feature requires leverage-first ranking with honest degradation rationale output and shared downstream inheritance,A shared ranking contract is mandatory rather than optional,high
+EV-002,SRC-002,plan.md:15-20,The plan explicitly rejects local policy drift and direct dependence on 008 and 009,Implementation should create extension points without state or memory coupling,high
+EV-003,SRC-003,services/gemini.js:29-105,Daily briefing weekly digest and reorg each embed their own policy language,Current recommendation behavior is split across separate prompt paths,high
+EV-004,SRC-003,services/gemini.js:518-604,Gemini fallback normalization infers priority and project from task keywords,Current deterministic policy is heuristic-based and not reusable as a standalone domain service,high
+EV-005,SRC-004,bot/commands.js:601-719,Command execution performs a second policy sweep with separate inferPriority and inferProject helpers,There is active duplication between model fallback logic and command repair logic,high
+EV-006,SRC-005,services/user_context.example.js:4-28,User context already carries ordered goals and behavioral notes,The product already has an explicit source for user-owned meaning even if it is not structured yet,high
+EV-007,SRC-004,bot/commands.js:782-819,Sensitive task content is preserved during updates,Ranking and rationale should avoid requiring content rewrites and should preserve privacy boundaries,high
+EV-008,SRC-007,006-briefing-weekly-modernization/spec.md:77,Briefing and weekly must inherit shared foundation policy,007 must expose a reusable policy surface for summaries,high
+EV-009,SRC-008,008-work-style-and-urgent-mode/spec.md:73-77,Urgent mode and state precedence belong to feature 008,007 should accept modifiers but not own the resolver,high
+EV-010,SRC-009,009-behavioral-signals-and-memory/spec.md:71-77,Behavioral reflection must remain observational and privacy-bounded,007 should not store or infer long-term behavior as part of ranking,high

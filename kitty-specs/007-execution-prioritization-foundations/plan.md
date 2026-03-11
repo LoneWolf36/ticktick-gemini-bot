@@ -1,108 +1,119 @@
-# Implementation Plan: [FEATURE]
-*Path: [templates/plan-template.md](templates/plan-template.md)*
+# 007-execution-prioritization-foundations Implementation Plan
 
+**Feature**: Execution Prioritization Foundations  
+**Created**: 2026-03-10  
+**Status**: Ready for Planning -> Work Packages
 
-**Branch**: `[###-feature-name]` | **Date**: [DATE] | **Spec**: [link]
-**Input**: Feature specification from `/kitty-specs/[###-feature-name]/spec.md`
+## Overview
 
-**Note**: This template is filled in by the `/spec-kitty.plan` command. See `src/specify_cli/missions/software-dev/command-templates/plan.md` for the execution workflow.
+This plan establishes one shared prioritization policy for recommendation surfaces in the bot. The goal is to define a leverage-first ranking module that is user-owned, recovery-aware, and reusable by later features such as `/briefing`, `/weekly`, and state-aware recommendations.
 
-The planner will not begin until all planning questions have been answered—capture those answers in this document before progressing to later phases.
+This track is intentionally foundational. It should create the ranking contract and its tests without trying to ship the full UX of work-style input, urgent mode, or behavioral reflection in the same step.
 
-## Summary
+## Alignment Decisions
 
-[Extract from feature spec: primary requirement + technical approach from research]
+- **Single policy source**: Prioritization logic should live in one shared service or domain module, not inside command handlers or summary formatters.
+- **User-owned meaning**: The ranking model should consume goals and life themes from explicit user context rather than silently imposing a fixed value system.
+- **Leverage-first with explicit exceptions**: Recovery, maintenance, and enabling work can outrank deep work only for clear blocker, urgency, or execution-capacity reasons.
+- **Fail-honest behavior**: If leverage is ambiguous, the system should degrade to consequence and urgency rather than pretending precise strategic insight.
+- **No state coupling yet**: This track should define extension points for work-style state and urgent mode, but the full state resolver belongs to `008`.
+- **No behavioral inference yet**: This track must not depend on `009` memory or anti-procrastination signals.
 
 ## Technical Context
 
-<!--
-  ACTION REQUIRED: Replace the content in this section with the technical details
-  for the project. The structure here is presented in advisory capacity to guide
-  the iteration process.
--->
+- **Language/Version**: Node.js 18+ with ESM
+- **Primary Dependencies**: Existing bot/services stack only; no new external dependency required
+- **Storage**: Existing user context and live TickTick task data
+- **Testing**: `node --test` plus regression harness in `tests/`
+- **Target Platform**: Telegram bot backend running in Node.js
+- **Primary Integration Points**: `services/`, `bot/commands.js`, later `services/scheduler.js`
 
-**Language/Version**: [e.g., Python 3.11, Swift 5.9, Rust 1.75 or NEEDS CLARIFICATION]  
-**Primary Dependencies**: [e.g., FastAPI, UIKit, LLVM or NEEDS CLARIFICATION]  
-**Storage**: [if applicable, e.g., PostgreSQL, CoreData, files or N/A]  
-**Testing**: [e.g., pytest, XCTest, cargo test or NEEDS CLARIFICATION]  
-**Target Platform**: [e.g., Linux server, iOS 15+, WASM or NEEDS CLARIFICATION]
-**Project Type**: [single/web/mobile - determines source structure]  
-**Performance Goals**: [domain-specific, e.g., 1000 req/s, 10k lines/sec, 60 fps or NEEDS CLARIFICATION]  
-**Constraints**: [domain-specific, e.g., <200ms p95, <100MB memory, offline-capable or NEEDS CLARIFICATION]  
-**Scale/Scope**: [domain-specific, e.g., 10k users, 1M LOC, 50 screens or NEEDS CLARIFICATION]
+## Proposed Implementation Shape
 
-## Constitution Check
+### New Shared Module
 
-*GATE: Must pass before Phase 0 research. Re-check after Phase 1 design.*
+Create one shared prioritization module, likely in `services/`, responsible for:
 
-[Gates determined based on constitution file]
+- turning tasks plus user context into ranked candidates
+- applying leverage-first ordering rules
+- identifying justified exceptions for maintenance and enabling work
+- returning a short rationale for top-ranked items
 
-## Project Structure
+The initial module should be pure and testable. It should accept explicit inputs and return deterministic outputs. It should not fetch state, talk to Telegram, or read memory stores on its own.
 
-### Documentation (this feature)
+### Inputs
 
-```
-kitty-specs/[###-feature]/
-├── plan.md              # This file (/spec-kitty.plan command output)
-├── research.md          # Phase 0 output (/spec-kitty.plan command)
-├── data-model.md        # Phase 1 output (/spec-kitty.plan command)
-├── quickstart.md        # Phase 1 output (/spec-kitty.plan command)
-├── contracts/           # Phase 1 output (/spec-kitty.plan command)
-└── tasks.md             # Phase 2 output (/spec-kitty.tasks command - NOT created by /spec-kitty.plan)
-```
+The first implementation should rank from:
 
-### Source Code (repository root)
-<!--
-  ACTION REQUIRED: Replace the placeholder tree below with the concrete layout
-  for this feature. Delete unused options and expand the chosen structure with
-  real paths (e.g., apps/admin, packages/something). The delivered plan must
-  not include Option labels.
--->
+- active TickTick tasks
+- explicit user context and goal/theme definitions
+- task-level urgency and blocker signals already available from task data
 
-```
-# [REMOVE IF UNUSED] Option 1: Single project (DEFAULT)
-src/
-├── models/
-├── services/
-├── cli/
-└── lib/
+It should be designed so `008` can later inject work-style and urgent-mode modifiers without rewriting the ranking core.
 
-tests/
-├── contract/
-├── integration/
-└── unit/
+### Outputs
 
-# [REMOVE IF UNUSED] Option 2: Web application (when "frontend" + "backend" detected)
-backend/
-├── src/
-│   ├── models/
-│   ├── services/
-│   └── api/
-└── tests/
+The module should return:
 
-frontend/
-├── src/
-│   ├── components/
-│   ├── pages/
-│   └── services/
-└── tests/
+- ranked candidate list
+- top recommendation
+- concise rationale fields suitable for formatter consumption
+- explicit markers when ranking fell back to lower-confidence heuristics
 
-# [REMOVE IF UNUSED] Option 3: Mobile + API (when "iOS/Android" detected)
-api/
-└── [same as backend above]
+## Phase 1: Define The Ranking Contract
 
-ios/ or android/
-└── [platform-specific structure: feature modules, UI flows, platform tests]
-```
+- [ ] Define the shared prioritization input shape
+- [ ] Define the ranked-candidate output shape
+- [ ] Define the rationale contract for top recommendations
+- [ ] Document the exact exception cases that allow maintenance or enabling work to outrank deeper work
+- [ ] Identify the current source of user-owned goals and themes in the repo and formalize the contract used by ranking
 
-**Structure Decision**: [Document the selected structure and reference the real
-directories captured above]
+## Phase 2: Implement The Core Policy Engine
 
-## Complexity Tracking
+- [ ] Add the shared prioritization service in `services/`
+- [ ] Implement leverage-first ordering rules
+- [ ] Implement honest fallback behavior for ambiguous leverage
+- [ ] Implement exception handling for blocker removal, urgent maintenance, and enabling work
+- [ ] Keep the module pure and deterministic
 
-*Fill ONLY if Constitution Check has violations that must be justified*
+## Phase 3: Add Narrow Integration Points
 
-| Violation | Why Needed | Simpler Alternative Rejected Because |
-|-----------|------------|-------------------------------------|
-| [e.g., 4th project] | [current need] | [why 3 projects insufficient] |
-| [e.g., Repository pattern] | [specific problem] | [why direct DB access insufficient] |
+- [ ] Add one thin integration point for recommendation consumers to call the shared prioritization service
+- [ ] Do not rewrite `/briefing` or `/weekly` in this track; only prepare the reusable service contract they will consume later
+- [ ] Ensure command handlers and summary surfaces can adopt the module without copying logic
+
+## Phase 4: Verification And Regression
+
+- [ ] Add unit tests for core ranking behavior
+- [ ] Add regression tests for high-leverage vs admin ranking
+- [ ] Add regression tests for justified maintenance and enabling exceptions
+- [ ] Add regression tests for ambiguous-leverage fallback behavior
+- [ ] Add regression tests for rationale generation so top recommendations remain legible
+
+## Expected File Touches
+
+- `services/` for the shared prioritization module
+- `tests/` for unit and regression coverage
+- possibly `services/user_context.example.js` or related context-loading helpers if the goal/theme contract needs tightening
+- no required changes yet to scheduler or briefing logic beyond future-ready integration seams
+
+## Out Of Scope
+
+- Full implementation of work-style state and urgent mode
+- Behavioral reflection or anti-procrastination callouts
+- Rewriting `/briefing` and `/weekly`
+- New storage systems or long-term memory design
+
+## Work Package Outline
+
+- **WP01**: Define ranking contract and context inputs
+- **WP02**: Implement core leverage-first ranking service
+- **WP03**: Implement rationale generation and exception handling
+- **WP04**: Add regression coverage and integration seam verification
+
+## Execution Notes
+
+- Start with `WP01` and `WP02` before touching any command or summary surface
+- Keep the service pure so `008` and `006` can adopt it cleanly
+- Prefer contract tests over broad end-to-end changes in this track
+- Do not let this track silently redefine user goals from inferred behavior

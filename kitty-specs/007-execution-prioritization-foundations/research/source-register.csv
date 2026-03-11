@@ -1,0 +1,10 @@
+source_id,artifact,kind,location,purpose,status
+SRC-001,Feature specification,spec,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\kitty-specs\007-execution-prioritization-foundations\spec.md,Defines the product policy and success criteria for leverage-first ranking,reviewed
+SRC-002,Implementation plan,plan,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\kitty-specs\007-execution-prioritization-foundations\plan.md,Defines intended module boundaries and execution sequencing,reviewed
+SRC-003,Gemini service,code,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\services\gemini.js,Shows current prompt paths and fallback prioritization heuristics,reviewed
+SRC-004,Bot commands,code,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\bot\commands.js,Shows command-level policy sweep and integration surfaces,reviewed
+SRC-005,User context template,code,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\services\user_context.example.js,Shows explicit goal-oriented context already exists,reviewed
+SRC-006,TickTick adapter,code,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\services\ticktick-adapter.js,Shows the current mutable task shape exposed to application services,reviewed
+SRC-007,Briefing and weekly modernization spec,spec,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\kitty-specs\006-briefing-weekly-modernization\spec.md,Defines downstream dependency on shared foundation policy,reviewed
+SRC-008,Work style and urgent mode spec,spec,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\kitty-specs\008-work-style-and-urgent-mode\spec.md,Defines future state-modifier ownership and precedence rules,reviewed
+SRC-009,Behavioral signals and memory spec,spec,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\kitty-specs\009-behavioral-signals-and-memory\spec.md,Defines privacy and reflection boundaries that 007 must not absorb,reviewed
