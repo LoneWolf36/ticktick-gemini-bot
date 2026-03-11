@@ -196,6 +196,72 @@ async function run() {
     console.error(err.message);
   }
 
+  try {
+    const handlers = { commands: new Map(), callbacks: [], events: [] };
+    const bot = {
+      command(name, handler) {
+        handlers.commands.set(name, handler);
+        return this;
+      },
+      callbackQuery(pattern, handler) {
+        handlers.callbacks.push({ pattern, handler });
+        return this;
+      },
+      on(eventName, handler) {
+        handlers.events.push({ eventName, handler });
+        return this;
+      },
+    };
+
+    registerCommands(
+      bot,
+      {
+        isAuthenticated: () => false,
+        getCacheAgeSeconds: () => null,
+        getAuthUrl: () => 'https://example.test/auth',
+        getAllTasks: async () => [],
+        getAllTasksCached: async () => [],
+        getLastFetchedProjects: () => [],
+      },
+      {
+        isQuotaExhausted: () => false,
+        quotaResumeTime: () => null,
+        activeKeyInfo: () => null,
+      },
+      {},
+      {
+        processMessage: async () => {
+          throw new Error('pipeline should not run for urgent mode toggles');
+        },
+      },
+    );
+
+    const messageHandler = handlers.events.find(({ eventName }) => eventName === 'message:text')?.handler;
+    assert.equal(typeof messageHandler, 'function');
+
+    const replies = [];
+    const userId = `regression-freeform-urgent-${Date.now()}`;
+    await store.setUrgentMode(userId, false);
+
+    await messageHandler({
+      message: { text: 'turn on urgent mode' },
+      chat: { id: userId },
+      from: { id: userId },
+      reply: async (message) => {
+        replies.push(message);
+      },
+    });
+
+    assert.equal(await store.getUrgentMode(userId), true);
+    assert.match(replies.at(-1), /Urgent mode activated/i);
+    assert.equal(replies.some((message) => /TickTick not connected yet/i.test(message)), false);
+    console.log('PASS free-form urgent toggles bypass TickTick auth gate');
+  } catch (err) {
+    failures++;
+    console.error('FAIL free-form urgent toggles bypass TickTick auth gate');
+    console.error(err.message);
+  }
+
 
 
   try {

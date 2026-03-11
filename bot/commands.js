@@ -580,13 +580,20 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         if (!isAuthorized(ctx)) return;
         // Skip commands (Grammy routes them first, but just in case)
         if (ctx.message.text.startsWith('/')) return;
+        const rawText = ctx.message.text.trim();
+        if (!rawText) return;
+
+        const freeformUrgentIntent = detectUrgentModeIntent(rawText);
+        if (freeformUrgentIntent?.type === 'set_urgent_mode') {
+            await applyUrgentModeState(ctx, freeformUrgentIntent.value, { source: 'natural-language' });
+            return;
+        }
         if (!ticktick.isAuthenticated()) {
             await ctx.reply('🔴 TickTick not connected yet. Complete OAuth first.');
             return;
         }
 
-        const userMessage = ctx.message.text.trim();
-        if (!userMessage) return;
+        const userMessage = rawText;
 
         const pendingReorg = store.getPendingReorg();
         if (pendingReorg?.awaitingRefine) {
@@ -613,12 +620,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
         // New pipeline path. Note: we leave gemini check in for the coach fallback optionally.
         await ctx.reply('🤔 Processing...');
-
-        const urgentModeIntent = detectUrgentModeIntent(userMessage);
-        if (urgentModeIntent?.type === 'set_urgent_mode') {
-            await applyUrgentModeState(ctx, urgentModeIntent.value, { source: 'natural-language' });
-            return;
-        }
         try {
             const result = await pipeline.processMessage(userMessage, {
                 timezone: process.env.USER_TIMEZONE || 'Europe/Dublin'

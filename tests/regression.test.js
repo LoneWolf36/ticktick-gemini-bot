@@ -120,6 +120,67 @@ test('registerCommands wires /urgent to the urgent mode store contract', async (
   assert.match(replies.at(-1), /Urgent mode activated/i);
 });
 
+test('registerCommands allows free-form urgent toggles before TickTick auth', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) {
+      handlers.commands.set(name, handler);
+      return this;
+    },
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return this;
+    },
+    on(eventName, handler) {
+      handlers.events.push({ eventName, handler });
+      return this;
+    },
+  };
+
+  registerCommands(
+    bot,
+    {
+      isAuthenticated: () => false,
+      getCacheAgeSeconds: () => null,
+      getAuthUrl: () => 'https://example.test/auth',
+      getAllTasks: async () => [],
+      getAllTasksCached: async () => [],
+      getLastFetchedProjects: () => [],
+    },
+    {
+      isQuotaExhausted: () => false,
+      quotaResumeTime: () => null,
+      activeKeyInfo: () => null,
+    },
+    {},
+    {
+      processMessage: async () => {
+        throw new Error('pipeline should not run for urgent mode toggles');
+      },
+    },
+  );
+
+  const messageHandler = handlers.events.find(({ eventName }) => eventName === 'message:text')?.handler;
+  assert.equal(typeof messageHandler, 'function');
+
+  const replies = [];
+  const userId = `node-test-freeform-urgent-${Date.now()}`;
+  await store.setUrgentMode(userId, false);
+
+  await messageHandler({
+    message: { text: 'turn on urgent mode' },
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => {
+      replies.push(message);
+    },
+  });
+
+  assert.equal(await store.getUrgentMode(userId), true);
+  assert.match(replies.at(-1), /Urgent mode activated/i);
+  assert.equal(replies.some((message) => /TickTick not connected yet/i.test(message)), false);
+});
+
 test('markdown parser normalizes hash-divider and preserves bold formatting', () => {
   const input = '**Start now**: Do the task\n\n#######';
   const html = parseTelegramMarkdownToHTML(input);
