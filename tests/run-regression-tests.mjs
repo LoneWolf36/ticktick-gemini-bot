@@ -365,8 +365,6 @@ async function run() {
     console.error('FAIL TickTickAdapter includes projectId for due-date-only updates');
     console.error(err.message);
   }
-
-
   try {
     const input = '**Start now**: Do the task\n\n#######';
     const html = parseTelegramMarkdownToHTML(input);
