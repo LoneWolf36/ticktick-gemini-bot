@@ -1,23 +1,27 @@
 ---
-work_package_id: "WP04"
+work_package_id: WP04
+title: Briefing Reminders
+lane: "doing"
+dependencies: []
+base_branch: 008-work-style-and-urgent-mode-WP01
+base_commit: 048768441e961fd93cb481a838bec21993dfc2d2
+created_at: '2026-03-11T13:31:21.938800+00:00'
 subtasks:
-  - "T010"
-  - "T011"
-  - "T012"
-title: "Briefing Reminders"
-phase: "Phase 2 - Parallel Execution"
-lane: "planned"  # DO NOT EDIT - use: spec-kitty agent tasks move-task <WPID> --to <lane>
-assignee: ""      # Optional friendly name when in doing/for_review
-agent: ""         # CLI agent identifier (claude, codex, etc.)
-shell_pid: ""     # PID captured when the task moved to the current lane
-review_status: "" # empty | has_feedback | acknowledged (populated by reviewers/implementers)
-reviewed_by: ""   # Agent ID of the reviewer (if reviewed)
+- T010
+- T011
+- T012
+phase: Phase 2 - Parallel Execution
+assignee: ''
+agent: ''
+shell_pid: "5528"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-03-11T05:44:14Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-03-11T05:44:14Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP04 – Briefing Reminders

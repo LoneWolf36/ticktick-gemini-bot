@@ -1,23 +1,27 @@
 ---
-work_package_id: "WP03"
+work_package_id: WP03
+title: AI Prompt Augmentation
+lane: "doing"
+dependencies: []
+base_branch: 008-work-style-and-urgent-mode-WP01
+base_commit: 048768441e961fd93cb481a838bec21993dfc2d2
+created_at: '2026-03-11T13:31:21.976739+00:00'
 subtasks:
-  - "T007"
-  - "T008"
-  - "T009"
-title: "AI Prompt Augmentation"
-phase: "Phase 2 - Parallel Execution"
-lane: "planned"  # DO NOT EDIT - use: spec-kitty agent tasks move-task <WPID> --to <lane>
-assignee: ""      # Optional friendly name when in doing/for_review
-agent: ""         # CLI agent identifier (claude, codex, etc.)
-shell_pid: ""     # PID captured when the task moved to the current lane
-review_status: "" # empty | has_feedback | acknowledged (populated by reviewers/implementers)
-reviewed_by: ""   # Agent ID of the reviewer (if reviewed)
+- T007
+- T008
+- T009
+phase: Phase 2 - Parallel Execution
+assignee: ''
+agent: "codex-wp03"
+shell_pid: "26664"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-03-11T05:44:14Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-03-11T05:44:14Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP03 – AI Prompt Augmentation
@@ -102,3 +106,4 @@ Use language identifiers in code blocks: ````python`, ````bash`
 ## Activity Log
 
 - 2026-03-11T05:44:14Z – system – lane=planned – Prompt created.
+- 2026-03-11T13:31:22Z – codex-wp03 – shell_pid=26664 – lane=doing – Assigned agent via workflow command
