@@ -89,7 +89,7 @@ All non-task inputs required to rank candidates.
 
 Fields:
 - `goalThemeProfile: GoalThemeProfile`
-- `nowIso: string`
+- `nowIso: string | null`
 - `workStyleMode: "gentle" | "standard" | "focused" | "unknown"`
 - `urgentMode: boolean`
 - `stateSource: "none" | "explicit" | "fallback"`
@@ -109,6 +109,7 @@ Fields:
 - `rationaleCode: "goal_alignment" | "urgency" | "blocker_removal" | "capacity_protection" | "fallback"`
 - `rationaleText: string`
 - `exceptionApplied: boolean`
+- `exceptionReason: "none" | "blocker" | "urgent_requirement" | "capacity_protection"`
 - `fallbackUsed: boolean`
 
 ### RecommendationResult

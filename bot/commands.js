@@ -8,6 +8,7 @@ import {
     formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage,
     parseDateStringToTickTickISO, parseTelegramMarkdownToHTML, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent
 } from './utils.js';
+import { createGoalThemeProfile, normalizePriorityCandidate, rankPriorityCandidates } from '../services/execution-prioritization.js';
 
 export function registerCommands(bot, ticktick, gemini, adapter, pipeline, config = {}) {
     const {
@@ -597,6 +598,32 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 export async function executeActions(actions, adapter, currentTasks, options = {}) {
     const outcomes = [];
     let hasUndoableActions = false;
+    const policyGoalThemeProfile = options.goalThemeProfile || createGoalThemeProfile(
+        typeof options.userContext === 'string' ? options.userContext : (process.env.USER_CONTEXT || ''),
+        { source: typeof options.userContext === 'string' ? 'user_context' : (process.env.USER_CONTEXT ? 'env' : 'fallback') },
+    );
+    const policyDecisionCache = new Map();
+
+    const getPolicySweepDecision = (task) => {
+        const cacheKey = task?.id || task?.taskId || `${task?.title || ''}|${task?.projectName || ''}|${task?.dueDate || ''}`;
+        if (policyDecisionCache.has(cacheKey)) {
+            return policyDecisionCache.get(cacheKey);
+        }
+
+        const ranking = rankPriorityCandidates(
+            [normalizePriorityCandidate(task)],
+            {
+                goalThemeProfile: policyGoalThemeProfile,
+                nowIso: options.nowIso,
+                workStyleMode: options.workStyleMode,
+                urgentMode: options.urgentMode,
+                stateSource: options.stateSource,
+            },
+        );
+        const decision = ranking.topRecommendation || null;
+        policyDecisionCache.set(cacheKey, decision);
+        return decision;
+    };
 
     const inferPriorityLabel = (task, explicitPriority = undefined) => {
         const normalizedPriority = explicitPriority ?? task?.priority;
@@ -604,6 +631,22 @@ export async function executeActions(actions, adapter, currentTasks, options = {
         if (normalizedPriority === 1) return 'life-admin';
         if (normalizedPriority === 3) return 'important';
 
+        const decision = getPolicySweepDecision(task);
+        const rationaleText = decision?.rationaleText?.toLowerCase() || '';
+        if (decision?.rationaleCode === 'goal_alignment') {
+            return 'career-critical';
+        }
+        if (decision?.rationaleCode === 'urgency' || decision?.exceptionApplied === true) {
+            return 'important';
+        }
+        if (rationaleText.includes('career-signaling')) {
+            return 'career-critical';
+        }
+        if (rationaleText.includes('consequential admin')) {
+            return 'life-admin';
+        }
+
+        // Fallback-only legacy bucket inference when the shared result is intentionally degraded.
         const haystack = `${task?.title || ''} ${task?.projectName || ''}`.toLowerCase();
         if (/\b(system design|dsa|interview|resume|leetcode|backend|career|study|assignment|exam)\b/i.test(haystack)) {
             return 'career-critical';
@@ -626,10 +669,14 @@ export async function executeActions(actions, adapter, currentTasks, options = {
         const text = `${task?.title || ''} ${task?.projectName || ''} ${task?.content || ''}`.toLowerCase();
         const byFragment = (fragment) =>
             projects.find((p) => (p.name || '').toLowerCase().includes(fragment))?.id || null;
-        if (/\b(system design|dsa|interview|resume|backend|career|study|college|assignment|exam)\b/.test(text)) {
+        const inferredPriorityLabel = inferPriorityLabel(task);
+        if (/\b(health|sleep|exercise|workout|doctor|therapy|recovery|burnout|mental)\b/.test(text)) {
+            return byFragment('health') || byFragment('personal') || null;
+        }
+        if (inferredPriorityLabel === 'career-critical') {
             return byFragment('career') || byFragment('study') || null;
         }
-        if (/\b(bank|bill|grocery|get |print|admin|errand|shopping|passport|visa|password|credential|wifi|home)\b/.test(text)) {
+        if (inferredPriorityLabel === 'life-admin' || /\b(bank|bill|grocery|get |print|admin|errand|shopping|passport|visa|password|credential|wifi|home)\b/.test(text)) {
             return byFragment('admin') || byFragment('personal') || null;
         }
         return byFragment('admin') || byFragment('personal') || null;
