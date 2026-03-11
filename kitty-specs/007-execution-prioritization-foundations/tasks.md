@@ -20,10 +20,10 @@
 **Requirement Refs**: FR-001, FR-002, FR-003
 
 ### Included Subtasks
-- [ ] T001 Audit current prioritization logic in `services/gemini.js` and `bot/commands.js`, and record the duplicated heuristics that must move behind a shared policy module.
-- [ ] T002 Define the `PriorityCandidate` and `GoalThemeProfile` input contracts in the implementation module and align them with `data-model.md`.
-- [ ] T003 Define how explicit user-owned goals and consequential life themes are sourced from `services/user_context.js` and fallback context without hard-coding a fixed value system.
-- [ ] T004 Define the top-level `RecommendationResult` and degraded-state contract that downstream consumers will depend on.
+- [x] T001 Audit current prioritization logic in `services/gemini.js` and `bot/commands.js`, and record the duplicated heuristics that must move behind a shared policy module.
+- [x] T002 Define the `PriorityCandidate` and `GoalThemeProfile` input contracts in the implementation module and align them with `data-model.md`.
+- [x] T003 Define how explicit user-owned goals and consequential life themes are sourced from `services/user_context.js` and fallback context without hard-coding a fixed value system.
+- [x] T004 Define the top-level `RecommendationResult` and degraded-state contract that downstream consumers will depend on.
 
 ### Implementation Notes
 - Keep this package domain-focused and pure. It should not fetch TickTick data or send Telegram messages.
@@ -50,11 +50,11 @@
 **Requirement Refs**: FR-004, FR-006, FR-008, FR-009
 
 ### Included Subtasks
-- [ ] T005 Create the shared prioritization module in `services/` with a stable exported API.
-- [ ] T006 Implement leverage-first candidate assessment using goal alignment, urgency, and consequential life themes.
-- [ ] T007 Implement honest fallback behavior for ambiguous leverage rather than prompt-only guessing or false precision.
-- [ ] T008 Ensure recommendation output works when work-style state is unknown by treating state modifiers as optional inputs with safe defaults.
-- [ ] T009 Add unit tests for baseline ranking behavior and degraded fallback paths.
+- [x] T005 Create the shared prioritization module in `services/` with a stable exported API.
+- [x] T006 Implement leverage-first candidate assessment using goal alignment, urgency, and consequential life themes.
+- [x] T007 Implement honest fallback behavior for ambiguous leverage rather than prompt-only guessing or false precision.
+- [x] T008 Ensure recommendation output works when work-style state is unknown by treating state modifiers as optional inputs with safe defaults.
+- [x] T009 Add unit tests for baseline ranking behavior and degraded fallback paths.
 
 ### Implementation Notes
 - Do not own state resolution here. `008` will supply work-style and urgent-mode modifiers later.
@@ -81,10 +81,10 @@
 **Requirement Refs**: FR-005, FR-007
 
 ### Included Subtasks
-- [ ] T010 Implement recovery, maintenance, and enabling-work exception handling inside the shared ranking module.
-- [ ] T011 Encode exception reasons explicitly so downstream consumers can tell why an override occurred.
-- [ ] T012 Generate short human-readable rationale text from structured ranking decisions rather than prompt-only prose.
-- [ ] T013 Add regression coverage for blocker removal, urgent real-world requirements, and capacity-protection scenarios.
+- [x] T010 Implement recovery, maintenance, and enabling-work exception handling inside the shared ranking module.
+- [x] T011 Encode exception reasons explicitly so downstream consumers can tell why an override occurred.
+- [x] T012 Generate short human-readable rationale text from structured ranking decisions rather than prompt-only prose.
+- [x] T013 Add regression coverage for blocker removal, urgent real-world requirements, and capacity-protection scenarios.
 
 ### Implementation Notes
 - Keep rationale generation deterministic and inspectable in tests.
@@ -111,11 +111,11 @@
 **Requirement Refs**: FR-010
 
 ### Included Subtasks
-- [ ] T014 Add one thin consumer integration seam so recommendation or summary code can call the shared prioritization module without copying logic.
-- [ ] T015 Narrow or replace duplicated local prioritization helpers in `bot/commands.js` and `services/gemini.js` where doing so is safe for this track.
-- [ ] T016 Add regression tests that assert downstream consumers inherit the shared policy rather than local heuristics.
-- [ ] T017 Add regression tests for unknown-state behavior and honest degraded recommendations.
-- [ ] T018 Update feature artifacts or example context notes where needed so future tracks `006`, `008`, and `009` can adopt the shared contract cleanly.
+- [x] T014 Add one thin consumer integration seam so recommendation or summary code can call the shared prioritization module without copying logic.
+- [x] T015 Narrow or replace duplicated local prioritization helpers in `bot/commands.js` and `services/gemini.js` where doing so is safe for this track.
+- [x] T016 Add regression tests that assert downstream consumers inherit the shared policy rather than local heuristics.
+- [x] T017 Add regression tests for unknown-state behavior and honest degraded recommendations.
+- [x] T018 Update feature artifacts or example context notes where needed so future tracks `006`, `008`, and `009` can adopt the shared contract cleanly.
 
 ### Implementation Notes
 - Do not fully rewrite `/briefing` or `/weekly` in this feature. Add the seam and the policy contract they will consume.

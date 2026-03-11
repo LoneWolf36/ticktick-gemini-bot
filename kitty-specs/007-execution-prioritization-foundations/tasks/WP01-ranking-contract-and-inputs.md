@@ -1,7 +1,7 @@
 ---
 work_package_id: WP01
 title: Ranking Contract and Inputs
-lane: planned
+lane: "done"
 dependencies: []
 subtasks:
 - T001
@@ -10,10 +10,10 @@ subtasks:
 - T004
 phase: Phase 1 - Contract Definition
 assignee: ''
-agent: ''
-shell_pid: ''
-review_status: ''
-reviewed_by: ''
+agent: "codex"
+shell_pid: "11900"
+review_status: "approved"
+reviewed_by: "TickTick Bot"
 history:
 - timestamp: '2026-03-10T23:54:11Z'
   lane: planned
@@ -120,3 +120,4 @@ Honor these constraints:
 ## Activity Log
 
 - 2026-03-10T23:54:11Z - system - lane=planned - Prompt created.
+- 2026-03-11T03:44:16Z – codex – lane=done – Implemented and committed on feature branch
