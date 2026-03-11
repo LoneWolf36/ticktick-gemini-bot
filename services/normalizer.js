@@ -55,6 +55,14 @@ const DAY_INDEX = {
 function _coerceDate(value, fallback = new Date()) {
     if (value instanceof Date) return value;
     if (typeof value === 'string' || typeof value === 'number') {
+        const dateOnlyMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (dateOnlyMatch) {
+            return new Date(
+                parseInt(dateOnlyMatch[1], 10),
+                parseInt(dateOnlyMatch[2], 10) - 1,
+                parseInt(dateOnlyMatch[3], 10)
+            );
+        }
         const parsed = new Date(value);
         if (!Number.isNaN(parsed.getTime())) return parsed;
     }
