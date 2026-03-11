@@ -1,8 +1,9 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { parseTelegramMarkdownToHTML, containsSensitiveContent, buildTickTickUpdate, scheduleToDateTime } from '../bot/utils.js';
-import { executeActions } from '../bot/commands.js';
+import { appendUrgentModeReminder, parseTelegramMarkdownToHTML, containsSensitiveContent, buildTickTickUpdate, scheduleToDateTime } from '../bot/utils.js';
+import { executeActions, registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer } from '../services/gemini.js';
+import * as store from '../services/store.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
 import {
   buildRankingContext,
@@ -114,6 +115,76 @@ async function run() {
   } catch (err) {
     failures++;
     console.error('FAIL urgent mode store defaults to false and persists boolean toggles');
+    console.error(err.message);
+  }
+
+  try {
+    assert.equal(appendUrgentModeReminder('Base briefing', false), 'Base briefing');
+    assert.match(appendUrgentModeReminder('Base briefing', true), /Urgent mode is currently active/i);
+    console.log('PASS urgent reminder helper only appends when urgent mode is active');
+  } catch (err) {
+    failures++;
+    console.error('FAIL urgent reminder helper only appends when urgent mode is active');
+    console.error(err.message);
+  }
+
+  try {
+    const handlers = { commands: new Map(), callbacks: [], events: [] };
+    const bot = {
+      command(name, handler) {
+        handlers.commands.set(name, handler);
+        return this;
+      },
+      callbackQuery(pattern, handler) {
+        handlers.callbacks.push({ pattern, handler });
+        return this;
+      },
+      on(eventName, handler) {
+        handlers.events.push({ eventName, handler });
+        return this;
+      },
+    };
+
+    registerCommands(
+      bot,
+      {
+        isAuthenticated: () => true,
+        getCacheAgeSeconds: () => null,
+        getAllTasks: async () => [],
+        getAllTasksCached: async () => [],
+        getLastFetchedProjects: () => [],
+      },
+      {
+        isQuotaExhausted: () => false,
+        quotaResumeTime: () => null,
+        activeKeyInfo: () => null,
+        generateDailyBriefing: async () => 'Plan for today',
+        generateWeeklyDigest: async () => 'Weekly summary',
+        generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
+      },
+      {},
+      {},
+    );
+
+    const briefingHandler = handlers.commands.get('briefing');
+    assert.equal(typeof briefingHandler, 'function');
+
+    const replies = [];
+    const userId = Date.now();
+    await store.setUrgentMode(userId, true);
+    await briefingHandler({
+      chat: { id: userId },
+      from: { id: userId },
+      reply: async (message) => {
+        replies.push(message);
+      },
+    });
+
+    assert.ok(replies.some((message) => typeof message === 'string' && message.includes('Urgent mode is currently active.')));
+    console.log('PASS registerCommands appends urgent reminder to manual briefing');
+  } catch (err) {
+    failures++;
+    console.error('FAIL registerCommands appends urgent reminder to manual briefing');
     console.error(err.message);
   }
 

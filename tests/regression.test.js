@@ -2,9 +2,10 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
-import { parseTelegramMarkdownToHTML } from '../bot/utils.js';
-import { executeActions } from '../bot/commands.js';
+import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../bot/utils.js';
+import { executeActions, registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer } from '../services/gemini.js';
+import * as store from '../services/store.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
 import {
   buildRankingContext,
@@ -47,6 +48,66 @@ test('store urgent mode defaults to false and persists boolean toggles', async (
   assert.equal(await store.getUrgentMode(userId), true);
   assert.equal(await store.setUrgentMode(userId, false), false);
   assert.equal(await store.getUrgentMode(userId), false);
+});
+
+test('appendUrgentModeReminder only appends reminder text when urgent mode is active', () => {
+  assert.equal(appendUrgentModeReminder('Base briefing', false), 'Base briefing');
+  assert.match(appendUrgentModeReminder('Base briefing', true), /Urgent mode is currently active/i);
+});
+
+test('registerCommands adds the urgent reminder to manual briefing surfaces when urgent mode is active', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) {
+      handlers.commands.set(name, handler);
+      return this;
+    },
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return this;
+    },
+    on(eventName, handler) {
+      handlers.events.push({ eventName, handler });
+      return this;
+    },
+  };
+
+  registerCommands(
+    bot,
+    {
+      isAuthenticated: () => true,
+      getCacheAgeSeconds: () => null,
+      getAllTasks: async () => [],
+      getAllTasksCached: async () => [],
+      getLastFetchedProjects: () => [],
+    },
+    {
+      isQuotaExhausted: () => false,
+      quotaResumeTime: () => null,
+      activeKeyInfo: () => null,
+      generateDailyBriefing: async () => 'Plan for today',
+      generateWeeklyDigest: async () => 'Weekly summary',
+      generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
+    },
+    {},
+    {},
+  );
+
+  const briefingHandler = handlers.commands.get('briefing');
+  assert.equal(typeof briefingHandler, 'function');
+
+  const replies = [];
+  const userId = Date.now();
+  await store.setUrgentMode(userId, true);
+  await briefingHandler({
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => {
+      replies.push(message);
+    },
+  });
+
+  assert.ok(replies.some((message) => typeof message === 'string' && message.includes('Urgent mode is currently active.')));
 });
 
 test('markdown parser normalizes hash-divider and preserves bold formatting', () => {

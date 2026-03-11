@@ -1,7 +1,7 @@
 // Scheduler — cron jobs for daily briefing, weekly digest, and task polling
 import cron from 'node-cron';
 import * as store from './store.js';
-import { buildAutoApplyNotification, userTimeString, formatBriefingHeader, filterProcessedThisWeek, sendWithMarkdown } from '../bot/utils.js';
+import { appendUrgentModeReminder, buildAutoApplyNotification, userTimeString, formatBriefingHeader, filterProcessedThisWeek, sendWithMarkdown } from '../bot/utils.js';
 
 export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, config) {
     const {
@@ -186,9 +186,10 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                 return;
             }
             const tasks = await ticktick.getAllTasks();
-            const briefing = await gemini.generateDailyBriefing(tasks);
+            const urgentMode = await store.getUrgentMode(chatId);
+            const briefing = await gemini.generateDailyBriefing(tasks, { userId: chatId, urgentMode });
 
-            let msg = formatBriefingHeader({ kind: 'daily' }) + briefing;
+            let msg = appendUrgentModeReminder(formatBriefingHeader({ kind: 'daily' }) + briefing, urgentMode);
 
             const pendingCount = store.getPendingCount();
             if (pendingCount > 0) {
@@ -217,8 +218,9 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
             const tasks = await ticktick.getAllTasks();
             const processed = store.getProcessedTasks();
             const thisWeek = filterProcessedThisWeek(processed, ['sentAt']);
-            const digest = await gemini.generateWeeklyDigest(tasks, thisWeek);
-            await sendWithMarkdown(bot.api, chatId, formatBriefingHeader({ kind: 'weekly' }) + digest);
+            const urgentMode = await store.getUrgentMode(chatId);
+            const digest = await gemini.generateWeeklyDigest(tasks, thisWeek, { userId: chatId, urgentMode });
+            await sendWithMarkdown(bot.api, chatId, appendUrgentModeReminder(formatBriefingHeader({ kind: 'weekly' }) + digest, urgentMode));
             await store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         } catch (err) {
             console.error('Weekly digest error:', err.message);

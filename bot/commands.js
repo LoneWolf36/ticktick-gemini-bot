@@ -5,7 +5,7 @@ import { taskReviewKeyboard } from './callbacks.js';
 import {
     buildTaskCard,
     sleep, userLocaleString, isAuthorized, guardAccess, buildUndoEntry,
-    formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage,
+    appendUrgentModeReminder, formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage,
     parseDateStringToTickTickISO, parseTelegramMarkdownToHTML, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent
 } from './utils.js';
 import { createGoalThemeProfile, normalizePriorityCandidate, rankPriorityCandidates } from '../services/execution-prioritization.js';
@@ -407,8 +407,10 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         await ctx.reply('🌅 Generating your briefing...');
         try {
             const tasks = await ticktick.getAllTasks();
-            const briefing = await gemini.generateDailyBriefing(tasks);
-            await replyWithMarkdown(ctx, formatBriefingHeader({ kind: 'daily' }) + briefing);
+            const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
+            const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
+            const briefing = await gemini.generateDailyBriefing(tasks, { userId, urgentMode });
+            await replyWithMarkdown(ctx, appendUrgentModeReminder(formatBriefingHeader({ kind: 'daily' }) + briefing, urgentMode));
             await store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
@@ -432,8 +434,10 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             const tasks = await ticktick.getAllTasks();
             const processed = store.getProcessedTasks();
             const thisWeek = filterProcessedThisWeek(processed, ['processedAt']);
-            const digest = await gemini.generateWeeklyDigest(tasks, thisWeek);
-            await replyWithMarkdown(ctx, formatBriefingHeader({ kind: 'weekly' }) + digest);
+            const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
+            const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
+            const digest = await gemini.generateWeeklyDigest(tasks, thisWeek, { userId, urgentMode });
+            await replyWithMarkdown(ctx, appendUrgentModeReminder(formatBriefingHeader({ kind: 'weekly' }) + digest, urgentMode));
             await store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
