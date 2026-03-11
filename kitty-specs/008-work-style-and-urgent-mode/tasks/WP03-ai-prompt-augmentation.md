@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: AI Prompt Augmentation
-lane: "doing"
+lane: "planned"
 dependencies: []
 base_branch: 008-work-style-and-urgent-mode-WP01
 base_commit: 048768441e961fd93cb481a838bec21993dfc2d2
@@ -14,8 +14,9 @@ phase: Phase 2 - Parallel Execution
 assignee: ''
 agent: "codex"
 shell_pid: "14884"
-review_status: ''
-reviewed_by: ''
+review_status: "has_feedback"
+reviewed_by: "TickTick Bot"
+review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP03.md"
 history:
 - timestamp: '2026-03-11T05:44:14Z'
   lane: planned
@@ -39,11 +40,15 @@ history:
 
 ## Review Feedback
 
-> **Populated by `/spec-kitty.review`** – Reviewers add detailed feedback here when work needs changes. Implementation must address every item listed below before returning for re-review.
+**Reviewed by**: TickTick Bot
+**Status**: ❌ Changes Requested
+**Date**: 2026-03-11
+**Feedback file**: `C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP03.md`
 
-*[This section is empty initially. Reviewers will populate it if the work is returned from review. If you see feedback here, treat each item as a must-do before completion.]*
+**Issue 1**: WP03's dependency metadata does not match the actual code coupling. [WP03-ai-prompt-augmentation.md](C:/Users/Huzefa%20Khan/Downloads/Gmail/ticktick-gemini/kitty-specs/008-work-style-and-urgent-mode/tasks/WP03-ai-prompt-augmentation.md) declares `dependencies: []` at line 5, but the same file is based on `008-work-style-and-urgent-mode-WP01` at line 6 and explicitly says it requires the WP01 `store.getUrgentMode` contract at line 63. The implementation also depends on that contract in [gemini.js](C:/Users/Huzefa%20Khan/Downloads/Gmail/ticktick-gemini/.worktrees/008-work-style-and-urgent-mode-WP03/services/gemini.js#L209). This breaks dependency checking and merge sequencing. Update the WP frontmatter so WP01 is declared as a dependency.
 
----
+**Dependent check**: [WP05-integration-testing.md](C:/Users/Huzefa%20Khan/Downloads/Gmail/ticktick-gemini/kitty-specs/008-work-style-and-urgent-mode/tasks/WP05-integration-testing.md#L63) depends on WP03 in its prompt text and is currently in review/active review flow. If WP03 changes, rebase that worktree with `cd C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\.worktrees\008-work-style-and-urgent-mode-WP05 && git rebase 008-work-style-and-urgent-mode-WP03`.
+
 
 ## Markdown Formatting
 Wrap HTML/XML tags in backticks: `` `<div>` ``, `` `<script>` ``
@@ -109,3 +114,4 @@ Use language identifiers in code blocks: ````python`, ````bash`
 - 2026-03-11T13:31:22Z – codex-wp03 – shell_pid=26664 – lane=doing – Assigned agent via workflow command
 - 2026-03-11T13:51:40Z – codex-wp03 – shell_pid=26664 – lane=for_review – Ready for review: urgent-aware Gemini prompts, state resolution, and ranking adjustments
 - 2026-03-11T15:03:57Z – codex – shell_pid=14884 – lane=doing – Started review via workflow command
+- 2026-03-11T15:07:57Z – codex – shell_pid=14884 – lane=planned – Moved to planned
