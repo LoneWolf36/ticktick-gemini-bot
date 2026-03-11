@@ -14,9 +14,10 @@ subtasks:
 phase: Phase 3 - Failure Semantics
 assignee: ''
 agent: "codex"
-shell_pid: "21012"
-review_status: ''
-reviewed_by: ''
+shell_pid: "16852"
+review_status: "has_feedback"
+reviewed_by: "TickTick Bot"
+review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP03.md"
 history:
 - timestamp: '2026-03-11T17:18:05Z'
   lane: planned
@@ -154,6 +155,20 @@ Verification commands:
 - Verify user mode and dev mode message shapes differ intentionally and safely.
 - Verify the returned failure envelope is stable enough for downstream regression packages to assert without reinterpreting caller-local strings.
 
+## Review Feedback
+
+**Reviewed by**: TickTick Bot
+**Status**: ❌ Changes Requested
+**Date**: 2026-03-11
+**Feedback file**: `C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP03.md`
+
+**Issue 1**: Dev-mode failure diagnostics omit validation and adapter details, so callers cannot surface actionable info.
+
+In `services/pipeline.js`, `buildFailureResult` only includes `details.diagnostics` and the summary/error message. For validation failures you populate `details.validationErrors`, and for adapter failures you populate `details.failures`, but those never make it into `errors`/`diagnostics`. The bot `formatPipelineFailure` only displays `result.diagnostics`, so dev-mode output loses the precise validation reasons and adapter failure messages. This violates the requirement that dev mode retains enough detail to debug the failing stage.
+
+**Fix**: Populate `diagnostics` with a deterministic rendering of `details.validationErrors` and `details.failures` (or update `formatPipelineFailure` to include `result.failure.details`). Keep user mode compact. Also consider including the failure `stage`/`class` in dev diagnostics for clarity.
+
+
 ## Activity Log
 
 - 2026-03-11T17:18:05Z - system - lane=planned - Prompt created.
@@ -161,3 +176,5 @@ Verification commands:
 - 2026-03-11T19:39:15Z – codex – shell_pid=28820 – lane=doing – Assigned agent via workflow command
 - 2026-03-11T19:50:06Z – codex – shell_pid=28820 – lane=for_review – Ready for review: added failure classes, quota rotation, and mode-aware messaging
 - 2026-03-11T19:50:55Z – codex – shell_pid=21012 – lane=doing – Started review via workflow command
+- 2026-03-11T19:52:41Z – codex – shell_pid=21012 – lane=planned – Moved to planned
+- 2026-03-11T20:07:56Z – codex – shell_pid=16852 – lane=doing – Started implementation via workflow command
