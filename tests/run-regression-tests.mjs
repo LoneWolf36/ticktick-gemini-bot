@@ -369,7 +369,7 @@ async function run() {
     const input = '**Start now**: Do the task\n\n#######';
     const html = parseTelegramMarkdownToHTML(input);
     assert.ok(html.includes('<b>Start now</b>:'));
-    assert.ok(html.includes('--------'));
+    assert.ok(html.includes('────────'));
     console.log('PASS markdown parser hash-divider normalization');
   } catch (err) {
     failures++;
