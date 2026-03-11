@@ -1,7 +1,7 @@
 ---
 work_package_id: WP05
 title: Integration & E2E Testing
-lane: "for_review"
+lane: "doing"
 dependencies: []
 base_branch: master
 base_commit: a7e40ce9ab69c2f3af0395628c36671f211e65d2
@@ -13,7 +13,7 @@ subtasks:
 phase: Phase 3 - Integration
 assignee: ''
 agent: "codex"
-shell_pid: "10544"
+shell_pid: "25204"
 review_status: ''
 reviewed_by: ''
 history:
@@ -108,3 +108,4 @@ Use language identifiers in code blocks: ````python`, ````bash`
 - 2026-03-11T05:44:14Z – system – lane=planned – Prompt created.
 - 2026-03-11T14:33:33Z – codex – shell_pid=10544 – lane=doing – Assigned agent via workflow command
 - 2026-03-11T14:46:49Z – codex – shell_pid=10544 – lane=for_review – Ready for review: added deterministic urgent-mode integration coverage for toggle behavior, humane default, and briefing reminders
+- 2026-03-11T15:06:05Z – codex – shell_pid=25204 – lane=doing – Started review via workflow command
