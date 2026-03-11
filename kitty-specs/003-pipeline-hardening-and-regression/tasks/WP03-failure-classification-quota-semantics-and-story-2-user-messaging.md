@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: Failure Classification, Quota Semantics, and Story 2 User Messaging
-lane: "doing"
+lane: "for_review"
 dependencies:
 - WP01
 base_branch: 003-pipeline-hardening-and-regression-WP01
@@ -159,3 +159,4 @@ Verification commands:
 - 2026-03-11T17:18:05Z - system - lane=planned - Prompt created.
 - 2026-03-11T17:50:00Z - codex - lane=planned - Restructured to keep Story 2 regression closure in WP06 and improve parallel execution.
 - 2026-03-11T19:39:15Z – codex – shell_pid=28820 – lane=doing – Assigned agent via workflow command
+- 2026-03-11T19:50:06Z – codex – shell_pid=28820 – lane=for_review – Ready for review: added failure classes, quota rotation, and mode-aware messaging
