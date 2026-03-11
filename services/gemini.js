@@ -5,6 +5,12 @@ import { existsSync } from 'fs';
 import path from 'path';
 import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from '../bot/utils.js';
 import { reorgSchema } from './schemas.js';
+import {
+    createGoalThemeProfile,
+    inferPriorityValueFromTask,
+    inferProjectIdFromTask,
+    rankPriorityCandidates,
+} from './execution-prioritization.js';
 
 // ─── User Context ────────────────────────────────────────────
 // Priority: 1) local user_context.js (gitignored), 2) USER_CONTEXT env var, 3) generic default
@@ -12,13 +18,17 @@ const __dirname = path.dirname(fileURLToPath(import.meta.url));
 const USER_CONTEXT_FILE = path.join(__dirname, 'user_context.js');
 
 let USER_CONTEXT;
+let USER_CONTEXT_SOURCE;
 if (existsSync(USER_CONTEXT_FILE)) {
     const mod = await import('./user_context.js');
     USER_CONTEXT = mod.USER_CONTEXT;
+    USER_CONTEXT_SOURCE = 'user_context';
 } else if (process.env.USER_CONTEXT) {
     USER_CONTEXT = process.env.USER_CONTEXT;
+    USER_CONTEXT_SOURCE = 'env';
 } else {
     USER_CONTEXT = 'You are an AI accountability partner and task analyst. Help the user stay focused, organized, and honest about their priorities.';
+    USER_CONTEXT_SOURCE = 'fallback';
     console.warn('⚠️  No user_context.js found and USER_CONTEXT env var not set. Using generic context.');
 }
 
@@ -146,6 +156,32 @@ export class GeminiAnalyzer {
         this._rotationPromise = null;
 
         this._initModelsForActiveKey();
+    }
+
+    _prepareBriefingTasks(tasks = [], options = {}) {
+        const activeTasks = (Array.isArray(tasks) ? tasks : [])
+            .filter((task) => task && (task.status === 0 || task.status === undefined));
+        const goalThemeProfile = options.goalThemeProfile || createGoalThemeProfile(USER_CONTEXT, { source: USER_CONTEXT_SOURCE });
+        const ranking = rankPriorityCandidates(activeTasks, {
+            goalThemeProfile,
+            nowIso: options.nowIso || new Date().toISOString(),
+            workStyleMode: options.workStyleMode,
+            urgentMode: options.urgentMode,
+            stateSource: options.stateSource,
+        });
+
+        const byTaskId = new Map(activeTasks.map((task) => [task.id || task.taskId, task]));
+        const orderedTasks = ranking.ranked
+            .map((decision) => byTaskId.get(decision.taskId))
+            .filter(Boolean);
+
+        for (const task of activeTasks) {
+            if (!orderedTasks.includes(task)) {
+                orderedTasks.push(task);
+            }
+        }
+
+        return { goalThemeProfile, ranking, orderedTasks };
     }
 
     _initModelsForActiveKey() {
@@ -395,7 +431,17 @@ export class GeminiAnalyzer {
     // ─── Generate daily briefing ──────────────────────────────
 
     async generateDailyBriefing(tasks) {
-        const taskList = tasks
+        const { ranking, orderedTasks } = this._prepareBriefingTasks(tasks);
+        const rankedPreview = ranking.ranked
+            .slice(0, 3)
+            .map((decision, index) => {
+                const task = orderedTasks.find((candidate) => (candidate.id || candidate.taskId) === decision.taskId);
+                const title = task?.title || decision.taskId;
+                return `${index + 1}. "${title}" — ${decision.rationaleText}`;
+            })
+            .join('\n');
+
+        const taskList = orderedTasks
             .map((t, i) => {
                 let line = `${i + 1}. "${t.title}" [${t.projectName || 'Inbox'}]`;
                 if (t.dueDate) line += ` — due: ${t.dueDate}`;
@@ -406,7 +452,7 @@ export class GeminiAnalyzer {
 
         const today = userTodayFormatted();
 
-        const prompt = `Today is ${today}.\n\nActive tasks (${tasks.length} total):\n${taskList}`;
+        const prompt = `Today is ${today}.\n\nShared priority guidance:\n${rankedPreview || 'No ranked guidance available.'}\n\nActive tasks (${orderedTasks.length} total):\n${taskList}`;
         const result = await this._generateWithFailover(() => this.briefingModel, prompt, { transientBaseMs: 15 });
         return result.response.text().trim();
     }
@@ -503,34 +549,17 @@ export class GeminiAnalyzer {
 
     _buildFallbackReorgProposal(tasks = [], projects = []) {
         const fallbackTasks = this._compactReorgTasks(tasks, 40);
-        const projectsByLower = new Map((projects || []).map(p => [(p.name || '').toLowerCase(), p.id]));
-        const findProjectId = (task) => {
-            const text = `${task.title || ''} ${task.projectName || ''} ${task.content || ''}`.toLowerCase();
-            if (/\b(system design|dsa|interview|resume|backend|career|study|college|assignment|exam)\b/.test(text)) {
-                return [...projectsByLower.entries()].find(([k]) => k.includes('career'))?.[1]
-                    || [...projectsByLower.entries()].find(([k]) => k.includes('study'))?.[1]
-                    || null;
-            }
-            return [...projectsByLower.entries()].find(([k]) => k.includes('admin'))?.[1]
-                || [...projectsByLower.entries()].find(([k]) => k.includes('personal'))?.[1]
-                || null;
-        };
-        const inferPriority = (task) => {
-            const text = `${task.title || ''} ${task.projectName || ''} ${task.content || ''}`.toLowerCase();
-            if (/\b(system design|dsa|interview|resume|backend|study|exam)\b/.test(text)) return 5;
-            if (/\b(bank|bill|grocery|get |print|admin|errand|shopping|password|credential|wifi)\b/.test(text)) return 1;
-            return 3;
-        };
+        const fallbackGoalThemeProfile = createGoalThemeProfile(USER_CONTEXT, { source: USER_CONTEXT_SOURCE });
 
         const actions = [];
         for (const task of fallbackTasks) {
             if (task.status !== 0 && task.status !== undefined) continue;
             const changes = {};
             if (![1, 3, 5].includes(task.priority)) {
-                changes.priority = inferPriority(task);
+                changes.priority = inferPriorityValueFromTask(task, { goalThemeProfile: fallbackGoalThemeProfile });
             }
             if ((task.projectName || '').toLowerCase() === 'inbox') {
-                const candidate = findProjectId(task);
+                const candidate = inferProjectIdFromTask(task, projects, { goalThemeProfile: fallbackGoalThemeProfile });
                 if (candidate && candidate !== task.projectId) changes.projectId = candidate;
             }
             if (Object.keys(changes).length > 0) {
@@ -554,18 +583,8 @@ export class GeminiAnalyzer {
     }
 
     _compactReorgTasks(tasks = [], limit = 80) {
-        const withoutCompleted = (tasks || []).filter(t => t.status === 0 || t.status === undefined);
-        const scored = withoutCompleted.map(t => {
-            let score = 0;
-            if ((t.projectName || '').toLowerCase() === 'inbox') score += 20;
-            if (t.priority === 5) score += 12;
-            if (t.priority === 0) score += 6;
-            if (!t.dueDate) score += 3;
-            if ((t.content || '').length === 0) score += 2;
-            return { task: t, score };
-        });
-        scored.sort((a, b) => b.score - a.score);
-        return scored.slice(0, limit).map(s => s.task);
+        const { orderedTasks } = this._prepareBriefingTasks(tasks);
+        return orderedTasks.slice(0, limit);
     }
 
     _normalizeReorgProposal(proposal = {}, tasks = [], projects = []) {
@@ -585,29 +604,10 @@ export class GeminiAnalyzer {
         const createSeen = new Set();
         const normalizedActions = [];
         const taskById = new Map(tasks.map(t => [t.id, t]));
+        const goalThemeProfile = createGoalThemeProfile(USER_CONTEXT, { source: USER_CONTEXT_SOURCE });
 
         const nonInboxProjects = projects.filter(p => (p.name || '').toLowerCase() !== 'inbox');
         const defaultProjectId = nonInboxProjects[0]?.id || projects[0]?.id || null;
-
-        const inferProjectForTask = (task) => {
-            const text = `${task?.title || ''} ${task?.projectName || ''} ${task?.content || ''}`.toLowerCase();
-            const byName = (fragment) => projects.find(p => (p.name || '').toLowerCase().includes(fragment))?.id;
-            if (/\b(system design|dsa|interview|resume|backend|career|study|college|assignment|exam)\b/.test(text)) {
-                return byName('career') || byName('study') || defaultProjectId;
-            }
-            if (/\b(bank|bill|grocery|get |print|admin|errand|shopping|passport|visa|password|credential|wifi)\b/.test(text)) {
-                return byName('admin') || byName('personal') || defaultProjectId;
-            }
-            return defaultProjectId;
-        };
-
-        const inferPriority = (task) => {
-            if ([1, 3, 5].includes(task?.priority)) return task.priority;
-            const text = `${task?.title || ''} ${task?.projectName || ''} ${task?.content || ''}`.toLowerCase();
-            if (/\b(system design|dsa|interview|resume|backend|study|exam)\b/.test(text)) return 5;
-            if (/\b(bank|bill|grocery|get |print|admin|errand|shopping|password|credential|wifi)\b/.test(text)) return 1;
-            return 3;
-        };
 
         for (const raw of cleaned.actions.slice(0, 60)) {
             const action = raw && typeof raw === 'object' ? { ...raw } : null;
@@ -644,13 +644,15 @@ export class GeminiAnalyzer {
             const type = merged.__type || 'update';
             delete merged.__type;
 
-            if (![0, 1, 3, 5].includes(merged.priority)) merged.priority = inferPriority(task);
+            if (![0, 1, 3, 5].includes(merged.priority)) {
+                merged.priority = inferPriorityValueFromTask(task, { goalThemeProfile });
+            }
             if (!merged.projectId && (task.projectName || '').toLowerCase() === 'inbox') {
-                merged.projectId = inferProjectForTask(task);
+                merged.projectId = inferProjectIdFromTask(task, projects, { goalThemeProfile }) || defaultProjectId;
             }
             if (type === 'drop') {
                 // Non-destructive demotion path: keep as drop but include metadata changes.
-                if (!merged.projectId) merged.projectId = inferProjectForTask(task);
+                if (!merged.projectId) merged.projectId = inferProjectIdFromTask(task, projects, { goalThemeProfile }) || defaultProjectId;
                 merged.priority = 0;
             }
             if (Object.keys(merged).length === 0) continue;
@@ -670,14 +672,14 @@ export class GeminiAnalyzer {
         const inboxActive = tasks.filter(t => (t.status === 0 || t.status === undefined) && (t.projectName || '').toLowerCase() === 'inbox');
         for (const task of inboxActive) {
             if (touched.has(task.id)) continue;
-            const inferredProjectId = inferProjectForTask(task);
+            const inferredProjectId = inferProjectIdFromTask(task, projects, { goalThemeProfile }) || defaultProjectId;
             if (!inferredProjectId || inferredProjectId === task.projectId) continue;
             normalizedActions.push({
                 type: 'update',
                 taskId: task.id,
                 changes: {
                     projectId: inferredProjectId,
-                    priority: inferPriority(task),
+                    priority: inferPriorityValueFromTask(task, { goalThemeProfile }),
                 },
             });
         }
@@ -691,8 +693,10 @@ export class GeminiAnalyzer {
                     type: 'update',
                     taskId: task.id,
                     changes: {
-                        priority: inferPriority(task),
-                        projectId: (task.projectName || '').toLowerCase() === 'inbox' ? inferProjectForTask(task) : undefined,
+                        priority: inferPriorityValueFromTask(task, { goalThemeProfile }),
+                        projectId: (task.projectName || '').toLowerCase() === 'inbox'
+                            ? (inferProjectIdFromTask(task, projects, { goalThemeProfile }) || defaultProjectId)
+                            : undefined,
                     },
                 });
             }
