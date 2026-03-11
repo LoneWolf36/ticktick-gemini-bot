@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: Failure Classification, Quota Semantics, and Story 2 User Messaging
-lane: "doing"
+lane: "done"
 dependencies:
 - WP01
 base_branch: 003-pipeline-hardening-and-regression-WP01
@@ -180,3 +180,4 @@ In `services/pipeline.js`, `buildFailureResult` only includes `details.diagnosti
 - 2026-03-11T20:07:56Z – codex – shell_pid=16852 – lane=doing – Started implementation via workflow command
 - 2026-03-11T20:08:44Z – codex – shell_pid=16852 – lane=for_review – Ready for review: added dev-mode validation/adapter diagnostics
 - 2026-03-11T20:10:06Z – codex – shell_pid=30336 – lane=doing – Started review via workflow command
+- 2026-03-11T20:12:52Z – codex – shell_pid=30336 – lane=done – Review passed: dev diagnostics include validation/adapter detail; failure classes preserved
