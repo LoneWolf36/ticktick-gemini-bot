@@ -45,9 +45,9 @@ description: "Work package task list template for feature implementation"
 **Requirements Refs**: FR-003, FR-005, SC-001
 
 ### Included Subtasks
-- [ ] T004 [P] Add `/urgent [on|off]` command handler to `bot/commands.js`.
-- [ ] T005 [P] Wire command to `store.setUrgentMode(userId, value)`.
-- [ ] T006 [P] Add natural language intent parsing for urgent mode toggle in `services/ax-intent.js` (optional but recommended for robustness).
+- [x] T004 [P] Add `/urgent [on|off]` command handler to `bot/commands.js`.
+- [x] T005 [P] Wire command to `store.setUrgentMode(userId, value)`.
+- [x] T006 [P] Add natural language intent parsing for urgent mode toggle in `services/ax-intent.js` (optional but recommended for robustness).
 
 ### Implementation Notes
 - Modify `bot/commands.js` to register the new command.
