@@ -85,7 +85,7 @@ function createDeterministicGemini() {
   return gemini;
 }
 
-function createPipelineDouble(ticktick) {
+function createPipelineDouble(ticktick, adapter) {
   return {
     async processMessage(userMessage) {
       if (/^move it to tomorrow$/i.test(userMessage.trim())) {
@@ -106,7 +106,10 @@ function createPipelineDouble(ticktick) {
         }
 
         const dueDate = scheduleToDateTime('today', { priorityLabel: 'career-critical' });
-        await ticktick.updateTask(matchedTask.id, { dueDate });
+        await adapter.updateTask(matchedTask.id, {
+          originalProjectId: matchedTask.projectId,
+          dueDate,
+        });
         return {
           type: 'task',
           results: [],
@@ -376,8 +379,8 @@ async function main() {
     const tasks = createTasks();
     const ticktick = new TickTickTestDouble(projects, tasks);
     const gemini = createDeterministicGemini();
-    const pipeline = createPipelineDouble(ticktick);
     const adapter = createAdapterDouble(ticktick);
+    const pipeline = createPipelineDouble(ticktick, adapter);
     const mockPort = 19081;
     mockServer = http.createServer(async (req, res) => {
       const chunks = [];

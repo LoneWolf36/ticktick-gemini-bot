@@ -4,6 +4,8 @@ import { parseTelegramMarkdownToHTML, containsSensitiveContent, buildTickTickUpd
 import { executeActions, registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer, buildUrgentModePromptNote } from '../services/gemini.js';
 import { detectUrgentModeIntent } from '../services/ax-intent.js';
+import { TickTickAdapter } from '../services/ticktick-adapter.js';
+import { TickTickClient } from '../services/ticktick.js';
 import * as store from '../services/store.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
 import {
@@ -262,6 +264,97 @@ async function run() {
     console.error(err.message);
   }
 
+  try {
+    const handlers = { commands: new Map(), callbacks: [], events: [] };
+    const bot = {
+      command(name, handler) {
+        handlers.commands.set(name, handler);
+        return this;
+      },
+      callbackQuery(pattern, handler) {
+        handlers.callbacks.push({ pattern, handler });
+        return this;
+      },
+      on(eventName, handler) {
+        handlers.events.push({ eventName, handler });
+        return this;
+      },
+    };
+
+    registerCommands(
+      bot,
+      {
+        isAuthenticated: () => true,
+        getCacheAgeSeconds: () => null,
+        getAuthUrl: () => 'https://example.test/auth',
+        getAllTasks: async () => [],
+        getAllTasksCached: async () => [],
+        getLastFetchedProjects: () => [],
+      },
+      {
+        isQuotaExhausted: () => false,
+        quotaResumeTime: () => null,
+        activeKeyInfo: () => null,
+        generateDailyBriefing: async () => 'Plan for today',
+        generateWeeklyDigest: async () => 'Weekly summary',
+        generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
+      },
+      {},
+      {},
+    );
+
+    const briefingHandler = handlers.commands.get('briefing');
+    assert.equal(typeof briefingHandler, 'function');
+
+    const replies = [];
+    const userId = Date.now();
+    await store.setUrgentMode(userId, true);
+    await briefingHandler({
+      chat: { id: userId },
+      from: { id: userId },
+      reply: async (message) => {
+        replies.push(message);
+      },
+    });
+
+    assert.ok(replies.some((message) => typeof message === 'string' && message.includes('Urgent mode is currently active.')));
+    console.log('PASS registerCommands appends urgent reminder to manual briefing');
+  } catch (err) {
+    failures++;
+    console.error('FAIL registerCommands appends urgent reminder to manual briefing');
+    console.error(err.message);
+  }
+
+  try {
+    let updatePayload = null;
+    const client = Object.create(TickTickClient.prototype);
+    client.getTask = async () => ({
+      id: 'task-1',
+      projectId: 'project-1',
+      content: '',
+      priority: 0,
+      status: 0,
+    });
+    client.updateTask = async (_taskId, payload) => {
+      updatePayload = payload;
+      return { id: 'task-1', ...payload };
+    };
+
+    const adapter = new TickTickAdapter(client);
+    await adapter.updateTask('task-1', {
+      originalProjectId: 'project-1',
+      dueDate: '2026-03-11T09:30:00.000+0000',
+    });
+
+    assert.equal(updatePayload.projectId, 'project-1');
+    assert.equal(updatePayload.dueDate, '2026-03-11T09:30:00.000+0000');
+    assert.equal(Object.hasOwn(updatePayload, 'originalProjectId'), false);
+    console.log('PASS TickTickAdapter includes projectId for due-date-only updates');
+  } catch (err) {
+    failures++;
+    console.error('FAIL TickTickAdapter includes projectId for due-date-only updates');
+    console.error(err.message);
+  }
 
 
   try {

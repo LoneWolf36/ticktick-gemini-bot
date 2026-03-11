@@ -9,6 +9,7 @@ import { registerCommands } from '../bot/commands.js';
 import { registerCallbacks } from '../bot/callbacks.js';
 import { GeminiAnalyzer } from '../services/gemini.js';
 import { TickTickClient } from '../services/ticktick.js';
+import { TickTickAdapter } from '../services/ticktick-adapter.js';
 import * as store from '../services/store.js';
 import { scheduleToDateTime } from '../bot/utils.js';
 
@@ -73,7 +74,7 @@ function createDeterministicGemini() {
   return gemini;
 }
 
-function createPipelineDouble(ticktick) {
+function createPipelineDouble(ticktick, adapter) {
   return {
     async processMessage(userMessage) {
       if (/^move it to tomorrow$/i.test(userMessage.trim())) {
@@ -95,7 +96,10 @@ function createPipelineDouble(ticktick) {
         }
 
         const dueDate = scheduleToDateTime('today', { priorityLabel: 'career-critical' });
-        await ticktick.updateTask(matchedTask.id, { dueDate });
+        await adapter.updateTask(matchedTask.id, {
+          originalProjectId: matchedTask.projectId,
+          dueDate,
+        });
         return {
           type: 'task',
           results: [],
@@ -105,23 +109,6 @@ function createPipelineDouble(ticktick) {
       }
 
       return { type: 'non-task', results: [], errors: [], confirmationText: 'No actionable tasks detected.' };
-    },
-  };
-}
-
-function createAdapterDouble(ticktick) {
-  return {
-    async createTask(taskData) {
-      return ticktick.createTask(taskData);
-    },
-    async updateTask(taskId, changes) {
-      return ticktick.updateTask(taskId, changes);
-    },
-    async completeTask(taskId, projectId) {
-      return ticktick.completeTask(projectId, taskId);
-    },
-    async deleteTask(taskId, projectId) {
-      return ticktick.deleteTask(projectId, taskId);
     },
   };
 }
@@ -226,6 +213,10 @@ async function fetchAllTasksIncludingCompleted(ticktick) {
   return all;
 }
 
+async function fetchActiveTasks(ticktick) {
+  return ticktick.getAllTasksCached(0);
+}
+
 function summarizeTask(t) {
   return {
     id: t.id,
@@ -247,6 +238,7 @@ async function main() {
   const createdTaskIds = new Set();
   const touchedTaskIds = new Set();
   let ticktick;
+  let latestActiveTasks = [];
 
   try {
     await store.resetAll();
@@ -292,8 +284,8 @@ async function main() {
     });
 
     const gemini = createDeterministicGemini();
-    const pipeline = createPipelineDouble(ticktick);
-    const adapter = createAdapterDouble(ticktick);
+    const adapter = new TickTickAdapter(ticktick);
+    const pipeline = createPipelineDouble(ticktick, adapter);
 
     await withMockTelegramServer(19082, apiCalls, async () => {
       const bot = new Bot('live-e2e-token', {
@@ -376,7 +368,7 @@ async function main() {
       // Freeform update (date move)
       await bot.handleUpdate(mk.message(`Move ${PREFIX} Netflix System Design to today`));
       await sleep(800);
-      const afterMove = (await fetchAllTasksIncludingCompleted(ticktick)).find((t) => t.id === seededNetflix?.id);
+      const afterMove = await ticktick.getTask(seededNetflix.projectId, seededNetflix.id);
       assert.ok(afterMove?.dueDate, 'Expected dueDate after move-to-today');
       touchedTaskIds.add(afterMove.id);
       if (String(afterMove.dueDate).includes('T23:59:00.000')) {
@@ -459,7 +451,7 @@ async function main() {
       });
 
       // Safety filter before apply: only test-prefix tasks.
-      const allNow = await fetchAllTasksIncludingCompleted(ticktick);
+      const allNow = await fetchActiveTasks(ticktick);
       const prefixTasks = allNow.filter((t) => (t.title || '').startsWith(PREFIX));
       const prefixById = new Map(prefixTasks.map((t) => [t.id, t]));
       const prefixIdSet = new Set(prefixTasks.map((t) => t.id));
@@ -517,7 +509,8 @@ async function main() {
       });
 
       // Validate policy on live tasks
-      const finalAll = await fetchAllTasksIncludingCompleted(ticktick);
+      const finalAll = await fetchActiveTasks(ticktick);
+      latestActiveTasks = finalAll;
       const finalPrefix = finalAll.filter((t) => (t.title || '').startsWith(PREFIX) && (t.status === 0 || t.status === undefined));
       const inboxLeft = finalPrefix.filter((t) => (t.projectName || '').toLowerCase() === 'inbox');
       if (inboxLeft.length > 0) {
@@ -543,7 +536,8 @@ async function main() {
       const sensitiveTitle = `${PREFIX} wifi details for mom`;
       await bot.handleUpdate(mk.message(`Update ${sensitiveTitle} content to: remove old details and replace with clean text`));
       await sleep(1000);
-      const sensitiveAfter = (await fetchAllTasksIncludingCompleted(ticktick)).find((t) => t.title === sensitiveTitle);
+      latestActiveTasks = await fetchActiveTasks(ticktick);
+      const sensitiveAfter = latestActiveTasks.find((t) => t.title === sensitiveTitle);
       const preserved = /Password=Abc!23456/i.test(sensitiveAfter?.content || '');
       checkpoints.push({
         id: 'sensitive-guard',
@@ -577,7 +571,7 @@ async function main() {
   } finally {
     try {
       if (ticktick) {
-        const all = await fetchAllTasksIncludingCompleted(ticktick);
+        const all = latestActiveTasks.length > 0 ? latestActiveTasks : await fetchActiveTasks(ticktick);
         const testTasks = all.filter((t) => (t.title || '').startsWith(PREFIX));
         for (const t of testTasks) {
           try {

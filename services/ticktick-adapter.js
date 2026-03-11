@@ -152,13 +152,15 @@ export class TickTickAdapter {
             }
 
             const existingTask = await this._client.getTask(projectId, taskId);
+            const sourceProjectId = normalizedAction.originalProjectId || existingTask.projectId || projectId;
+            const targetProjectId = normalizedAction.projectId ?? sourceProjectId;
 
             const updatePayload = {};
 
             if (normalizedAction.title !== undefined) updatePayload.title = normalizedAction.title;
             if (normalizedAction.dueDate !== undefined) updatePayload.dueDate = normalizedAction.dueDate;
             if (normalizedAction.priority !== undefined) updatePayload.priority = normalizedAction.priority;
-            if (normalizedAction.projectId !== undefined) updatePayload.projectId = normalizedAction.projectId;
+            if (targetProjectId !== undefined && targetProjectId !== null) updatePayload.projectId = targetProjectId;
             if (normalizedAction.repeatFlag !== undefined) updatePayload.repeatFlag = normalizedAction.repeatFlag;
 
             // Handle content merge (FR-007)
@@ -183,10 +185,8 @@ export class TickTickAdapter {
                 }
             }
 
-            if (normalizedAction.originalProjectId) {
-                updatePayload.originalProjectId = normalizedAction.originalProjectId;
-            } else if (normalizedAction.projectId && normalizedAction.projectId !== projectId) {
-                updatePayload.originalProjectId = projectId;
+            if (sourceProjectId && targetProjectId && targetProjectId !== sourceProjectId) {
+                updatePayload.originalProjectId = sourceProjectId;
             }
 
             const updatedTask = await this._client.updateTask(taskId, updatePayload);
