@@ -64,3 +64,10 @@ Feature `006` requires briefing and weekly surfaces to inherit shared foundation
 ## Conclusion
 
 The repository already contains enough raw inputs and enough duplicated heuristics to justify `007` as a true foundation feature. The main architectural need is not more prompt logic. It is a shared, deterministic prioritization contract that sits above prompt wording and below command or scheduler surfaces.
+
+## Adoption Notes
+
+- `006` should consume structured `RankingDecision` output for briefing and weekly selection rather than re-deriving its own local priority buckets.
+- `008` should inject `workStyleMode`, `urgentMode`, and any future state provenance into `RankingContext`, but it should not redefine base leverage ordering or exception reasons.
+- `009` should treat `RecommendationResult` as an upstream input only. Behavioral memory may explain or reflect on ranking outcomes, but it should not mutate core ranking policy inside the same module.
+- Downstream consumers should prefer the shared service even when they continue to format their own prompt text. Prompt wording may vary; the ranking contract should not.
