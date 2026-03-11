@@ -13,6 +13,8 @@ export function createPipelineHarness({
     now = '2026-03-10T10:00:00Z',
     useRealNormalizer = true,
     normalizedActions = null,
+    adapterOverrides = {},
+    observability = undefined,
 } = {}) {
     const axCalls = [];
     const adapterCalls = {
@@ -33,11 +35,21 @@ export function createPipelineHarness({
         },
     };
 
-    const adapter = {
+    const baseAdapter = {
         listProjects: async () => {
             adapterCalls.listProjects += 1;
             return projects;
         },
+        getTaskSnapshot: async (taskId, projectId) => ({
+            id: taskId,
+            projectId,
+            title: `Task ${taskId}`,
+            content: null,
+            priority: 0,
+            dueDate: null,
+            repeatFlag: null,
+            status: 0,
+        }),
         createTask: async (action) => {
             adapterCalls.create.push(action);
             return { id: 'task-created', ...action };
@@ -54,13 +66,20 @@ export function createPipelineHarness({
             adapterCalls.delete.push({ taskId, projectId });
             return { deleted: true, taskId };
         },
+        restoreTask: async (taskId, snapshot) => ({ id: taskId, ...snapshot }),
     };
+    const adapter = { ...baseAdapter, ...adapterOverrides };
 
     const normalizerImpl = useRealNormalizer
         ? { normalizeActions: (input, options) => normalizer.normalizeActions(input, options) }
         : { normalizeActions: () => normalizedActions ?? [] };
 
-    const pipeline = createPipeline({ axIntent, normalizer: normalizerImpl, adapter });
+    const pipeline = createPipeline({
+        axIntent,
+        normalizer: normalizerImpl,
+        adapter,
+        ...(observability ? { observability } : {}),
+    });
 
     const processMessage = (userMessage, options = {}) => (
         pipeline.processMessage(userMessage, {

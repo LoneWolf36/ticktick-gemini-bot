@@ -92,6 +92,13 @@ function createPipelineDouble(ticktick, adapter) {
         return {
           type: 'error',
           results: [],
+          failure: {
+            class: 'validation',
+            failureClass: 'validation',
+            requestId: null,
+            retryable: true,
+            rolledBack: false,
+          },
           confirmationText: 'Clarification needed.',
           errors: ['Which task do you want to move?'],
         };
