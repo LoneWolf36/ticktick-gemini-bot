@@ -1,7 +1,7 @@
 ---
 work_package_id: WP01
 title: Canonical Pipeline Context Foundation
-lane: "doing"
+lane: "planned"
 dependencies: []
 base_branch: master
 base_commit: 8c54eceaa745a46db9622848e7ddf85b8336c0d6
@@ -15,8 +15,9 @@ phase: Phase 1 - Context Foundation
 assignee: ''
 agent: "Codex"
 shell_pid: "12216"
-review_status: ''
-reviewed_by: ''
+review_status: "has_feedback"
+reviewed_by: "TickTick Bot"
+review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP01.md"
 history:
 - timestamp: '2026-03-11T17:18:05Z'
   lane: planned
@@ -179,9 +180,26 @@ Suggested commands for later verification:
 - Verify no caller still owns authoritative timezone logic after this package.
 - Verify the adapter boundary remains untouched.
 
+## Review Feedback
+
+**Reviewed by**: TickTick Bot
+**Status**: ❌ Changes Requested
+**Date**: 2026-03-11
+**Feedback file**: `C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP01.md`
+
+**Issue 1**: `services/normalizer.js` now receives `currentDate` from the canonical context as a `YYYY-MM-DD` string, but `_coerceDate` parses it with `new Date(value)`. For negative-offset timezones (e.g., America/Los_Angeles), `new Date('YYYY-MM-DD')` resolves to UTC midnight and shifts the local date to the previous day. That makes "today/tomorrow/this-week" expansions off by one for users outside UTC+.
+
+**How to fix**: Avoid parsing date-only strings via `new Date(value)`. Prefer one of:
+- In `normalizeActions` options, pass a real Date object (e.g., the raw `now` used by the context builder) and keep the `currentDate` string only for AX.
+- Or update `_getNowComponents` to detect `YYYY-MM-DD` strings and parse year/month/day directly, computing `dayOfWeek` from those components without timezone shifting. Then use those components to build `baseDate` for due-date expansion.
+
+This is a correctness issue for any user who sets `USER_TIMEZONE` to a negative offset.
+
+
 ## Activity Log
 
 - 2026-03-11T17:18:05Z - system - lane=planned - Prompt created.
 - 2026-03-11T18:06:51Z – Codex – shell_pid=23616 – lane=doing – Assigned agent via workflow command
 - 2026-03-11T18:16:23Z – Codex – shell_pid=23616 – lane=for_review – Ready for review: added canonical pipeline context builder with validation and aligned AX/normalizer inputs
 - 2026-03-11T18:17:12Z – Codex – shell_pid=12216 – lane=doing – Started review via workflow command
+- 2026-03-11T18:20:22Z – Codex – shell_pid=12216 – lane=planned – Moved to planned
