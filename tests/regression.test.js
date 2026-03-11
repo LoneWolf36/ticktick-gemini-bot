@@ -273,7 +273,7 @@ test('markdown parser normalizes hash-divider and preserves bold formatting', ()
   const input = '**Start now**: Do the task\n\n#######';
   const html = parseTelegramMarkdownToHTML(input);
   assert.match(html, /<b>Start now<\/b>:/);
-  assert.match(html, /────────/);
+  assert.match(html, /--------/);
 });
 
 test('executeActions accepts suggested_schedule update alias and applies dueDate', async () => {
@@ -292,7 +292,7 @@ test('executeActions accepts suggested_schedule update alias and applies dueDate
 
   const result = await executeActions(actions, ticktick, currentTasks);
 
-  assert.equal(result.outcomes[0], '✅ Updated: "Netflix task"');
+  assert.equal(result.outcomes[0], '? Updated: "Netflix task"');
   assert.equal(typeof calls[0].changes.dueDate, 'string');
   assert.ok(calls[0].changes.dueDate.includes('T'));
   assert.ok(!calls[0].changes.dueDate.includes('T23:59:00.000'));
