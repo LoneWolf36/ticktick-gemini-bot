@@ -154,10 +154,10 @@
 **Requirement Refs**: FR-007, FR-008, FR-009, SC-002, SC-004
 
 ### Included Subtasks
-- [ ] T013 Introduce per-action execution records and rollback-step capture in `services/pipeline.js` for `create`, `update`, `complete`, and `delete` operations.
-- [ ] T014 Implement retry-once then rollback orchestration above `TickTickAdapter`, including pre-write snapshots or compensating payload capture for prior successful actions.
-- [ ] T015 Classify rollback outcomes explicitly, including the case where rollback itself partially fails, and surface a deterministic partial-failure summary.
-- [ ] T016 Add structured observability helpers or hooks that emit request-correlated logs, metrics, and tracing scaffolding for request start, AX, normalization, execution, rollback, and terminal result.
+- [x] T013 Introduce per-action execution records and rollback-step capture in `services/pipeline.js` for `create`, `update`, `complete`, and `delete` operations.
+- [x] T014 Implement retry-once then rollback orchestration above `TickTickAdapter`, including pre-write snapshots or compensating payload capture for prior successful actions.
+- [x] T015 Classify rollback outcomes explicitly, including the case where rollback itself partially fails, and surface a deterministic partial-failure summary.
+- [x] T016 Add structured observability helpers or hooks that emit request-correlated logs, metrics, and tracing scaffolding for request start, AX, normalization, execution, rollback, and terminal result.
 
 ### Implementation Notes
 - Do not bypass `services/ticktick-adapter.js`; rollback must use compensating adapter calls.
