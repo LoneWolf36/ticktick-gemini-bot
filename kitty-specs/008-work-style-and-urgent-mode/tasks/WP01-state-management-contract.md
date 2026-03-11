@@ -1,29 +1,23 @@
 ---
-work_package_id: WP01
-title: State Management Contract
-lane: planned
-dependencies: []
+work_package_id: "WP01"
 subtasks:
-- T001
-- T002
-- T003
-phase: Phase 1 - Foundation
-assignee: ''
-agent: ''
-shell_pid: ''
-review_status: ''
-reviewed_by: ''
+  - "T001"
+  - "T002"
+  - "T003"
+title: "State Management Contract"
+phase: "Phase 1 - Foundation"
+lane: "planned"  # DO NOT EDIT - use: spec-kitty agent tasks move-task <WPID> --to <lane>
+assignee: ""      # Optional friendly name when in doing/for_review
+agent: ""         # CLI agent identifier (claude, codex, etc.)
+shell_pid: ""     # PID captured when the task moved to the current lane
+review_status: "" # empty | has_feedback | acknowledged (populated by reviewers/implementers)
+reviewed_by: ""   # Agent ID of the reviewer (if reviewed)
 history:
-- timestamp: '2026-03-11T05:44:14Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
-requirement_refs:
-- FR-001
-- FR-002
-- FR-005
-- FR-011
+  - timestamp: "2026-03-11T05:44:14Z"
+    lane: "planned"
+    agent: "system"
+    shell_pid: ""
+    action: "Prompt generated via /spec-kitty.tasks"
 ---
 
 # Work Package Prompt: WP01 – State Management Contract

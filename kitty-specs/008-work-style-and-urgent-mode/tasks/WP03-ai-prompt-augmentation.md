@@ -1,32 +1,23 @@
 ---
-work_package_id: WP03
-title: AI Prompt Augmentation
-lane: planned
-dependencies:
-- WP01
+work_package_id: "WP03"
 subtasks:
-- T007
-- T008
-- T009
-phase: Phase 2 - Parallel Execution
-assignee: ''
-agent: ''
-shell_pid: ''
-review_status: ''
-reviewed_by: ''
+  - "T007"
+  - "T008"
+  - "T009"
+title: "AI Prompt Augmentation"
+phase: "Phase 2 - Parallel Execution"
+lane: "planned"  # DO NOT EDIT - use: spec-kitty agent tasks move-task <WPID> --to <lane>
+assignee: ""      # Optional friendly name when in doing/for_review
+agent: ""         # CLI agent identifier (claude, codex, etc.)
+shell_pid: ""     # PID captured when the task moved to the current lane
+review_status: "" # empty | has_feedback | acknowledged (populated by reviewers/implementers)
+reviewed_by: ""   # Agent ID of the reviewer (if reviewed)
 history:
-- timestamp: '2026-03-11T05:44:14Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
-requirement_refs:
-- FR-004
-- FR-009
-- FR-010
-- FR-012
-- FR-013
-- FR-014
+  - timestamp: "2026-03-11T05:44:14Z"
+    lane: "planned"
+    agent: "system"
+    shell_pid: ""
+    action: "Prompt generated via /spec-kitty.tasks"
 ---
 
 # Work Package Prompt: WP03 – AI Prompt Augmentation

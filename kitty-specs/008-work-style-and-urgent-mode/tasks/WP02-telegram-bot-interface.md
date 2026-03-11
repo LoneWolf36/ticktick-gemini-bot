@@ -1,28 +1,23 @@
 ---
-work_package_id: WP02
-title: Telegram Bot Interface
-lane: planned
-dependencies:
-- WP01
+work_package_id: "WP02"
 subtasks:
-- T004
-- T005
-- T006
-phase: Phase 2 - Parallel Execution
-assignee: ''
-agent: ''
-shell_pid: ''
-review_status: ''
-reviewed_by: ''
+  - "T004"
+  - "T005"
+  - "T006"
+title: "Telegram Bot Interface"
+phase: "Phase 2 - Parallel Execution"
+lane: "planned"  # DO NOT EDIT - use: spec-kitty agent tasks move-task <WPID> --to <lane>
+assignee: ""      # Optional friendly name when in doing/for_review
+agent: ""         # CLI agent identifier (claude, codex, etc.)
+shell_pid: ""     # PID captured when the task moved to the current lane
+review_status: "" # empty | has_feedback | acknowledged (populated by reviewers/implementers)
+reviewed_by: ""   # Agent ID of the reviewer (if reviewed)
 history:
-- timestamp: '2026-03-11T05:44:14Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
-requirement_refs:
-- FR-003
-- FR-005
+  - timestamp: "2026-03-11T05:44:14Z"
+    lane: "planned"
+    agent: "system"
+    shell_pid: ""
+    action: "Prompt generated via /spec-kitty.tasks"
 ---
 
 # Work Package Prompt: WP02 – Telegram Bot Interface
