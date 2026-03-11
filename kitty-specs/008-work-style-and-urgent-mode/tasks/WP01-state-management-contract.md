@@ -1,7 +1,7 @@
 ---
 work_package_id: WP01
 title: State Management Contract
-lane: "doing"
+lane: "for_review"
 dependencies: []
 base_branch: master
 base_commit: 50c1642627d0e5fa1fc224c01c79180363d207a8
@@ -112,3 +112,4 @@ Use language identifiers in code blocks: ````python`, ````bash`
 
 - 2026-03-11T05:44:14Z – system – lane=planned – Prompt created.
 - 2026-03-11T13:21:42Z – codex – shell_pid=26716 – lane=doing – Assigned agent via workflow command
+- 2026-03-11T13:27:40Z – codex – shell_pid=26716 – lane=for_review – Ready for review: added urgent mode Redis contract, default false fallback, and regression coverage
