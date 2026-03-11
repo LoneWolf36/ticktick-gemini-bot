@@ -16,9 +16,9 @@ description: "Work package task list template for feature implementation"
 **Requirements Refs**: FR-001, FR-002, FR-005, FR-011
 
 ### Included Subtasks
-- [ ] T001 Implement `getUrgentMode(userId)` in `services/store.js` with default fallback.
-- [ ] T002 Implement `setUrgentMode(userId, boolean)` in `services/store.js`.
-- [ ] T003 Update Redis schema/documentation in `store.js` comments.
+- [x] T001 Implement `getUrgentMode(userId)` in `services/store.js` with default fallback.
+- [x] T002 Implement `setUrgentMode(userId, boolean)` in `services/store.js`.
+- [x] T003 Update Redis schema/documentation in `store.js` comments.
 
 ### Implementation Notes
 - Modify `services/store.js` to add the new getter and setter methods.
