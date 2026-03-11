@@ -87,9 +87,9 @@
 **Requirement Refs**: FR-003, FR-004, FR-007, FR-010, SC-002, SC-003
 
 ### Included Subtasks
-- [ ] T009 Reshape `services/pipeline.js` result handling so malformed AX output, empty intent lists, validation failures, quota exhaustion, adapter failures, and unexpected exceptions map to explicit failure classes instead of one broad catch-all.
-- [ ] T010 Integrate configured-key rotation and quota exhaustion behavior across `services/ax-intent.js`, `services/gemini.js`, and `services/pipeline.js` so the pipeline tries another configured key before surfacing a quota failure.
-- [ ] T011 Implement failure-message rendering that keeps end-user responses compact by failure class while preserving detailed diagnostics in development mode.
+- [x] T009 Reshape `services/pipeline.js` result handling so malformed AX output, empty intent lists, validation failures, quota exhaustion, adapter failures, and unexpected exceptions map to explicit failure classes instead of one broad catch-all.
+- [x] T010 Integrate configured-key rotation and quota exhaustion behavior across `services/ax-intent.js`, `services/gemini.js`, and `services/pipeline.js` so the pipeline tries another configured key before surfacing a quota failure.
+- [x] T011 Implement failure-message rendering that keeps end-user responses compact by failure class while preserving detailed diagnostics in development mode.
 
 ### Implementation Notes
 - Preserve request context when rotating keys; do not lose the original message, request ID, or entry-point metadata.
