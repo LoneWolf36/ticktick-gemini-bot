@@ -240,6 +240,27 @@ function goalAlignmentWeight(themeMatches) {
     return 34 + orderBoost;
 }
 
+function urgentModeWeight(candidate, urgency, context) {
+    if (context.urgentMode !== true) return 0;
+
+    let boost = 0;
+    if (urgency === 'high') {
+        boost += 70;
+    } else if (urgency === 'medium') {
+        boost += 24;
+    }
+
+    if (candidate.priority === 5) {
+        boost += 10;
+    } else if (candidate.priority === 3) {
+        boost += 6;
+    } else if (candidate.priority === 1 && urgency !== 'low') {
+        boost += 4;
+    }
+
+    return boost;
+}
+
 function buildRationaleText(rationaleCode, candidate, themeMatches) {
     if (rationaleCode === 'goal_alignment') {
         const hasCareer = themeMatches.some((theme) => theme.kind === 'career');
@@ -313,6 +334,11 @@ function assessCandidate(candidate, context) {
 
         if (isConsequentialAdmin(candidate)) {
             score += 12;
+        }
+
+        score += urgentModeWeight(candidate, urgency, context);
+        if (context.urgentMode === true && rationaleCode === 'fallback' && urgency !== 'low') {
+            rationaleCode = 'urgency';
         }
     }
 

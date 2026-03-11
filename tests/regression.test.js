@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 
 import { parseTelegramMarkdownToHTML } from '../bot/utils.js';
 import { executeActions } from '../bot/commands.js';
-import { GeminiAnalyzer } from '../services/gemini.js';
+import { GeminiAnalyzer, buildUrgentModePromptNote } from '../services/gemini.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
 import {
   buildRankingContext,
@@ -206,6 +206,12 @@ test('GeminiAnalyzer briefing preparation uses shared ranking outputs', () => {
   assert.equal(prepared.ranking.topRecommendation.taskId, 'task-career');
   assert.equal(prepared.orderedTasks[0].id, 'task-career');
   assert.equal(prepared.ranking.ranked[0].rationaleCode, 'goal_alignment');
+});
+
+test('GeminiAnalyzer builds an urgent mode prompt note only when urgent mode is active', () => {
+  assert.match(buildUrgentModePromptNote(true), /URGENT MODE is active/i);
+  assert.match(buildUrgentModePromptNote(true), /direct, sharp language/i);
+  assert.equal(buildUrgentModePromptNote(false), '');
 });
 
 test('GeminiAnalyzer fallback reorg routes recovery inbox work into Health', () => {
@@ -615,6 +621,41 @@ test('execution prioritization elevates urgent maintenance with explicit excepti
   assert.equal(result.topRecommendation.exceptionApplied, true);
   assert.equal(result.topRecommendation.exceptionReason, 'urgent_requirement');
   assert.equal(result.topRecommendation.rationaleCode, 'urgency');
+});
+
+test('execution prioritization boosts urgent tasks ahead of long-term deep work when urgent mode is active', () => {
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-deep-work',
+      title: 'Prepare backend system design interview notes',
+      projectId: 'career',
+      projectName: 'Career',
+      priority: 5,
+      status: 0,
+    }),
+    normalizePriorityCandidate({
+      id: 'task-urgent-admin',
+      title: 'Submit passport paperwork today',
+      projectId: 'admin',
+      projectName: 'Admin',
+      dueDate: '2026-03-10',
+      status: 0,
+    }),
+  ];
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile(`GOALS:
+1. Land a senior backend role`, { source: 'user_context' }),
+    nowIso: '2026-03-10T10:00:00Z',
+    urgentMode: true,
+    workStyleMode: 'humane',
+    stateSource: 'store',
+  });
+
+  const result = rankPriorityCandidatesForTest(candidates, context);
+
+  assert.equal(result.topRecommendation.taskId, 'task-urgent-admin');
+  assert.equal(result.context.urgentMode, true);
+  assert.equal(result.context.workStyleMode, 'humane');
 });
 
 test('execution prioritization elevates recovery work when it protects execution capacity', () => {
