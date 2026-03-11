@@ -102,11 +102,12 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                     });
 
                     if (result.type === 'error') {
-                        if (result.errors.some(e => e.includes('QUOTA_EXHAUSTED') || e.includes('All API keys exhausted') || e.includes('quota'))) {
+                        if (result.failure?.class === 'quota') {
                             throw new Error('QUOTA_EXHAUSTED');
                         }
-                        await store.markTaskFailed(task.id, result.errors.join(', '));
-                        console.error(`  ❌ Failed: "${task.title}": ${result.errors.join(', ')}`);
+                        const reason = result.failure?.summary || result.confirmationText || result.errors.join(', ') || 'Pipeline failed';
+                        await store.markTaskFailed(task.id, reason);
+                        console.error(`  ❌ Failed: "${task.title}": ${reason}`);
                     } else if (result.type === 'task') {
                         await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: true });
                         for (const action of result.actions) {

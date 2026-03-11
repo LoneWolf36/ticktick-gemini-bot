@@ -1,9 +1,92 @@
 /**
  * services/pipeline.js
- * Orchestrates the full task processing flow: 
+ * Orchestrates the full task processing flow:
  * Message -> AX Intent Extraction -> Normalization -> TickTick Adapter Execution
  */
 import { createPipelineContextBuilder } from './pipeline-context.js';
+import { QuotaExhaustedError } from './ax-intent.js';
+
+const FAILURE_CLASSES = {
+    QUOTA: 'quota',
+    MALFORMED_AX: 'malformed_ax',
+    VALIDATION: 'validation',
+    ADAPTER: 'adapter',
+    ROLLBACK: 'rollback',
+    UNEXPECTED: 'unexpected',
+};
+
+const NON_TASK_REASONS = {
+    EMPTY_INTENTS: 'empty_intents',
+};
+
+const USER_FAILURE_MESSAGES = {
+    [FAILURE_CLASSES.QUOTA]: '⚠️ AI quota exhausted. Try again shortly.',
+    [FAILURE_CLASSES.MALFORMED_AX]: '⚠️ I could not understand that request. Please rephrase.',
+    [FAILURE_CLASSES.VALIDATION]: '⚠️ I could not validate the task details. Please clarify and retry.',
+    [FAILURE_CLASSES.ADAPTER]: '⚠️ Task updates failed. Please retry shortly.',
+    [FAILURE_CLASSES.ROLLBACK]: '⚠️ Task updates partially failed. Please check your tasks.',
+    [FAILURE_CLASSES.UNEXPECTED]: '⚠️ An unexpected error occurred while processing your request.',
+};
+
+function resolveDevMode(context) {
+    const mode = (context?.mode || '').toLowerCase();
+    if (['dev', 'development', 'debug', 'diagnostic', 'test'].includes(mode)) return true;
+    return process.env.NODE_ENV !== 'production';
+}
+
+function buildFailureResult(context, { failureClass, stage, summary, error, details }) {
+    const isDevMode = resolveDevMode(context);
+    const diagnostics = [];
+
+    if (summary) diagnostics.push(summary);
+    if (error?.message) diagnostics.push(error.message);
+    if (details?.diagnostics && Array.isArray(details.diagnostics)) {
+        diagnostics.push(...details.diagnostics);
+    }
+
+    return {
+        type: 'error',
+        failure: {
+            class: failureClass,
+            stage,
+            summary: summary || null,
+            details: details || null,
+        },
+        confirmationText: USER_FAILURE_MESSAGES[failureClass] || USER_FAILURE_MESSAGES[FAILURE_CLASSES.UNEXPECTED],
+        errors: isDevMode ? diagnostics : [],
+        diagnostics: isDevMode ? diagnostics : [],
+        requestId: context?.requestId || null,
+        entryPoint: context?.entryPoint || null,
+        mode: context?.mode || null,
+        isDevMode,
+    };
+}
+
+function buildNonTaskResult(context, reason, details = null) {
+    return {
+        type: 'non-task',
+        results: [],
+        errors: [],
+        confirmationText: 'Got it — no actionable tasks detected.',
+        nonTaskReason: reason,
+        nonTaskDetails: details,
+        requestId: context?.requestId || null,
+        entryPoint: context?.entryPoint || null,
+        mode: context?.mode || null,
+    };
+}
+
+function isQuotaFailure(error) {
+    if (!error) return false;
+    if (error instanceof QuotaExhaustedError) return true;
+    const msg = error.message || '';
+    return msg.includes('QUOTA_EXHAUSTED') || msg.includes('quota') || msg.includes('All API keys exhausted');
+}
+
+function isMalformedIntentPayload(intents) {
+    if (!Array.isArray(intents)) return true;
+    return intents.some(intent => !intent || typeof intent !== 'object' || Array.isArray(intent));
+}
 
 export function createPipeline({ axIntent, normalizer, adapter }) {
     const contextBuilder = createPipelineContextBuilder({ adapter });
@@ -14,8 +97,10 @@ export function createPipeline({ axIntent, normalizer, adapter }) {
      * @param {Object} options - Context options like existingTask, entryPoint, mode
      */
     async function processMessage(userMessage, options = {}) {
+        let context;
+
         try {
-            const context = await contextBuilder.buildRequestContext(userMessage, options);
+            context = await contextBuilder.buildRequestContext(userMessage, options);
             console.log(`[Pipeline:${context.requestId}] Processing message: "${context.userMessage.substring(0, 50)}..."`);
 
             // Phase 1: Intent Extraction (AX)
@@ -25,12 +110,25 @@ export function createPipeline({ axIntent, normalizer, adapter }) {
 
             const intents = await axIntent.extractIntents(context.userMessage, {
                 currentDate: context.currentDate,
-                availableProjects: availableProjectNames
+                availableProjects: availableProjectNames,
+                requestId: context.requestId,
             });
+
+            if (isMalformedIntentPayload(intents)) {
+                console.warn(`[Pipeline:${context.requestId}] Malformed AX output.`);
+                return buildFailureResult(context, {
+                    failureClass: FAILURE_CLASSES.MALFORMED_AX,
+                    stage: 'ax',
+                    summary: 'Malformed AX output.',
+                    details: {
+                        receivedType: Array.isArray(intents) ? 'array' : typeof intents,
+                    },
+                });
+            }
 
             if (!intents || intents.length === 0) {
                 console.log(`[Pipeline:${context.requestId}] No intents extracted. Routing as non-task.`);
-                return { type: 'non-task', results: [], errors: [] };
+                return buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS);
             }
 
             // Phase 2: Normalization
@@ -56,13 +154,36 @@ export function createPipeline({ axIntent, normalizer, adapter }) {
                 console.warn(`[Pipeline:${context.requestId}] Filtered out ${invalidActions.length} invalid actions:`, invalidActions.map(a => a.validationErrors));
             }
 
+            if (validActions.length === 0 && invalidActions.length > 0) {
+                return buildFailureResult(context, {
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    stage: 'normalize',
+                    summary: 'All intents failed validation.',
+                    details: {
+                        validationErrors: invalidActions.map(a => a.validationErrors),
+                    },
+                });
+            }
+
             if (validActions.length === 0) {
-                console.log(`[Pipeline:${context.requestId}] All intents failed validation. Routing as non-task.`);
-                return { type: 'non-task', results: [], errors: ['All actions failed validation.'] };
+                return buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS, {
+                    note: 'No valid actions after normalization.',
+                });
             }
 
             // Phase 3: Execution (Adapter)
             const executionResult = await _executeActions(validActions, adapter, context.requestId);
+
+            if (executionResult.failureCount > 0 && executionResult.successCount === 0) {
+                return buildFailureResult(context, {
+                    failureClass: FAILURE_CLASSES.ADAPTER,
+                    stage: 'adapter',
+                    summary: 'All adapter actions failed.',
+                    details: {
+                        failures: executionResult.failures,
+                    },
+                });
+            }
 
             // Merge execution errors with validation errors if we want to report them
             const allErrors = [
@@ -78,16 +199,35 @@ export function createPipeline({ axIntent, normalizer, adapter }) {
                 actions: validActions,
                 results: executionResult.results,
                 errors: allErrors,
-                confirmationText
+                confirmationText,
+                requestId: context.requestId,
+                entryPoint: context.entryPoint,
+                mode: context.mode,
+                warnings: invalidActions.map(a => a.validationErrors).flat(),
             };
 
         } catch (error) {
+            let failureClass = FAILURE_CLASSES.UNEXPECTED;
+            let stage = 'pipeline';
+            let summary = 'Unhandled pipeline error.';
+
+            if (error?.code === 'PIPELINE_CONTEXT_INVALID') {
+                failureClass = FAILURE_CLASSES.VALIDATION;
+                stage = 'context';
+                summary = 'Invalid pipeline request context.';
+            } else if (isQuotaFailure(error)) {
+                failureClass = FAILURE_CLASSES.QUOTA;
+                stage = 'ax';
+                summary = 'AI quota exhausted after configured key rotation.';
+            }
             console.error('[Pipeline] Unhandled pipeline error:', error);
-            return {
-                type: 'error',
-                errors: [error.message],
-                confirmationText: '⚠️ An unexpected error occurred while processing your request.'
-            };
+
+            return buildFailureResult(context, {
+                failureClass,
+                stage,
+                summary,
+                error,
+            });
         }
     }
 
@@ -97,6 +237,8 @@ export function createPipeline({ axIntent, normalizer, adapter }) {
     async function _executeActions(actions, adapter, requestId = 'n/a') {
         const results = [];
         const errors = [];
+        const failures = [];
+        let successCount = 0;
 
         console.log(`[Pipeline:${requestId}] Executing ${actions.length} valid action(s).`);
 
@@ -120,16 +262,30 @@ export function createPipeline({ axIntent, normalizer, adapter }) {
                         throw new Error(`Unsupported action type: ${action.type}`);
                 }
                 results.push({ action, result, success: true });
+                successCount++;
                 console.log(`[Pipeline:${requestId}] ✅ ${action.type.toUpperCase()} successful: ${action.title || action.taskId}`);
             } catch (err) {
+                const message = err?.message || 'Unknown adapter failure';
                 // Graceful failure handling (FR-016)
-                console.error(`[Pipeline:${requestId}] ❌ API Failure during ${action.type}:`, err.message);
-                errors.push(`${action.type} failed: ${err.message}`);
-                results.push({ action, error: err, success: false });
+                console.error(`[Pipeline:${requestId}] ❌ API Failure during ${action.type}:`, message);
+                errors.push(`${action.type} failed: ${message}`);
+                failures.push({
+                    type: action.type,
+                    title: action.title || null,
+                    taskId: action.taskId || null,
+                    message,
+                });
+                results.push({ action, error: message, success: false });
             }
         }
 
-        return { results, errors };
+        return {
+            results,
+            errors,
+            failures,
+            successCount,
+            failureCount: failures.length,
+        };
     }
 
     /**
