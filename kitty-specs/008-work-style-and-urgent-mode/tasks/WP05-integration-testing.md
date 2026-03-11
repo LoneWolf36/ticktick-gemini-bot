@@ -1,23 +1,27 @@
 ---
-work_package_id: "WP05"
+work_package_id: WP05
+title: Integration & E2E Testing
+lane: "doing"
+dependencies: []
+base_branch: master
+base_commit: a7e40ce9ab69c2f3af0395628c36671f211e65d2
+created_at: '2026-03-11T14:33:29.547519+00:00'
 subtasks:
-  - "T013"
-  - "T014"
-  - "T015"
-title: "Integration & E2E Testing"
-phase: "Phase 3 - Integration"
-lane: "planned"  # DO NOT EDIT - use: spec-kitty agent tasks move-task <WPID> --to <lane>
-assignee: ""      # Optional friendly name when in doing/for_review
-agent: ""         # CLI agent identifier (claude, codex, etc.)
-shell_pid: ""     # PID captured when the task moved to the current lane
-review_status: "" # empty | has_feedback | acknowledged (populated by reviewers/implementers)
-reviewed_by: ""   # Agent ID of the reviewer (if reviewed)
+- T013
+- T014
+- T015
+phase: Phase 3 - Integration
+assignee: ''
+agent: ''
+shell_pid: "10544"
+review_status: ''
+reviewed_by: ''
 history:
-  - timestamp: "2026-03-11T05:44:14Z"
-    lane: "planned"
-    agent: "system"
-    shell_pid: ""
-    action: "Prompt generated via /spec-kitty.tasks"
+- timestamp: '2026-03-11T05:44:14Z'
+  lane: planned
+  agent: system
+  shell_pid: ''
+  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP05 – Integration & E2E Testing
