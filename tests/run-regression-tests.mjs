@@ -1135,6 +1135,35 @@ ACCOUNTABILITY STYLE:
   }
 
   try {
+    process.env.USER_TIMEZONE = 'America/Los_Angeles';
+    const { processMessage, adapterCalls } = createPipelineHarness({
+      intents: [
+        {
+          type: 'create',
+          title: 'Book dentist',
+          dueDate: 'today',
+          confidence: 0.9,
+        },
+      ],
+    });
+
+    const result = await processMessage('book dentist today', {
+      currentDate: '2026-03-10',
+      entryPoint: 'regression',
+      requestId: 'req-negative-offset',
+    });
+
+    assert.equal(result.type, 'task');
+    assert.equal(adapterCalls.create.length, 1);
+    assert.match(adapterCalls.create[0].dueDate, /^2026-03-10T23:59:00\.000-\d{4}$/);
+    console.log('PASS pipeline context keeps date-only currentDate stable in negative-offset timezones');
+  } catch (err) {
+    failures++;
+    console.error('FAIL pipeline context keeps date-only currentDate stable in negative-offset timezones');
+    console.error(err.message);
+  }
+
+  try {
     process.env.USER_TIMEZONE = 'Europe/Dublin';
     const { processMessage, adapterCalls } = createPipelineHarness({
       intents: [
