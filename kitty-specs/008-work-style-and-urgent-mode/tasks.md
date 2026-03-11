@@ -73,9 +73,9 @@ description: "Work package task list template for feature implementation"
 **Requirements Refs**: FR-004, FR-009, FR-010, FR-012, FR-013, FR-014, SC-001
 
 ### Included Subtasks
-- [ ] T007 [P] Fetch `urgent_mode` state before calling Gemini in `services/gemini.js`.
-- [ ] T008 [P] Inject urgent mode instructions into the system prompt (e.g., "Use direct language, prioritize high-impact tasks").
-- [ ] T009 [P] Update `services/execution-prioritization.js` to apply urgent-aware ordering logic without mutating underlying TickTick data.
+- [x] T007 [P] Fetch `urgent_mode` state before calling Gemini in `services/gemini.js`.
+- [x] T008 [P] Inject urgent mode instructions into the system prompt (e.g., "Use direct language, prioritize high-impact tasks").
+- [x] T009 [P] Update `services/execution-prioritization.js` to apply urgent-aware ordering logic without mutating underlying TickTick data.
 
 ### Implementation Notes
 - The AI prompt should explicitly instruct the model to adopt a sharper tone.
