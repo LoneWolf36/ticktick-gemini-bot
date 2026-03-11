@@ -55,14 +55,6 @@ const DAY_INDEX = {
 function _coerceDate(value, fallback = new Date()) {
     if (value instanceof Date) return value;
     if (typeof value === 'string' || typeof value === 'number') {
-        const dateOnlyMatch = value.match(/^(\d{4})-(\d{2})-(\d{2})$/);
-        if (dateOnlyMatch) {
-            return new Date(
-                parseInt(dateOnlyMatch[1], 10),
-                parseInt(dateOnlyMatch[2], 10) - 1,
-                parseInt(dateOnlyMatch[3], 10)
-            );
-        }
         const parsed = new Date(value);
         if (!Number.isNaN(parsed.getTime())) return parsed;
     }
@@ -73,6 +65,21 @@ function _coerceDate(value, fallback = new Date()) {
  * Gets local current date components formatted by the system timezone.
  */
 function _getNowComponents(timezone = 'Europe/Dublin', currentDate = new Date()) {
+    if (typeof currentDate === 'string') {
+        const dateOnlyMatch = currentDate.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+        if (dateOnlyMatch) {
+            const year = parseInt(dateOnlyMatch[1], 10);
+            const month = parseInt(dateOnlyMatch[2], 10) - 1;
+            const day = parseInt(dateOnlyMatch[3], 10);
+            return {
+                year,
+                month,
+                day,
+                dayOfWeek: new Date(year, month, day).getDay()
+            };
+        }
+    }
+
     const resolvedDate = _coerceDate(currentDate, new Date());
     const parts = new Intl.DateTimeFormat('en-CA', {
         timeZone: timezone,
