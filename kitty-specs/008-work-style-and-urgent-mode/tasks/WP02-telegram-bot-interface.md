@@ -1,7 +1,7 @@
 ---
 work_package_id: WP02
 title: Telegram Bot Interface
-lane: "doing"
+lane: "planned"
 dependencies: []
 base_branch: 008-work-style-and-urgent-mode-WP01
 base_commit: 048768441e961fd93cb481a838bec21993dfc2d2
@@ -14,8 +14,9 @@ phase: Phase 2 - Parallel Execution
 assignee: ''
 agent: "codex"
 shell_pid: "27136"
-review_status: ''
-reviewed_by: ''
+review_status: "has_feedback"
+reviewed_by: "TickTick Bot"
+review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP02.md"
 history:
 - timestamp: '2026-03-11T05:44:14Z'
   lane: planned
@@ -39,11 +40,17 @@ history:
 
 ## Review Feedback
 
-> **Populated by `/spec-kitty.review`** – Reviewers add detailed feedback here when work needs changes. Implementation must address every item listed below before returning for re-review.
+**Reviewed by**: TickTick Bot
+**Status**: ❌ Changes Requested
+**Date**: 2026-03-11
+**Feedback file**: `C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP02.md`
 
-*[This section is empty initially. Reviewers will populate it if the work is returned from review. If you see feedback here, treat each item as a must-do before completion.]*
+**Issue 1**: Natural-language urgent-mode toggles are still blocked by TickTick authentication and processed too late in the message handler. In [bot/commands.js](C:/Users/Huzefa%20Khan/Downloads/Gmail/ticktick-gemini/.worktrees/008-work-style-and-urgent-mode-WP02/bot/commands.js) the auth gate at lines 583-585 runs before urgent-mode detection at lines 617-620, so a message like `turn on urgent mode` returns `TickTick not connected yet` instead of updating the stored mode. Repro: register the `message:text` handler with `ticktick.isAuthenticated() === false` and send `turn on urgent mode`; the only reply is the TickTick auth error. Move urgent-mode detection ahead of the TickTick auth check and ahead of the `Processing...` reply so free-form toggles route to the same store-backed behavior as `/urgent`. Add regression coverage for the unauthenticated free-form path.
 
----
+**Issue 2**: WP02's declared dependencies do not match the actual code coupling. [WP02-telegram-bot-interface.md](C:/Users/Huzefa%20Khan/Downloads/Gmail/ticktick-gemini/kitty-specs/008-work-style-and-urgent-mode/tasks/WP02-telegram-bot-interface.md) declares `dependencies: []` at line 5, but the same file says it requires WP01's `store.setUrgentMode` / `store.getUrgentMode` contract at line 64 and is based on `008-work-style-and-urgent-mode-WP01` at line 6. This mismatch breaks review/merge sequencing and makes the dashboard workflow inaccurate. Update the WP metadata so the dependency graph reflects the real prerequisite.
+
+**Dependent check**: [WP05-integration-testing.md](C:/Users/Huzefa%20Khan/Downloads/Gmail/ticktick-gemini/kitty-specs/008-work-style-and-urgent-mode/tasks/WP05-integration-testing.md) is currently `planned` and explicitly requires WP02/WP03/WP04 in its prompt text (line 59). If WP05 work starts from a branch that already included the current WP02 implementation, rebase it after the fix with `cd C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\.worktrees\008-work-style-and-urgent-mode-WP05 && git rebase 008-work-style-and-urgent-mode-WP02`.
+
 
 ## Markdown Formatting
 Wrap HTML/XML tags in backticks: `` `<div>` ``, `` `<script>` ``
@@ -110,3 +117,4 @@ Use language identifiers in code blocks: ````python`, ````bash`
 - 2026-03-11T13:31:25Z – codex-wp02 – shell_pid=26188 – lane=doing – Assigned agent via workflow command
 - 2026-03-11T13:51:13Z – codex-wp02 – shell_pid=26188 – lane=for_review – Ready for review: added /urgent command, natural-language toggle detection, and regression coverage
 - 2026-03-11T14:06:58Z – codex – shell_pid=27136 – lane=doing – Started review via workflow command
+- 2026-03-11T14:09:51Z – codex – shell_pid=27136 – lane=planned – Moved to planned
