@@ -1,9 +1,12 @@
 ---
 work_package_id: WP02
 title: Entry-Point Context Wiring
-lane: planned
+lane: "doing"
 dependencies:
 - WP01
+base_branch: 003-pipeline-hardening-and-regression-WP01
+base_commit: c90a6dba8b6ef9698fc24fa7c02e3ca6025f7094
+created_at: '2026-03-11T19:39:14.294528+00:00'
 subtasks:
 - T005
 - T006
@@ -11,7 +14,7 @@ subtasks:
 phase: Phase 2 - Story 1 Context Wiring
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "30628"
 review_status: ''
 reviewed_by: ''
 history:
