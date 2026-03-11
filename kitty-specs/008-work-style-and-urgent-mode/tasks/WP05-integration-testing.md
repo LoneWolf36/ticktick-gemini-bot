@@ -1,8 +1,11 @@
 ---
 work_package_id: WP05
 title: Integration & E2E Testing
-lane: "doing"
-dependencies: []
+lane: "planned"
+dependencies:
+- WP02
+- WP03
+- WP04
 base_branch: master
 base_commit: a7e40ce9ab69c2f3af0395628c36671f211e65d2
 created_at: '2026-03-11T14:33:29.547519+00:00'
@@ -14,8 +17,8 @@ phase: Phase 3 - Integration
 assignee: ''
 agent: "codex"
 shell_pid: "25204"
-review_status: ''
-reviewed_by: ''
+review_status: "acknowledged"
+reviewed_by: "TickTick Bot"
 history:
 - timestamp: '2026-03-11T05:44:14Z'
   lane: planned

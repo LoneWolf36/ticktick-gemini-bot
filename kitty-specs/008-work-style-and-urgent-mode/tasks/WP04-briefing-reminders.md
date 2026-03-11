@@ -1,8 +1,9 @@
 ---
 work_package_id: WP04
 title: Briefing Reminders
-lane: "doing"
-dependencies: []
+lane: "planned"
+dependencies:
+- WP01
 base_branch: 008-work-style-and-urgent-mode-WP01
 base_commit: 048768441e961fd93cb481a838bec21993dfc2d2
 created_at: '2026-03-11T13:31:21.938800+00:00'
@@ -14,8 +15,8 @@ phase: Phase 2 - Parallel Execution
 assignee: ''
 agent: "codex"
 shell_pid: "6796"
-review_status: ''
-reviewed_by: ''
+review_status: "acknowledged"
+reviewed_by: "TickTick Bot"
 history:
 - timestamp: '2026-03-11T05:44:14Z'
   lane: planned

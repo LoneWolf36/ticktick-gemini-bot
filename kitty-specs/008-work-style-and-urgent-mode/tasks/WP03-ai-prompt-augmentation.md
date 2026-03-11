@@ -2,7 +2,8 @@
 work_package_id: WP03
 title: AI Prompt Augmentation
 lane: "planned"
-dependencies: []
+dependencies:
+- WP01
 base_branch: 008-work-style-and-urgent-mode-WP01
 base_commit: 048768441e961fd93cb481a838bec21993dfc2d2
 created_at: '2026-03-11T13:31:21.976739+00:00'
@@ -14,7 +15,7 @@ phase: Phase 2 - Parallel Execution
 assignee: ''
 agent: "codex"
 shell_pid: "14884"
-review_status: "has_feedback"
+review_status: "acknowledged"
 reviewed_by: "TickTick Bot"
 review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP03.md"
 history:
