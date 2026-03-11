@@ -1,10 +1,13 @@
 ---
 work_package_id: WP05
 title: Retry, Rollback, and Observability Hardening
-lane: planned
+lane: "doing"
 dependencies:
 - WP01
 - WP03
+base_branch: 003-pipeline-hardening-and-regression-WP05-merge-base
+base_commit: 1e390162039ac4c9bf35864ef90e45e25f225add
+created_at: '2026-03-11T20:33:26.419166+00:00'
 subtasks:
 - T013
 - T014
@@ -13,7 +16,7 @@ subtasks:
 phase: Phase 4 - Execution Hardening
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "31060"
 review_status: ''
 reviewed_by: ''
 history:
