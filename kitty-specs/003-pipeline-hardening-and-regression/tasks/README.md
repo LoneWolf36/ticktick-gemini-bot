@@ -7,10 +7,11 @@ This directory contains work package prompt files for `003-pipeline-hardening-an
 ```text
 tasks/
 |- WP01-canonical-pipeline-context-foundation.md
-|- WP02-entry-point-context-wiring-and-story-1-validation.md
+|- WP02-entry-point-context-wiring.md
 |- WP03-failure-classification-quota-semantics-and-story-2-user-messaging.md
-|- WP04-retry-rollback-and-observability-hardening.md
-|- WP05-direct-regression-harness-and-burst-concurrency-coverage.md
+|- WP04-direct-pipeline-harness-and-story-1-coverage.md
+|- WP05-retry-rollback-and-observability-hardening.md
+|- WP06-failure-rollback-and-burst-regression-finalization.md
 `- README.md
 ```
 

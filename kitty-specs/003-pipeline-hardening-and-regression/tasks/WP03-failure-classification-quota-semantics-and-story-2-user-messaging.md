@@ -8,7 +8,6 @@ subtasks:
 - T009
 - T010
 - T011
-- T012
 phase: Phase 3 - Failure Semantics
 assignee: ''
 agent: ''
@@ -41,7 +40,7 @@ Success looks like:
 - quota handling rotates to another configured key before the pipeline gives up
 - user mode gets short failure-class messaging
 - development mode retains enough detail to debug the failing stage
-- direct regression tests cover malformed AX, empty intents, validation failures, and quota rotation
+- the result envelope is stable enough that a separate regression package can lock it down without chasing formatting drift
 
 ## Context and Constraints
 
@@ -62,8 +61,6 @@ Relevant code:
 - `services/gemini.js`
 - `bot/commands.js`
 - `services/scheduler.js`
-- `tests/regression.test.js`
-- `tests/run-regression-tests.mjs`
 
 Design constraints:
 - Keep the Gemini key manager as the current rotation authority where possible.
@@ -123,32 +120,16 @@ Design constraints:
   - Avoid dumping raw stack traces into user mode.
   - If callers still append `result.errors`, ensure that behavior is compatible with the new message model or remove the duplication.
 
-### Subtask T012 - Add Story 2 failure-path regressions
-- **Purpose**: Lock in the hardened failure semantics so they cannot drift silently.
-- **Steps**:
-  1. Add tests for malformed AX output that prove the pipeline fails safely.
-  2. Add tests for empty intent lists and validation failure behavior.
-  3. Add tests proving configured-key rotation happens before final quota failure.
-  4. Assert failure class plus message-shape behavior rather than brittle full error paragraphs.
-- **Files**:
-  - `tests/regression.test.js`
-  - `tests/run-regression-tests.mjs`
-- **Parallel**: Yes, once the public result shape is stable.
-- **Notes**:
-  - Prefer direct pipeline doubles over calling unrelated legacy helpers.
-  - Use exact dates or injected now-values where needed for deterministic assertions.
-
 ## Test Strategy
 
-- Required direct regressions:
-  - malformed AX output
-  - empty or missing intents
-  - validation failure
-  - configured-key rotation before final quota failure
-- Prefer mocked doubles for:
-  - AX extraction
-  - key-rotation behavior
-  - adapter writes
+- Keep implementation deterministic enough for WP06 to add:
+  - malformed AX regressions
+  - empty or missing intent regressions
+  - validation failure regressions
+  - configured-key rotation regressions
+- Preferred local verification during this package:
+  - targeted unit or direct pipeline checks near the touched modules if needed
+  - request/response spot checks in development mode for message-shape consistency
 
 Verification commands:
 - `node tests/run-regression-tests.mjs`
@@ -168,8 +149,9 @@ Verification commands:
 - Verify each major failure mode maps to an explicit class.
 - Verify the pipeline does not report quota failure until all configured keys are exhausted for that request.
 - Verify user mode and dev mode message shapes differ intentionally and safely.
-- Verify direct tests cover the classified failure envelope rather than legacy helper behavior.
+- Verify the returned failure envelope is stable enough for downstream regression packages to assert without reinterpreting caller-local strings.
 
 ## Activity Log
 
 - 2026-03-11T17:18:05Z - system - lane=planned - Prompt created.
+- 2026-03-11T17:50:00Z - codex - lane=planned - Restructured to keep Story 2 regression closure in WP06 and improve parallel execution.
