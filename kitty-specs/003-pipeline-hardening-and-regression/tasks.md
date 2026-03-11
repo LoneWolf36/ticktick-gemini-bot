@@ -188,11 +188,11 @@
 **Requirement Refs**: FR-003, FR-004, FR-005, FR-006, FR-007, FR-010, SC-002, SC-003, SC-004, SC-005
 
 ### Included Subtasks
-- [ ] T012 Add direct regression coverage for malformed AX output, empty intents, validation failures, and key-rotation-before-failure quota scenarios.
-- [ ] T017 Add direct regression coverage for adapter rejection, successful rollback, rollback failure, and request-correlated observability emission.
-- [ ] T020 Add direct pipeline failure-path coverage for validation failure, malformed AX, quota rotation, adapter failure, rollback success, and rollback failure.
-- [ ] T021 Add burst-concurrency regressions for tens of concurrent mocked requests with unique request IDs, isolated results, and deterministic contract assertions.
-- [ ] T022 Update any pipeline test doubles or validation notes in `tests/e2e-live-ticktick.mjs`, `tests/e2e-live-checklist.mjs`, and feature docs so future implementers can run the hardened regression scope without rediscovering the contract.
+- [x] T012 Add direct regression coverage for malformed AX output, empty intents, validation failures, and key-rotation-before-failure quota scenarios.
+- [x] T017 Add direct regression coverage for adapter rejection, successful rollback, rollback failure, and request-correlated observability emission.
+- [x] T020 Add direct pipeline failure-path coverage for validation failure, malformed AX, quota rotation, adapter failure, rollback success, and rollback failure.
+- [x] T021 Add burst-concurrency regressions for tens of concurrent mocked requests with unique request IDs, isolated results, and deterministic contract assertions.
+- [x] T022 Update any pipeline test doubles or validation notes in `tests/e2e-live-ticktick.mjs`, `tests/e2e-live-checklist.mjs`, and feature docs so future implementers can run the hardened regression scope without rediscovering the contract.
 
 ### Implementation Notes
 - Keep live API scripts opt-in; the required regression coverage should remain mocked and deterministic.
