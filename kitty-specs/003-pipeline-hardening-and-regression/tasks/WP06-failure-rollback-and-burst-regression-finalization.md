@@ -1,7 +1,7 @@
 ---
 work_package_id: WP06
 title: Failure, Rollback, and Burst Regression Finalization
-lane: "doing"
+lane: "planned"
 dependencies:
 - WP03
 - WP04
@@ -19,8 +19,9 @@ phase: Phase 5 - Regression Hardening
 assignee: ''
 agent: "Codex"
 shell_pid: "15804"
-review_status: ''
-reviewed_by: ''
+review_status: "has_feedback"
+reviewed_by: "TickTick Bot"
+review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP06.md"
 history:
 - timestamp: '2026-03-11T17:50:00Z'
   lane: planned
@@ -174,9 +175,33 @@ Optional follow-up only if helpful:
 - Verify the burst test is mocked, bounded, and deterministic.
 - Verify live-script assumptions stay compatible with the hardened result envelope.
 
+## Review Feedback
+
+**Reviewed by**: TickTick Bot
+**Status**: ❌ Changes Requested
+**Date**: 2026-03-11
+**Feedback file**: `C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP06.md`
+
+**Issue 1 (blocking)**: `WP05` is declared as a dependency in `kitty-specs/003-pipeline-hardening-and-regression/tasks/WP06-failure-rollback-and-burst-regression-finalization.md`, but `WP05` is not merged into `master` yet.
+
+Evidence:
+- `git branch --merged master` includes `003-pipeline-hardening-and-regression-WP03` and `003-pipeline-hardening-and-regression-WP04`, but not `003-pipeline-hardening-and-regression-WP05`.
+- `git log master..HEAD --oneline` for the WP06 review branch includes `689d766 feat(WP05): add pipeline rollback and observability`, so the WP06 review diff is contaminated by dependency work rather than being isolated to WP06.
+
+Why this blocks approval:
+- The review workflow requires all declared dependencies to be merged to the target branch before approving the dependent WP.
+- Until `WP05` is merged, this review cannot confirm that WP06 is a clean convergence package on top of the current target branch.
+
+How to fix:
+1. Merge `WP05` into `master`.
+2. Rebase or recreate the `WP06` review branch/worktree on top of updated `master` so `git log master..HEAD` contains only WP06-specific review scope.
+3. Re-run the WP06 review after that.
+
+
 ## Activity Log
 
 - 2026-03-11T17:50:00Z - codex - lane=planned - Prompt created.
 - 2026-03-11T22:23:04Z – Codex – shell_pid=30416 – lane=doing – Assigned agent via workflow command
 - 2026-03-11T22:27:56Z – Codex – shell_pid=30416 – lane=for_review – Ready for review: finalized direct failure-path, rollback, telemetry, and burst-concurrency regressions; updated pipeline harness and live doubles for hardened result compatibility.
 - 2026-03-11T22:30:58Z – Codex – shell_pid=15804 – lane=doing – Started review via workflow command
+- 2026-03-11T22:32:05Z – Codex – shell_pid=15804 – lane=planned – Moved to planned
