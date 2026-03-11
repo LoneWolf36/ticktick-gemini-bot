@@ -91,6 +91,32 @@ async function run() {
     console.error(err.message);
   }
 
+  try {
+    const storeSource = readFileSync('services/store.js', 'utf8');
+    assert.ok(storeSource.includes('user:{userId}:urgent_mode'));
+    console.log('PASS store schema documents per-user urgent mode key');
+  } catch (err) {
+    failures++;
+    console.error('FAIL store schema documents per-user urgent mode key');
+    console.error(err.message);
+  }
+
+  try {
+    const store = await import('../services/store.js');
+    const userId = `regression-urgent-mode-${Date.now()}`;
+
+    assert.equal(await store.getUrgentMode(userId), false);
+    assert.equal(await store.setUrgentMode(userId, true), true);
+    assert.equal(await store.getUrgentMode(userId), true);
+    assert.equal(await store.setUrgentMode(userId, false), false);
+    assert.equal(await store.getUrgentMode(userId), false);
+    console.log('PASS urgent mode store defaults to false and persists boolean toggles');
+  } catch (err) {
+    failures++;
+    console.error('FAIL urgent mode store defaults to false and persists boolean toggles');
+    console.error(err.message);
+  }
+
 
 
   try {
