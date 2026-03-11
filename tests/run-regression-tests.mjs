@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseTelegramMarkdownToHTML, containsSensitiveContent, buildTickTickUpdate, scheduleToDateTime } from '../bot/utils.js';
 import { executeActions, registerCommands } from '../bot/commands.js';
-import { GeminiAnalyzer } from '../services/gemini.js';
+import { GeminiAnalyzer, buildUrgentModePromptNote } from '../services/gemini.js';
 import { detectUrgentModeIntent } from '../services/ax-intent.js';
 import * as store from '../services/store.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
@@ -427,6 +427,17 @@ async function run() {
   } catch (err) {
     failures++;
     console.error('FAIL Gemini briefing preparation uses shared ranking');
+    console.error(err.message);
+  }
+
+  try {
+    assert.match(buildUrgentModePromptNote(true), /URGENT MODE is active/i);
+    assert.match(buildUrgentModePromptNote(true), /direct, sharp language/i);
+    assert.equal(buildUrgentModePromptNote(false), '');
+    console.log('PASS Gemini urgent mode prompt note is conditional');
+  } catch (err) {
+    failures++;
+    console.error('FAIL Gemini urgent mode prompt note is conditional');
     console.error(err.message);
   }
 
@@ -909,6 +920,46 @@ ACCOUNTABILITY STYLE:
   } catch (err) {
     failures++;
     console.error('FAIL execution prioritization elevates urgent maintenance');
+    console.error(err.message);
+  }
+
+  try {
+    const candidates = [
+      normalizePriorityCandidate({
+        id: 'task-deep-work',
+        title: 'Prepare backend system design interview notes',
+        projectId: 'career',
+        projectName: 'Career',
+        priority: 5,
+        status: 0,
+      }),
+      normalizePriorityCandidate({
+        id: 'task-urgent-admin',
+        title: 'Submit passport paperwork today',
+        projectId: 'admin',
+        projectName: 'Admin',
+        dueDate: '2026-03-10',
+        status: 0,
+      }),
+    ];
+    const context = buildRankingContext({
+      goalThemeProfile: createGoalThemeProfile(`GOALS:
+1. Land a senior backend role`, { source: 'user_context' }),
+      nowIso: '2026-03-10T10:00:00Z',
+      urgentMode: true,
+      workStyleMode: 'humane',
+      stateSource: 'store',
+    });
+
+    const result = rankPriorityCandidatesForTest(candidates, context);
+
+    assert.equal(result.topRecommendation.taskId, 'task-urgent-admin');
+    assert.equal(result.context.urgentMode, true);
+    assert.equal(result.context.workStyleMode, 'humane');
+    console.log('PASS execution prioritization boosts urgent tasks when urgent mode is active');
+  } catch (err) {
+    failures++;
+    console.error('FAIL execution prioritization boosts urgent tasks when urgent mode is active');
     console.error(err.message);
   }
 

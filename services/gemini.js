@@ -5,6 +5,7 @@ import { existsSync } from 'fs';
 import path from 'path';
 import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from '../bot/utils.js';
 import { reorgSchema } from './schemas.js';
+import * as store from './store.js';
 import {
     createGoalThemeProfile,
     inferPriorityValueFromTask,
@@ -142,6 +143,11 @@ Output constraints:
 - Return compact plain JSON only (no markdown, no code fences, no prose).
 `;
 
+export function buildUrgentModePromptNote(urgentMode = false) {
+    if (urgentMode !== true) return '';
+    return 'URGENT MODE is active. Use direct, sharp language. Prioritize immediate, high-impact tasks. Do not soften your tone.';
+}
+
 export class GeminiAnalyzer {
     constructor(apiKeys) {
         const keys = Array.isArray(apiKeys) ? apiKeys : [apiKeys];
@@ -182,6 +188,29 @@ export class GeminiAnalyzer {
         }
 
         return { goalThemeProfile, ranking, orderedTasks };
+    }
+
+    async _resolveRecommendationState(options = {}) {
+        const workStyleMode = options.workStyleMode || 'humane';
+        if (options.urgentMode === true || options.urgentMode === false) {
+            return {
+                workStyleMode,
+                urgentMode: options.urgentMode,
+                stateSource: options.stateSource || 'explicit',
+            };
+        }
+
+        const userId = options.userId ?? options.chatId ?? store.getChatId();
+        if (userId == null) {
+            return { workStyleMode, urgentMode: false, stateSource: 'default' };
+        }
+
+        try {
+            const urgentMode = await store.getUrgentMode(userId);
+            return { workStyleMode, urgentMode, stateSource: 'store' };
+        } catch {
+            return { workStyleMode, urgentMode: false, stateSource: 'default' };
+        }
     }
 
     _initModelsForActiveKey() {
@@ -430,8 +459,12 @@ export class GeminiAnalyzer {
 
     // ─── Generate daily briefing ──────────────────────────────
 
-    async generateDailyBriefing(tasks) {
-        const { ranking, orderedTasks } = this._prepareBriefingTasks(tasks);
+    async generateDailyBriefing(tasks, options = {}) {
+        const recommendationState = await this._resolveRecommendationState(options);
+        const { ranking, orderedTasks } = this._prepareBriefingTasks(tasks, {
+            ...options,
+            ...recommendationState,
+        });
         const rankedPreview = ranking.ranked
             .slice(0, 3)
             .map((decision, index) => {
@@ -451,15 +484,17 @@ export class GeminiAnalyzer {
             .join('\n');
 
         const today = userTodayFormatted();
+        const urgentModePromptNote = buildUrgentModePromptNote(recommendationState.urgentMode);
 
-        const prompt = `Today is ${today}.\n\nShared priority guidance:\n${rankedPreview || 'No ranked guidance available.'}\n\nActive tasks (${orderedTasks.length} total):\n${taskList}`;
+        const prompt = `${urgentModePromptNote ? `${urgentModePromptNote}\n\n` : ''}Today is ${today}.\n\nShared priority guidance:\n${rankedPreview || 'No ranked guidance available.'}\n\nActive tasks (${orderedTasks.length} total):\n${taskList}`;
         const result = await this._generateWithFailover(() => this.briefingModel, prompt, { transientBaseMs: 15 });
         return result.response.text().trim();
     }
 
     // ─── Generate weekly digest ───────────────────────────────
 
-    async generateWeeklyDigest(allTasks, processedThisWeek) {
+    async generateWeeklyDigest(allTasks, processedThisWeek, options = {}) {
+        const recommendationState = await this._resolveRecommendationState(options);
         const taskList = allTasks
             .map((t, i) => `${i + 1}. "${t.title}" [${t.projectName || 'Inbox'}]`)
             .join('\n');
@@ -468,15 +503,17 @@ export class GeminiAnalyzer {
             .map(([_, d]) => formatProcessedTask(d))
             .join('\n');
 
-        const prompt = `Current active tasks (${allTasks.length}):\n${taskList}\n\nTasks analyzed this week:\n${processed || 'None'}`;
+        const urgentModePromptNote = buildUrgentModePromptNote(recommendationState.urgentMode);
+        const prompt = `${urgentModePromptNote ? `${urgentModePromptNote}\n\n` : ''}Current active tasks (${allTasks.length}):\n${taskList}\n\nTasks analyzed this week:\n${processed || 'None'}`;
         const result = await this._generateWithFailover(() => this.weeklyModel, prompt, { transientBaseMs: 15 });
         return result.response.text().trim();
     }
 
 
 
-    async generateReorgProposal(tasks = [], projects = [], refinement = null, existingActions = []) {
-        const compactTasks = this._compactReorgTasks(tasks);
+    async generateReorgProposal(tasks = [], projects = [], refinement = null, existingActions = [], options = {}) {
+        const recommendationState = await this._resolveRecommendationState(options);
+        const compactTasks = this._compactReorgTasks(tasks, recommendationState);
         const projectList = projects.map(p => `[id:${p.id}] ${p.name}`).join(' | ');
         const taskList = compactTasks.map(t => {
             const parts = [`[id:${t.id}] "${t.title}"`];
@@ -487,7 +524,8 @@ export class GeminiAnalyzer {
             return parts.join(' | ');
         }).join('\n');
 
-        let prompt = `Current tasks (${tasks.length} total, ${compactTasks.length} included in context):\n${taskList}\n\nProjects:\n${projectList}\n`;
+        const urgentModePromptNote = buildUrgentModePromptNote(recommendationState.urgentMode);
+        let prompt = `${urgentModePromptNote ? `${urgentModePromptNote}\n\n` : ''}Current tasks (${tasks.length} total, ${compactTasks.length} included in context):\n${taskList}\n\nProjects:\n${projectList}\n`;
         if (existingActions?.length > 0) {
             const existingSummary = existingActions
                 .slice(0, 30)
@@ -505,7 +543,7 @@ export class GeminiAnalyzer {
         const raw = result.response.text().trim();
         const parsed = this._safeParseJson(raw);
         if (parsed) return this._safeNormalizeReorgProposal(parsed, tasks, projects);
-        return this._safeNormalizeReorgProposal(this._buildFallbackReorgProposal(tasks, projects), tasks, projects);
+        return this._safeNormalizeReorgProposal(this._buildFallbackReorgProposal(tasks, projects, recommendationState), tasks, projects);
     }
 
     _safeParseJson(raw = '') {
@@ -547,8 +585,8 @@ export class GeminiAnalyzer {
         return null;
     }
 
-    _buildFallbackReorgProposal(tasks = [], projects = []) {
-        const fallbackTasks = this._compactReorgTasks(tasks, 40);
+    _buildFallbackReorgProposal(tasks = [], projects = [], options = {}) {
+        const fallbackTasks = this._compactReorgTasks(tasks, options, 40);
         const fallbackGoalThemeProfile = createGoalThemeProfile(USER_CONTEXT, { source: USER_CONTEXT_SOURCE });
 
         const actions = [];
@@ -556,10 +594,20 @@ export class GeminiAnalyzer {
             if (task.status !== 0 && task.status !== undefined) continue;
             const changes = {};
             if (![1, 3, 5].includes(task.priority)) {
-                changes.priority = inferPriorityValueFromTask(task, { goalThemeProfile: fallbackGoalThemeProfile });
+                changes.priority = inferPriorityValueFromTask(task, {
+                    goalThemeProfile: fallbackGoalThemeProfile,
+                    workStyleMode: options.workStyleMode,
+                    urgentMode: options.urgentMode,
+                    stateSource: options.stateSource,
+                });
             }
             if ((task.projectName || '').toLowerCase() === 'inbox') {
-                const candidate = inferProjectIdFromTask(task, projects, { goalThemeProfile: fallbackGoalThemeProfile });
+                const candidate = inferProjectIdFromTask(task, projects, {
+                    goalThemeProfile: fallbackGoalThemeProfile,
+                    workStyleMode: options.workStyleMode,
+                    urgentMode: options.urgentMode,
+                    stateSource: options.stateSource,
+                });
                 if (candidate && candidate !== task.projectId) changes.projectId = candidate;
             }
             if (Object.keys(changes).length > 0) {
@@ -582,8 +630,8 @@ export class GeminiAnalyzer {
         }
     }
 
-    _compactReorgTasks(tasks = [], limit = 80) {
-        const { orderedTasks } = this._prepareBriefingTasks(tasks);
+    _compactReorgTasks(tasks = [], options = {}, limit = 80) {
+        const { orderedTasks } = this._prepareBriefingTasks(tasks, options);
         return orderedTasks.slice(0, limit);
     }
 
