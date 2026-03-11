@@ -1,7 +1,7 @@
 ---
 work_package_id: WP02
 title: Telegram Bot Interface
-lane: "for_review"
+lane: "doing"
 dependencies:
 - WP01
 base_branch: 008-work-style-and-urgent-mode-WP01
@@ -14,7 +14,7 @@ subtasks:
 phase: Phase 2 - Parallel Execution
 assignee: ''
 agent: "codex"
-shell_pid: "27136"
+shell_pid: "12188"
 review_status: "acknowledged"
 reviewed_by: "TickTick Bot"
 review_feedback_file: "C:\\Users\\Huzefa Khan\\AppData\\Local\\Temp\\spec-kitty-review-feedback-WP02.md"
@@ -125,3 +125,4 @@ Use language identifiers in code blocks: ````python`, ````bash`
 - 2026-03-11T14:23:11Z - codex - shell_pid=27136 - lane=doing - Addressing review feedback: unauthenticated free-form urgent toggle path and dependency metadata
 - 2026-03-11T14:30:00Z - codex - shell_pid=27136 - lane=doing - Acknowledged feedback, moved free-form urgent detection ahead of auth, added unauthenticated regression coverage, and declared WP01 dependency
 - 2026-03-11T14:29:13Z – codex – shell_pid=27136 – lane=for_review – Ready for review: fixed unauthenticated free-form urgent toggle path and corrected WP01 dependency metadata
+- 2026-03-11T14:30:40Z – codex – shell_pid=12188 – lane=doing – Started review via workflow command
