@@ -1,7 +1,7 @@
 ---
 work_package_id: WP04
 title: Direct Pipeline Harness and Story 1 Coverage
-lane: "for_review"
+lane: "done"
 dependencies:
 - WP01
 subtasks:
@@ -166,3 +166,4 @@ Verification commands:
 - 2026-03-11T19:51:46Z – codex – shell_pid=18888 – lane=planned – Moved to planned
 - 2026-03-11T19:53:16Z – codex – shell_pid=24356 – lane=doing – Started implementation via workflow command
 - 2026-03-11T19:54:30Z – codex – shell_pid=24356 – lane=for_review – Ready for review: add direct pipeline harness + Story 1 coverage
+- 2026-03-11T20:28:58Z – codex – shell_pid=24356 – lane=done – Review passed: direct pipeline harness verified with Story 1 coverage and negative-offset regression
