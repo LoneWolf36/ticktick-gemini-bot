@@ -1,8 +1,10 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { parseTelegramMarkdownToHTML, containsSensitiveContent, buildTickTickUpdate, scheduleToDateTime } from '../bot/utils.js';
-import { executeActions } from '../bot/commands.js';
+import { executeActions, registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer } from '../services/gemini.js';
+import { detectUrgentModeIntent } from '../services/ax-intent.js';
+import * as store from '../services/store.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
 import {
   buildRankingContext,
@@ -114,6 +116,83 @@ async function run() {
   } catch (err) {
     failures++;
     console.error('FAIL urgent mode store defaults to false and persists boolean toggles');
+    console.error(err.message);
+  }
+
+  try {
+    assert.deepEqual(detectUrgentModeIntent('turn on urgent mode'), {
+      type: 'set_urgent_mode',
+      value: true,
+    });
+    assert.deepEqual(detectUrgentModeIntent('switch back to humane mode'), {
+      type: 'set_urgent_mode',
+      value: false,
+    });
+    assert.equal(detectUrgentModeIntent('buy groceries tonight'), null);
+    console.log('PASS ax intent detects urgent mode toggle phrases');
+  } catch (err) {
+    failures++;
+    console.error('FAIL ax intent detects urgent mode toggle phrases');
+    console.error(err.message);
+  }
+
+  try {
+    const handlers = { commands: new Map(), callbacks: [], events: [] };
+    const bot = {
+      command(name, handler) {
+        handlers.commands.set(name, handler);
+        return this;
+      },
+      callbackQuery(pattern, handler) {
+        handlers.callbacks.push({ pattern, handler });
+        return this;
+      },
+      on(eventName, handler) {
+        handlers.events.push({ eventName, handler });
+        return this;
+      },
+    };
+
+    registerCommands(
+      bot,
+      {
+        isAuthenticated: () => true,
+        getCacheAgeSeconds: () => null,
+        getAuthUrl: () => 'https://example.test/auth',
+        getAllTasks: async () => [],
+        getAllTasksCached: async () => [],
+        getLastFetchedProjects: () => [],
+      },
+      {
+        isQuotaExhausted: () => false,
+        quotaResumeTime: () => null,
+        activeKeyInfo: () => null,
+      },
+      {},
+      {},
+    );
+
+    const urgentHandler = handlers.commands.get('urgent');
+    assert.equal(typeof urgentHandler, 'function');
+
+    const replies = [];
+    const userId = Date.now();
+    await store.setUrgentMode(userId, false);
+    await urgentHandler({
+      chat: { id: userId },
+      from: { id: userId },
+      match: 'on',
+      reply: async (message) => {
+        replies.push(message);
+      },
+    });
+
+    assert.equal(await store.getUrgentMode(userId), true);
+    assert.match(replies.at(-1), /Urgent mode activated/i);
+    console.log('PASS registerCommands wires /urgent to the urgent mode store contract');
+  } catch (err) {
+    failures++;
+    console.error('FAIL registerCommands wires /urgent to the urgent mode store contract');
     console.error(err.message);
   }
 
