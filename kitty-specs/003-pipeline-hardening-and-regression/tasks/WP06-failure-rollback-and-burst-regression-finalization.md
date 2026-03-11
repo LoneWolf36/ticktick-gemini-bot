@@ -1,11 +1,14 @@
 ---
 work_package_id: WP06
 title: Failure, Rollback, and Burst Regression Finalization
-lane: planned
+lane: "doing"
 dependencies:
 - WP03
 - WP04
 - WP05
+base_branch: 003-pipeline-hardening-and-regression-WP06-merge-base
+base_commit: 963c9f2595c9fd89bfc624cb3c9924c0d47efa9b
+created_at: '2026-03-11T22:23:03.006100+00:00'
 subtasks:
 - T012
 - T017
@@ -15,7 +18,7 @@ subtasks:
 phase: Phase 5 - Regression Hardening
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "30416"
 review_status: ''
 reviewed_by: ''
 history:
