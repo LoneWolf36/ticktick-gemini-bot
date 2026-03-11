@@ -1,7 +1,7 @@
 ---
 work_package_id: WP04
 title: Direct Pipeline Harness and Story 1 Coverage
-lane: "planned"
+lane: "doing"
 dependencies:
 - WP01
 subtasks:
@@ -11,7 +11,7 @@ subtasks:
 phase: Phase 2 - Direct Harness Foundation
 assignee: ''
 agent: "codex"
-shell_pid: "18888"
+shell_pid: "24356"
 review_status: "has_feedback"
 reviewed_by: "TickTick Bot"
 review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP04.md"
@@ -164,3 +164,4 @@ Verification commands:
 - 2026-03-11T17:50:00Z - codex - lane=planned - Reframed as early direct-harness work to open a third parallel implementation track.
 - 2026-03-11T19:39:35Z – codex – shell_pid=18888 – lane=doing – Started implementation via workflow command
 - 2026-03-11T19:51:46Z – codex – shell_pid=18888 – lane=planned – Moved to planned
+- 2026-03-11T19:53:16Z – codex – shell_pid=24356 – lane=doing – Started implementation via workflow command
