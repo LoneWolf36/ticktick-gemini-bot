@@ -20,10 +20,10 @@
 **Requirement Refs**: FR-001, FR-002, FR-007, FR-008, SC-001, SC-004
 
 ### Included Subtasks
-- [ ] T001 Define the canonical `PipelineRequestContext` assembly path in `services/pipeline.js` or a dedicated helper module, including `requestId`, `entryPoint`, `mode`, `currentDate`, canonical timezone, available projects, and optional existing task snapshot.
-- [ ] T002 Align `services/ax-intent.js` and `services/pipeline.js` around the canonical context contract so AX receives the expected extraction inputs on every request.
-- [ ] T003 Align normalization input handling in `services/normalizer.js` and `services/pipeline.js` so due-date expansion and project resolution consume the same context shape instead of ad-hoc option fields.
-- [ ] T004 Add fail-fast contract validation and development-mode diagnostics for missing or drifted pipeline context fields before execution proceeds.
+- [x] T001 Define the canonical `PipelineRequestContext` assembly path in `services/pipeline.js` or a dedicated helper module, including `requestId`, `entryPoint`, `mode`, `currentDate`, canonical timezone, available projects, and optional existing task snapshot.
+- [x] T002 Align `services/ax-intent.js` and `services/pipeline.js` around the canonical context contract so AX receives the expected extraction inputs on every request.
+- [x] T003 Align normalization input handling in `services/normalizer.js` and `services/pipeline.js` so due-date expansion and project resolution consume the same context shape instead of ad-hoc option fields.
+- [x] T004 Add fail-fast contract validation and development-mode diagnostics for missing or drifted pipeline context fields before execution proceeds.
 
 ### Implementation Notes
 - Keep the write path unchanged: `AX -> normalizer -> TickTickAdapter`.
