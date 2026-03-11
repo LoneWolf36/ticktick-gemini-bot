@@ -15,7 +15,7 @@ subtasks:
 - T016
 phase: Phase 4 - Execution Hardening
 assignee: ''
-agent: ''
+agent: "Codex"
 shell_pid: "31060"
 review_status: ''
 reviewed_by: ''
@@ -169,3 +169,4 @@ Verification commands:
 
 - 2026-03-11T17:18:05Z - system - lane=planned - Prompt created.
 - 2026-03-11T17:50:00Z - codex - lane=planned - Tightened scope so implementation hardening and final regression closure can proceed as separate packages.
+- 2026-03-11T20:33:30Z – Codex – shell_pid=31060 – lane=doing – Assigned agent via workflow command
