@@ -54,9 +54,9 @@
 **Requirement Refs**: FR-001, FR-002, FR-005, FR-006, SC-001, SC-003
 
 ### Included Subtasks
-- [ ] T005 Update the free-form, `/scan`, and `/review` pipeline call sites in `bot/commands.js` to source canonical timezone and entry-point metadata from the new request context contract rather than direct `process.env.USER_TIMEZONE` fallbacks.
-- [ ] T006 Update scheduler-triggered pipeline calls in `services/scheduler.js` and any bootstrap wiring in `server.js` so scheduled task processing uses the same canonical context fields and request metadata.
-- [ ] T007 Ensure project lookup and AX-facing project-name context are fetched once per request and passed consistently into AX extraction and normalization without shape drift.
+- [x] T005 Update the free-form, `/scan`, and `/review` pipeline call sites in `bot/commands.js` to source canonical timezone and entry-point metadata from the new request context contract rather than direct `process.env.USER_TIMEZONE` fallbacks.
+- [x] T006 Update scheduler-triggered pipeline calls in `services/scheduler.js` and any bootstrap wiring in `server.js` so scheduled task processing uses the same canonical context fields and request metadata.
+- [x] T007 Ensure project lookup and AX-facing project-name context are fetched once per request and passed consistently into AX extraction and normalization without shape drift.
 
 ### Implementation Notes
 - Keep call-site-specific behavior thin; the shared context helper from WP01 should own defaulting and field names.
