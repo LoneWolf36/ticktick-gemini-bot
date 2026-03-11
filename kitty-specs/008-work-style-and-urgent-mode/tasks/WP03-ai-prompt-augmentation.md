@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: AI Prompt Augmentation
-lane: "for_review"
+lane: "doing"
 dependencies: []
 base_branch: 008-work-style-and-urgent-mode-WP01
 base_commit: 048768441e961fd93cb481a838bec21993dfc2d2
@@ -12,8 +12,8 @@ subtasks:
 - T009
 phase: Phase 2 - Parallel Execution
 assignee: ''
-agent: "codex-wp03"
-shell_pid: "26664"
+agent: "codex"
+shell_pid: "14884"
 review_status: ''
 reviewed_by: ''
 history:
@@ -108,3 +108,4 @@ Use language identifiers in code blocks: ````python`, ````bash`
 - 2026-03-11T05:44:14Z – system – lane=planned – Prompt created.
 - 2026-03-11T13:31:22Z – codex-wp03 – shell_pid=26664 – lane=doing – Assigned agent via workflow command
 - 2026-03-11T13:51:40Z – codex-wp03 – shell_pid=26664 – lane=for_review – Ready for review: urgent-aware Gemini prompts, state resolution, and ranking adjustments
+- 2026-03-11T15:03:57Z – codex – shell_pid=14884 – lane=doing – Started review via workflow command
