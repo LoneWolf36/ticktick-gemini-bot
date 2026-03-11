@@ -33,6 +33,22 @@ test('default timezone remains Europe/Dublin when USER_TIMEZONE is unset', () =>
   assert.match(source, /USER_TIMEZONE\s*\|\|\s*'Europe\/Dublin'/);
 });
 
+test('store documents the urgent mode Redis key schema', () => {
+  const source = readFileSync('services/store.js', 'utf8');
+  assert.match(source, /user:\{userId\}:urgent_mode/);
+});
+
+test('store urgent mode defaults to false and persists boolean toggles', async () => {
+  const store = await import('../services/store.js');
+  const userId = `node-test-urgent-mode-${Date.now()}`;
+
+  assert.equal(await store.getUrgentMode(userId), false);
+  assert.equal(await store.setUrgentMode(userId, true), true);
+  assert.equal(await store.getUrgentMode(userId), true);
+  assert.equal(await store.setUrgentMode(userId, false), false);
+  assert.equal(await store.getUrgentMode(userId), false);
+});
+
 test('markdown parser normalizes hash-divider and preserves bold formatting', () => {
   const input = '**Start now**: Do the task\n\n#######';
   const html = parseTelegramMarkdownToHTML(input);
