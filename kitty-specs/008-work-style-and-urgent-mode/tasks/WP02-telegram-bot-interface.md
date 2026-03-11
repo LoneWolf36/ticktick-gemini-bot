@@ -1,8 +1,9 @@
 ---
 work_package_id: WP02
 title: Telegram Bot Interface
-lane: "doing"
-dependencies: []
+lane: "for_review"
+dependencies:
+- WP01
 base_branch: 008-work-style-and-urgent-mode-WP01
 base_commit: 048768441e961fd93cb481a838bec21993dfc2d2
 created_at: '2026-03-11T13:31:21.965873+00:00'
@@ -14,9 +15,9 @@ phase: Phase 2 - Parallel Execution
 assignee: ''
 agent: "codex"
 shell_pid: "27136"
-review_status: "has_feedback"
+review_status: "acknowledged"
 reviewed_by: "TickTick Bot"
-review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP02.md"
+review_feedback_file: "C:\\Users\\Huzefa Khan\\AppData\\Local\\Temp\\spec-kitty-review-feedback-WP02.md"
 history:
 - timestamp: '2026-03-11T05:44:14Z'
   lane: planned
@@ -25,9 +26,9 @@ history:
   action: Prompt generated via /spec-kitty.tasks
 ---
 
-# Work Package Prompt: WP02 – Telegram Bot Interface
+# Work Package Prompt: WP02 - Telegram Bot Interface
 
-## ⚠️ IMPORTANT: Review Feedback Status
+## IMPORTANT: Review Feedback Status
 
 **Read this first if you are implementing this task!**
 
@@ -41,7 +42,7 @@ history:
 ## Review Feedback
 
 **Reviewed by**: TickTick Bot
-**Status**: ❌ Changes Requested
+**Status**: Changes Requested
 **Date**: 2026-03-11
 **Feedback file**: `C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP02.md`
 
@@ -51,8 +52,8 @@ history:
 
 **Dependent check**: [WP05-integration-testing.md](C:/Users/Huzefa%20Khan/Downloads/Gmail/ticktick-gemini/kitty-specs/008-work-style-and-urgent-mode/tasks/WP05-integration-testing.md) is currently `planned` and explicitly requires WP02/WP03/WP04 in its prompt text (line 59). If WP05 work starts from a branch that already included the current WP02 implementation, rebase it after the fix with `cd C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\.worktrees\008-work-style-and-urgent-mode-WP05 && git rebase 008-work-style-and-urgent-mode-WP02`.
 
-
 ## Markdown Formatting
+
 Wrap HTML/XML tags in backticks: `` `<div>` ``, `` `<script>` ``
 Use language identifiers in code blocks: ````python`, ````bash`
 
@@ -72,7 +73,8 @@ Use language identifiers in code blocks: ````python`, ````bash`
 
 ## Subtasks & Detailed Guidance
 
-### Subtask T004 – Add `/urgent [on|off]` command handler
+### Subtask T004 - Add `/urgent [on|off]` command handler
+
 - **Purpose**: Provide a direct command to toggle the state.
 - **Steps**:
   1. Open `bot/commands.js`.
@@ -82,7 +84,8 @@ Use language identifiers in code blocks: ````python`, ````bash`
 - **Files**: `bot/commands.js`
 - **Parallel?**: Yes.
 
-### Subtask T005 – Wire command to `store.setUrgentMode(userId, value)`
+### Subtask T005 - Wire command to `store.setUrgentMode(userId, value)`
+
 - **Purpose**: Persist the toggle action to Redis.
 - **Steps**:
   1. In the new `/urgent` handler in `bot/commands.js`, call `store.setUrgentMode(userId, true/false)`.
@@ -90,7 +93,8 @@ Use language identifiers in code blocks: ````python`, ````bash`
 - **Files**: `bot/commands.js`
 - **Parallel?**: Yes.
 
-### Subtask T006 – Natural language intent (Optional but recommended)
+### Subtask T006 - Natural language intent (Optional but recommended)
+
 - **Purpose**: Allow users to say "turn on urgent mode".
 - **Steps**:
   1. Open `services/ax-intent.js`.
@@ -113,9 +117,11 @@ Use language identifiers in code blocks: ````python`, ````bash`
 
 ## Activity Log
 
-- 2026-03-11T05:44:14Z – system – lane=planned – Prompt created.
-- 2026-03-11T13:31:25Z – codex-wp02 – shell_pid=26188 – lane=doing – Assigned agent via workflow command
-- 2026-03-11T13:51:13Z – codex-wp02 – shell_pid=26188 – lane=for_review – Ready for review: added /urgent command, natural-language toggle detection, and regression coverage
-- 2026-03-11T14:06:58Z – codex – shell_pid=27136 – lane=doing – Started review via workflow command
-- 2026-03-11T14:09:51Z – codex – shell_pid=27136 – lane=planned – Moved to planned
-- 2026-03-11T14:23:11Z – codex – shell_pid=27136 – lane=doing – Addressing review feedback: unauthenticated free-form urgent toggle path and dependency metadata
+- 2026-03-11T05:44:14Z - system - lane=planned - Prompt created.
+- 2026-03-11T13:31:25Z - codex-wp02 - shell_pid=26188 - lane=doing - Assigned agent via workflow command
+- 2026-03-11T13:51:13Z - codex-wp02 - shell_pid=26188 - lane=for_review - Ready for review: added /urgent command, natural-language toggle detection, and regression coverage
+- 2026-03-11T14:06:58Z - codex - shell_pid=27136 - lane=doing - Started review via workflow command
+- 2026-03-11T14:09:51Z - codex - shell_pid=27136 - lane=planned - Moved to planned
+- 2026-03-11T14:23:11Z - codex - shell_pid=27136 - lane=doing - Addressing review feedback: unauthenticated free-form urgent toggle path and dependency metadata
+- 2026-03-11T14:30:00Z - codex - shell_pid=27136 - lane=doing - Acknowledged feedback, moved free-form urgent detection ahead of auth, added unauthenticated regression coverage, and declared WP01 dependency
+- 2026-03-11T14:29:13Z – codex – shell_pid=27136 – lane=for_review – Ready for review: fixed unauthenticated free-form urgent toggle path and corrected WP01 dependency metadata
