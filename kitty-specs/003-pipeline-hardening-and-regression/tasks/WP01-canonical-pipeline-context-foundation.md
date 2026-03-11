@@ -1,8 +1,11 @@
 ---
 work_package_id: WP01
 title: Canonical Pipeline Context Foundation
-lane: planned
+lane: "doing"
 dependencies: []
+base_branch: master
+base_commit: 8c54eceaa745a46db9622848e7ddf85b8336c0d6
+created_at: '2026-03-11T18:06:41.078668+00:00'
 subtasks:
 - T001
 - T002
@@ -11,7 +14,7 @@ subtasks:
 phase: Phase 1 - Context Foundation
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "1760"
 review_status: ''
 reviewed_by: ''
 history:
