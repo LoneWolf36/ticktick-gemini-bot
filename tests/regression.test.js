@@ -3,8 +3,10 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import { parseTelegramMarkdownToHTML } from '../bot/utils.js';
-import { executeActions } from '../bot/commands.js';
+import { executeActions, registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer } from '../services/gemini.js';
+import { detectUrgentModeIntent } from '../services/ax-intent.js';
+import * as store from '../services/store.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
 import {
   buildRankingContext,
@@ -47,6 +49,75 @@ test('store urgent mode defaults to false and persists boolean toggles', async (
   assert.equal(await store.getUrgentMode(userId), true);
   assert.equal(await store.setUrgentMode(userId, false), false);
   assert.equal(await store.getUrgentMode(userId), false);
+});
+
+test('ax intent detects urgent mode toggle phrases', () => {
+  assert.deepEqual(detectUrgentModeIntent('turn on urgent mode'), {
+    type: 'set_urgent_mode',
+    value: true,
+  });
+  assert.deepEqual(detectUrgentModeIntent('switch back to humane mode'), {
+    type: 'set_urgent_mode',
+    value: false,
+  });
+  assert.equal(detectUrgentModeIntent('buy groceries tonight'), null);
+});
+
+test('registerCommands wires /urgent to the urgent mode store contract', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) {
+      handlers.commands.set(name, handler);
+      return this;
+    },
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return this;
+    },
+    on(eventName, handler) {
+      handlers.events.push({ eventName, handler });
+      return this;
+    },
+  };
+
+  registerCommands(
+    bot,
+    {
+      isAuthenticated: () => true,
+      getCacheAgeSeconds: () => null,
+      getAuthUrl: () => 'https://example.test/auth',
+      getAllTasks: async () => [],
+      getAllTasksCached: async () => [],
+      getLastFetchedProjects: () => [],
+    },
+    {
+      isQuotaExhausted: () => false,
+      quotaResumeTime: () => null,
+      activeKeyInfo: () => null,
+    },
+    {},
+    {},
+  );
+
+  const urgentHandler = handlers.commands.get('urgent');
+  assert.equal(typeof urgentHandler, 'function');
+
+  const replies = [];
+  const userId = Date.now();
+  const ctx = {
+    chat: { id: userId },
+    from: { id: userId },
+    match: 'on',
+    reply: async (message) => {
+      replies.push(message);
+    },
+  };
+
+  await store.setUrgentMode(userId, false);
+  await urgentHandler(ctx);
+
+  assert.equal(await store.getUrgentMode(userId), true);
+  assert.match(replies.at(-1), /Urgent mode activated/i);
 });
 
 test('markdown parser normalizes hash-divider and preserves bold formatting', () => {

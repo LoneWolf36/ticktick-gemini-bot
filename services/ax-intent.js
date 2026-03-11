@@ -1,5 +1,34 @@
 import { AxAI, AxGen } from '@ax-llm/ax';
 
+const URGENT_MODE_ON_PATTERNS = [
+    /\b(?:turn|switch|set)\s+(?:on|into)\s+urgent mode\b/i,
+    /\b(?:enable|activate|start)\s+urgent mode\b/i,
+    /\burgent mode\s+(?:on|enabled|active)\b/i,
+    /\bgo urgent\b/i,
+];
+
+const URGENT_MODE_OFF_PATTERNS = [
+    /\b(?:turn|switch|set)\s+(?:off|out of)\s+urgent mode\b/i,
+    /\b(?:disable|deactivate|stop)\s+urgent mode\b/i,
+    /\burgent mode\s+(?:off|disabled|inactive)\b/i,
+    /\b(?:back to|switch to|use)\s+humane mode\b/i,
+];
+
+export function detectUrgentModeIntent(userMessage = '') {
+    const text = typeof userMessage === 'string' ? userMessage.trim() : '';
+    if (!text) return null;
+
+    if (URGENT_MODE_OFF_PATTERNS.some((pattern) => pattern.test(text))) {
+        return { type: 'set_urgent_mode', value: false };
+    }
+
+    if (URGENT_MODE_ON_PATTERNS.some((pattern) => pattern.test(text))) {
+        return { type: 'set_urgent_mode', value: true };
+    }
+
+    return null;
+}
+
 export class QuotaExhaustedError extends Error {
     constructor(message) {
         super(message);

@@ -9,6 +9,7 @@ import {
     parseDateStringToTickTickISO, parseTelegramMarkdownToHTML, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent
 } from './utils.js';
 import { createGoalThemeProfile, normalizePriorityCandidate, rankPriorityCandidates } from '../services/execution-prioritization.js';
+import { detectUrgentModeIntent } from '../services/ax-intent.js';
 
 export function registerCommands(bot, ticktick, gemini, adapter, pipeline, config = {}) {
     const {
@@ -169,6 +170,55 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
         lines.push('\nCommands: /menu | /scan | /pending | /reorg | /undo | /briefing | /weekly');
         await ctx.reply(lines.join('\n'));
+    });
+
+    const resolveUrgentModeUserId = (ctx) => ctx.from?.id ?? ctx.chat?.id ?? null;
+
+    const applyUrgentModeState = async (ctx, requestedValue, { source = 'command' } = {}) => {
+        const userId = resolveUrgentModeUserId(ctx);
+        if (userId == null) {
+            await ctx.reply('Could not resolve your Telegram user ID, so urgent mode was not changed.');
+            return false;
+        }
+
+        try {
+            const currentValue = await store.getUrgentMode(userId);
+            const nextValue = requestedValue === 'toggle' ? !currentValue : requestedValue === true;
+            await store.setUrgentMode(userId, nextValue);
+
+            const confirmation = nextValue
+                ? 'Urgent mode activated. I will use a sharper tone and prioritize immediate deadlines.'
+                : 'Urgent mode deactivated. Humane mode remains your baseline recommendation posture.';
+            const statusLine = nextValue ? 'Current state: URGENT MODE ON' : 'Current state: Humane baseline active';
+
+            await ctx.reply(source === 'natural-language' ? confirmation : `${confirmation}\n${statusLine}`);
+            return true;
+        } catch (err) {
+            await ctx.reply(`Could not update urgent mode: ${err.message}`);
+            return false;
+        }
+    };
+
+    bot.command('urgent', async (ctx) => {
+        if (!await guardAccess(ctx)) return;
+
+        const rawArg = typeof ctx.match === 'string' ? ctx.match.trim().toLowerCase() : '';
+        if (!rawArg) {
+            await applyUrgentModeState(ctx, 'toggle');
+            return;
+        }
+
+        if (['on', 'enable', 'enabled', 'true'].includes(rawArg)) {
+            await applyUrgentModeState(ctx, true);
+            return;
+        }
+
+        if (['off', 'disable', 'disabled', 'false'].includes(rawArg)) {
+            await applyUrgentModeState(ctx, false);
+            return;
+        }
+
+        await ctx.reply('Usage: /urgent on | /urgent off\nTip: /urgent with no argument toggles the current state.');
     });
 
     bot.callbackQuery(/^menu:(.+)$/, async (ctx) => {
@@ -564,6 +614,11 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         // New pipeline path. Note: we leave gemini check in for the coach fallback optionally.
         await ctx.reply('🤔 Processing...');
 
+        const urgentModeIntent = detectUrgentModeIntent(userMessage);
+        if (urgentModeIntent?.type === 'set_urgent_mode') {
+            await applyUrgentModeState(ctx, urgentModeIntent.value, { source: 'natural-language' });
+            return;
+        }
         try {
             const result = await pipeline.processMessage(userMessage, {
                 timezone: process.env.USER_TIMEZONE || 'Europe/Dublin'
