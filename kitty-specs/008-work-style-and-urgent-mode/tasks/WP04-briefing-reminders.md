@@ -1,7 +1,7 @@
 ---
 work_package_id: WP04
 title: Briefing Reminders
-lane: "planned"
+lane: "done"
 dependencies:
 - WP01
 base_branch: 008-work-style-and-urgent-mode-WP01
@@ -108,3 +108,4 @@ Use language identifiers in code blocks: ````python`, ````bash`
 - 2026-03-11T13:31:22Z – codex-wp04 – shell_pid=5528 – lane=doing – Assigned agent via workflow command
 - 2026-03-11T13:52:07Z – codex-wp04 – shell_pid=5528 – lane=for_review – Ready for review: urgent reminders added to scheduled and manual briefing surfaces
 - 2026-03-11T15:05:11Z – codex – shell_pid=6796 – lane=doing – Started review via workflow command
+- 2026-03-11T15:23:45Z – codex – shell_pid=6796 – lane=done – Review passed: scheduled and manual briefing reminders use the completed WP01 urgent-mode contract, metadata now declares that dependency, and master regression coverage is green
