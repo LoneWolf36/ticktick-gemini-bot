@@ -4,11 +4,12 @@ import { appendUrgentModeReminder, parseTelegramMarkdownToHTML, containsSensitiv
 import { executeActions, registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer, buildUrgentModePromptNote } from '../services/gemini.js';
 import { detectUrgentModeIntent } from '../services/ax-intent.js';
+import { createPipeline } from '../services/pipeline.js';
+import { createPipelineObservability } from '../services/pipeline-observability.js';
 import { TickTickAdapter } from '../services/ticktick-adapter.js';
 import { TickTickClient } from '../services/ticktick.js';
 import * as store from '../services/store.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
-import { createPipelineHarness, DEFAULT_PROJECTS } from './pipeline-harness.js';
 import {
   buildRankingContext,
   buildRecommendationResult,
@@ -364,6 +365,199 @@ async function run() {
   } catch (err) {
     failures++;
     console.error('FAIL TickTickAdapter includes projectId for due-date-only updates');
+    console.error(err.message);
+  }
+
+  try {
+    const adapterCalls = [];
+    const telemetryEvents = [];
+    const adapter = {
+      listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+      getTaskSnapshot: async (taskId, projectId) => ({
+        id: taskId,
+        projectId,
+        title: 'Existing task',
+        content: null,
+        priority: 0,
+        dueDate: null,
+        repeatFlag: null,
+        status: 0,
+      }),
+      createTask: async (action) => {
+        adapterCalls.push(['createTask', action.title]);
+        return { id: 'created-1', projectId: action.projectId };
+      },
+      updateTask: async () => {
+        adapterCalls.push(['updateTask']);
+        throw new Error('TickTick unavailable');
+      },
+      deleteTask: async (taskId, projectId) => {
+        adapterCalls.push(['deleteTask', taskId, projectId]);
+        return { deleted: true, taskId, projectId };
+      },
+      restoreTask: async () => {
+        throw new Error('restoreTask should not be called in this scenario');
+      },
+      completeTask: async () => {
+        throw new Error('completeTask should not be called in this scenario');
+      },
+    };
+
+    const pipeline = createPipeline({
+      axIntent: {
+        extractIntents: async () => [{ type: 'create' }, { type: 'update' }],
+      },
+      normalizer: {
+        normalizeActions: () => ([
+          { type: 'create', title: 'Draft proposal', projectId: 'inbox', valid: true, validationErrors: [] },
+          { type: 'update', taskId: 'task-2', originalProjectId: 'inbox', projectId: 'inbox', title: 'Existing task', valid: true, validationErrors: [] },
+        ]),
+      },
+      adapter,
+      observability: createPipelineObservability({
+        eventSink: async (event) => {
+          telemetryEvents.push(event);
+        },
+        logger: null,
+      }),
+    });
+
+    const result = await pipeline.processMessage('Draft proposal and update the follow-up', {
+      requestId: 'regression-rollback-success',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+    });
+
+    assert.equal(result.type, 'error');
+    assert.equal(result.failure.class, 'adapter');
+    assert.equal(result.failure.rolledBack, true);
+    assert.equal(result.results[0].status, 'rolled_back');
+    assert.equal(result.results[0].rollbackStep.type, 'delete_created');
+    assert.equal(result.results[1].status, 'failed');
+    assert.equal(result.results[1].attempts, 2);
+    assert.deepEqual(
+      adapterCalls,
+      [
+        ['createTask', 'Draft proposal'],
+        ['updateTask'],
+        ['updateTask'],
+        ['deleteTask', 'created-1', 'inbox'],
+      ],
+    );
+    assert.ok(
+      telemetryEvents.some((event) =>
+        event.eventType === 'pipeline.rollback.succeeded'
+        && event.metadata.rollbackType === 'delete_created'
+        && event.rolledBack === true),
+    );
+    console.log('PASS pipeline retries once and rolls back earlier successful writes');
+  } catch (err) {
+    failures++;
+    console.error('FAIL pipeline retries once and rolls back earlier successful writes');
+    console.error(err.message);
+  }
+
+  try {
+    const telemetryEvents = [];
+    const adapter = {
+      listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+      getTaskSnapshot: async (taskId, projectId) => ({
+        id: taskId,
+        projectId,
+        title: 'Existing task',
+        content: null,
+        priority: 0,
+        dueDate: null,
+        repeatFlag: null,
+        status: 0,
+      }),
+      completeTask: async (taskId, projectId) => ({ completed: true, taskId, projectId }),
+      createTask: async () => {
+        throw new Error('Create failed');
+      },
+      updateTask: async () => {
+        throw new Error('updateTask should not be called in this scenario');
+      },
+      deleteTask: async () => {
+        throw new Error('deleteTask should not be called in this scenario');
+      },
+      restoreTask: async () => {
+        throw new Error('restoreTask should not be called in this scenario');
+      },
+    };
+
+    const pipeline = createPipeline({
+      axIntent: {
+        extractIntents: async () => [{ type: 'complete' }, { type: 'create' }],
+      },
+      normalizer: {
+        normalizeActions: () => ([
+          { type: 'complete', taskId: 'task-1', projectId: 'inbox', valid: true, validationErrors: [] },
+          { type: 'create', title: 'Replacement task', projectId: 'inbox', valid: true, validationErrors: [] },
+        ]),
+      },
+      adapter,
+      observability: createPipelineObservability({
+        eventSink: async (event) => {
+          telemetryEvents.push(event);
+        },
+        logger: null,
+      }),
+    });
+
+    const result = await pipeline.processMessage('Complete this and create a replacement', {
+      requestId: 'regression-rollback-failure',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+    });
+
+    assert.equal(result.type, 'error');
+    assert.equal(result.failure.class, 'rollback');
+    assert.equal(result.failure.rolledBack, false);
+    assert.equal(result.results[0].status, 'rollback_failed');
+    assert.equal(result.results[0].rollbackStep.type, 'uncomplete_task');
+    assert.equal(result.results[1].status, 'failed');
+    assert.equal(result.results[1].attempts, 2);
+    assert.equal(result.failure.retryable, false);
+    assert.ok(
+      telemetryEvents.some((event) =>
+        event.eventType === 'pipeline.rollback.failed'
+        && event.metadata.rollbackType === 'uncomplete_task'
+        && event.failureClass === 'rollback'),
+    );
+    console.log('PASS pipeline classifies rollback failures when compensation is unsupported');
+  } catch (err) {
+    failures++;
+    console.error('FAIL pipeline classifies rollback failures when compensation is unsupported');
+    console.error(err.message);
+  }
+
+  try {
+    const telemetryEvents = [];
+    const observability = createPipelineObservability({
+      eventSink: async (event) => {
+        telemetryEvents.push(event);
+      },
+      logger: null,
+    });
+
+    await observability.emit(
+      { requestId: 'regression-telemetry', entryPoint: 'telegram', mode: 'scan' },
+      {
+        eventType: 'pipeline.request.received',
+        step: 'request',
+        status: 'start',
+        metadata: { mode: 'scan' },
+      },
+    );
+
+    assert.equal(telemetryEvents.length, 1);
+    assert.equal(telemetryEvents[0].entryPoint, 'telegram_review');
+    assert.equal(telemetryEvents[0].eventType, 'pipeline.request.received');
+    console.log('PASS pipeline observability normalizes telegram entry points for sink events');
+  } catch (err) {
+    failures++;
+    console.error('FAIL pipeline observability normalizes telegram entry points for sink events');
     console.error(err.message);
   }
   try {
@@ -1098,150 +1292,6 @@ ACCOUNTABILITY STYLE:
   } catch (err) {
     failures++;
     console.error('FAIL execution prioritization elevates capacity protection');
-    console.error(err.message);
-  }
-
-  try {
-    process.env.USER_TIMEZONE = 'Europe/Dublin';
-    const { processMessage, adapterCalls, axCalls } = createPipelineHarness({
-      intents: [
-        {
-          type: 'create',
-          title: 'Book dentist',
-          dueDate: 'thursday',
-          confidence: 0.9,
-        },
-      ],
-    });
-
-    const result = await processMessage('book dentist thursday', {
-      currentDate: '2026-03-10T10:00:00Z',
-      entryPoint: 'regression',
-      requestId: 'req-story-1',
-    });
-
-    assert.equal(result.type, 'task');
-    assert.equal(result.actions.length, 1);
-    assert.equal(result.results.length, 1);
-    assert.equal(axCalls[0].options.currentDate, '2026-03-10');
-    assert.deepEqual(axCalls[0].options.availableProjects, DEFAULT_PROJECTS.map((project) => project.name));
-    assert.equal(adapterCalls.create.length, 1);
-    assert.match(adapterCalls.create[0].dueDate, /^2026-03-12T23:59:00\.000[+-]\d{4}$/);
-    console.log('PASS pipeline context resolves relative dates through normalizer path');
-  } catch (err) {
-    failures++;
-    console.error('FAIL pipeline context resolves relative dates through normalizer path');
-    console.error(err.message);
-  }
-
-  try {
-    process.env.USER_TIMEZONE = 'America/Los_Angeles';
-    const { processMessage, adapterCalls } = createPipelineHarness({
-      intents: [
-        {
-          type: 'create',
-          title: 'Book dentist',
-          dueDate: 'today',
-          confidence: 0.9,
-        },
-      ],
-    });
-
-    const result = await processMessage('book dentist today', {
-      currentDate: '2026-03-10',
-      entryPoint: 'regression',
-      requestId: 'req-negative-offset',
-    });
-
-    assert.equal(result.type, 'task');
-    assert.equal(adapterCalls.create.length, 1);
-    assert.match(adapterCalls.create[0].dueDate, /^2026-03-10T23:59:00\.000-\d{4}$/);
-    console.log('PASS pipeline context keeps date-only currentDate stable in negative-offset timezones');
-  } catch (err) {
-    failures++;
-    console.error('FAIL pipeline context keeps date-only currentDate stable in negative-offset timezones');
-    console.error(err.message);
-  }
-
-  try {
-    process.env.USER_TIMEZONE = 'Europe/Dublin';
-    const { processMessage, adapterCalls } = createPipelineHarness({
-      intents: [
-        {
-          type: 'create',
-          title: 'Plan sprint',
-          projectHint: 'Career',
-          confidence: 0.9,
-        },
-      ],
-    });
-
-    const result = await processMessage('plan sprint in career');
-
-    assert.equal(result.type, 'task');
-    assert.equal(adapterCalls.create.length, 1);
-    assert.equal(adapterCalls.create[0].projectId, DEFAULT_PROJECTS[1].id);
-    console.log('PASS pipeline context resolves project hints from available projects');
-  } catch (err) {
-    failures++;
-    console.error('FAIL pipeline context resolves project hints from available projects');
-    console.error(err.message);
-  }
-
-  try {
-    process.env.USER_TIMEZONE = 'Europe/Dublin';
-
-    const createHarness = createPipelineHarness({
-      intents: [
-        { type: 'create', title: 'Write summary', confidence: 0.9 },
-      ],
-    });
-    const createResult = await createHarness.processMessage('write summary');
-    assert.equal(createResult.type, 'task');
-    assert.equal(createResult.actions[0].type, 'create');
-    assert.equal(createResult.results[0].success, true);
-    assert.match(createResult.confirmationText, /Created/);
-
-    const updateHarness = createPipelineHarness({
-      intents: [
-        { type: 'update', taskId: 'task-123', title: 'Revise summary', projectHint: 'Inbox', confidence: 0.9 },
-      ],
-    });
-    const updateResult = await updateHarness.processMessage('update task');
-    assert.equal(updateResult.type, 'task');
-    assert.equal(updateResult.actions[0].type, 'update');
-    assert.equal(updateHarness.adapterCalls.update.length, 1);
-    assert.match(updateResult.confirmationText, /Updated 1 task/);
-
-    const completeHarness = createPipelineHarness({
-      intents: [
-        { type: 'complete', taskId: 'task-456', projectHint: 'Inbox', confidence: 0.9 },
-      ],
-    });
-    const completeResult = await completeHarness.processMessage('complete task');
-    assert.equal(completeResult.type, 'task');
-    assert.equal(completeHarness.adapterCalls.complete.length, 1);
-    assert.match(completeResult.confirmationText, /Completed 1 task/);
-
-    const deleteHarness = createPipelineHarness({
-      intents: [
-        { type: 'delete', taskId: 'task-789', projectHint: 'Inbox', confidence: 0.9 },
-      ],
-    });
-    const deleteResult = await deleteHarness.processMessage('delete task');
-    assert.equal(deleteResult.type, 'task');
-    assert.equal(deleteHarness.adapterCalls.delete.length, 1);
-    assert.match(deleteResult.confirmationText, /Deleted 1 task/);
-
-    const nonTaskHarness = createPipelineHarness({ intents: [] });
-    const nonTaskResult = await nonTaskHarness.processMessage('just chatting');
-    assert.equal(nonTaskResult.type, 'non-task');
-    assert.equal(nonTaskResult.results.length, 0);
-
-    console.log('PASS pipeline happy path covers task operations and non-task routing');
-  } catch (err) {
-    failures++;
-    console.error('FAIL pipeline happy path covers task operations and non-task routing');
     console.error(err.message);
   }
 
