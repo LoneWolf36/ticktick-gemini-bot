@@ -1,7 +1,7 @@
 ---
 work_package_id: WP02
 title: Telegram Bot Interface
-lane: "doing"
+lane: "done"
 dependencies:
 - WP01
 base_branch: 008-work-style-and-urgent-mode-WP01
@@ -126,3 +126,4 @@ Use language identifiers in code blocks: ````python`, ````bash`
 - 2026-03-11T14:30:00Z - codex - shell_pid=27136 - lane=doing - Acknowledged feedback, moved free-form urgent detection ahead of auth, added unauthenticated regression coverage, and declared WP01 dependency
 - 2026-03-11T14:29:13Z – codex – shell_pid=27136 – lane=for_review – Ready for review: fixed unauthenticated free-form urgent toggle path and corrected WP01 dependency metadata
 - 2026-03-11T14:30:40Z – codex – shell_pid=12188 – lane=doing – Started review via workflow command
+- 2026-03-11T14:32:05Z – codex – shell_pid=12188 – lane=done – Review passed: urgent-mode messages now bypass auth gate, dependency metadata is corrected, and regression coverage verifies the unauthenticated free-form path
