@@ -10,6 +10,7 @@ import { TickTickAdapter } from './services/ticktick-adapter.js';
 import { createAxIntent } from './services/ax-intent.js';
 import * as normalizer from './services/normalizer.js';
 import { createPipeline } from './services/pipeline.js';
+import { getUserTimezone } from './services/user-settings.js';
 
 const {
     TICKTICK_CLIENT_ID,
@@ -19,7 +20,6 @@ const {
     GEMINI_API_KEYS,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
-    USER_TIMEZONE = 'Europe/Dublin',
     DAILY_BRIEFING_HOUR = '8',
     WEEKLY_DIGEST_DAY = '0',
     POLL_INTERVAL_MINUTES = '5',
@@ -107,6 +107,7 @@ const pipeline = createPipeline({ axIntent, normalizer, adapter });
 
 const bot = createBot(TELEGRAM_BOT_TOKEN, ticktick, gemini, adapter, pipeline, botConfig);
 const app = express();
+const userTimezone = getUserTimezone();
 
 app.get('/health', (req, res) => res.json({ status: 'ok', authenticated: ticktick.isAuthenticated() }));
 
@@ -188,7 +189,7 @@ app.listen(parseInt(PORT), async () => {
         dailyHour: parseInt(DAILY_BRIEFING_HOUR),
         weeklyDay: parseInt(WEEKLY_DIGEST_DAY),
         pollMinutes: parseInt(POLL_INTERVAL_MINUTES),
-        timezone: USER_TIMEZONE,
+        timezone: userTimezone,
         ...botConfig,
     });
 

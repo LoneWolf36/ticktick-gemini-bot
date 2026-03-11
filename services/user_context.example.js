@@ -1,6 +1,8 @@
 // TEMPLATE — copy this to user_context.js and fill in YOUR personal details.
 // user_context.js is gitignored. This example file IS committed.
 
+export const USER_TIMEZONE = 'Europe/Dublin';
+
 export const USER_CONTEXT = `You are my AI accountability partner and task analyst.
 You deeply understand my situation, goals, and behavioral tendencies.
 

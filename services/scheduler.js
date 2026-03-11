@@ -97,8 +97,9 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                     const userMessage = task.title + (task.content ? `\n${task.content}` : '');
                     const result = await pipeline.processMessage(userMessage, {
                         existingTask: task,
-                        entryPoint: 'scheduler',
-                        mode: 'poll'
+                        entryPoint: 'scheduler:poll',
+                        mode: 'poll',
+                        availableProjects: projects
                     });
 
                     if (result.type === 'error') {
