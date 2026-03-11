@@ -1,7 +1,11 @@
 // State store — two-phase task tracking (pending → processed)
 //
 // Backend: Redis if REDIS_URL is set (for cloud), file-based fallback (for local dev).
-// The entire state is stored as a single JSON blob — simple, no schema to manage.
+// Redis schema:
+//   - ticktick-bot:state => JSON blob for shared bot/task state
+//   - user:{userId}:urgent_mode => JSON boolean ("true"/"false"), defaults to false when missing
+// File fallback schema:
+//   - data/store.json => JSON blob for shared bot/task state plus urgentModes[userId] booleans
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -15,6 +19,7 @@ const REDIS_KEY = 'ticktick-bot:state';
 
 const DEFAULT_STATE = {
     chatId: null,
+    urgentModes: {},
     pendingTasks: {},    // Analyzed + sent to Telegram, awaiting user review
     pendingReorg: null,  // Proposed global reorg plan awaiting apply/refine/cancel
     processedTasks: {},  // User has clicked approve/skip/drop
@@ -71,6 +76,7 @@ async function loadFromRedis() {
                 ...DEFAULT_STATE,
                 ...parsed,
                 stats: { ...DEFAULT_STATE.stats, ...parsed.stats },
+                urgentModes: parsed.urgentModes || {},
                 pendingTasks: parsed.pendingTasks || {},
                 pendingReorg: parsed.pendingReorg || null,
                 processedTasks: parsed.processedTasks || {},
@@ -137,6 +143,7 @@ function loadFromFile() {
             ...DEFAULT_STATE,
             ...parsed,
             stats: { ...DEFAULT_STATE.stats, ...parsed.stats },
+            urgentModes: parsed.urgentModes || {},
             pendingTasks: parsed.pendingTasks || {},
             pendingReorg: parsed.pendingReorg || null,
             processedTasks: parsed.processedTasks || {},
@@ -215,6 +222,61 @@ export function getChatId() {
 export async function setChatId(id) {
     state.chatId = id;
     await save();
+}
+
+function getUrgentModeRedisKey(userId) {
+    return `user:${userId}:urgent_mode`;
+}
+
+function normalizeStoredBoolean(value) {
+    if (typeof value === 'boolean') return value;
+    if (value === 'true' || value === '1') return true;
+    if (value === 'false' || value === '0' || value == null) return false;
+    return Boolean(value);
+}
+
+function assertUserId(userId) {
+    if (userId === undefined || userId === null || userId === '') {
+        throw new Error('userId is required');
+    }
+}
+
+export async function getUrgentMode(userId) {
+    assertUserId(userId);
+
+    if (useRedis) {
+        try {
+            const raw = await redis.get(getUrgentModeRedisKey(userId));
+            if (raw !== null) return normalizeStoredBoolean(JSON.parse(raw));
+        } catch (err) {
+            console.warn('⚠️  Redis urgent mode load error:', err.message);
+        }
+    }
+
+    return state.urgentModes?.[userId] === true;
+}
+
+export async function setUrgentMode(userId, value) {
+    assertUserId(userId);
+
+    const normalizedValue = value === true;
+    if (!state.urgentModes || typeof state.urgentModes !== 'object' || Array.isArray(state.urgentModes)) {
+        state.urgentModes = {};
+    }
+    state.urgentModes[userId] = normalizedValue;
+
+    if (useRedis) {
+        try {
+            await redis.set(getUrgentModeRedisKey(userId), JSON.stringify(normalizedValue));
+            return normalizedValue;
+        } catch (err) {
+            console.error('⚠️  Redis urgent mode save error:', err.message);
+            return normalizedValue;
+        }
+    }
+
+    await save();
+    return normalizedValue;
 }
 
 // ─── Task Status Checks ─────────────────────────────────────
