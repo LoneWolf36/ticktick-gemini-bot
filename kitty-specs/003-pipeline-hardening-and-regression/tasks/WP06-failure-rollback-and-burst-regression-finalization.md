@@ -17,7 +17,7 @@ subtasks:
 - T022
 phase: Phase 5 - Regression Hardening
 assignee: ''
-agent: ''
+agent: "Codex"
 shell_pid: "30416"
 review_status: ''
 reviewed_by: ''
@@ -177,3 +177,4 @@ Optional follow-up only if helpful:
 ## Activity Log
 
 - 2026-03-11T17:50:00Z - codex - lane=planned - Prompt created.
+- 2026-03-11T22:23:04Z – Codex – shell_pid=30416 – lane=doing – Assigned agent via workflow command
