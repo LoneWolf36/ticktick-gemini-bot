@@ -2,6 +2,7 @@
 
 **Purpose**: Validate specification completeness and quality before proceeding to planning
 **Created**: 2026-03-10
+**Updated**: 2026-03-11
 **Feature**: [spec.md](/C:/Users/Huzefa%20Khan/Downloads/Gmail/ticktick-gemini/kitty-specs/008-work-style-and-urgent-mode/spec.md)
 
 ## Content Quality
@@ -33,5 +34,6 @@
 
 - This spec keeps explicit state small enough to remain usable on low-capacity days.
 - It intentionally rejects a richer multi-field self-tracking model for v1.
-- Urgent mode changes ranking only and does not authorize stronger tone or intervention.
+- Urgent mode changes BOTH ranking and interaction tone, and stays on until manually disabled.
+- Daily/weekly briefings must remind the user whenever urgent mode is active.
 - Ready for `/spec-kitty.plan`
