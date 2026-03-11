@@ -38,10 +38,33 @@ function buildFailureResult(context, { failureClass, stage, summary, error, deta
     const isDevMode = resolveDevMode(context);
     const diagnostics = [];
 
+    if (failureClass) diagnostics.push(`failure_class: ${failureClass}`);
+    if (stage) diagnostics.push(`failure_stage: ${stage}`);
     if (summary) diagnostics.push(summary);
     if (error?.message) diagnostics.push(error.message);
     if (details?.diagnostics && Array.isArray(details.diagnostics)) {
         diagnostics.push(...details.diagnostics);
+    }
+    if (details?.validationErrors && Array.isArray(details.validationErrors)) {
+        for (const entry of details.validationErrors) {
+            if (Array.isArray(entry)) {
+                const compact = entry.filter(Boolean).join('; ');
+                diagnostics.push(compact ? `validation_error: ${compact}` : 'validation_error: (empty)');
+            } else if (typeof entry === 'string') {
+                diagnostics.push(`validation_error: ${entry}`);
+            }
+        }
+    }
+    if (details?.failures && Array.isArray(details.failures)) {
+        for (const failure of details.failures) {
+            if (!failure || typeof failure !== 'object') continue;
+            const parts = [];
+            if (failure.type) parts.push(`type=${failure.type}`);
+            if (failure.title) parts.push(`title="${failure.title}"`);
+            if (failure.taskId) parts.push(`taskId=${failure.taskId}`);
+            if (failure.message) parts.push(`message="${failure.message}"`);
+            diagnostics.push(`adapter_failure: ${parts.join(' | ')}`);
+        }
     }
 
     return {
