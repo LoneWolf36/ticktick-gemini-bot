@@ -36,6 +36,10 @@ function formatCurrentDate(date, timezone) {
     return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
+function isDateOnlyString(value) {
+    return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
+}
+
 function normalizeProjects(projects) {
     if (!Array.isArray(projects)) return [];
     return projects;
@@ -103,8 +107,11 @@ export function createPipelineContextBuilder({
         if (options.timezone && options.timezone !== timezone) {
             console.warn(`[PipelineContext] Ignoring caller timezone "${options.timezone}" in favor of "${timezone}".`);
         }
-        const resolvedNow = coerceDate(options.currentDate ?? options.now, now());
-        const currentDate = formatCurrentDate(resolvedNow, timezone);
+        const requestedCurrentDate = options.currentDate ?? options.now;
+        const resolvedNow = coerceDate(requestedCurrentDate, now());
+        const currentDate = isDateOnlyString(requestedCurrentDate)
+            ? requestedCurrentDate
+            : formatCurrentDate(resolvedNow, timezone);
 
         const context = {
             requestId: options.requestId || requestIdFactory(),
