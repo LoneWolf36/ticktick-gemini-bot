@@ -13,8 +13,8 @@ subtasks:
 - T007
 phase: Phase 2 - Story 1 Context Wiring
 assignee: ''
-agent: ''
-shell_pid: "30628"
+agent: "Codex"
+shell_pid: "19636"
 review_status: ''
 reviewed_by: ''
 history:
@@ -153,3 +153,4 @@ Verification commands:
 
 - 2026-03-11T17:18:05Z - system - lane=planned - Prompt created.
 - 2026-03-11T17:50:00Z - codex - lane=planned - Reframed as pure caller wiring to open a parallel test-harness track.
+- 2026-03-11T19:39:31Z – Codex – shell_pid=19636 – lane=doing – Assigned agent via workflow command
