@@ -120,9 +120,9 @@
 **Requirement Refs**: FR-001, FR-002, FR-005, FR-006, SC-001, SC-003
 
 ### Included Subtasks
-- [ ] T008 Add direct regression coverage for relative-date resolution and project-hint resolution through the hardened pipeline path.
-- [ ] T018 Refactor `tests/regression.test.js` and `tests/run-regression-tests.mjs` helpers so they exercise `createPipeline()` directly with mocked AX, normalizer, and adapter doubles rather than mostly legacy helper behavior.
-- [ ] T019 Add direct pipeline happy-path coverage for create, update, complete, delete, and non-task outcomes using the hardened result envelope.
+- [x] T008 Add direct regression coverage for relative-date resolution and project-hint resolution through the hardened pipeline path.
+- [x] T018 Refactor `tests/regression.test.js` and `tests/run-regression-tests.mjs` helpers so they exercise `createPipeline()` directly with mocked AX, normalizer, and adapter doubles rather than mostly legacy helper behavior.
+- [x] T019 Add direct pipeline happy-path coverage for create, update, complete, delete, and non-task outcomes using the hardened result envelope.
 
 ### Implementation Notes
 - This package is intentionally front-loaded to unlock parallel work on the harness.
