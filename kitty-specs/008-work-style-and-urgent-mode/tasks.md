@@ -130,9 +130,9 @@ description: "Work package task list template for feature implementation"
 **Requirements Refs**: SC-001, SC-002, SC-003, SC-004, FR-001, FR-002, FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010, FR-011, FR-012, FR-013, FR-014
 
 ### Included Subtasks
-- [ ] T013 Write E2E test for User Story 1 (toggle behavior) in `tests/e2e-live-ticktick.mjs`.
-- [ ] T014 Write E2E test for User Story 2 (humane default) in `tests/e2e-live-checklist.mjs`.
-- [ ] T015 Write E2E test for User Story 3 (briefing reminders).
+- [x] T013 Write E2E test for User Story 1 (toggle behavior) in `tests/e2e-live-ticktick.mjs`.
+- [x] T014 Write E2E test for User Story 2 (humane default) in `tests/e2e-live-checklist.mjs`.
+- [x] T015 Write E2E test for User Story 3 (briefing reminders).
 
 ### Implementation Notes
 - Ensure tests run cleanly and do not leave residual test state in Redis.
