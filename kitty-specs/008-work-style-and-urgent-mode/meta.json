@@ -1,0 +1,11 @@
+{
+  "feature_number": "008",
+  "slug": "008-work-style-and-urgent-mode",
+  "feature_slug": "008-work-style-and-urgent-mode",
+  "friendly_name": "Work Style and Urgent Mode",
+  "mission": "software-dev",
+  "target_branch": "master",
+  "created_at": "2026-03-10T19:29:48Z",
+  "source_description": "Define the explicit user-state model for recommendations: a single humane work-style mode, manual urgent-mode toggle, and weak inference fallback that never escalates intervention on its own.",
+  "vcs": "git"
+}
