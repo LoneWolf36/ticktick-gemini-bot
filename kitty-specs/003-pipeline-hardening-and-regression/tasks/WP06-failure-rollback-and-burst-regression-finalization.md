@@ -1,7 +1,7 @@
 ---
 work_package_id: WP06
 title: Failure, Rollback, and Burst Regression Finalization
-lane: "for_review"
+lane: "doing"
 dependencies:
 - WP03
 - WP04
@@ -18,7 +18,7 @@ subtasks:
 phase: Phase 5 - Regression Hardening
 assignee: ''
 agent: "Codex"
-shell_pid: "30416"
+shell_pid: "15804"
 review_status: ''
 reviewed_by: ''
 history:
@@ -179,3 +179,4 @@ Optional follow-up only if helpful:
 - 2026-03-11T17:50:00Z - codex - lane=planned - Prompt created.
 - 2026-03-11T22:23:04Z – Codex – shell_pid=30416 – lane=doing – Assigned agent via workflow command
 - 2026-03-11T22:27:56Z – Codex – shell_pid=30416 – lane=for_review – Ready for review: finalized direct failure-path, rollback, telemetry, and burst-concurrency regressions; updated pipeline harness and live doubles for hardened result compatibility.
+- 2026-03-11T22:30:58Z – Codex – shell_pid=15804 – lane=doing – Started review via workflow command
