@@ -1,7 +1,7 @@
 ---
 work_package_id: WP05
 title: Retry, Rollback, and Observability Hardening
-lane: "for_review"
+lane: "doing"
 dependencies:
 - WP01
 - WP03
@@ -15,8 +15,8 @@ subtasks:
 - T016
 phase: Phase 4 - Execution Hardening
 assignee: ''
-agent: "Codex"
-shell_pid: "31060"
+agent: "codex"
+shell_pid: "12656"
 review_status: ''
 reviewed_by: ''
 history:
@@ -171,3 +171,4 @@ Verification commands:
 - 2026-03-11T17:50:00Z - codex - lane=planned - Tightened scope so implementation hardening and final regression closure can proceed as separate packages.
 - 2026-03-11T20:33:30Z – Codex – shell_pid=31060 – lane=doing – Assigned agent via workflow command
 - 2026-03-11T20:51:55Z – Codex – shell_pid=31060 – lane=for_review – Ready for review: added per-action execution records, retry-once rollback handling, and structured pipeline telemetry with regression coverage.
+- 2026-03-11T22:16:52Z – codex – shell_pid=12656 – lane=doing – Started review via workflow command
