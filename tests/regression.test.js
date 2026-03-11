@@ -10,6 +10,7 @@ import { TickTickAdapter } from '../services/ticktick-adapter.js';
 import { TickTickClient } from '../services/ticktick.js';
 import * as store from '../services/store.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
+import { createPipelineHarness, DEFAULT_PROJECTS } from './pipeline-harness.js';
 import {
   buildRankingContext,
   buildRecommendationResult,
@@ -907,4 +908,103 @@ test('execution prioritization elevates recovery work when it protects execution
   assert.equal(result.topRecommendation.exceptionApplied, true);
   assert.equal(result.topRecommendation.exceptionReason, 'capacity_protection');
   assert.equal(result.topRecommendation.rationaleCode, 'capacity_protection');
+});
+
+test('pipeline context resolves relative dates through the normalizer path', async () => {
+  process.env.USER_TIMEZONE = 'Europe/Dublin';
+  const { processMessage, adapterCalls, axCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Book dentist',
+        dueDate: 'thursday',
+        confidence: 0.9,
+      },
+    ],
+  });
+
+  const result = await processMessage('book dentist thursday', {
+    currentDate: '2026-03-10T10:00:00Z',
+    entryPoint: 'regression',
+    requestId: 'req-story-1',
+  });
+
+  assert.equal(result.type, 'task');
+  assert.equal(result.actions.length, 1);
+  assert.equal(result.results.length, 1);
+  assert.equal(axCalls[0].options.currentDate, '2026-03-10');
+  assert.deepEqual(axCalls[0].options.availableProjects, DEFAULT_PROJECTS.map((project) => project.name));
+  assert.equal(adapterCalls.create.length, 1);
+  assert.match(adapterCalls.create[0].dueDate, /^2026-03-12T23:59:00\.000[+-]\d{4}$/);
+});
+
+test('pipeline context resolves project hints from available projects', async () => {
+  process.env.USER_TIMEZONE = 'Europe/Dublin';
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Plan sprint',
+        projectHint: 'Career',
+        confidence: 0.9,
+      },
+    ],
+  });
+
+  const result = await processMessage('plan sprint in career');
+
+  assert.equal(result.type, 'task');
+  assert.equal(adapterCalls.create.length, 1);
+  assert.equal(adapterCalls.create[0].projectId, DEFAULT_PROJECTS[1].id);
+});
+
+test('pipeline happy path covers create, update, complete, delete, and non-task routing', async () => {
+  process.env.USER_TIMEZONE = 'Europe/Dublin';
+
+  const createHarness = createPipelineHarness({
+    intents: [
+      { type: 'create', title: 'Write summary', confidence: 0.9 },
+    ],
+  });
+  const createResult = await createHarness.processMessage('write summary');
+  assert.equal(createResult.type, 'task');
+  assert.equal(createResult.actions[0].type, 'create');
+  assert.equal(createResult.results[0].success, true);
+  assert.match(createResult.confirmationText, /Created/);
+
+  const updateHarness = createPipelineHarness({
+    intents: [
+      { type: 'update', taskId: 'task-123', title: 'Revise summary', projectHint: 'Inbox', confidence: 0.9 },
+    ],
+  });
+  const updateResult = await updateHarness.processMessage('update task');
+  assert.equal(updateResult.type, 'task');
+  assert.equal(updateResult.actions[0].type, 'update');
+  assert.equal(updateHarness.adapterCalls.update.length, 1);
+  assert.match(updateResult.confirmationText, /Updated 1 task/);
+
+  const completeHarness = createPipelineHarness({
+    intents: [
+      { type: 'complete', taskId: 'task-456', projectHint: 'Inbox', confidence: 0.9 },
+    ],
+  });
+  const completeResult = await completeHarness.processMessage('complete task');
+  assert.equal(completeResult.type, 'task');
+  assert.equal(completeHarness.adapterCalls.complete.length, 1);
+  assert.match(completeResult.confirmationText, /Completed 1 task/);
+
+  const deleteHarness = createPipelineHarness({
+    intents: [
+      { type: 'delete', taskId: 'task-789', projectHint: 'Inbox', confidence: 0.9 },
+    ],
+  });
+  const deleteResult = await deleteHarness.processMessage('delete task');
+  assert.equal(deleteResult.type, 'task');
+  assert.equal(deleteHarness.adapterCalls.delete.length, 1);
+  assert.match(deleteResult.confirmationText, /Deleted 1 task/);
+
+  const nonTaskHarness = createPipelineHarness({ intents: [] });
+  const nonTaskResult = await nonTaskHarness.processMessage('just chatting');
+  assert.equal(nonTaskResult.type, 'non-task');
+  assert.equal(nonTaskResult.results.length, 0);
 });
