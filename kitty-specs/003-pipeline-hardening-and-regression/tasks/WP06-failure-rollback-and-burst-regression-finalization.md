@@ -1,7 +1,7 @@
 ---
 work_package_id: WP06
 title: Failure, Rollback, and Burst Regression Finalization
-lane: "for_review"
+lane: "doing"
 dependencies:
 - WP03
 - WP04
@@ -18,7 +18,7 @@ subtasks:
 phase: Phase 5 - Regression Hardening
 assignee: ''
 agent: "Codex"
-shell_pid: "15804"
+shell_pid: "15240"
 review_status: "has_feedback"
 reviewed_by: "TickTick Bot"
 review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP06.md"
@@ -206,3 +206,4 @@ How to fix:
 - 2026-03-11T22:30:58Z – Codex – shell_pid=15804 – lane=doing – Started review via workflow command
 - 2026-03-11T22:32:05Z – Codex – shell_pid=15804 – lane=planned – Moved to planned
 - 2026-03-11T22:36:03Z – Codex – shell_pid=15804 – lane=for_review – Dependency gate satisfied after merging WP05 into master; re-entering review.
+- 2026-03-11T22:36:12Z – Codex – shell_pid=15240 – lane=doing – Started review via workflow command
