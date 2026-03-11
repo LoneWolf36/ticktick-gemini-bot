@@ -1,7 +1,7 @@
 ---
 work_package_id: WP04
 title: Direct Pipeline Harness and Story 1 Coverage
-lane: "doing"
+lane: "planned"
 dependencies:
 - WP01
 subtasks:
@@ -12,8 +12,9 @@ phase: Phase 2 - Direct Harness Foundation
 assignee: ''
 agent: "codex"
 shell_pid: "18888"
-review_status: ''
-reviewed_by: ''
+review_status: "has_feedback"
+reviewed_by: "TickTick Bot"
+review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP04.md"
 history:
 - timestamp: '2026-03-11T17:18:05Z'
   lane: planned
@@ -143,8 +144,23 @@ Verification commands:
 - Verify happy-path coverage uses mocked dependencies and the hardened result envelope.
 - Verify this harness is reusable by later failure and rollback packages instead of creating a parallel test path.
 
+## Review Feedback
+
+**Reviewed by**: TickTick Bot
+**Status**: ❌ Changes Requested
+**Date**: 2026-03-11
+**Feedback file**: `C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP04.md`
+
+**Issue 1**: `tests/regression.test.js` and `tests/run-regression-tests.mjs` import `./pipeline-harness.js`, but that file does not exist in this worktree. This will fail with module-not-found. Please add/commit `tests/pipeline-harness.js` (or adjust imports to an existing helper).
+
+**Issue 2**: The WP04 changes are not committed. `git log master..HEAD` only shows `feat(WP01)` and `git status` shows uncommitted edits in `tests/regression.test.js` and `tests/run-regression-tests.mjs`. Please commit the WP04 deliverables as required before review.
+
+**Issue 3**: Dependency check: WP04 depends on WP01, but WP01 is not merged to `master` (the WP01 commit is still in this branch). Please merge WP01 to master or rebase WP04 on the merged WP01 before resubmitting for review.
+
+
 ## Activity Log
 
 - 2026-03-11T17:18:05Z - system - lane=planned - Prompt created.
 - 2026-03-11T17:50:00Z - codex - lane=planned - Reframed as early direct-harness work to open a third parallel implementation track.
 - 2026-03-11T19:39:35Z – codex – shell_pid=18888 – lane=doing – Started implementation via workflow command
+- 2026-03-11T19:51:46Z – codex – shell_pid=18888 – lane=planned – Moved to planned
