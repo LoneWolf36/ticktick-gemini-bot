@@ -326,7 +326,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
                     const result = await pipeline.processMessage(userMessage, {
                         existingTask: task,
-                        timezone: process.env.USER_TIMEZONE || 'Europe/Dublin'
+                        entryPoint: 'telegram',
+                        mode: 'scan'
                     });
 
                     if (result.type === 'error') {
@@ -532,7 +533,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     const userMessage = task.title + (task.content ? `\n${task.content}` : '');
                     const result = await pipeline.processMessage(userMessage, {
                         existingTask: task,
-                        timezone: process.env.USER_TIMEZONE || 'Europe/Dublin'
+                        entryPoint: 'telegram',
+                        mode: 'review'
                     });
 
                     if (result.type === 'error') {
@@ -626,7 +628,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         await ctx.reply('🤔 Processing...');
         try {
             const result = await pipeline.processMessage(userMessage, {
-                timezone: process.env.USER_TIMEZONE || 'Europe/Dublin'
+                entryPoint: 'telegram',
+                mode: 'interactive'
             });
 
             if (result.type === 'task') {

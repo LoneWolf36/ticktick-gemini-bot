@@ -70,11 +70,11 @@ Instructions:
     confidence: number (0.0 to 1.0)
   }`);
 
-    async function extractIntents(userMessage, { currentDate, projects }) {
+    async function extractIntents(userMessage, { currentDate, availableProjects } = {}) {
         const input = {
             userMessage,
             currentDate,
-            availableProjects: projects
+            availableProjects: Array.isArray(availableProjects) ? availableProjects : []
         };
 
         const tryGenerate = async () => {

@@ -52,12 +52,25 @@ const DAY_INDEX = {
 /**
  * Gets local current date components formatted by the system timezone.
  */
+function _coerceDate(value, fallback = new Date()) {
+    if (value instanceof Date) return value;
+    if (typeof value === 'string' || typeof value === 'number') {
+        const parsed = new Date(value);
+        if (!Number.isNaN(parsed.getTime())) return parsed;
+    }
+    return fallback instanceof Date ? fallback : new Date();
+}
+
+/**
+ * Gets local current date components formatted by the system timezone.
+ */
 function _getNowComponents(timezone = 'Europe/Dublin', currentDate = new Date()) {
+    const resolvedDate = _coerceDate(currentDate, new Date());
     const parts = new Intl.DateTimeFormat('en-CA', {
         timeZone: timezone,
         year: 'numeric', month: '2-digit', day: '2-digit',
         hour: '2-digit', minute: '2-digit', hour12: false,
-    }).formatToParts(currentDate);
+    }).formatToParts(resolvedDate);
 
     const get = (type) => parts.find(p => p.type === type)?.value;
     return {
