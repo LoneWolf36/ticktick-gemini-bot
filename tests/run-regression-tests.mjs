@@ -4,6 +4,8 @@ import { appendUrgentModeReminder, parseTelegramMarkdownToHTML, containsSensitiv
 import { executeActions, registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer, buildUrgentModePromptNote } from '../services/gemini.js';
 import { detectUrgentModeIntent } from '../services/ax-intent.js';
+import { createPipeline } from '../services/pipeline.js';
+import { createPipelineObservability } from '../services/pipeline-observability.js';
 import { TickTickAdapter } from '../services/ticktick-adapter.js';
 import { TickTickClient } from '../services/ticktick.js';
 import * as store from '../services/store.js';
@@ -363,6 +365,199 @@ async function run() {
   } catch (err) {
     failures++;
     console.error('FAIL TickTickAdapter includes projectId for due-date-only updates');
+    console.error(err.message);
+  }
+
+  try {
+    const adapterCalls = [];
+    const telemetryEvents = [];
+    const adapter = {
+      listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+      getTaskSnapshot: async (taskId, projectId) => ({
+        id: taskId,
+        projectId,
+        title: 'Existing task',
+        content: null,
+        priority: 0,
+        dueDate: null,
+        repeatFlag: null,
+        status: 0,
+      }),
+      createTask: async (action) => {
+        adapterCalls.push(['createTask', action.title]);
+        return { id: 'created-1', projectId: action.projectId };
+      },
+      updateTask: async () => {
+        adapterCalls.push(['updateTask']);
+        throw new Error('TickTick unavailable');
+      },
+      deleteTask: async (taskId, projectId) => {
+        adapterCalls.push(['deleteTask', taskId, projectId]);
+        return { deleted: true, taskId, projectId };
+      },
+      restoreTask: async () => {
+        throw new Error('restoreTask should not be called in this scenario');
+      },
+      completeTask: async () => {
+        throw new Error('completeTask should not be called in this scenario');
+      },
+    };
+
+    const pipeline = createPipeline({
+      axIntent: {
+        extractIntents: async () => [{ type: 'create' }, { type: 'update' }],
+      },
+      normalizer: {
+        normalizeActions: () => ([
+          { type: 'create', title: 'Draft proposal', projectId: 'inbox', valid: true, validationErrors: [] },
+          { type: 'update', taskId: 'task-2', originalProjectId: 'inbox', projectId: 'inbox', title: 'Existing task', valid: true, validationErrors: [] },
+        ]),
+      },
+      adapter,
+      observability: createPipelineObservability({
+        eventSink: async (event) => {
+          telemetryEvents.push(event);
+        },
+        logger: null,
+      }),
+    });
+
+    const result = await pipeline.processMessage('Draft proposal and update the follow-up', {
+      requestId: 'regression-rollback-success',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+    });
+
+    assert.equal(result.type, 'error');
+    assert.equal(result.failure.class, 'adapter');
+    assert.equal(result.failure.rolledBack, true);
+    assert.equal(result.results[0].status, 'rolled_back');
+    assert.equal(result.results[0].rollbackStep.type, 'delete_created');
+    assert.equal(result.results[1].status, 'failed');
+    assert.equal(result.results[1].attempts, 2);
+    assert.deepEqual(
+      adapterCalls,
+      [
+        ['createTask', 'Draft proposal'],
+        ['updateTask'],
+        ['updateTask'],
+        ['deleteTask', 'created-1', 'inbox'],
+      ],
+    );
+    assert.ok(
+      telemetryEvents.some((event) =>
+        event.eventType === 'pipeline.rollback.succeeded'
+        && event.metadata.rollbackType === 'delete_created'
+        && event.rolledBack === true),
+    );
+    console.log('PASS pipeline retries once and rolls back earlier successful writes');
+  } catch (err) {
+    failures++;
+    console.error('FAIL pipeline retries once and rolls back earlier successful writes');
+    console.error(err.message);
+  }
+
+  try {
+    const telemetryEvents = [];
+    const adapter = {
+      listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+      getTaskSnapshot: async (taskId, projectId) => ({
+        id: taskId,
+        projectId,
+        title: 'Existing task',
+        content: null,
+        priority: 0,
+        dueDate: null,
+        repeatFlag: null,
+        status: 0,
+      }),
+      completeTask: async (taskId, projectId) => ({ completed: true, taskId, projectId }),
+      createTask: async () => {
+        throw new Error('Create failed');
+      },
+      updateTask: async () => {
+        throw new Error('updateTask should not be called in this scenario');
+      },
+      deleteTask: async () => {
+        throw new Error('deleteTask should not be called in this scenario');
+      },
+      restoreTask: async () => {
+        throw new Error('restoreTask should not be called in this scenario');
+      },
+    };
+
+    const pipeline = createPipeline({
+      axIntent: {
+        extractIntents: async () => [{ type: 'complete' }, { type: 'create' }],
+      },
+      normalizer: {
+        normalizeActions: () => ([
+          { type: 'complete', taskId: 'task-1', projectId: 'inbox', valid: true, validationErrors: [] },
+          { type: 'create', title: 'Replacement task', projectId: 'inbox', valid: true, validationErrors: [] },
+        ]),
+      },
+      adapter,
+      observability: createPipelineObservability({
+        eventSink: async (event) => {
+          telemetryEvents.push(event);
+        },
+        logger: null,
+      }),
+    });
+
+    const result = await pipeline.processMessage('Complete this and create a replacement', {
+      requestId: 'regression-rollback-failure',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+    });
+
+    assert.equal(result.type, 'error');
+    assert.equal(result.failure.class, 'rollback');
+    assert.equal(result.failure.rolledBack, false);
+    assert.equal(result.results[0].status, 'rollback_failed');
+    assert.equal(result.results[0].rollbackStep.type, 'uncomplete_task');
+    assert.equal(result.results[1].status, 'failed');
+    assert.equal(result.results[1].attempts, 2);
+    assert.equal(result.failure.retryable, false);
+    assert.ok(
+      telemetryEvents.some((event) =>
+        event.eventType === 'pipeline.rollback.failed'
+        && event.metadata.rollbackType === 'uncomplete_task'
+        && event.failureClass === 'rollback'),
+    );
+    console.log('PASS pipeline classifies rollback failures when compensation is unsupported');
+  } catch (err) {
+    failures++;
+    console.error('FAIL pipeline classifies rollback failures when compensation is unsupported');
+    console.error(err.message);
+  }
+
+  try {
+    const telemetryEvents = [];
+    const observability = createPipelineObservability({
+      eventSink: async (event) => {
+        telemetryEvents.push(event);
+      },
+      logger: null,
+    });
+
+    await observability.emit(
+      { requestId: 'regression-telemetry', entryPoint: 'telegram', mode: 'scan' },
+      {
+        eventType: 'pipeline.request.received',
+        step: 'request',
+        status: 'start',
+        metadata: { mode: 'scan' },
+      },
+    );
+
+    assert.equal(telemetryEvents.length, 1);
+    assert.equal(telemetryEvents[0].entryPoint, 'telegram_review');
+    assert.equal(telemetryEvents[0].eventType, 'pipeline.request.received');
+    console.log('PASS pipeline observability normalizes telegram entry points for sink events');
+  } catch (err) {
+    failures++;
+    console.error('FAIL pipeline observability normalizes telegram entry points for sink events');
     console.error(err.message);
   }
   try {

@@ -142,6 +142,36 @@ export class TickTickAdapter {
         return results;
     }
 
+    async getTaskSnapshot(taskId, projectId) {
+        const start = Date.now();
+        this._log('getTaskSnapshot', { taskId, projectId });
+        try {
+            if (!taskId || !projectId) {
+                throw new Error('getTaskSnapshot requires both taskId and projectId');
+            }
+
+            const task = await this._client.getTask(projectId, taskId);
+            const snapshot = {
+                id: task.id,
+                projectId: task.projectId ?? projectId ?? null,
+                title: task.title || '',
+                content: task.content ?? null,
+                priority: task.priority ?? null,
+                dueDate: task.dueDate ?? null,
+                repeatFlag: task.repeatFlag ?? null,
+                status: task.status ?? null,
+            };
+
+            const elapsed = Date.now() - start;
+            this._log('getTaskSnapshot', `SUCCESS { id: "${snapshot.id}", ${elapsed}ms }`);
+            return snapshot;
+        } catch (error) {
+            const elapsed = Date.now() - start;
+            this._log('getTaskSnapshot', `FAILED { error: "${error.message}", ${elapsed}ms }`, true);
+            throw error;
+        }
+    }
+
     async updateTask(taskId, normalizedAction) {
         const start = Date.now();
         const projectId = normalizedAction.originalProjectId || normalizedAction.projectId;
@@ -196,6 +226,37 @@ export class TickTickAdapter {
         } catch (error) {
             const elapsed = Date.now() - start;
             this._log('updateTask', `FAILED { error: "${error.message}", ${elapsed}ms }`, true);
+            throw error;
+        }
+    }
+
+    async restoreTask(taskId, snapshot) {
+        const start = Date.now();
+        this._log('restoreTask', { taskId, snapshotTaskId: snapshot?.id, projectId: snapshot?.projectId ?? null });
+        try {
+            if (!taskId) {
+                throw new Error('restoreTask requires a taskId');
+            }
+            if (!snapshot || typeof snapshot !== 'object') {
+                throw new Error('restoreTask requires a snapshot');
+            }
+
+            const payload = {
+                title: snapshot.title ?? '',
+                content: snapshot.content ?? null,
+                dueDate: snapshot.dueDate ?? null,
+                priority: snapshot.priority ?? null,
+                projectId: snapshot.projectId ?? null,
+                repeatFlag: snapshot.repeatFlag ?? null,
+            };
+
+            const restoredTask = await this._client.updateTask(taskId, payload);
+            const elapsed = Date.now() - start;
+            this._log('restoreTask', `SUCCESS { id: "${restoredTask.id}", ${elapsed}ms }`);
+            return restoredTask;
+        } catch (error) {
+            const elapsed = Date.now() - start;
+            this._log('restoreTask', `FAILED { error: "${error.message}", ${elapsed}ms }`, true);
             throw error;
         }
     }
