@@ -306,6 +306,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         try {
             await ctx.reply('🔍 Scanning for new tasks...');
             const allTasks = await ticktick.getAllTasks();
+            const availableProjects = ticktick.getLastFetchedProjects();
             const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
@@ -326,8 +327,9 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
                     const result = await pipeline.processMessage(userMessage, {
                         existingTask: task,
-                        entryPoint: 'telegram',
-                        mode: 'scan'
+                        entryPoint: 'telegram:scan',
+                        mode: 'scan',
+                        availableProjects
                     });
 
                     if (result.type === 'error') {
@@ -515,6 +517,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         try {
             await ctx.reply('📋 Checking for unreviewed tasks...');
             const allTasks = await ticktick.getAllTasks();
+            const availableProjects = ticktick.getLastFetchedProjects();
             const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
@@ -533,8 +536,9 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     const userMessage = task.title + (task.content ? `\n${task.content}` : '');
                     const result = await pipeline.processMessage(userMessage, {
                         existingTask: task,
-                        entryPoint: 'telegram',
-                        mode: 'review'
+                        entryPoint: 'telegram:review',
+                        mode: 'review',
+                        availableProjects
                     });
 
                     if (result.type === 'error') {
@@ -628,7 +632,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         await ctx.reply('🤔 Processing...');
         try {
             const result = await pipeline.processMessage(userMessage, {
-                entryPoint: 'telegram',
+                entryPoint: 'telegram:freeform',
                 mode: 'interactive'
             });
 

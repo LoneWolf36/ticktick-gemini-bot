@@ -19,9 +19,11 @@ export function createPipeline({ axIntent, normalizer, adapter }) {
             console.log(`[Pipeline:${context.requestId}] Processing message: "${context.userMessage.substring(0, 50)}..."`);
 
             // Phase 1: Intent Extraction (AX)
-            const availableProjectNames = context.availableProjects
-                .map(p => p?.name)
-                .filter(name => typeof name === 'string' && name.trim());
+            const availableProjectNames = Array.isArray(context.availableProjectNames)
+                ? context.availableProjectNames
+                : context.availableProjects
+                    .map(p => p?.name)
+                    .filter(name => typeof name === 'string' && name.trim());
 
             const intents = await axIntent.extractIntents(context.userMessage, {
                 currentDate: context.currentDate,

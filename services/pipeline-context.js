@@ -45,6 +45,12 @@ function normalizeProjects(projects) {
     return projects;
 }
 
+function deriveProjectNames(projects) {
+    return projects
+        .map((project) => project?.name)
+        .filter((name) => typeof name === 'string' && name.trim());
+}
+
 export function validatePipelineContext(context) {
     const errors = [];
     if (!context || typeof context !== 'object') {
@@ -112,6 +118,10 @@ export function createPipelineContextBuilder({
         const currentDate = isDateOnlyString(requestedCurrentDate)
             ? requestedCurrentDate
             : formatCurrentDate(resolvedNow, timezone);
+        const providedProjects = Array.isArray(options.availableProjects)
+            ? options.availableProjects
+            : (Array.isArray(options.projects) ? options.projects : null);
+        const availableProjects = normalizeProjects(providedProjects ?? await adapter.listProjects());
 
         const context = {
             requestId: options.requestId || requestIdFactory(),
@@ -120,7 +130,8 @@ export function createPipelineContextBuilder({
             userMessage,
             currentDate,
             timezone,
-            availableProjects: normalizeProjects(await adapter.listProjects()),
+            availableProjects,
+            availableProjectNames: deriveProjectNames(availableProjects),
             existingTask: options.existingTask || null,
         };
 
