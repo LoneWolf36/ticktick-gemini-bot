@@ -3,36 +3,48 @@
  * Orchestrates the full task processing flow: 
  * Message -> AX Intent Extraction -> Normalization -> TickTick Adapter Execution
  */
+import { createPipelineContextBuilder } from './pipeline-context.js';
 
 export function createPipeline({ axIntent, normalizer, adapter }) {
+    const contextBuilder = createPipelineContextBuilder({ adapter });
 
     /**
      * Processes a user message through the entire pipeline.
      * @param {string} userMessage - Raw text from the user
-     * @param {Object} options - Context options like existingTask, timezone
+     * @param {Object} options - Context options like existingTask, entryPoint, mode
      */
     async function processMessage(userMessage, options = {}) {
         try {
-            console.log(`[Pipeline] Processing message: "${userMessage.substring(0, 50)}..."`);
+            const context = await contextBuilder.buildRequestContext(userMessage, options);
+            console.log(`[Pipeline:${context.requestId}] Processing message: "${context.userMessage.substring(0, 50)}..."`);
 
             // Phase 1: Intent Extraction (AX)
-            const intents = await axIntent.extractIntents(userMessage, options);
+            const availableProjectNames = context.availableProjects
+                .map(p => p?.name)
+                .filter(name => typeof name === 'string' && name.trim());
+
+            const intents = await axIntent.extractIntents(context.userMessage, {
+                currentDate: context.currentDate,
+                availableProjects: availableProjectNames
+            });
 
             if (!intents || intents.length === 0) {
-                console.log(`[Pipeline] No intents extracted. Routing as non-task.`);
+                console.log(`[Pipeline:${context.requestId}] No intents extracted. Routing as non-task.`);
                 return { type: 'non-task', results: [], errors: [] };
             }
 
             // Phase 2: Normalization
             // Fetch projects once for the normalizer to resolve project hints
-            const projects = await adapter.listProjects();
-            const defaultProjectId = projects.find(p => p.name.toLowerCase() === 'inbox')?.id || null;
+            const defaultProjectId = context.availableProjects
+                .find(p => p?.name?.toLowerCase() === 'inbox')?.id || null;
 
             const normOptions = {
-                ...options,
-                projects,
+                projects: context.availableProjects,
                 defaultProjectId,
-                existingTaskContent: options.existingTask?.content || null
+                existingTask: context.existingTask,
+                existingTaskContent: context.existingTask?.content || null,
+                timezone: context.timezone,
+                currentDate: context.currentDate
             };
 
             const normalizedActions = normalizer.normalizeActions(intents, normOptions);
@@ -41,16 +53,16 @@ export function createPipeline({ axIntent, normalizer, adapter }) {
             const invalidActions = normalizedActions.filter(a => !a.valid);
 
             if (invalidActions.length > 0) {
-                console.warn(`[Pipeline] Filtered out ${invalidActions.length} invalid actions:`, invalidActions.map(a => a.validationErrors));
+                console.warn(`[Pipeline:${context.requestId}] Filtered out ${invalidActions.length} invalid actions:`, invalidActions.map(a => a.validationErrors));
             }
 
             if (validActions.length === 0) {
-                console.log(`[Pipeline] All intents failed validation. Routing as non-task.`);
+                console.log(`[Pipeline:${context.requestId}] All intents failed validation. Routing as non-task.`);
                 return { type: 'non-task', results: [], errors: ['All actions failed validation.'] };
             }
 
             // Phase 3: Execution (Adapter)
-            const executionResult = await _executeActions(validActions, adapter);
+            const executionResult = await _executeActions(validActions, adapter, context.requestId);
 
             // Merge execution errors with validation errors if we want to report them
             const allErrors = [
@@ -82,11 +94,11 @@ export function createPipeline({ axIntent, normalizer, adapter }) {
     /**
      * Internal execution router
      */
-    async function _executeActions(actions, adapter) {
+    async function _executeActions(actions, adapter, requestId = 'n/a') {
         const results = [];
         const errors = [];
 
-        console.log(`[Pipeline] Executing ${actions.length} valid action(s).`);
+        console.log(`[Pipeline:${requestId}] Executing ${actions.length} valid action(s).`);
 
         for (const action of actions) {
             try {
@@ -108,10 +120,10 @@ export function createPipeline({ axIntent, normalizer, adapter }) {
                         throw new Error(`Unsupported action type: ${action.type}`);
                 }
                 results.push({ action, result, success: true });
-                console.log(`[Pipeline] ✅ ${action.type.toUpperCase()} successful: ${action.title || action.taskId}`);
+                console.log(`[Pipeline:${requestId}] ✅ ${action.type.toUpperCase()} successful: ${action.title || action.taskId}`);
             } catch (err) {
                 // Graceful failure handling (FR-016)
-                console.error(`[Pipeline] ❌ API Failure during ${action.type}:`, err.message);
+                console.error(`[Pipeline:${requestId}] ❌ API Failure during ${action.type}:`, err.message);
                 errors.push(`${action.type} failed: ${err.message}`);
                 results.push({ action, error: err, success: false });
             }
