@@ -100,31 +100,53 @@ function _getNowComponents(timezone = 'Europe/Dublin', currentDate = new Date())
     };
 }
 
+function _getTimezoneOffsetMinutes(year, month, day, hour, minute, timezone) {
+    const utcGuess = new Date(Date.UTC(year, month, day, hour, minute, 0));
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: timezone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        second: '2-digit',
+        hour12: false,
+    }).formatToParts(utcGuess);
+
+    const get = (type) => parseInt(parts.find(p => p.type === type)?.value, 10);
+    const localizedAsUtc = Date.UTC(
+        get('year'),
+        get('month') - 1,
+        get('day'),
+        get('hour'),
+        get('minute'),
+        get('second')
+    );
+
+    return Math.round((localizedAsUtc - utcGuess.getTime()) / 60000);
+}
+
 /**
  * Formats a Date object to TickTick ISO format
  */
 function _formatISO(date, timezone = 'Europe/Dublin', endOfDay = true) {
     const h = endOfDay ? 23 : 0;
     const m = endOfDay ? 59 : 0;
-    const targetDate = new Date(date.getFullYear(), date.getMonth(), date.getDate(), h, m, 0);
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const day = date.getDate();
+    const offsetMinutes = _getTimezoneOffsetMinutes(year, month, day, h, m, timezone);
+    const sign = offsetMinutes >= 0 ? '+' : '-';
+    const absOffsetMinutes = Math.abs(offsetMinutes);
+    const offsetHours = String(Math.floor(absOffsetMinutes / 60)).padStart(2, '0');
+    const offsetRemainderMinutes = String(absOffsetMinutes % 60).padStart(2, '0');
+    const tzOffset = `${sign}${offsetHours}${offsetRemainderMinutes}`;
 
-    const formatter = new Intl.DateTimeFormat('en-CA', {
-        timeZone: timezone,
-        timeZoneName: 'shortOffset',
-    });
-    const parts = formatter.formatToParts(targetDate);
-    const offsetStr = parts.find(p => p.type === 'timeZoneName')?.value || 'GMT';
-    const match = offsetStr.match(/GMT([+-]?\d+)?/);
-    const offsetHours = match?.[1] ? parseInt(match[1]) : 0;
-    const sign = offsetHours >= 0 ? '+' : '-';
-    const absHours = String(Math.abs(offsetHours)).padStart(2, '0');
-    const tzOffset = `${sign}${absHours}00`;
-
-    const mm = String(targetDate.getMonth() + 1).padStart(2, '0');
-    const dd = String(targetDate.getDate()).padStart(2, '0');
+    const mm = String(month + 1).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
     const hh = String(h).padStart(2, '0');
     const min = String(m).padStart(2, '0');
-    return `${targetDate.getFullYear()}-${mm}-${dd}T${hh}:${min}:00.000${tzOffset}`;
+    return `${year}-${mm}-${dd}T${hh}:${min}:00.000${tzOffset}`;
 }
 
 /**
