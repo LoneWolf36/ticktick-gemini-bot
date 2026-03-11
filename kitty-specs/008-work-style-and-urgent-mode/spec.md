@@ -6,6 +6,14 @@
 **Mission**: software-dev  
 **Input**: Define the explicit user-state model for recommendations: a single humane work-style mode, manual urgent-mode toggle, and weak inference fallback that never escalates intervention on its own.
 
+## Clarifications
+
+### Session 2026-03-11
+- Q: How does the user manually toggle urgent mode? -> A: inline keyboard or telegram command
+- Q: Where is the user's explicit work-style state and urgent mode state persisted? -> A: Redis (In-memory)
+- Q: Does turning on "urgent mode" modify any data in TickTick itself? -> A: Only Internal Output
+- Q: If the state is missing from Redis (e.g. first run or cache cleared), what are the explicit "safe defaults"? -> A: Humane ON, Urgent OFF
+
 ## User Scenarios & Testing
 
 ### User Story 1 - Manual Urgent Mode Changes Recommendation Behavior (Priority: P1)
@@ -18,8 +26,8 @@ The user can manually turn urgent mode on when they need a sharper operating pos
 
 **Acceptance Scenarios**:
 
-1. **Given** urgent mode is off, **When** the user manually turns urgent mode on, **Then** the next recommendation applies urgent-aware ordering and more direct language without changing the underlying prioritization contract
-2. **Given** urgent mode is on, **When** the user manually turns urgent mode off, **Then** the next recommendation no longer applies urgent-mode ordering or urgent-mode tone
+1. **Given** urgent mode is off, **When** the user manually turns urgent mode on (via Telegram command or inline keyboard), **Then** the next recommendation applies urgent-aware ordering and more direct language without changing the underlying prioritization contract
+2. **Given** urgent mode is on, **When** the user manually turns urgent mode off (via Telegram command or inline keyboard), **Then** the next recommendation no longer applies urgent-mode ordering or urgent-mode tone
 
 ---
 
@@ -74,22 +82,22 @@ The user receives daily and weekly briefing surfaces that visibly remind them wh
 - **FR-001**: The system MUST define one explicit work-style mode in v1 called humane mode
 - **FR-002**: Humane mode MUST act as the baseline recommendation posture when urgent mode is not active
 - **FR-003**: The system MUST provide urgent mode as a separate manual toggle that users can turn on and off directly
-- **FR-004**: When urgent mode is active, recommendation behavior MUST change in both task ordering and recommendation tone
+- **FR-004**: When urgent mode is active, recommendation behavior MUST change in both task ordering and recommendation tone. This MUST only affect the bot's internal output and MUST NOT modify any data (tags, dates, priorities) in TickTick itself.
 - **FR-005**: Urgent mode MUST remain active until the user manually turns it off
 - **FR-006**: Daily briefing surfaces MUST remind the user when urgent mode is active
 - **FR-007**: Weekly briefing surfaces MUST remind the user when urgent mode is active
 - **FR-008**: Urgent-mode reminders MUST disappear once urgent mode is turned off
 - **FR-009**: Weak inference MAY inform low-confidence fallback framing, but it MUST NOT activate urgent mode, intensify intervention, or create a stronger state than the user explicitly chose
 - **FR-010**: The state resolver for work style and urgent mode MUST be owned by this feature and passed into shared recommendation surfaces rather than reimplemented separately inside ranking, mutation, briefing, or weekly flows
-- **FR-011**: If work-style or urgent-mode state is missing or unknown, recommendation surfaces MUST fail honestly and continue with safe defaults rather than stopping output
+- **FR-011**: If work-style or urgent-mode state is missing or unknown (e.g. from Redis), recommendation surfaces MUST fail honestly and continue with safe defaults (Humane Mode ON, Urgent Mode OFF) rather than stopping output
 - **FR-012**: The v1 state model MUST remain limited to humane mode plus the separate urgent-mode overlay
 - **FR-013**: Behavioral signals or memory-derived reflections defined by other features MUST NOT override explicit humane or urgent-mode state in v1
 - **FR-014**: Manual and scheduled recommendation surfaces MUST apply the same resolved work-style and urgent-mode contract so the user does not see conflicting behavior across touchpoints
 
 ### Key Entities
 
-- **Work Style State**: The explicit user-owned baseline recommendation posture, limited to humane mode in v1
-- **Urgent Mode State**: The separate manual override indicating whether urgent mode is currently active
+- **Work Style State**: The explicit user-owned baseline recommendation posture, limited to humane mode in v1. Persisted in Redis.
+- **Urgent Mode State**: The separate manual override indicating whether urgent mode is currently active. Persisted in Redis.
 - **Resolved Recommendation State**: The combined state passed into shared recommendation surfaces after baseline work style and urgent-mode status are reconciled
 - **Urgent Reminder**: A user-facing indicator in recurring briefing surfaces that urgent mode is still active
 
