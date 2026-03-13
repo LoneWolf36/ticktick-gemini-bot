@@ -1,7 +1,7 @@
 ---
 work_package_id: WP06
 title: Scheduler Integration and Delivery Parity
-lane: "doing"
+lane: "for_review"
 dependencies:
 - WP02
 - WP03
@@ -205,3 +205,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 
 **Valid lanes**: `planned`, `doing`, `for_review`, `done`
 - 2026-03-13T17:57:07Z – codex – shell_pid=28528 – lane=doing – Assigned agent via workflow command
+- 2026-03-13T18:07:55Z – codex – shell_pid=28528 – lane=for_review – Ready for review: scheduled daily and weekly jobs now use shared summary surfaces with scheduler-only wrappers preserved and regression coverage added
