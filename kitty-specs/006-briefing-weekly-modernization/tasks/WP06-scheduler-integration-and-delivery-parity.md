@@ -1,7 +1,7 @@
 ---
 work_package_id: WP06
 title: Scheduler Integration and Delivery Parity
-lane: "for_review"
+lane: "doing"
 dependencies:
 - WP02
 - WP03
@@ -17,8 +17,8 @@ subtasks:
 - T031
 phase: Phase 3 - Surface Adapters
 assignee: ''
-agent: "codex"
-shell_pid: "28528"
+agent: "Codex"
+shell_pid: "17184"
 review_status: ''
 reviewed_by: ''
 history:
@@ -206,3 +206,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 **Valid lanes**: `planned`, `doing`, `for_review`, `done`
 - 2026-03-13T17:57:07Z – codex – shell_pid=28528 – lane=doing – Assigned agent via workflow command
 - 2026-03-13T18:07:55Z – codex – shell_pid=28528 – lane=for_review – Ready for review: scheduled daily and weekly jobs now use shared summary surfaces with scheduler-only wrappers preserved and regression coverage added
+- 2026-03-13T18:08:15Z – Codex – shell_pid=17184 – lane=doing – Started review via workflow command
