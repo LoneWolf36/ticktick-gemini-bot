@@ -1,11 +1,14 @@
 ---
 work_package_id: WP06
 title: Scheduler Integration and Delivery Parity
-lane: planned
+lane: "doing"
 dependencies:
 - WP02
 - WP03
 - WP04
+base_branch: 006-briefing-weekly-modernization-WP03
+base_commit: 834edfe28644dfee289147dd3f319cb0f9ce77d0
+created_at: '2026-03-13T17:57:05.361650+00:00'
 subtasks:
 - T027
 - T028
@@ -15,7 +18,7 @@ subtasks:
 phase: Phase 3 - Surface Adapters
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "28528"
 review_status: ''
 reviewed_by: ''
 history:
