@@ -1,7 +1,7 @@
 ---
 work_package_id: WP01
 title: Foundation - Shared Summary Surface Contracts
-lane: "doing"
+lane: "done"
 dependencies: []
 base_branch: master
 base_commit: aae6aa2d3d95386d8c29718b8302d2a2248d5467
@@ -16,8 +16,8 @@ phase: Phase 1 - Foundation
 assignee: ''
 agent: "Codex"
 shell_pid: "29216"
-review_status: ''
-reviewed_by: ''
+review_status: "approved"
+reviewed_by: "TickTick Bot"
 history:
 - timestamp: '2026-03-12T21:19:42Z'
   lane: planned
@@ -207,3 +207,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 - 2026-03-13T16:52:12Z – Codex – shell_pid=2764 – lane=doing – Assigned agent via workflow command
 - 2026-03-13T17:00:21Z – Codex – shell_pid=2764 – lane=for_review – Ready for review: shared summary surface seams, schemas, fixtures, and contract tests are implemented and passing
 - 2026-03-13T17:23:38Z – Codex – shell_pid=29216 – lane=doing – Started review via workflow command
+- 2026-03-13T17:25:16Z – Codex – shell_pid=29216 – lane=done – Review passed: seams/contracts/tests implemented; dependency check clear; dependents WP02-04 remain planned
