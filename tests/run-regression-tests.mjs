@@ -11,9 +11,11 @@ import { TickTickAdapter } from '../services/ticktick-adapter.js';
 import { TickTickClient } from '../services/ticktick.js';
 import * as store from '../services/store.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
+import { runDailyBriefingJob, runWeeklyDigestJob } from '../services/scheduler.js';
 import {
   BRIEFING_SUMMARY_SECTION_KEYS,
   WEEKLY_SUMMARY_SECTION_KEYS,
+  buildSummaryLogPayload,
   composeBriefingSummary,
   composeWeeklySummary,
   formatSummary,
@@ -404,6 +406,142 @@ async function run() {
   }
 
   try {
+    const activeTasks = buildSummaryActiveTasksFixture();
+    const processedHistory = buildSummaryProcessedHistoryFixture();
+    const rankingResult = buildSummaryRankingFixture(activeTasks);
+    const context = {
+      ...buildSummaryResolvedStateFixture(),
+      kind: 'weekly',
+    };
+    const modelSummary = {
+      progress: ['Completed: Shipped weekly architecture PR'],
+      carry_forward: [
+        {
+          task_id: 'task-support',
+          title: 'Prepare system design notes',
+          reason: 'Still open with planned follow-up.',
+        },
+      ],
+      next_focus: ['Random model suggestion'],
+      watchouts: [
+        {
+          label: 'Overdue tasks accumulating',
+          evidence: '1 active task is overdue right now.',
+          evidence_source: 'current_tasks',
+        },
+      ],
+      notices: [
+        {
+          code: 'delivery_context',
+          message: 'Model summary received.',
+          severity: 'info',
+          evidence_source: 'system',
+        },
+      ],
+    };
+
+    const result = composeWeeklySummary({
+      context,
+      activeTasks,
+      processedHistory,
+      historyAvailable: true,
+      rankingResult,
+      modelSummary,
+    });
+
+    assert.ok(result.summary.progress.includes('Completed: Shipped weekly architecture PR'));
+    assert.equal(result.summary.next_focus.includes('Random model suggestion'), false);
+    assert.equal(result.summary.next_focus[0], activeTasks[0].title);
+    console.log('PASS composeWeeklySummary uses structured model summary and keeps next_focus grounded');
+  } catch (err) {
+    failures++;
+    console.error('FAIL composeWeeklySummary uses structured model summary and keeps next_focus grounded');
+    console.error(err.message);
+  }
+
+  try {
+    const activeTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+    const processedHistory = [];
+    const rankingResult = buildSummaryRankingFixture(activeTasks);
+    const context = {
+      ...buildSummaryResolvedStateFixture(),
+      kind: 'weekly',
+    };
+    const modelSummary = {
+      progress: ['Completed: Placeholder progress'],
+      watchouts: [
+        {
+          label: 'Dropped tasks this week',
+          evidence: '1 processed item was dropped.',
+          evidence_source: 'processed_history',
+        },
+      ],
+    };
+
+    const result = composeWeeklySummary({
+      context,
+      activeTasks,
+      processedHistory,
+      historyAvailable: false,
+      rankingResult,
+      modelSummary,
+    });
+
+    assert.equal(result.summary.progress.length, 0);
+    assert.ok(result.summary.carry_forward.length > 0);
+    assert.ok(result.summary.next_focus.length > 0);
+    assert.ok(result.summary.notices.some((notice) => notice.code === 'missing_history'));
+    console.log('PASS composeWeeklySummary reduces digest when history is missing');
+  } catch (err) {
+    failures++;
+    console.error('FAIL composeWeeklySummary reduces digest when history is missing');
+    console.error(err.message);
+  }
+
+  try {
+    const activeTasks = buildSummaryActiveTasksFixture().map((task) => ({
+      ...task,
+      dueDate: '2026-03-20',
+    }));
+    const processedHistory = [];
+    const rankingResult = buildSummaryRankingFixture(activeTasks);
+    const context = {
+      ...buildSummaryResolvedStateFixture(),
+      kind: 'weekly',
+    };
+    const modelSummary = {
+      watchouts: [
+        {
+          label: 'Dropped tasks this week',
+          evidence: '1 processed item was dropped.',
+          evidence_source: 'processed_history',
+        },
+        {
+          label: 'History unavailable',
+          evidence: 'Processed-task history was unavailable.',
+          evidence_source: 'missing_data',
+        },
+      ],
+    };
+
+    const result = composeWeeklySummary({
+      context,
+      activeTasks,
+      processedHistory,
+      historyAvailable: true,
+      rankingResult,
+      modelSummary,
+    });
+
+    assert.equal(result.summary.watchouts.length, 0);
+    console.log('PASS composeWeeklySummary drops watchouts without evidence backing');
+  } catch (err) {
+    failures++;
+    console.error('FAIL composeWeeklySummary drops watchouts without evidence backing');
+    console.error(err.message);
+  }
+
+  try {
     const watchouts = normalizeWeeklyWatchouts([
       {
         label: 'avoidance',
@@ -548,12 +686,12 @@ async function run() {
   }
 
   try {
-    const geminiSource = readFileSync('services/gemini.js', 'utf8');
-    assert.ok(geminiSource.includes('Do not use markdown headings (#, ##, ###)'));
-    console.log('PASS prompts explicitly ban markdown heading syntax');
+    const summarySurfaceSource = readFileSync('services/summary-surfaces/index.js', 'utf8');
+    assert.match(summarySurfaceSource, /#\{1,3\}\\s\+/);
+    console.log('PASS summary surfaces guard against markdown heading syntax');
   } catch (err) {
     failures++;
-    console.error('FAIL prompts explicitly ban markdown heading syntax');
+    console.error('FAIL summary surfaces guard against markdown heading syntax');
     console.error(err.message);
   }
 
@@ -754,22 +892,6 @@ async function run() {
     };
 
     const summaryCalls = [];
-    const summarySurface = {
-      composeBriefingSummary: (args) => {
-        summaryCalls.push(args);
-        return {
-          summary: {
-            focus: 'Test focus',
-            priorities: [],
-            why_now: [],
-            start_now: '',
-            notices: [],
-          },
-          formattedText: '**🌄 MORNING BRIEFING**\n\n**Focus**: Test focus\n\n**Urgent mode is currently active.**',
-          diagnostics: { telegram_safe: true, tone_preserved: true, source_counts: { active_tasks: 0, processed_history: 0 } },
-        };
-      },
-    };
 
     registerCommands(
       bot,
@@ -785,16 +907,38 @@ async function run() {
         isQuotaExhausted: () => false,
         quotaResumeTime: () => null,
         activeKeyInfo: () => null,
-        generateDailyBriefingModelSummary: async () => ({
-          modelSummary: { focus: 'Test focus', priorities: [], why_now: [], start_now: '', notices: [] },
-          ranking: { ranked: [], topRecommendation: null, degraded: false, degradedReason: 'none', context: {} },
-          orderedTasks: [],
-        }),
+        generateDailyBriefingSummary: async (_tasks, options) => {
+          summaryCalls.push(options);
+          return {
+            summary: {
+              focus: 'Test focus',
+              priorities: [],
+              why_now: [],
+              start_now: '',
+              notices: [],
+            },
+            formattedText: '**???? MORNING BRIEFING**\n\n**Focus**: Test focus\n\n**Urgent mode is currently active.**',
+            diagnostics: {
+              kind: 'briefing',
+              entryPoint: options.entryPoint,
+              sourceCounts: { activeTasks: 0, processedHistory: 0 },
+              degraded: false,
+              degradedReason: null,
+              formatterVersion: 'summary-formatter.v1',
+              formattingDecisions: {
+                telegramSafe: true,
+                tonePreserved: true,
+                urgentReminderApplied: false,
+                truncated: false,
+              },
+              deliveryStatus: 'composed',
+            },
+          };
+        },
         generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
       },
       {},
       {},
-      { summarySurface },
     );
 
     const briefingHandler = handlers.commands.get('briefing');
@@ -812,8 +956,8 @@ async function run() {
     });
 
     assert.equal(summaryCalls.length, 1);
-    assert.equal(summaryCalls[0].context.entryPoint, 'manual_command');
-    assert.equal(summaryCalls[0].context.urgentMode, true);
+    assert.equal(summaryCalls[0].entryPoint, 'manual_command');
+    assert.equal(summaryCalls[0].urgentMode, true);
     assert.ok(replies.some((message) => typeof message === 'string' && message.includes('Urgent mode is currently active.')));
     console.log('PASS registerCommands uses shared briefing surface and urgent reminder');
   } catch (err) {
@@ -840,22 +984,6 @@ async function run() {
     };
 
     const weeklyCalls = [];
-    const summarySurface = {
-      composeWeeklySummary: (args) => {
-        weeklyCalls.push(args);
-        return {
-          summary: {
-            progress: [],
-            carry_forward: [],
-            next_focus: [],
-            watchouts: [],
-            notices: [],
-          },
-          formattedText: '**📊 WEEKLY ACCOUNTABILITY REVIEW**\n\n**Progress**:\n- None',
-          diagnostics: { telegram_safe: true, tone_preserved: true, source_counts: { active_tasks: 0, processed_history: 0 } },
-        };
-      },
-    };
 
     registerCommands(
       bot,
@@ -871,11 +999,41 @@ async function run() {
         isQuotaExhausted: () => false,
         quotaResumeTime: () => null,
         activeKeyInfo: () => null,
+        generateWeeklyDigestSummary: async (_tasks, processedThisWeek, options) => {
+          weeklyCalls.push({ processedThisWeek, options });
+          return {
+            summary: {
+              progress: [],
+              carry_forward: [],
+              next_focus: [],
+              watchouts: [],
+              notices: [],
+            },
+            formattedText: '**???? WEEKLY ACCOUNTABILITY REVIEW**\n\n**Progress**:\n- None',
+            diagnostics: {
+              kind: 'weekly',
+              entryPoint: options.entryPoint,
+              sourceCounts: {
+                activeTasks: 0,
+                processedHistory: Object.keys(processedThisWeek).length,
+              },
+              degraded: false,
+              degradedReason: null,
+              formatterVersion: 'summary-formatter.v1',
+              formattingDecisions: {
+                telegramSafe: true,
+                tonePreserved: true,
+                urgentReminderApplied: false,
+                truncated: false,
+              },
+              deliveryStatus: 'composed',
+            },
+          };
+        },
         generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
       },
       {},
       {},
-      { summarySurface },
     );
 
     const weeklyHandler = handlers.commands.get('weekly');
@@ -893,7 +1051,8 @@ async function run() {
     });
 
     assert.equal(weeklyCalls.length, 1);
-    assert.equal(weeklyCalls[0].context.entryPoint, 'manual_command');
+    assert.equal(weeklyCalls[0].options.entryPoint, 'manual_command');
+    assert.equal(weeklyCalls[0].options.historyAvailable, true);
     assert.ok(replies.some((message) => typeof message === 'string' && message.includes('WEEKLY ACCOUNTABILITY REVIEW')));
     console.log('PASS registerCommands uses shared weekly surface');
   } catch (err) {
@@ -919,15 +1078,6 @@ async function run() {
       },
     };
 
-    const summarySurface = {
-      composeBriefingSummary: () => {
-        throw new Error('composeBriefingSummary should not be called when quota is exhausted');
-      },
-      composeWeeklySummary: () => {
-        throw new Error('composeWeeklySummary should not be called when quota is exhausted');
-      },
-    };
-
     registerCommands(
       bot,
       {
@@ -942,14 +1092,16 @@ async function run() {
         isQuotaExhausted: () => true,
         quotaResumeTime: () => null,
         activeKeyInfo: () => null,
-        generateDailyBriefingModelSummary: async () => {
-          throw new Error('generateDailyBriefingModelSummary should not be called when quota is exhausted');
+        generateDailyBriefingSummary: async () => {
+          throw new Error('generateDailyBriefingSummary should not be called when quota is exhausted');
+        },
+        generateWeeklyDigestSummary: async () => {
+          throw new Error('generateWeeklyDigestSummary should not be called when quota is exhausted');
         },
         generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
       },
       {},
       {},
-      { summarySurface },
     );
 
     const replies = [];
@@ -970,6 +1122,150 @@ async function run() {
   } catch (err) {
     failures++;
     console.error('FAIL registerCommands short-circuits on quota exhaustion');
+    console.error(err.message);
+  }
+
+  try {
+    await store.resetAll();
+    const userId = `scheduler-daily-${Date.now()}`;
+    await store.setChatId(userId);
+    await store.setUrgentMode(userId, true);
+    await store.markTaskPending('pending-1', { originalTitle: 'Review inbox capture' });
+
+    const sentMessages = [];
+    let summaryCalls = 0;
+    const ran = await runDailyBriefingJob({
+      bot: {
+        api: {
+          sendMessage: async (chatId, text) => {
+            sentMessages.push({ chatId, text });
+          },
+        },
+      },
+      ticktick: {
+        isAuthenticated: () => true,
+        getAllTasks: async () => buildSummaryActiveTasksFixture(),
+      },
+      gemini: {
+        isQuotaExhausted: () => false,
+        generateDailyBriefingSummary: async (_tasks, options) => {
+          summaryCalls += 1;
+          assert.equal(options.entryPoint, 'scheduler');
+          assert.equal(options.userId, userId);
+          assert.equal(options.urgentMode, true);
+          return {
+            formattedText: '**🌅 MORNING BRIEFING**\n\nShared surface body.\n\n**Urgent mode is currently active.**',
+          };
+        },
+      },
+    });
+
+    assert.equal(ran, true);
+    assert.equal(summaryCalls, 1);
+    assert.equal(sentMessages.length, 1);
+    assert.equal(sentMessages[0].chatId, userId);
+    assert.match(sentMessages[0].text, /MORNING BRIEFING/);
+    assert.match(sentMessages[0].text, /Urgent mode is currently active/);
+    assert.match(sentMessages[0].text, /1 task\(s\) pending your review\. Run \/pending\./);
+    assert.ok(store.getStats().lastDailyBriefing);
+    console.log('PASS runDailyBriefingJob uses shared summary surface and preserves pending reminder wrapper');
+  } catch (err) {
+    failures++;
+    console.error('FAIL runDailyBriefingJob uses shared summary surface and preserves pending reminder wrapper');
+    console.error(err.message);
+  }
+
+  try {
+    await store.resetAll();
+    const userId = `scheduler-weekly-${Date.now()}`;
+    await store.setChatId(userId);
+    await store.setUrgentMode(userId, true);
+    await store.markTaskProcessed('hist-1', {
+      originalTitle: 'Completed architecture PR draft',
+      approved: true,
+      sentAt: new Date().toISOString(),
+    });
+
+    const sentMessages = [];
+    let summaryCalls = 0;
+    const ran = await runWeeklyDigestJob({
+      bot: {
+        api: {
+          sendMessage: async (chatId, text) => {
+            sentMessages.push({ chatId, text });
+          },
+        },
+      },
+      ticktick: {
+        isAuthenticated: () => true,
+        getAllTasks: async () => buildSummaryActiveTasksFixture(),
+      },
+      gemini: {
+        isQuotaExhausted: () => false,
+        generateWeeklyDigestSummary: async (_tasks, processedThisWeek, options) => {
+          summaryCalls += 1;
+          assert.equal(options.entryPoint, 'scheduler');
+          assert.equal(options.userId, userId);
+          assert.equal(options.urgentMode, true);
+          assert.deepEqual(Object.keys(processedThisWeek), ['hist-1']);
+          return {
+            formattedText: '**📊 WEEKLY ACCOUNTABILITY REVIEW**\n\nShared weekly surface.\n\n**Urgent mode is currently active.**',
+          };
+        },
+      },
+    });
+
+    assert.equal(ran, true);
+    assert.equal(summaryCalls, 1);
+    assert.equal(sentMessages.length, 1);
+    assert.equal(sentMessages[0].chatId, userId);
+    assert.match(sentMessages[0].text, /WEEKLY ACCOUNTABILITY REVIEW/);
+    assert.match(sentMessages[0].text, /Urgent mode is currently active/);
+    assert.ok(store.getStats().lastWeeklyDigest);
+    console.log('PASS runWeeklyDigestJob uses shared weekly surface and keeps processed history input');
+  } catch (err) {
+    failures++;
+    console.error('FAIL runWeeklyDigestJob uses shared weekly surface and keeps processed history input');
+    console.error(err.message);
+  }
+
+  try {
+    await store.resetAll();
+    const userId = `scheduler-weekly-missing-${Date.now()}`;
+    await store.setChatId(userId);
+    await store.setUrgentMode(userId, false);
+
+    let summaryCalls = 0;
+    const ran = await runWeeklyDigestJob({
+      bot: {
+        api: {
+          sendMessage: async () => {},
+        },
+      },
+      ticktick: {
+        isAuthenticated: () => true,
+        getAllTasks: async () => buildSummaryActiveTasksFixture(),
+      },
+      gemini: {
+        isQuotaExhausted: () => false,
+        generateWeeklyDigestSummary: async (_tasks, processedThisWeek, options) => {
+          summaryCalls += 1;
+          assert.deepEqual(processedThisWeek, {});
+          assert.equal(options.historyAvailable, false);
+          return {
+            formattedText: '**📊 WEEKLY ACCOUNTABILITY REVIEW**\n\nReduced weekly surface.',
+          };
+        },
+      },
+      processedTasks: null,
+    });
+
+    assert.equal(ran, true);
+    assert.equal(summaryCalls, 1);
+    console.log('PASS runWeeklyDigestJob passes historyAvailable false when processed history is missing');
+  } catch (err) {
+    failures++;
+    console.error('FAIL runWeeklyDigestJob passes historyAvailable false when processed history is missing');
     console.error(err.message);
   }
 
@@ -1363,6 +1659,41 @@ async function run() {
   }
 
   try {
+    const payload = buildSummaryLogPayload({
+      context: { kind: 'briefing', entryPoint: 'manual_command', userId: 'log-user' },
+      result: {
+        summary: { focus: 'Test focus' },
+        diagnostics: {
+          kind: 'briefing',
+          entryPoint: 'manual_command',
+          sourceCounts: { activeTasks: 3, processedHistory: 1 },
+          degraded: false,
+          degradedReason: null,
+          formatterVersion: 'summary-formatter.v1',
+          formattingDecisions: {
+            telegramSafe: true,
+            tonePreserved: true,
+            urgentReminderApplied: false,
+            truncated: false,
+          },
+          deliveryStatus: 'composed',
+        },
+      },
+      deliveryStatus: 'sent',
+    });
+
+    assert.equal(payload.userId, 'log-user');
+    assert.equal(payload.diagnostics.deliveryStatus, 'sent');
+    assert.deepEqual(payload.diagnostics.sourceCounts, { activeTasks: 3, processedHistory: 1 });
+    assert.equal(Object.hasOwn(payload.diagnostics, 'source_counts'), false);
+    console.log('PASS summary log payload normalizes diagnostics field names');
+  } catch (err) {
+    failures++;
+    console.error('FAIL summary log payload normalizes diagnostics field names');
+    console.error(err.message);
+  }
+
+  try {
     const analyzer = new GeminiAnalyzer(['dummy-key']);
     analyzer._generateWithFailover = async () => ({
       response: {
@@ -1385,19 +1716,82 @@ async function run() {
       },
     });
 
-    const briefing = await analyzer.generateDailyBriefing(buildSummaryActiveTasksFixture(), {
-      userId: 'boundary-user',
+    const manual = await analyzer.generateDailyBriefingSummary(buildSummaryActiveTasksFixture(), {
+      entryPoint: 'manual_command',
+      userId: 'parity-user',
       urgentMode: false,
+      generatedAtIso: '2026-03-13T08:30:00Z',
+    });
+    const scheduled = await analyzer.generateDailyBriefingSummary(buildSummaryActiveTasksFixture(), {
+      entryPoint: 'scheduler',
+      userId: 'parity-user',
+      urgentMode: false,
+      generatedAtIso: '2026-03-13T08:30:00Z',
     });
 
-    assert.equal(typeof briefing, 'string');
-    assert.match(briefing, /\*\*Focus\*\*/);
-    assert.match(briefing, /Ship weekly architecture PR/);
-    assert.doesNotMatch(briefing, /\[object Object\]/);
-    console.log('PASS Gemini generateDailyBriefing preserves string output for live callers');
+    assert.deepEqual(manual.summary, scheduled.summary);
+    assert.equal(manual.formattedText, scheduled.formattedText);
+    assert.deepEqual(manual.diagnostics.sourceCounts, scheduled.diagnostics.sourceCounts);
+    assert.equal(manual.diagnostics.degradedReason, scheduled.diagnostics.degradedReason);
+    assert.equal(manual.diagnostics.formatterVersion, scheduled.diagnostics.formatterVersion);
+    console.log('PASS daily summary parity matches across manual and scheduler paths');
   } catch (err) {
     failures++;
-    console.error('FAIL Gemini generateDailyBriefing preserves string output for live callers');
+    console.error('FAIL daily summary parity matches across manual and scheduler paths');
+    console.error(err.message);
+  }
+
+  try {
+    const analyzer = new GeminiAnalyzer(['dummy-key']);
+    analyzer._generateWithFailover = async () => ({
+      response: {
+        text: () => JSON.stringify({
+          progress: ['Completed resume update'],
+          carry_forward: ['Reschedule mock interview'],
+          next_focus: ['Protect maker time'],
+          watchouts: ['Do not let admin work crowd out backend prep'],
+          notices: [],
+        }),
+      },
+    });
+
+    const activeTasks = buildSummaryActiveTasksFixture();
+    const processedHistory = Object.fromEntries(buildSummaryProcessedHistoryFixture().map((entry) => [entry.taskId, entry]));
+    const manual = await analyzer.generateWeeklyDigestSummary(activeTasks, processedHistory, {
+      entryPoint: 'manual_command',
+      userId: 'parity-user',
+      urgentMode: false,
+      generatedAtIso: '2026-03-13T08:30:00Z',
+      historyAvailable: true,
+    });
+    const scheduled = await analyzer.generateWeeklyDigestSummary(activeTasks, processedHistory, {
+      entryPoint: 'scheduler',
+      userId: 'parity-user',
+      urgentMode: false,
+      generatedAtIso: '2026-03-13T08:30:00Z',
+      historyAvailable: true,
+    });
+
+    assert.deepEqual(manual.summary, scheduled.summary);
+    assert.equal(manual.formattedText, scheduled.formattedText);
+    assert.deepEqual(manual.diagnostics.sourceCounts, scheduled.diagnostics.sourceCounts);
+    assert.equal(manual.diagnostics.degradedReason, scheduled.diagnostics.degradedReason);
+    assert.equal(manual.diagnostics.formatterVersion, scheduled.diagnostics.formatterVersion);
+    console.log('PASS weekly summary parity matches across manual and scheduler paths');
+  } catch (err) {
+    failures++;
+    console.error('FAIL weekly summary parity matches across manual and scheduler paths');
+    console.error(err.message);
+  }
+
+  try {
+    const source = readFileSync(new URL('../services/gemini.js', import.meta.url), 'utf8');
+    assert.doesNotMatch(source, /async generateDailyBriefing\s*\(/);
+    assert.doesNotMatch(source, /async generateWeeklyDigest\s*\(/);
+    console.log('PASS Gemini no longer exposes legacy formatted-string summary wrappers');
+  } catch (err) {
+    failures++;
+    console.error('FAIL Gemini no longer exposes legacy formatted-string summary wrappers');
     console.error(err.message);
   }
 

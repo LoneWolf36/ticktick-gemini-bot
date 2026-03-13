@@ -6,6 +6,7 @@ import {
 } from '../../bot/utils.js';
 
 const EMPTY_LABEL = 'None';
+export const SUMMARY_FORMATTER_VERSION = 'summary-formatter.v1';
 
 function normalizeInline(value) {
     if (typeof value !== 'string') return '';
@@ -122,6 +123,7 @@ function applyUrgentReminder(text, urgentMode) {
 function buildRenderResult({ kind, body, context = {} }) {
     const header = applyBriefingHeader({ kind });
     const combined = `${header}${body}`.trim();
+    const urgentReminderApplied = context.urgentMode === true && !/urgent mode is currently active/i.test(combined);
     const withReminder = applyUrgentReminder(combined, context.urgentMode);
     const truncated = truncateMessage(withReminder);
     parseTelegramMarkdownToHTML(truncated);
@@ -130,6 +132,9 @@ function buildRenderResult({ kind, body, context = {} }) {
         text: truncated,
         telegramSafe: isTelegramSafe(truncated),
         tonePreserved: true,
+        urgentReminderApplied,
+        truncated: truncated !== withReminder,
+        formatterVersion: SUMMARY_FORMATTER_VERSION,
     };
 }
 

@@ -8,7 +8,7 @@ import {
 } from '../schemas.js';
 import { composeBriefingSummarySections } from './briefing-summary.js';
 import { composeWeeklySummarySections } from './weekly-summary.js';
-import { formatSummary } from './summary-formatter.js';
+import { formatSummary, SUMMARY_FORMATTER_VERSION } from './summary-formatter.js';
 
 const BRIEFING_KIND = 'briefing';
 const WEEKLY_KIND = 'weekly';
@@ -78,6 +78,7 @@ export function normalizeWeeklyWatchouts(watchouts = []) {
 
             if (!label || !evidence || !evidenceSource) return null;
             if (isBehaviorLabel(label)) return null;
+            if (evidenceSource === 'missing_data') return null;
 
             return {
                 label,
@@ -155,8 +156,8 @@ function ensureWeeklySections(summary = {}) {
 
 function buildSourceCounts({ activeTasks = [], processedHistory = [] }) {
     return {
-        active_tasks: toArray(activeTasks).length,
-        processed_history: toArray(processedHistory).length,
+        activeTasks: toArray(activeTasks).length,
+        processedHistory: toArray(processedHistory).length,
     };
 }
 
@@ -165,24 +166,85 @@ function isTelegramSafe(text = '') {
 }
 
 export function createSummaryDiagnostics({
+    context = {},
     activeTasks = [],
     processedHistory = [],
     rankingResult = null,
     formattedText = '',
     formattedResult = null,
 } = {}) {
+    const normalizedContext = normalizeSummaryRequestContext(context.kind, context);
     const tonePreserved = formattedResult?.tonePreserved ?? true;
     const telegramSafe = typeof formattedResult?.telegramSafe === 'boolean'
         ? formattedResult.telegramSafe
         : isTelegramSafe(formattedText);
 
     return {
-        source_counts: buildSourceCounts({ activeTasks, processedHistory }),
+        kind: normalizedContext.kind,
+        entryPoint: normalizedContext.entryPoint,
+        sourceCounts: buildSourceCounts({ activeTasks, processedHistory }),
         degraded: rankingResult?.degraded === true,
-        degraded_reason: rankingResult?.degradedReason || null,
-        tone_preserved: tonePreserved,
-        telegram_safe: telegramSafe,
+        degradedReason: rankingResult?.degradedReason || null,
+        formatterVersion: formattedResult?.formatterVersion || SUMMARY_FORMATTER_VERSION,
+        formattingDecisions: {
+            telegramSafe,
+            tonePreserved,
+            urgentReminderApplied: formattedResult?.urgentReminderApplied === true,
+            truncated: formattedResult?.truncated === true,
+        },
+        deliveryStatus: 'composed',
     };
+}
+
+export function buildSummaryLogPayload({
+    context = {},
+    result = null,
+    deliveryStatus = 'composed',
+    error = null,
+    extra = {},
+} = {}) {
+    const diagnostics = result?.diagnostics
+        ? {
+            ...result.diagnostics,
+            deliveryStatus,
+        }
+        : {
+            kind: context.kind || BRIEFING_KIND,
+            entryPoint: context.entryPoint || 'manual_command',
+            sourceCounts: buildSourceCounts({}),
+            degraded: false,
+            degradedReason: null,
+            formatterVersion: SUMMARY_FORMATTER_VERSION,
+            formattingDecisions: null,
+            deliveryStatus,
+        };
+
+    return {
+        kind: diagnostics.kind,
+        entryPoint: diagnostics.entryPoint,
+        userId: context.userId ?? null,
+        summary: result?.summary || null,
+        diagnostics,
+        error: error ? { message: error.message } : null,
+        ...extra,
+    };
+}
+
+export function logSummarySurfaceEvent({
+    context = {},
+    result = null,
+    deliveryStatus = 'composed',
+    error = null,
+    extra = {},
+} = {}) {
+    const payload = buildSummaryLogPayload({
+        context,
+        result,
+        deliveryStatus,
+        error,
+        extra,
+    });
+    console.log(`[SummarySurface:${payload.kind}] ${JSON.stringify(payload)}`);
 }
 
 /**
@@ -206,6 +268,7 @@ export function composeBriefingSummary({
     const formattedResult = formatSummary({ kind: BRIEFING_KIND, summary, context: normalizedContext });
     const formattedText = formattedResult.text;
     const diagnostics = createSummaryDiagnostics({
+        context: normalizedContext,
         activeTasks,
         processedHistory: [],
         rankingResult,
@@ -229,6 +292,7 @@ export function composeWeeklySummary({
     processedHistory = [],
     historyAvailable = true,
     rankingResult = null,
+    modelSummary = {},
 } = {}) {
     const normalizedContext = normalizeSummaryRequestContext(WEEKLY_KIND, context);
     const summary = ensureWeeklySections(
@@ -238,11 +302,13 @@ export function composeWeeklySummary({
             processedHistory: toArray(processedHistory),
             historyAvailable: historyAvailable === true,
             rankingResult,
+            modelSummary,
         }),
     );
     const formattedResult = formatSummary({ kind: WEEKLY_KIND, summary, context: normalizedContext });
     const formattedText = formattedResult.text;
     const diagnostics = createSummaryDiagnostics({
+        context: normalizedContext,
         activeTasks,
         processedHistory,
         rankingResult,

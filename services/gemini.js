@@ -4,9 +4,9 @@ import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import path from 'path';
 import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from '../bot/utils.js';
-import { briefingSummarySchema, reorgSchema } from './schemas.js';
-import { composeBriefingSummary } from './summary-surfaces/index.js';
+import { briefingSummarySchema, reorgSchema, weeklySummarySchema } from './schemas.js';
 import * as store from './store.js';
+import { composeBriefingSummary, composeWeeklySummary } from './summary-surfaces/index.js';
 import {
     createGoalThemeProfile,
     inferPriorityValueFromTask,
@@ -65,48 +65,25 @@ Constraints:
 `;
 
 // ─── Weekly Digest Prompt ───────────────────────────────────
-const WEEKLY_PROMPT = `${USER_CONTEXT}
+const WEEKLY_SUMMARY_PROMPT = `${USER_CONTEXT}
 
-Generate a concise weekly accountability review.
+Generate a weekly accountability summary as STRICT JSON.
 
-Include:
+Output rules:
+- Return JSON only. No markdown, no prose, no code fences.
+- Use exactly these top-level keys: progress, carry_forward, next_focus, watchouts, notices.
+- progress: array of short strings describing completed outcomes grounded in processed history.
+- carry_forward: array of objects { task_id, title, reason } for active tasks that carry into next week.
+- next_focus: array of short strings for the top 3 tasks to focus next.
+- watchouts: array of objects { label, evidence, evidence_source }.
+  - evidence_source must be "current_tasks" or "processed_history".
+  - Do not include behavioral labels or callouts.
+  - Do not include avoidance, needle-mover ratios, or callout language.
+- notices: array of objects { code, message, severity, evidence_source }.
+  - Use code "missing_history" when processed history is sparse or missing.
 
-1. WINS (actual completed outputs)
-2. AVOIDANCE (what 🔴 work was delayed)
-3. NEEDLE-MOVER RATIO: Format specifically as "🔴 Y out of X tasks (Z%)". Use your internal invisible reasoning to do the math flawlessly. Do not output the calculation steps.
-4. STALE TASKS (do, rescope, or drop)
-5. NEXT WEEK — top 3 only
-6. ONE direct callout
-
-Be honest. Short. No fluff.
-
-Output:
-Plain text formatted for Telegram. Use **asterisks** for bold emphasis.
-Do not use markdown headings (#, ##, ###) or separator lines made of hashes.
-
-<example_format>
-**WINS**:
-- Shipped 3 PRs 
-- Finished algorithm study
-
-**AVOIDANCE**:
-- Delayed the systems design mock interview. 
-
-**NEEDLE-MOVER RATIO**: 🔴 4 out of 10 tasks (40%)
-
-**STALE TASKS**:
-- "Read marketing book" (Recommend: Drop)
-
-**NEXT WEEK**:
-1. 🔴 Auth migration
-2. 🔴 Database mock
-3. 🟡 Finish unit tests
-
-**CALLOUT**: You spent too much time on life-admin. Focus on career-critical work next week.
-</example_format>
+Keep the summary concise, evidence-based, and non-behavioral.
 `;
-
-
 
 const REORG_PROMPT = `${USER_CONTEXT}
 
@@ -226,11 +203,13 @@ export class GeminiAnalyzer {
 
         this.weeklyModel = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
-            systemInstruction: WEEKLY_PROMPT,
+            systemInstruction: WEEKLY_SUMMARY_PROMPT,
             generationConfig: {
-                temperature: 0.8,
+                responseMimeType: 'application/json',
+                responseSchema: weeklySummarySchema,
+                temperature: 0.4,
                 topP: 0.9,
-                maxOutputTokens: 8192,
+                maxOutputTokens: 4096,
             },
             thinkingConfig: { thinkingBudget: 1024 },
         });
@@ -529,30 +508,53 @@ export class GeminiAnalyzer {
         });
     }
 
-    async generateDailyBriefing(tasks, options = {}) {
-        const result = await this.generateDailyBriefingSummary(tasks, options);
-        return result.formattedText;
-    }
-
     // ─── Generate weekly digest ───────────────────────────────
 
-    async generateWeeklyDigest(allTasks, processedThisWeek, options = {}) {
+    async generateWeeklyDigestSummary(allTasks, processedThisWeek, options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
-        const taskList = allTasks
-            .map((t, i) => `${i + 1}. "${t.title}" [${t.projectName || 'Inbox'}]`)
+        const { ranking, orderedTasks } = this._prepareBriefingTasks(allTasks, {
+            ...options,
+            ...recommendationState,
+        });
+
+        const taskList = orderedTasks
+            .map((t, i) => {
+                let line = `${i + 1}. "${t.title}" [${t.projectName || 'Inbox'}]`;
+                if (t.dueDate) line += ` - due: ${t.dueDate}`;
+                if (t.priority !== undefined) line += ` priority=${t.priority}`;
+                return line;
+            })
             .join('\n');
 
-        const processed = Object.entries(processedThisWeek)
-            .map(([_, d]) => formatProcessedTask(d))
+        const processedEntries = Object.entries(processedThisWeek || {})
+            .map(([taskId, data]) => ({ taskId, ...data }));
+        const processed = processedEntries
+            .map((entry) => formatProcessedTask(entry))
             .join('\n');
 
         const urgentModePromptNote = buildUrgentModePromptNote(recommendationState.urgentMode);
-        const prompt = `${urgentModePromptNote ? `${urgentModePromptNote}\n\n` : ''}Current active tasks (${allTasks.length}):\n${taskList}\n\nTasks analyzed this week:\n${processed || 'None'}`;
+        const prompt = `${urgentModePromptNote ? `${urgentModePromptNote}\n\n` : ''}Current active tasks (${orderedTasks.length}):\n${taskList || 'None'}\n\nProcessed tasks this week (${processedEntries.length}):\n${processed || 'None'}`;
         const result = await this._generateWithFailover(() => this.weeklyModel, prompt, { transientBaseMs: 15 });
-        return result.response.text().trim();
+        const raw = result.response.text().trim();
+        const parsed = this._safeParseJson(raw);
+        const summaryPayload = parsed && typeof parsed === 'object' ? parsed : {};
+
+        return composeWeeklySummary({
+            context: {
+                entryPoint: options.entryPoint || 'manual_command',
+                userId: options.userId ?? options.chatId ?? store.getChatId(),
+                generatedAtIso: options.generatedAtIso || new Date().toISOString(),
+                timezone: options.timezone || null,
+                urgentMode: recommendationState.urgentMode,
+                tonePolicy: options.tonePolicy || 'preserve_existing',
+            },
+            activeTasks: orderedTasks,
+            processedHistory: processedEntries,
+            historyAvailable: options.historyAvailable !== false,
+            rankingResult: ranking,
+            modelSummary: summaryPayload,
+        });
     }
-
-
 
     async generateReorgProposal(tasks = [], projects = [], refinement = null, existingActions = [], options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
