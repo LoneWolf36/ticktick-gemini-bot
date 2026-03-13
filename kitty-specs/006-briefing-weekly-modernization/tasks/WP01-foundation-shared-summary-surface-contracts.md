@@ -14,7 +14,7 @@ subtasks:
 - T005
 phase: Phase 1 - Foundation
 assignee: ''
-agent: ''
+agent: "Codex"
 shell_pid: "2764"
 review_status: ''
 reviewed_by: ''
@@ -204,3 +204,4 @@ Use language identifiers in fenced code blocks.
 Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or edit the frontmatter plus append a new activity log entry.
 
 **Valid lanes**: `planned`, `doing`, `for_review`, `done`
+- 2026-03-13T16:52:12Z – Codex – shell_pid=2764 – lane=doing – Assigned agent via workflow command
