@@ -85,12 +85,12 @@
 **Requirements Refs**: FR-002, FR-004, FR-004a, FR-004c, FR-005, FR-005a, FR-005b, FR-007, FR-008
 
 ### Included Subtasks
-- [ ] T011 Implement structured weekly-generation request and response parsing in `services/gemini.js`
-- [ ] T012 Build the weekly summary composer in `services/summary-surfaces/weekly-summary.js`
-- [ ] T013 Implement reduced-digest behavior when processed history is sparse or missing
-- [ ] T014 Enforce evidence-backed watchout filtering and explicit missing-data notices only
-- [ ] T015 Use current tasks and existing ranking/state inputs for `next_focus` without behavioral interpretation
-- [ ] T016 Add weekly summary regression coverage for fallback and watchout boundaries
+- [x] T011 Implement structured weekly-generation request and response parsing in `services/gemini.js`
+- [x] T012 Build the weekly summary composer in `services/summary-surfaces/weekly-summary.js`
+- [x] T013 Implement reduced-digest behavior when processed history is sparse or missing
+- [x] T014 Enforce evidence-backed watchout filtering and explicit missing-data notices only
+- [x] T015 Use current tasks and existing ranking/state inputs for `next_focus` without behavioral interpretation
+- [x] T016 Add weekly summary regression coverage for fallback and watchout boundaries
 
 ### Implementation Notes
 - Weekly summary logic must keep `watchouts` factual and within the `006` scope boundary.
