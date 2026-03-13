@@ -3,6 +3,18 @@ function asActiveTasks(tasks = []) {
         .filter((task) => task && (task.status === 0 || task.status === undefined));
 }
 
+function toArray(value) {
+    return Array.isArray(value) ? value : [];
+}
+
+function toString(value, fallback = '') {
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed.length > 0) return trimmed;
+    }
+    return fallback;
+}
+
 function toPriorityLabel(priority) {
     if (priority === 5) return 'career-critical';
     if (priority === 3) return 'high';
@@ -75,30 +87,136 @@ function buildNotices({ activeTasks = [], context = {}, rankingResult = null }) 
     return notices;
 }
 
-export function composeBriefingSummarySections({ activeTasks = [], rankingResult = null, context = {} } = {}) {
+function normalizeModelSummary(summary = {}) {
+    return {
+        focus: toString(summary.focus, ''),
+        priorities: toArray(summary.priorities).map((item) => ({
+            task_id: toString(item?.task_id, ''),
+            title: toString(item?.title, ''),
+            project_name: item?.project_name ?? null,
+            due_date: item?.due_date ?? null,
+            priority_label: item?.priority_label ?? null,
+            rationale_text: toString(item?.rationale_text, ''),
+        })),
+        why_now: toArray(summary.why_now).map((item) => toString(item)).filter(Boolean),
+        start_now: toString(summary.start_now, ''),
+        notices: toArray(summary.notices).map((notice) => ({
+            code: toString(notice?.code, ''),
+            message: toString(notice?.message, ''),
+            severity: toString(notice?.severity, ''),
+            evidence_source: toString(notice?.evidence_source, ''),
+        })),
+    };
+}
+
+function mergeNotices(baseNotices = [], modelNotices = []) {
+    const merged = [];
+    const seen = new Set();
+
+    for (const notice of baseNotices) {
+        if (!notice?.code) continue;
+        if (seen.has(notice.code)) continue;
+        seen.add(notice.code);
+        merged.push(notice);
+    }
+
+    for (const notice of modelNotices) {
+        if (!notice?.code) continue;
+        if (seen.has(notice.code)) continue;
+        seen.add(notice.code);
+        merged.push(notice);
+    }
+
+    return merged;
+}
+
+function mergePriorities({
+    modelPriorities = [],
+    fallbackPriorities = [],
+    activeTasks = [],
+} = {}) {
+    const byTaskId = new Map(activeTasks.map((task) => [task.id || task.taskId, task]));
+    const fallbackByTaskId = new Map(fallbackPriorities.map((item) => [item.task_id, item]));
+    const merged = [];
+    const seen = new Set();
+
+    for (const item of modelPriorities) {
+        const taskId = item.task_id;
+        if (taskId && seen.has(taskId)) continue;
+        const task = taskId ? byTaskId.get(taskId) : null;
+        const fallback = taskId ? fallbackByTaskId.get(taskId) : null;
+
+        const normalized = {
+            task_id: toString(taskId, fallback?.task_id || 'unknown-task'),
+            title: toString(item.title, task?.title || fallback?.title || 'Untitled task'),
+            project_name: item.project_name ?? task?.projectName ?? fallback?.project_name ?? null,
+            due_date: item.due_date ?? task?.dueDate ?? fallback?.due_date ?? null,
+            priority_label: item.priority_label ?? toPriorityLabel(task?.priority) ?? fallback?.priority_label ?? null,
+            rationale_text: toString(item.rationale_text, fallback?.rationale_text || 'High-impact active work.'),
+        };
+
+        if (normalized.task_id) seen.add(normalized.task_id);
+        merged.push(normalized);
+    }
+
+    for (const fallback of fallbackPriorities) {
+        if (merged.length >= 3) break;
+        if (seen.has(fallback.task_id)) continue;
+        seen.add(fallback.task_id);
+        merged.push(fallback);
+    }
+
+    if (merged.length === 0) {
+        return fallbackPriorities.slice(0, 3);
+    }
+
+    return merged.slice(0, 3);
+}
+
+export function composeBriefingSummarySections({
+    activeTasks = [],
+    rankingResult = null,
+    context = {},
+    modelSummary = null,
+} = {}) {
     const normalizedTasks = asActiveTasks(activeTasks);
     const ranking = Array.isArray(rankingResult?.ranked) ? rankingResult.ranked : [];
-    const priorities = buildPriorityItems(normalizedTasks, ranking);
-    const topPriority = priorities[0];
+    const fallbackPriorities = buildPriorityItems(normalizedTasks, ranking);
+    const fallbackTopPriority = fallbackPriorities[0];
 
-    const focus = topPriority
-        ? `Ship ${topPriority.title} before lower-leverage tasks.`
+    const fallbackFocus = fallbackTopPriority
+        ? `Ship ${fallbackTopPriority.title} before lower-leverage tasks.`
         : 'Pick one concrete task and finish its first meaningful step.';
 
-    const whyNow = priorities
+    const fallbackWhyNow = fallbackPriorities
         .map((item) => item.rationale_text)
         .filter((value, index, all) => value && all.indexOf(value) === index)
         .slice(0, 3);
 
-    const startNow = topPriority
-        ? `Open "${topPriority.title}" and finish the first executable sub-step.`
+    const fallbackStartNow = fallbackTopPriority
+        ? `Open "${fallbackTopPriority.title}" and finish the first executable sub-step.`
         : 'Review active tasks, select one high-impact action, and begin immediately.';
+
+    const modelNormalized = normalizeModelSummary(modelSummary || {});
+    const priorities = mergePriorities({
+        modelPriorities: modelNormalized.priorities,
+        fallbackPriorities,
+        activeTasks: normalizedTasks,
+    });
+    const topPriority = priorities[0];
+
+    const focus = modelNormalized.focus || fallbackFocus;
+    const whyNow = modelNormalized.why_now.length > 0 ? modelNormalized.why_now : fallbackWhyNow;
+    const startNow = modelNormalized.start_now || fallbackStartNow;
 
     return {
         focus,
         priorities,
         why_now: whyNow,
         start_now: startNow,
-        notices: buildNotices({ activeTasks: normalizedTasks, context, rankingResult }),
+        notices: mergeNotices(
+            buildNotices({ activeTasks: normalizedTasks, context, rankingResult }),
+            modelNormalized.notices,
+        ),
     };
 }
