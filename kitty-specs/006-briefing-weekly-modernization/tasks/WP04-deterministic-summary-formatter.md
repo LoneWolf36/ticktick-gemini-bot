@@ -1,7 +1,7 @@
 ---
 work_package_id: WP04
 title: Deterministic Summary Formatter
-lane: "doing"
+lane: "done"
 dependencies:
 - WP01
 base_branch: 006-briefing-weekly-modernization-WP01
@@ -17,8 +17,8 @@ phase: Phase 2 - Parallel Core
 assignee: ''
 agent: "codex"
 shell_pid: "31572"
-review_status: ''
-reviewed_by: ''
+review_status: "approved"
+reviewed_by: "TickTick Bot"
 history:
 - timestamp: '2026-03-12T21:27:55Z'
   lane: planned
@@ -204,3 +204,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 - 2026-03-13T17:26:57Z – codex – shell_pid=28472 – lane=doing – Assigned agent via workflow command
 - 2026-03-13T17:38:33Z – codex – shell_pid=28472 – lane=for_review – Ready for review: deterministic daily/weekly formatter with header/reminder, telegram-safe diagnostics, formatter regression coverage
 - 2026-03-13T17:39:40Z – codex – shell_pid=31572 – lane=doing – Started review via workflow command
+- 2026-03-13T17:41:44Z – codex – shell_pid=31572 – lane=done – Review passed: no WP04 findings; formatter diff verified against stacked base WP01, dependency coupling matches code, dependents WP05 and WP06 remain planned
