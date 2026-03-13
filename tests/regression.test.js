@@ -18,6 +18,7 @@ import {
   WEEKLY_SUMMARY_SECTION_KEYS,
   composeBriefingSummary,
   composeWeeklySummary,
+  formatSummary,
   normalizeWeeklyWatchouts,
 } from '../services/summary-surfaces/index.js';
 import { createPipelineHarness, DEFAULT_PROJECTS } from './pipeline-harness.js';
@@ -153,6 +154,75 @@ function buildSummaryRankingFixture(activeTasks, { degraded = false } = {}) {
       workStyleMode: 'humane',
       stateSource: 'fixture',
     },
+  };
+}
+
+function buildDailySummaryFixture({ variant = 'normal' } = {}) {
+  if (variant === 'empty') {
+    return {
+      focus: '',
+      priorities: [],
+      why_now: [],
+      start_now: '',
+      notices: [],
+    };
+  }
+
+  return {
+    focus: 'Ship the architecture PR before lower-leverage tasks.',
+    priorities: [
+      {
+        title: 'Ship weekly architecture PR',
+        rationale_text: 'Directly moves the highest-priority goal.',
+      },
+      {
+        title: 'Prepare system design notes',
+        rationale_text: 'Interview rehearsal window is closing.',
+      },
+    ],
+    why_now: [
+      'Deadline is close.',
+      'Unblocks review feedback.',
+    ],
+    start_now: 'Open the PR and list required changes.',
+    notices: [
+      { severity: 'info', message: 'Task list is sparse, so focus is tight.' },
+      { severity: 'warning', message: 'Ranking inputs were incomplete.' },
+    ],
+  };
+}
+
+function buildWeeklySummaryFixture({ variant = 'normal' } = {}) {
+  if (variant === 'reduced') {
+    return {
+      progress: [],
+      carry_forward: [],
+      next_focus: [],
+      watchouts: [],
+      notices: [
+        { severity: 'warning', message: 'Processed-task history was unavailable.' },
+      ],
+    };
+  }
+
+  return {
+    progress: [
+      'Completed architecture PR draft.',
+      'Closed the interview prep loop.',
+    ],
+    carry_forward: [
+      { title: 'Finalize system design notes', reason: 'Needs explicit completion next week.' },
+    ],
+    next_focus: [
+      'Ship weekly architecture PR',
+      'Practice system design questions',
+    ],
+    watchouts: [
+      { label: 'Overdue tasks accumulating', evidence: '2 active tasks are overdue right now.' },
+    ],
+    notices: [
+      { severity: 'info', message: 'Active task set is sparse, so weekly recommendations are compact.' },
+    ],
   };
 }
 
@@ -313,6 +383,65 @@ test('weekly watchout normalization rejects behavioral labels and strips prompt-
   assert.equal(watchouts[0].label, 'Overdue tasks accumulating');
   assert.equal(Object.hasOwn(watchouts[0], 'avoidance'), false);
   assert.equal(Object.hasOwn(watchouts[0], 'callout'), false);
+});
+
+test('formatSummary renders daily sections with header and urgent reminder in fixed order', () => {
+  const summary = buildDailySummaryFixture();
+  const { text, telegramSafe, tonePreserved } = formatSummary({
+    kind: 'briefing',
+    summary,
+    context: { urgentMode: true },
+  });
+
+  const sectionOrder = ['**Focus**', '**Priorities**', '**Why now**', '**Start now**', '**Notices**'];
+  const positions = sectionOrder.map((label) => text.indexOf(label));
+  const reminderMatches = text.match(/Urgent mode is currently active/gi) || [];
+
+  assert.ok(text.includes('MORNING BRIEFING'));
+  assert.ok(positions.every((pos) => pos >= 0));
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions);
+  assert.equal(reminderMatches.length, 1);
+  assert.equal(telegramSafe, true);
+  assert.equal(tonePreserved, true);
+});
+
+test('formatSummary renders weekly sections in fixed order and preserves watchout evidence', () => {
+  const summary = buildWeeklySummaryFixture();
+  const { text, telegramSafe } = formatSummary({
+    kind: 'weekly',
+    summary,
+    context: { urgentMode: false },
+  });
+
+  const sectionOrder = ['**Progress**', '**Carry forward**', '**Next focus**', '**Watchouts**', '**Notices**'];
+  const positions = sectionOrder.map((label) => text.indexOf(label));
+
+  assert.ok(text.includes('WEEKLY ACCOUNTABILITY REVIEW'));
+  assert.ok(text.includes('Overdue tasks accumulating: 2 active tasks are overdue right now.'));
+  assert.ok(positions.every((pos) => pos >= 0));
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions);
+  assert.equal(telegramSafe, true);
+});
+
+test('formatSummary keeps empty sections compact and Telegram-safe', () => {
+  const daily = buildDailySummaryFixture({ variant: 'empty' });
+  const weekly = buildWeeklySummaryFixture({ variant: 'reduced' });
+  const dailyResult = formatSummary({ kind: 'briefing', summary: daily, context: {} });
+  const weeklyResult = formatSummary({ kind: 'weekly', summary: weekly, context: {} });
+
+  assert.match(dailyResult.text, /\*\*Focus\*\*: None/);
+  assert.match(dailyResult.text, /\*\*Priorities\*\*:\n1\. None/);
+  assert.equal(dailyResult.text.includes('Keep momentum on your top task.'), false);
+  assert.match(weeklyResult.text, /\*\*Progress\*\*:\n- None/);
+  assert.match(weeklyResult.text, /\*\*Carry forward\*\*:\n- None/);
+  assert.match(weeklyResult.text, /\*\*Next focus\*\*:\n1\. None/);
+  assert.match(weeklyResult.text, /\*\*Watchouts\*\*:\n- None/);
+  assert.match(weeklyResult.text, /\[Warning\] Processed-task history was unavailable\./);
+
+  const dailyHtml = parseTelegramMarkdownToHTML(dailyResult.text);
+  const weeklyHtml = parseTelegramMarkdownToHTML(weeklyResult.text);
+  assert.match(dailyHtml, /<b>Focus<\/b>/);
+  assert.match(weeklyHtml, /<b>Progress<\/b>/);
 });
 
 test('default timezone remains Europe/Dublin when USER_TIMEZONE is unset', () => {
