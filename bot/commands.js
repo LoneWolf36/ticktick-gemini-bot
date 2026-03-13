@@ -5,9 +5,10 @@ import { taskReviewKeyboard } from './callbacks.js';
 import {
     buildTaskCard,
     sleep, userLocaleString, isAuthorized, guardAccess, buildUndoEntry,
-    appendUrgentModeReminder, formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage,
-    parseDateStringToTickTickISO, parseTelegramMarkdownToHTML, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent
+    filterProcessedThisWeek, buildQuotaExhaustedMessage,
+    parseDateStringToTickTickISO, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent
 } from './utils.js';
+import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, normalizePriorityCandidate, rankPriorityCandidates } from '../services/execution-prioritization.js';
 import { detectUrgentModeIntent } from '../services/ax-intent.js';
 
@@ -68,6 +69,15 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const message = `${result.confirmationText || '⚠️ Pipeline failed.'}${diagnostics}`;
         return compact ? message.replace(/\n+/g, ' | ') : message;
     };
+
+    const buildSummaryContext = ({ kind, userId, urgentMode }) => ({
+        kind,
+        entryPoint: 'manual_command',
+        userId,
+        urgentMode,
+        tonePolicy: 'preserve_existing',
+        generatedAtIso: new Date().toISOString(),
+    });
 
     // ─── /start ───────────────────────────────────────────────
     bot.command('start', async (ctx) => {
@@ -472,14 +482,23 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             return;
         }
         await ctx.reply('🌅 Generating your briefing...');
+        const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
+        const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
+        const context = buildSummaryContext({ kind: 'briefing', userId, urgentMode });
         try {
             const tasks = await ticktick.getAllTasks();
-            const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
-            const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
-            const briefing = await gemini.generateDailyBriefing(tasks, { userId, urgentMode });
-            await replyWithMarkdown(ctx, appendUrgentModeReminder(formatBriefingHeader({ kind: 'daily' }) + briefing, urgentMode));
+            const briefingResult = await gemini.generateDailyBriefingSummary(tasks, {
+                entryPoint: context.entryPoint,
+                userId,
+                urgentMode,
+                generatedAtIso: context.generatedAtIso,
+            });
+            logSummarySurfaceEvent({ context, result: briefingResult, deliveryStatus: 'ready' });
+            await replyWithMarkdown(ctx, briefingResult.formattedText);
+            logSummarySurfaceEvent({ context, result: briefingResult, deliveryStatus: 'sent' });
             await store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         } catch (err) {
+            logSummarySurfaceEvent({ context, deliveryStatus: 'failed', error: err });
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
                 await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
                 return;
@@ -497,16 +516,37 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             return;
         }
         await ctx.reply('📊 Generating your weekly review...');
+        const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
+        const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
+        const context = buildSummaryContext({ kind: 'weekly', userId, urgentMode });
         try {
             const tasks = await ticktick.getAllTasks();
             const processed = store.getProcessedTasks();
-            const thisWeek = filterProcessedThisWeek(processed, ['processedAt']);
-            const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
-            const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
-            const digest = await gemini.generateWeeklyDigest(tasks, thisWeek, { userId, urgentMode });
-            await replyWithMarkdown(ctx, appendUrgentModeReminder(formatBriefingHeader({ kind: 'weekly' }) + digest, urgentMode));
+            const historyAvailable = typeof processed === 'object' && processed !== null && !Array.isArray(processed);
+            const thisWeek = filterProcessedThisWeek(processed || {}, ['processedAt']);
+            const weeklyResult = await gemini.generateWeeklyDigestSummary(tasks, thisWeek, {
+                entryPoint: context.entryPoint,
+                userId,
+                urgentMode,
+                generatedAtIso: context.generatedAtIso,
+                historyAvailable,
+            });
+            logSummarySurfaceEvent({
+                context,
+                result: weeklyResult,
+                deliveryStatus: 'ready',
+                extra: { historyAvailable },
+            });
+            await replyWithMarkdown(ctx, weeklyResult.formattedText);
+            logSummarySurfaceEvent({
+                context,
+                result: weeklyResult,
+                deliveryStatus: 'sent',
+                extra: { historyAvailable },
+            });
             await store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         } catch (err) {
+            logSummarySurfaceEvent({ context, deliveryStatus: 'failed', error: err });
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
                 await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
                 return;

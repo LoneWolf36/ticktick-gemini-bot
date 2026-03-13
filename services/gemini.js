@@ -4,8 +4,9 @@ import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import path from 'path';
 import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from '../bot/utils.js';
-import { reorgSchema } from './schemas.js';
+import { briefingSummarySchema, reorgSchema, weeklySummarySchema } from './schemas.js';
 import * as store from './store.js';
+import { composeBriefingSummary, composeWeeklySummary } from './summary-surfaces/index.js';
 import {
     createGoalThemeProfile,
     inferPriorityValueFromTask,
@@ -39,79 +40,50 @@ if (existsSync(USER_CONTEXT_FILE)) {
 // ─── Daily Briefing Prompt ──────────────────────────────────
 const BRIEFING_PROMPT = `${USER_CONTEXT}
 
-Generate today's focused plan.
+Generate today's focused plan as structured JSON only.
 
 Rules:
-- Maximum 3 tasks.
-- First item MUST be career-critical (🔴) if one exists.
-- Flag overdue items with ⚠️.
-- Do not list everything — choose highest leverage only.
-- If too many tasks exist, ignore lower-impact ones.
+- Maximum 3 tasks in priorities.
+- First priority MUST be career-critical if one exists.
+- Avoid behavioral callouts; focus on task evidence and ranking rationale.
+- If data is sparse, return compact output without filler.
 
-Structure:
-1. One-line focus for the day.
-2. 2–3 tasks.
-3. One direct callout if avoidance is visible.
-4. End with ONE action he can start in 5 minutes.
+Return a JSON object with these fields:
+- focus: string
+- priorities: array of { task_id, title, project_name, due_date, priority_label, rationale_text }
+- why_now: array of short strings
+- start_now: string
+- notices: array of { code, message, severity, evidence_source }
 
-Output:
-Plain text formatted for Telegram. Use **asterisks** for bold emphasis.
-Do not use markdown headings (#, ##, ###) or separator lines made of hashes.
-Short. Direct. No fluff.
-
-<example_format>
-**Focus**: Shipping core features over polishing.
-1. 🔴 Complete API endpoint
-2. 🟡 Update documentation
-3. 🟡 Review PRs
-⚠️ You have been avoiding the Auth fix. Eat the frog.
-**Start now**: Open auth.js and map the initial functions.
-</example_format>
+Constraints:
+- Use snake_case keys exactly as listed.
+- notices.code must be one of: sparse_tasks, degraded_ranking, urgent_mode_active, delivery_context
+- notices.severity must be info or warning
+- notices.evidence_source must be tasks, processed_history, state, or system
+- Do not add extra keys.
+- Output strict JSON only (no markdown, no prose).
 `;
 
 // ─── Weekly Digest Prompt ───────────────────────────────────
-const WEEKLY_PROMPT = `${USER_CONTEXT}
+const WEEKLY_SUMMARY_PROMPT = `${USER_CONTEXT}
 
-Generate a concise weekly accountability review.
+Generate a weekly accountability summary as STRICT JSON.
 
-Include:
+Output rules:
+- Return JSON only. No markdown, no prose, no code fences.
+- Use exactly these top-level keys: progress, carry_forward, next_focus, watchouts, notices.
+- progress: array of short strings describing completed outcomes grounded in processed history.
+- carry_forward: array of objects { task_id, title, reason } for active tasks that carry into next week.
+- next_focus: array of short strings for the top 3 tasks to focus next.
+- watchouts: array of objects { label, evidence, evidence_source }.
+  - evidence_source must be "current_tasks" or "processed_history".
+  - Do not include behavioral labels or callouts.
+  - Do not include avoidance, needle-mover ratios, or callout language.
+- notices: array of objects { code, message, severity, evidence_source }.
+  - Use code "missing_history" when processed history is sparse or missing.
 
-1. WINS (actual completed outputs)
-2. AVOIDANCE (what 🔴 work was delayed)
-3. NEEDLE-MOVER RATIO: Format specifically as "🔴 Y out of X tasks (Z%)". Use your internal invisible reasoning to do the math flawlessly. Do not output the calculation steps.
-4. STALE TASKS (do, rescope, or drop)
-5. NEXT WEEK — top 3 only
-6. ONE direct callout
-
-Be honest. Short. No fluff.
-
-Output:
-Plain text formatted for Telegram. Use **asterisks** for bold emphasis.
-Do not use markdown headings (#, ##, ###) or separator lines made of hashes.
-
-<example_format>
-**WINS**:
-- Shipped 3 PRs 
-- Finished algorithm study
-
-**AVOIDANCE**:
-- Delayed the systems design mock interview. 
-
-**NEEDLE-MOVER RATIO**: 🔴 4 out of 10 tasks (40%)
-
-**STALE TASKS**:
-- "Read marketing book" (Recommend: Drop)
-
-**NEXT WEEK**:
-1. 🔴 Auth migration
-2. 🔴 Database mock
-3. 🟡 Finish unit tests
-
-**CALLOUT**: You spent too much time on life-admin. Focus on career-critical work next week.
-</example_format>
+Keep the summary concise, evidence-based, and non-behavioral.
 `;
-
-
 
 const REORG_PROMPT = `${USER_CONTEXT}
 
@@ -220,6 +192,8 @@ export class GeminiAnalyzer {
             model: 'gemini-2.5-flash',
             systemInstruction: BRIEFING_PROMPT,
             generationConfig: {
+                responseMimeType: "application/json",
+                responseSchema: briefingSummarySchema,
                 temperature: 0.8,
                 topP: 0.9,
                 maxOutputTokens: 4096,
@@ -229,11 +203,13 @@ export class GeminiAnalyzer {
 
         this.weeklyModel = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
-            systemInstruction: WEEKLY_PROMPT,
+            systemInstruction: WEEKLY_SUMMARY_PROMPT,
             generationConfig: {
-                temperature: 0.8,
+                responseMimeType: 'application/json',
+                responseSchema: weeklySummarySchema,
+                temperature: 0.4,
                 topP: 0.9,
-                maxOutputTokens: 8192,
+                maxOutputTokens: 4096,
             },
             thinkingConfig: { thinkingBudget: 1024 },
         });
@@ -459,7 +435,7 @@ export class GeminiAnalyzer {
 
     // ─── Generate daily briefing ──────────────────────────────
 
-    async generateDailyBriefing(tasks, options = {}) {
+    async generateDailyBriefingModelSummary(tasks, options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
         const { ranking, orderedTasks } = this._prepareBriefingTasks(tasks, {
             ...options,
@@ -488,28 +464,97 @@ export class GeminiAnalyzer {
 
         const prompt = `${urgentModePromptNote ? `${urgentModePromptNote}\n\n` : ''}Today is ${today}.\n\nShared priority guidance:\n${rankedPreview || 'No ranked guidance available.'}\n\nActive tasks (${orderedTasks.length} total):\n${taskList}`;
         const result = await this._generateWithFailover(() => this.briefingModel, prompt, { transientBaseMs: 15 });
-        return result.response.text().trim();
+        const raw = result.response.text().trim();
+        const parsed = this._safeParseJson(raw);
+        const modelSummary = parsed && typeof parsed === 'object'
+            ? parsed
+            : {
+                focus: '',
+                priorities: [],
+                why_now: [],
+                start_now: '',
+                notices: [],
+            };
+
+        return {
+            modelSummary,
+            ranking,
+            orderedTasks,
+            recommendationState,
+        };
+    }
+
+    async generateDailyBriefingSummary(tasks, options = {}) {
+        const {
+            modelSummary,
+            ranking,
+            orderedTasks,
+            recommendationState,
+        } = await this.generateDailyBriefingModelSummary(tasks, options);
+
+        return composeBriefingSummary({
+            context: {
+                kind: 'briefing',
+                entryPoint: options.entryPoint || 'manual_command',
+                userId: options.userId ?? options.chatId ?? null,
+                generatedAtIso: options.generatedAtIso || new Date().toISOString(),
+                timezone: options.timezone || null,
+                urgentMode: recommendationState.urgentMode,
+                tonePolicy: 'preserve_existing',
+            },
+            activeTasks: orderedTasks,
+            rankingResult: ranking,
+            modelSummary,
+        });
     }
 
     // ─── Generate weekly digest ───────────────────────────────
 
-    async generateWeeklyDigest(allTasks, processedThisWeek, options = {}) {
+    async generateWeeklyDigestSummary(allTasks, processedThisWeek, options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
-        const taskList = allTasks
-            .map((t, i) => `${i + 1}. "${t.title}" [${t.projectName || 'Inbox'}]`)
+        const { ranking, orderedTasks } = this._prepareBriefingTasks(allTasks, {
+            ...options,
+            ...recommendationState,
+        });
+
+        const taskList = orderedTasks
+            .map((t, i) => {
+                let line = `${i + 1}. "${t.title}" [${t.projectName || 'Inbox'}]`;
+                if (t.dueDate) line += ` - due: ${t.dueDate}`;
+                if (t.priority !== undefined) line += ` priority=${t.priority}`;
+                return line;
+            })
             .join('\n');
 
-        const processed = Object.entries(processedThisWeek)
-            .map(([_, d]) => formatProcessedTask(d))
+        const processedEntries = Object.entries(processedThisWeek || {})
+            .map(([taskId, data]) => ({ taskId, ...data }));
+        const processed = processedEntries
+            .map((entry) => formatProcessedTask(entry))
             .join('\n');
 
         const urgentModePromptNote = buildUrgentModePromptNote(recommendationState.urgentMode);
-        const prompt = `${urgentModePromptNote ? `${urgentModePromptNote}\n\n` : ''}Current active tasks (${allTasks.length}):\n${taskList}\n\nTasks analyzed this week:\n${processed || 'None'}`;
+        const prompt = `${urgentModePromptNote ? `${urgentModePromptNote}\n\n` : ''}Current active tasks (${orderedTasks.length}):\n${taskList || 'None'}\n\nProcessed tasks this week (${processedEntries.length}):\n${processed || 'None'}`;
         const result = await this._generateWithFailover(() => this.weeklyModel, prompt, { transientBaseMs: 15 });
-        return result.response.text().trim();
+        const raw = result.response.text().trim();
+        const parsed = this._safeParseJson(raw);
+        const summaryPayload = parsed && typeof parsed === 'object' ? parsed : {};
+
+        return composeWeeklySummary({
+            context: {
+                entryPoint: options.entryPoint || 'manual_command',
+                userId: options.userId ?? options.chatId ?? store.getChatId(),
+                generatedAtIso: options.generatedAtIso || new Date().toISOString(),
+                timezone: options.timezone || null,
+                urgentMode: recommendationState.urgentMode,
+                tonePolicy: options.tonePolicy || 'preserve_existing',
+            },
+            activeTasks: orderedTasks,
+            processedHistory: processedEntries,
+            historyAvailable: options.historyAvailable !== false,
+            rankingResult: ranking,
+            modelSummary: summaryPayload,
+        });
     }
-
-
 
     async generateReorgProposal(tasks = [], projects = [], refinement = null, existingActions = [], options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);

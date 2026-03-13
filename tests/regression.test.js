@@ -13,6 +13,16 @@ import { TickTickAdapter } from '../services/ticktick-adapter.js';
 import { TickTickClient } from '../services/ticktick.js';
 import * as store from '../services/store.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
+import { runDailyBriefingJob, runWeeklyDigestJob } from '../services/scheduler.js';
+import {
+  BRIEFING_SUMMARY_SECTION_KEYS,
+  WEEKLY_SUMMARY_SECTION_KEYS,
+  buildSummaryLogPayload,
+  composeBriefingSummary,
+  composeWeeklySummary,
+  formatSummary,
+  normalizeWeeklyWatchouts,
+} from '../services/summary-surfaces/index.js';
 import { createPipelineHarness, DEFAULT_PROJECTS } from './pipeline-harness.js';
 import {
   buildRankingContext,
@@ -35,6 +45,527 @@ function rankPriorityCandidatesForTest(candidates, context) {
 
   return executionPrioritization.rankPriorityCandidates({ candidates, context });
 }
+
+function buildSummaryActiveTasksFixture({ variant = 'normal' } = {}) {
+  const base = [
+    {
+      id: 'task-focus',
+      title: 'Ship weekly architecture PR',
+      projectId: 'career',
+      projectName: 'Career',
+      priority: 5,
+      dueDate: '2026-03-12',
+      status: 0,
+    },
+    {
+      id: 'task-support',
+      title: 'Prepare system design notes',
+      projectId: 'career',
+      projectName: 'Career',
+      priority: 3,
+      dueDate: '2026-03-14',
+      status: 0,
+    },
+    {
+      id: 'task-admin',
+      title: 'Pay rent',
+      projectId: 'admin',
+      projectName: 'Admin',
+      priority: 1,
+      dueDate: '2026-03-10',
+      status: 0,
+    },
+  ];
+
+  if (variant === 'sparse') {
+    return [base[0]];
+  }
+
+  if (variant === 'degraded-ranking') {
+    return base.map((task) => ({ ...task, priority: 0 }));
+  }
+
+  return base;
+}
+
+function buildSummaryProcessedHistoryFixture({ variant = 'normal' } = {}) {
+  const base = [
+    {
+      taskId: 'hist-1',
+      originalTitle: 'Completed resume update',
+      approved: true,
+      skipped: false,
+      dropped: false,
+      reviewedAt: '2026-03-11T09:00:00Z',
+      sentAt: '2026-03-11T09:05:00Z',
+      suggestedPriority: 5,
+      priorityEmoji: '🔴',
+    },
+    {
+      taskId: 'hist-2',
+      originalTitle: 'Deferred mock interview',
+      approved: false,
+      skipped: true,
+      dropped: false,
+      reviewedAt: '2026-03-11T09:10:00Z',
+      sentAt: '2026-03-11T09:15:00Z',
+      suggestedPriority: 3,
+      priorityEmoji: '🟡',
+    },
+  ];
+
+  if (variant === 'sparse') {
+    return [base[0]];
+  }
+
+  if (variant === 'missing') {
+    return [];
+  }
+
+  return base;
+}
+
+function buildSummaryResolvedStateFixture({ urgentMode = false, entryPoint = 'manual_command' } = {}) {
+  return {
+    kind: 'briefing',
+    entryPoint,
+    userId: 'summary-fixture-user',
+    generatedAtIso: '2026-03-13T08:30:00Z',
+    timezone: 'Europe/Dublin',
+    urgentMode,
+    tonePolicy: 'preserve_existing',
+  };
+}
+
+function buildSummaryRankingFixture(activeTasks, { degraded = false } = {}) {
+  const ranked = activeTasks.slice(0, 3).map((task, index) => ({
+    taskId: task.id,
+    rationaleCode: index === 0 ? 'goal_alignment' : 'urgency',
+    rationaleText: index === 0
+      ? 'Directly moves the highest-priority goal.'
+      : 'Time-bound execution window is closing.',
+  }));
+
+  return {
+    ranked,
+    topRecommendation: ranked[0] || null,
+    degraded,
+    degradedReason: degraded ? 'ranking inputs incomplete' : null,
+    context: {
+      urgentMode: false,
+      workStyleMode: 'humane',
+      stateSource: 'fixture',
+    },
+  };
+}
+
+function buildDailySummaryFixture({ variant = 'normal' } = {}) {
+  if (variant === 'empty') {
+    return {
+      focus: '',
+      priorities: [],
+      why_now: [],
+      start_now: '',
+      notices: [],
+    };
+  }
+
+  return {
+    focus: 'Ship the architecture PR before lower-leverage tasks.',
+    priorities: [
+      {
+        title: 'Ship weekly architecture PR',
+        rationale_text: 'Directly moves the highest-priority goal.',
+      },
+      {
+        title: 'Prepare system design notes',
+        rationale_text: 'Interview rehearsal window is closing.',
+      },
+    ],
+    why_now: [
+      'Deadline is close.',
+      'Unblocks review feedback.',
+    ],
+    start_now: 'Open the PR and list required changes.',
+    notices: [
+      { severity: 'info', message: 'Task list is sparse, so focus is tight.' },
+      { severity: 'warning', message: 'Ranking inputs were incomplete.' },
+    ],
+  };
+}
+
+function buildWeeklySummaryFixture({ variant = 'normal' } = {}) {
+  if (variant === 'reduced') {
+    return {
+      progress: [],
+      carry_forward: [],
+      next_focus: [],
+      watchouts: [],
+      notices: [
+        { severity: 'warning', message: 'Processed-task history was unavailable.' },
+      ],
+    };
+  }
+
+  return {
+    progress: [
+      'Completed architecture PR draft.',
+      'Closed the interview prep loop.',
+    ],
+    carry_forward: [
+      { title: 'Finalize system design notes', reason: 'Needs explicit completion next week.' },
+    ],
+    next_focus: [
+      'Ship weekly architecture PR',
+      'Practice system design questions',
+    ],
+    watchouts: [
+      { label: 'Overdue tasks accumulating', evidence: '2 active tasks are overdue right now.' },
+    ],
+    notices: [
+      { severity: 'info', message: 'Active task set is sparse, so weekly recommendations are compact.' },
+    ],
+  };
+}
+
+test('summary fixtures expose deterministic normal sparse and degraded inputs', () => {
+  const normalTasks = buildSummaryActiveTasksFixture();
+  const sparseTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+  const degradedTasks = buildSummaryActiveTasksFixture({ variant: 'degraded-ranking' });
+  const normalHistory = buildSummaryProcessedHistoryFixture();
+  const sparseHistory = buildSummaryProcessedHistoryFixture({ variant: 'sparse' });
+  const missingHistory = buildSummaryProcessedHistoryFixture({ variant: 'missing' });
+  const urgentState = buildSummaryResolvedStateFixture({ urgentMode: true });
+  const ranking = buildSummaryRankingFixture(normalTasks, { degraded: true });
+
+  assert.equal(normalTasks.length, 3);
+  assert.equal(normalTasks[0].id, 'task-focus');
+  assert.equal(sparseTasks.length, 1);
+  assert.equal(degradedTasks.every((task) => task.priority === 0), true);
+  assert.equal(normalHistory.length, 2);
+  assert.equal(sparseHistory.length, 1);
+  assert.equal(missingHistory.length, 0);
+  assert.equal(urgentState.urgentMode, true);
+  assert.equal(ranking.degraded, true);
+  assert.equal(ranking.degradedReason, 'ranking inputs incomplete');
+});
+
+test('composeBriefingSummary always returns fixed briefing top-level sections', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture();
+  const result = composeBriefingSummary({ context, activeTasks, rankingResult });
+
+  assert.deepEqual(Object.keys(result.summary), BRIEFING_SUMMARY_SECTION_KEYS);
+  assert.equal(Array.isArray(result.summary.priorities), true);
+  assert.equal(Array.isArray(result.summary.why_now), true);
+  assert.equal(Array.isArray(result.summary.notices), true);
+});
+
+test('composeBriefingSummary prefers structured model focus and priorities', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture();
+  const modelSummary = {
+    focus: 'Ship the architecture PR before low-leverage work.',
+    priorities: [
+      {
+        task_id: activeTasks[0].id,
+        title: '',
+        project_name: null,
+        due_date: null,
+        priority_label: 'career-critical',
+        rationale_text: 'Directly moves the core goal.',
+      },
+    ],
+    why_now: ['Directly moves the core goal.'],
+    start_now: 'Open the PR checklist and draft the next commit.',
+    notices: [],
+  };
+
+  const result = composeBriefingSummary({
+    context,
+    activeTasks,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.equal(result.summary.focus, modelSummary.focus);
+  assert.equal(result.summary.priorities[0].task_id, activeTasks[0].id);
+  assert.equal(result.summary.priorities[0].title, activeTasks[0].title);
+  assert.equal(result.summary.start_now, modelSummary.start_now);
+});
+
+test('composeBriefingSummary adds sparse-task notices without filler', () => {
+  const activeTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture();
+  const modelSummary = {
+    focus: '',
+    priorities: [],
+    why_now: [],
+    start_now: '',
+    notices: [],
+  };
+
+  const result = composeBriefingSummary({
+    context,
+    activeTasks,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.equal(result.summary.priorities.length, 1);
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'sparse_tasks'));
+});
+
+test('composeBriefingSummary adds degraded-ranking notice when ranking is degraded', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks, { degraded: true });
+  const context = buildSummaryResolvedStateFixture();
+  const modelSummary = {
+    focus: 'Keep momentum on ranked work.',
+    priorities: [],
+    why_now: [],
+    start_now: 'Open the top task and take the first step.',
+    notices: [],
+  };
+
+  const result = composeBriefingSummary({
+    context,
+    activeTasks,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'degraded_ranking'));
+});
+
+test('composeWeeklySummary always returns fixed weekly top-level sections', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildSummaryProcessedHistoryFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+  });
+
+  assert.deepEqual(Object.keys(result.summary), WEEKLY_SUMMARY_SECTION_KEYS);
+  assert.equal(Array.isArray(result.summary.progress), true);
+  assert.equal(Array.isArray(result.summary.watchouts), true);
+  assert.equal(Array.isArray(result.summary.notices), true);
+});
+
+test('composeWeeklySummary uses structured model summary but keeps next_focus grounded', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildSummaryProcessedHistoryFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+  };
+  const modelSummary = {
+    progress: ['Completed: Shipped weekly architecture PR'],
+    carry_forward: [
+      {
+        task_id: 'task-support',
+        title: 'Prepare system design notes',
+        reason: 'Still open with planned follow-up.',
+      },
+    ],
+    next_focus: ['Random model suggestion'],
+    watchouts: [
+      {
+        label: 'Overdue tasks accumulating',
+        evidence: '1 active task is overdue right now.',
+        evidence_source: 'current_tasks',
+      },
+    ],
+    notices: [
+      {
+        code: 'delivery_context',
+        message: 'Model summary received.',
+        severity: 'info',
+        evidence_source: 'system',
+      },
+    ],
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.ok(result.summary.progress.includes('Completed: Shipped weekly architecture PR'));
+  assert.equal(result.summary.next_focus.includes('Random model suggestion'), false);
+  assert.equal(result.summary.next_focus[0], activeTasks[0].title);
+});
+
+test('composeWeeklySummary reduces digest and adds missing history notice when history is missing', () => {
+  const activeTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+  const processedHistory = [];
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+  };
+  const modelSummary = {
+    progress: ['Completed: Placeholder progress'],
+    watchouts: [
+      {
+        label: 'Dropped tasks this week',
+        evidence: '1 processed item was dropped.',
+        evidence_source: 'processed_history',
+      },
+    ],
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: false,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.equal(result.summary.progress.length, 0);
+  assert.ok(result.summary.carry_forward.length > 0);
+  assert.ok(result.summary.next_focus.length > 0);
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'missing_history'));
+});
+
+test('composeWeeklySummary drops watchouts without evidence backing', () => {
+  const activeTasks = buildSummaryActiveTasksFixture().map((task) => ({
+    ...task,
+    dueDate: '2026-03-20',
+  }));
+  const processedHistory = [];
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+  };
+  const modelSummary = {
+    watchouts: [
+      {
+        label: 'Dropped tasks this week',
+        evidence: '1 processed item was dropped.',
+        evidence_source: 'processed_history',
+      },
+      {
+        label: 'History unavailable',
+        evidence: 'Processed-task history was unavailable.',
+        evidence_source: 'missing_data',
+      },
+    ],
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.equal(result.summary.watchouts.length, 0);
+});
+
+test('weekly watchout normalization rejects behavioral labels and strips prompt-era fields', () => {
+  const watchouts = normalizeWeeklyWatchouts([
+    {
+      label: 'avoidance',
+      evidence: 'A delayed critical task appears in history.',
+      evidence_source: 'processed_history',
+      callout: 'legacy behavioral field',
+    },
+    {
+      label: 'Overdue tasks accumulating',
+      evidence: '3 active tasks are overdue.',
+      evidence_source: 'current_tasks',
+      avoidance: 'legacy field should be removed',
+      callout: 'legacy field should be removed',
+    },
+  ]);
+
+  assert.equal(watchouts.length, 1);
+  assert.equal(watchouts[0].label, 'Overdue tasks accumulating');
+  assert.equal(Object.hasOwn(watchouts[0], 'avoidance'), false);
+  assert.equal(Object.hasOwn(watchouts[0], 'callout'), false);
+});
+
+test('formatSummary renders daily sections with header and urgent reminder in fixed order', () => {
+  const summary = buildDailySummaryFixture();
+  const { text, telegramSafe, tonePreserved } = formatSummary({
+    kind: 'briefing',
+    summary,
+    context: { urgentMode: true },
+  });
+
+  const sectionOrder = ['**Focus**', '**Priorities**', '**Why now**', '**Start now**', '**Notices**'];
+  const positions = sectionOrder.map((label) => text.indexOf(label));
+  const reminderMatches = text.match(/Urgent mode is currently active/gi) || [];
+
+  assert.ok(text.includes('MORNING BRIEFING'));
+  assert.ok(positions.every((pos) => pos >= 0));
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions);
+  assert.equal(reminderMatches.length, 1);
+  assert.equal(telegramSafe, true);
+  assert.equal(tonePreserved, true);
+});
+
+test('formatSummary renders weekly sections in fixed order and preserves watchout evidence', () => {
+  const summary = buildWeeklySummaryFixture();
+  const { text, telegramSafe } = formatSummary({
+    kind: 'weekly',
+    summary,
+    context: { urgentMode: false },
+  });
+
+  const sectionOrder = ['**Progress**', '**Carry forward**', '**Next focus**', '**Watchouts**', '**Notices**'];
+  const positions = sectionOrder.map((label) => text.indexOf(label));
+
+  assert.ok(text.includes('WEEKLY ACCOUNTABILITY REVIEW'));
+  assert.ok(text.includes('Overdue tasks accumulating: 2 active tasks are overdue right now.'));
+  assert.ok(positions.every((pos) => pos >= 0));
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions);
+  assert.equal(telegramSafe, true);
+});
+
+test('formatSummary keeps empty sections compact and Telegram-safe', () => {
+  const daily = buildDailySummaryFixture({ variant: 'empty' });
+  const weekly = buildWeeklySummaryFixture({ variant: 'reduced' });
+  const dailyResult = formatSummary({ kind: 'briefing', summary: daily, context: {} });
+  const weeklyResult = formatSummary({ kind: 'weekly', summary: weekly, context: {} });
+
+  assert.match(dailyResult.text, /\*\*Focus\*\*: None/);
+  assert.match(dailyResult.text, /\*\*Priorities\*\*:\n1\. None/);
+  assert.equal(dailyResult.text.includes('Keep momentum on your top task.'), false);
+  assert.match(weeklyResult.text, /\*\*Progress\*\*:\n- None/);
+  assert.match(weeklyResult.text, /\*\*Carry forward\*\*:\n- None/);
+  assert.match(weeklyResult.text, /\*\*Next focus\*\*:\n1\. None/);
+  assert.match(weeklyResult.text, /\*\*Watchouts\*\*:\n- None/);
+  assert.match(weeklyResult.text, /\[Warning\] Processed-task history was unavailable\./);
+
+  const dailyHtml = parseTelegramMarkdownToHTML(dailyResult.text);
+  const weeklyHtml = parseTelegramMarkdownToHTML(weeklyResult.text);
+  assert.match(dailyHtml, /<b>Focus<\/b>/);
+  assert.match(weeklyHtml, /<b>Progress<\/b>/);
+});
 
 test('default timezone remains Europe/Dublin when USER_TIMEZONE is unset', () => {
   const source = readFileSync('bot/utils.js', 'utf8');
@@ -192,7 +723,184 @@ test('registerCommands allows free-form urgent toggles before TickTick auth', as
   assert.equal(replies.some((message) => /TickTick not connected yet/i.test(message)), false);
 });
 
-test('registerCommands adds the urgent reminder to manual briefing surfaces when urgent mode is active', async () => {
+test('registerCommands uses shared briefing surface and preserves urgent reminder', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) {
+      handlers.commands.set(name, handler);
+      return this;
+    },
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return this;
+    },
+    on(eventName, handler) {
+      handlers.events.push({ eventName, handler });
+      return this;
+    },
+  };
+
+  const summaryCalls = [];
+
+  registerCommands(
+    bot,
+    {
+      isAuthenticated: () => true,
+      getCacheAgeSeconds: () => null,
+      getAuthUrl: () => 'https://example.test/auth',
+      getAllTasks: async () => [],
+      getAllTasksCached: async () => [],
+      getLastFetchedProjects: () => [],
+    },
+    {
+      isQuotaExhausted: () => false,
+      quotaResumeTime: () => null,
+      activeKeyInfo: () => null,
+      generateDailyBriefingSummary: async (_tasks, options) => {
+        summaryCalls.push(options);
+        return {
+          summary: {
+            focus: 'Test focus',
+            priorities: [],
+            why_now: [],
+            start_now: '',
+            notices: [],
+          },
+          formattedText: '**???? MORNING BRIEFING**\n\n**Focus**: Test focus\n\n**Urgent mode is currently active.**',
+          diagnostics: {
+            kind: 'briefing',
+            entryPoint: options.entryPoint,
+            sourceCounts: { activeTasks: 0, processedHistory: 0 },
+            degraded: false,
+            degradedReason: null,
+            formatterVersion: 'summary-formatter.v1',
+            formattingDecisions: {
+              telegramSafe: true,
+              tonePreserved: true,
+              urgentReminderApplied: false,
+              truncated: false,
+            },
+            deliveryStatus: 'composed',
+          },
+        };
+      },
+      generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
+    },
+    {},
+    {},
+  );
+
+  const briefingHandler = handlers.commands.get('briefing');
+  assert.equal(typeof briefingHandler, 'function');
+
+  const replies = [];
+  const userId = Date.now();
+  await store.setUrgentMode(userId, true);
+  await briefingHandler({
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => {
+      replies.push(message);
+    },
+  });
+
+  assert.equal(summaryCalls.length, 1);
+  assert.equal(summaryCalls[0].entryPoint, 'manual_command');
+  assert.equal(summaryCalls[0].urgentMode, true);
+  assert.ok(replies.some((message) => typeof message === 'string' && message.includes('Urgent mode is currently active.')));
+});
+
+test('registerCommands uses shared weekly surface and sends formatted output', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) {
+      handlers.commands.set(name, handler);
+      return this;
+    },
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return this;
+    },
+    on(eventName, handler) {
+      handlers.events.push({ eventName, handler });
+      return this;
+    },
+  };
+
+  const weeklyCalls = [];
+
+  registerCommands(
+    bot,
+    {
+      isAuthenticated: () => true,
+      getCacheAgeSeconds: () => null,
+      getAuthUrl: () => 'https://example.test/auth',
+      getAllTasks: async () => [],
+      getAllTasksCached: async () => [],
+      getLastFetchedProjects: () => [],
+    },
+    {
+      isQuotaExhausted: () => false,
+      quotaResumeTime: () => null,
+      activeKeyInfo: () => null,
+      generateWeeklyDigestSummary: async (_tasks, processedThisWeek, options) => {
+        weeklyCalls.push({ processedThisWeek, options });
+        return {
+          summary: {
+            progress: [],
+            carry_forward: [],
+            next_focus: [],
+            watchouts: [],
+            notices: [],
+          },
+          formattedText: '**???? WEEKLY ACCOUNTABILITY REVIEW**\n\n**Progress**:\n- None',
+          diagnostics: {
+            kind: 'weekly',
+            entryPoint: options.entryPoint,
+            sourceCounts: {
+              activeTasks: 0,
+              processedHistory: Object.keys(processedThisWeek).length,
+            },
+            degraded: false,
+            degradedReason: null,
+            formatterVersion: 'summary-formatter.v1',
+            formattingDecisions: {
+              telegramSafe: true,
+              tonePreserved: true,
+              urgentReminderApplied: false,
+              truncated: false,
+            },
+            deliveryStatus: 'composed',
+          },
+        };
+      },
+      generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
+    },
+    {},
+    {},
+  );
+
+  const weeklyHandler = handlers.commands.get('weekly');
+  assert.equal(typeof weeklyHandler, 'function');
+
+  const replies = [];
+  const userId = Date.now();
+  await store.setUrgentMode(userId, false);
+  await weeklyHandler({
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => {
+      replies.push(message);
+    },
+  });
+
+  assert.equal(weeklyCalls.length, 1);
+  assert.equal(weeklyCalls[0].options.entryPoint, 'manual_command');
+  assert.equal(weeklyCalls[0].options.historyAvailable, true);
+  assert.ok(replies.some((message) => typeof message === 'string' && message.includes('WEEKLY ACCOUNTABILITY REVIEW')));
+});
+
+test('registerCommands short-circuits briefing and weekly when quota is exhausted', async () => {
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
     command(name, handler) {
@@ -220,32 +928,171 @@ test('registerCommands adds the urgent reminder to manual briefing surfaces when
       getLastFetchedProjects: () => [],
     },
     {
-      isQuotaExhausted: () => false,
+      isQuotaExhausted: () => true,
       quotaResumeTime: () => null,
       activeKeyInfo: () => null,
-      generateDailyBriefing: async () => 'Plan for today',
-      generateWeeklyDigest: async () => 'Weekly summary',
+      generateDailyBriefingSummary: async () => {
+        throw new Error('generateDailyBriefingSummary should not be called when quota is exhausted');
+      },
+      generateWeeklyDigestSummary: async () => {
+        throw new Error('generateWeeklyDigestSummary should not be called when quota is exhausted');
+      },
       generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
     },
     {},
     {},
   );
 
-  const briefingHandler = handlers.commands.get('briefing');
-  assert.equal(typeof briefingHandler, 'function');
-
   const replies = [];
   const userId = Date.now();
-  await store.setUrgentMode(userId, true);
-  await briefingHandler({
+  const ctx = {
     chat: { id: userId },
     from: { id: userId },
     reply: async (message) => {
       replies.push(message);
     },
+  };
+
+  await handlers.commands.get('briefing')(ctx);
+  await handlers.commands.get('weekly')(ctx);
+
+  assert.ok(replies.some((message) => /quota exhausted/i.test(message)));
+});
+
+test('runDailyBriefingJob uses the shared briefing summary surface and keeps pending reminder outside the formatter', async () => {
+  await store.resetAll();
+  const userId = `scheduler-daily-${Date.now()}`;
+  await store.setChatId(userId);
+  await store.setUrgentMode(userId, true);
+  await store.markTaskPending('pending-1', { originalTitle: 'Review inbox capture' });
+
+  const sentMessages = [];
+  let summaryCalls = 0;
+  const ran = await runDailyBriefingJob({
+    bot: {
+      api: {
+        sendMessage: async (chatId, text) => {
+          sentMessages.push({ chatId, text });
+        },
+      },
+    },
+    ticktick: {
+      isAuthenticated: () => true,
+      getAllTasks: async () => buildSummaryActiveTasksFixture(),
+    },
+    gemini: {
+      isQuotaExhausted: () => false,
+      generateDailyBriefing: async () => {
+        throw new Error('legacy daily string path should not be used');
+      },
+      generateDailyBriefingSummary: async (_tasks, options) => {
+        summaryCalls += 1;
+        assert.equal(options.entryPoint, 'scheduler');
+        assert.equal(options.userId, userId);
+        assert.equal(options.urgentMode, true);
+        return {
+          formattedText: '**🌅 MORNING BRIEFING**\n\nShared surface body.\n\n**Urgent mode is currently active.**',
+        };
+      },
+    },
   });
 
-  assert.ok(replies.some((message) => typeof message === 'string' && message.includes('Urgent mode is currently active.')));
+  assert.equal(ran, true);
+  assert.equal(summaryCalls, 1);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].chatId, userId);
+  assert.match(sentMessages[0].text, /MORNING BRIEFING/);
+  assert.match(sentMessages[0].text, /Urgent mode is currently active/);
+  assert.match(sentMessages[0].text, /1 task\(s\) pending your review\. Run \/pending\./);
+  assert.ok(store.getStats().lastDailyBriefing);
+});
+
+test('runWeeklyDigestJob uses the shared weekly summary surface and preserves processed-history input', async () => {
+  await store.resetAll();
+  const userId = `scheduler-weekly-${Date.now()}`;
+  await store.setChatId(userId);
+  await store.setUrgentMode(userId, true);
+  await store.markTaskProcessed('hist-1', {
+    originalTitle: 'Completed architecture PR draft',
+    approved: true,
+    sentAt: new Date().toISOString(),
+  });
+
+  const sentMessages = [];
+  let summaryCalls = 0;
+  const ran = await runWeeklyDigestJob({
+    bot: {
+      api: {
+        sendMessage: async (chatId, text) => {
+          sentMessages.push({ chatId, text });
+        },
+      },
+    },
+    ticktick: {
+      isAuthenticated: () => true,
+      getAllTasks: async () => buildSummaryActiveTasksFixture(),
+    },
+    gemini: {
+      isQuotaExhausted: () => false,
+      generateWeeklyDigest: async () => {
+        throw new Error('legacy weekly string path should not be used');
+      },
+      generateWeeklyDigestSummary: async (_tasks, processedThisWeek, options) => {
+        summaryCalls += 1;
+        assert.equal(options.entryPoint, 'scheduler');
+        assert.equal(options.userId, userId);
+        assert.equal(options.urgentMode, true);
+        assert.deepEqual(Object.keys(processedThisWeek), ['hist-1']);
+        return {
+          formattedText: '**📊 WEEKLY ACCOUNTABILITY REVIEW**\n\nShared weekly surface.\n\n**Urgent mode is currently active.**',
+        };
+      },
+    },
+  });
+
+  assert.equal(ran, true);
+  assert.equal(summaryCalls, 1);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].chatId, userId);
+  assert.match(sentMessages[0].text, /WEEKLY ACCOUNTABILITY REVIEW/);
+  assert.match(sentMessages[0].text, /Urgent mode is currently active/);
+  assert.ok(store.getStats().lastWeeklyDigest);
+});
+
+test('runWeeklyDigestJob passes historyAvailable false when processed-task history is missing', async () => {
+  await store.resetAll();
+  const userId = `scheduler-weekly-missing-${Date.now()}`;
+  await store.setChatId(userId);
+  await store.setUrgentMode(userId, false);
+
+  let summaryCalls = 0;
+  const ran = await runWeeklyDigestJob({
+    bot: {
+      api: {
+        sendMessage: async () => {},
+      },
+    },
+    ticktick: {
+      isAuthenticated: () => true,
+      getAllTasks: async () => buildSummaryActiveTasksFixture(),
+    },
+    gemini: {
+      isQuotaExhausted: () => false,
+      generateWeeklyDigestSummary: async (_tasks, processedThisWeek, options) => {
+        summaryCalls += 1;
+        assert.deepEqual(processedThisWeek, {});
+        assert.equal(options.historyAvailable, false);
+        return {
+          formattedText: '**📊 WEEKLY ACCOUNTABILITY REVIEW**\n\nReduced weekly surface.',
+        };
+      },
+    },
+    processedTasks: null,
+  });
+
+  assert.equal(ran, true);
+  assert.equal(summaryCalls, 1);
+
 });
 
 test('TickTickAdapter includes the existing projectId when updating only a due date', async () => {
@@ -862,6 +1709,124 @@ test('execution prioritization does not synthesize wall-clock time when nowIso i
   });
 
   assert.equal(context.nowIso, null);
+});
+
+test('buildSummaryLogPayload normalizes diagnostics field names and delivery status', () => {
+  const payload = buildSummaryLogPayload({
+    context: { kind: 'briefing', entryPoint: 'manual_command', userId: 'log-user' },
+    result: {
+      summary: { focus: 'Test focus' },
+      diagnostics: {
+        kind: 'briefing',
+        entryPoint: 'manual_command',
+        sourceCounts: { activeTasks: 3, processedHistory: 1 },
+        degraded: false,
+        degradedReason: null,
+        formatterVersion: 'summary-formatter.v1',
+        formattingDecisions: {
+          telegramSafe: true,
+          tonePreserved: true,
+          urgentReminderApplied: false,
+          truncated: false,
+        },
+        deliveryStatus: 'composed',
+      },
+    },
+    deliveryStatus: 'sent',
+  });
+
+  assert.equal(payload.userId, 'log-user');
+  assert.equal(payload.diagnostics.deliveryStatus, 'sent');
+  assert.deepEqual(payload.diagnostics.sourceCounts, { activeTasks: 3, processedHistory: 1 });
+  assert.equal(Object.hasOwn(payload.diagnostics, 'source_counts'), false);
+  assert.equal(payload.diagnostics.formattingDecisions.telegramSafe, true);
+});
+
+test('GeminiAnalyzer generateDailyBriefingSummary matches manual and scheduler output for the same inputs', async () => {
+  const analyzer = new GeminiAnalyzer(['dummy-key']);
+  analyzer._generateWithFailover = async () => ({
+    response: {
+      text: () => JSON.stringify({
+        focus: 'Ship the architecture PR before lower-leverage work.',
+        priorities: [
+          {
+            task_id: 'task-focus',
+            title: 'Ship weekly architecture PR',
+            project_name: 'Career',
+            due_date: '2026-03-12',
+            priority_label: 'career-critical',
+            rationale_text: 'Directly moves the highest-priority goal.',
+          },
+        ],
+        why_now: ['Directly moves the highest-priority goal.'],
+        start_now: 'Open the PR checklist and draft the next commit.',
+        notices: [],
+      }),
+    },
+  });
+
+  const manual = await analyzer.generateDailyBriefingSummary(buildSummaryActiveTasksFixture(), {
+    entryPoint: 'manual_command',
+    userId: 'parity-user',
+    urgentMode: false,
+    generatedAtIso: '2026-03-13T08:30:00Z',
+  });
+  const scheduled = await analyzer.generateDailyBriefingSummary(buildSummaryActiveTasksFixture(), {
+    entryPoint: 'scheduler',
+    userId: 'parity-user',
+    urgentMode: false,
+    generatedAtIso: '2026-03-13T08:30:00Z',
+  });
+
+  assert.deepEqual(manual.summary, scheduled.summary);
+  assert.equal(manual.formattedText, scheduled.formattedText);
+  assert.deepEqual(manual.diagnostics.sourceCounts, scheduled.diagnostics.sourceCounts);
+  assert.equal(manual.diagnostics.degradedReason, scheduled.diagnostics.degradedReason);
+  assert.equal(manual.diagnostics.formatterVersion, scheduled.diagnostics.formatterVersion);
+});
+
+test('GeminiAnalyzer generateWeeklyDigestSummary matches manual and scheduler output for the same snapshot', async () => {
+  const analyzer = new GeminiAnalyzer(['dummy-key']);
+  analyzer._generateWithFailover = async () => ({
+    response: {
+      text: () => JSON.stringify({
+        progress: ['Completed resume update'],
+        carry_forward: ['Reschedule mock interview'],
+        next_focus: ['Protect maker time'],
+        watchouts: ['Do not let admin work crowd out backend prep'],
+        notices: [],
+      }),
+    },
+  });
+
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = Object.fromEntries(buildSummaryProcessedHistoryFixture().map((entry) => [entry.taskId, entry]));
+  const manual = await analyzer.generateWeeklyDigestSummary(activeTasks, processedHistory, {
+    entryPoint: 'manual_command',
+    userId: 'parity-user',
+    urgentMode: false,
+    generatedAtIso: '2026-03-13T08:30:00Z',
+    historyAvailable: true,
+  });
+  const scheduled = await analyzer.generateWeeklyDigestSummary(activeTasks, processedHistory, {
+    entryPoint: 'scheduler',
+    userId: 'parity-user',
+    urgentMode: false,
+    generatedAtIso: '2026-03-13T08:30:00Z',
+    historyAvailable: true,
+  });
+
+  assert.deepEqual(manual.summary, scheduled.summary);
+  assert.equal(manual.formattedText, scheduled.formattedText);
+  assert.deepEqual(manual.diagnostics.sourceCounts, scheduled.diagnostics.sourceCounts);
+  assert.equal(manual.diagnostics.degradedReason, scheduled.diagnostics.degradedReason);
+  assert.equal(manual.diagnostics.formatterVersion, scheduled.diagnostics.formatterVersion);
+});
+
+test('GeminiAnalyzer no longer exposes legacy formatted-string summary wrappers', () => {
+  const source = readFileSync(new URL('../services/gemini.js', import.meta.url), 'utf8');
+  assert.doesNotMatch(source, /async generateDailyBriefing\s*\(/);
+  assert.doesNotMatch(source, /async generateWeeklyDigest\s*\(/);
 });
 
 test('execution prioritization parses mixed bullet and numbered goals inside the GOALS section', () => {
