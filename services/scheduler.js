@@ -38,7 +38,7 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini }) {
     }
 }
 
-export async function runWeeklyDigestJob({ bot, ticktick, gemini }) {
+export async function runWeeklyDigestJob({ bot, ticktick, gemini, processedTasks = store.getProcessedTasks() }) {
     if (!ticktick.isAuthenticated()) return false;
     const chatId = store.getChatId();
     if (!chatId) return false;
@@ -51,13 +51,15 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini }) {
         }
 
         const tasks = await ticktick.getAllTasks();
-        const processed = store.getProcessedTasks();
+        const historyAvailable = typeof processedTasks === 'object' && processedTasks !== null && !Array.isArray(processedTasks);
+        const processed = historyAvailable ? processedTasks : {};
         const thisWeek = filterProcessedThisWeek(processed, ['sentAt']);
         const urgentMode = await store.getUrgentMode(chatId);
         const digest = await gemini.generateWeeklyDigestSummary(tasks, thisWeek, {
             entryPoint: 'scheduler',
             userId: chatId,
             urgentMode,
+            historyAvailable,
         });
 
         await sendWithMarkdown(bot.api, chatId, digest.formattedText);

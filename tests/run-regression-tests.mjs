@@ -1045,6 +1045,46 @@ async function run() {
   }
 
   try {
+    await store.resetAll();
+    const userId = `scheduler-weekly-missing-${Date.now()}`;
+    await store.setChatId(userId);
+    await store.setUrgentMode(userId, false);
+
+    let summaryCalls = 0;
+    const ran = await runWeeklyDigestJob({
+      bot: {
+        api: {
+          sendMessage: async () => {},
+        },
+      },
+      ticktick: {
+        isAuthenticated: () => true,
+        getAllTasks: async () => buildSummaryActiveTasksFixture(),
+      },
+      gemini: {
+        isQuotaExhausted: () => false,
+        generateWeeklyDigestSummary: async (_tasks, processedThisWeek, options) => {
+          summaryCalls += 1;
+          assert.deepEqual(processedThisWeek, {});
+          assert.equal(options.historyAvailable, false);
+          return {
+            formattedText: '**📊 WEEKLY ACCOUNTABILITY REVIEW**\n\nReduced weekly surface.',
+          };
+        },
+      },
+      processedTasks: null,
+    });
+
+    assert.equal(ran, true);
+    assert.equal(summaryCalls, 1);
+    console.log('PASS runWeeklyDigestJob passes historyAvailable false when processed history is missing');
+  } catch (err) {
+    failures++;
+    console.error('FAIL runWeeklyDigestJob passes historyAvailable false when processed history is missing');
+    console.error(err.message);
+  }
+
+  try {
     let updatePayload = null;
     const client = Object.create(TickTickClient.prototype);
     client.getTask = async () => ({
