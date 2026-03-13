@@ -11,6 +11,13 @@ import { TickTickAdapter } from '../services/ticktick-adapter.js';
 import { TickTickClient } from '../services/ticktick.js';
 import * as store from '../services/store.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
+import {
+  BRIEFING_SUMMARY_SECTION_KEYS,
+  WEEKLY_SUMMARY_SECTION_KEYS,
+  composeBriefingSummary,
+  composeWeeklySummary,
+  normalizeWeeklyWatchouts,
+} from '../services/summary-surfaces/index.js';
 import { createPipelineHarness, DEFAULT_PROJECTS } from './pipeline-harness.js';
 import {
   buildRankingContext,
@@ -34,6 +41,119 @@ function rankPriorityCandidatesForTest(candidates, context) {
   return executionPrioritization.rankPriorityCandidates({ candidates, context });
 }
 
+function buildSummaryActiveTasksFixture({ variant = 'normal' } = {}) {
+  const base = [
+    {
+      id: 'task-focus',
+      title: 'Ship weekly architecture PR',
+      projectId: 'career',
+      projectName: 'Career',
+      priority: 5,
+      dueDate: '2026-03-12',
+      status: 0,
+    },
+    {
+      id: 'task-support',
+      title: 'Prepare system design notes',
+      projectId: 'career',
+      projectName: 'Career',
+      priority: 3,
+      dueDate: '2026-03-14',
+      status: 0,
+    },
+    {
+      id: 'task-admin',
+      title: 'Pay rent',
+      projectId: 'admin',
+      projectName: 'Admin',
+      priority: 1,
+      dueDate: '2026-03-10',
+      status: 0,
+    },
+  ];
+
+  if (variant === 'sparse') {
+    return [base[0]];
+  }
+
+  if (variant === 'degraded-ranking') {
+    return base.map((task) => ({ ...task, priority: 0 }));
+  }
+
+  return base;
+}
+
+function buildSummaryProcessedHistoryFixture({ variant = 'normal' } = {}) {
+  const base = [
+    {
+      taskId: 'hist-1',
+      originalTitle: 'Completed resume update',
+      approved: true,
+      skipped: false,
+      dropped: false,
+      reviewedAt: '2026-03-11T09:00:00Z',
+      sentAt: '2026-03-11T09:05:00Z',
+      suggestedPriority: 5,
+      priorityEmoji: '🔴',
+    },
+    {
+      taskId: 'hist-2',
+      originalTitle: 'Deferred mock interview',
+      approved: false,
+      skipped: true,
+      dropped: false,
+      reviewedAt: '2026-03-11T09:10:00Z',
+      sentAt: '2026-03-11T09:15:00Z',
+      suggestedPriority: 3,
+      priorityEmoji: '🟡',
+    },
+  ];
+
+  if (variant === 'sparse') {
+    return [base[0]];
+  }
+
+  if (variant === 'missing') {
+    return [];
+  }
+
+  return base;
+}
+
+function buildSummaryResolvedStateFixture({ urgentMode = false, entryPoint = 'manual_command' } = {}) {
+  return {
+    kind: 'briefing',
+    entryPoint,
+    userId: 'summary-fixture-user',
+    generatedAtIso: '2026-03-13T08:30:00Z',
+    timezone: 'Europe/Dublin',
+    urgentMode,
+    tonePolicy: 'preserve_existing',
+  };
+}
+
+function buildSummaryRankingFixture(activeTasks, { degraded = false } = {}) {
+  const ranked = activeTasks.slice(0, 3).map((task, index) => ({
+    taskId: task.id,
+    rationaleCode: index === 0 ? 'goal_alignment' : 'urgency',
+    rationaleText: index === 0
+      ? 'Directly moves the highest-priority goal.'
+      : 'Time-bound execution window is closing.',
+  }));
+
+  return {
+    ranked,
+    topRecommendation: ranked[0] || null,
+    degraded,
+    degradedReason: degraded ? 'ranking inputs incomplete' : null,
+    context: {
+      urgentMode: false,
+      workStyleMode: 'humane',
+      stateSource: 'fixture',
+    },
+  };
+}
+
 async function run() {
   let failures = 0;
 
@@ -44,6 +164,106 @@ async function run() {
   } catch (err) {
     failures++;
     console.error('FAIL timezone default is Europe/Dublin');
+    console.error(err.message);
+  }
+
+  try {
+    const normalTasks = buildSummaryActiveTasksFixture();
+    const sparseTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+    const degradedTasks = buildSummaryActiveTasksFixture({ variant: 'degraded-ranking' });
+    const normalHistory = buildSummaryProcessedHistoryFixture();
+    const sparseHistory = buildSummaryProcessedHistoryFixture({ variant: 'sparse' });
+    const missingHistory = buildSummaryProcessedHistoryFixture({ variant: 'missing' });
+    const urgentState = buildSummaryResolvedStateFixture({ urgentMode: true });
+    const ranking = buildSummaryRankingFixture(normalTasks, { degraded: true });
+
+    assert.equal(normalTasks.length, 3);
+    assert.equal(normalTasks[0].id, 'task-focus');
+    assert.equal(sparseTasks.length, 1);
+    assert.equal(degradedTasks.every((task) => task.priority === 0), true);
+    assert.equal(normalHistory.length, 2);
+    assert.equal(sparseHistory.length, 1);
+    assert.equal(missingHistory.length, 0);
+    assert.equal(urgentState.urgentMode, true);
+    assert.equal(ranking.degraded, true);
+    assert.equal(ranking.degradedReason, 'ranking inputs incomplete');
+    console.log('PASS summary fixtures expose deterministic normal sparse and degraded inputs');
+  } catch (err) {
+    failures++;
+    console.error('FAIL summary fixtures expose deterministic normal sparse and degraded inputs');
+    console.error(err.message);
+  }
+
+  try {
+    const activeTasks = buildSummaryActiveTasksFixture();
+    const rankingResult = buildSummaryRankingFixture(activeTasks);
+    const context = buildSummaryResolvedStateFixture();
+    const result = composeBriefingSummary({ context, activeTasks, rankingResult });
+
+    assert.deepEqual(Object.keys(result.summary), BRIEFING_SUMMARY_SECTION_KEYS);
+    assert.equal(Array.isArray(result.summary.priorities), true);
+    assert.equal(Array.isArray(result.summary.why_now), true);
+    assert.equal(Array.isArray(result.summary.notices), true);
+    console.log('PASS composeBriefingSummary enforces fixed briefing top-level sections');
+  } catch (err) {
+    failures++;
+    console.error('FAIL composeBriefingSummary enforces fixed briefing top-level sections');
+    console.error(err.message);
+  }
+
+  try {
+    const activeTasks = buildSummaryActiveTasksFixture();
+    const processedHistory = buildSummaryProcessedHistoryFixture();
+    const rankingResult = buildSummaryRankingFixture(activeTasks);
+    const context = {
+      ...buildSummaryResolvedStateFixture(),
+      kind: 'weekly',
+    };
+
+    const result = composeWeeklySummary({
+      context,
+      activeTasks,
+      processedHistory,
+      historyAvailable: true,
+      rankingResult,
+    });
+
+    assert.deepEqual(Object.keys(result.summary), WEEKLY_SUMMARY_SECTION_KEYS);
+    assert.equal(Array.isArray(result.summary.progress), true);
+    assert.equal(Array.isArray(result.summary.watchouts), true);
+    assert.equal(Array.isArray(result.summary.notices), true);
+    console.log('PASS composeWeeklySummary enforces fixed weekly top-level sections');
+  } catch (err) {
+    failures++;
+    console.error('FAIL composeWeeklySummary enforces fixed weekly top-level sections');
+    console.error(err.message);
+  }
+
+  try {
+    const watchouts = normalizeWeeklyWatchouts([
+      {
+        label: 'avoidance',
+        evidence: 'A delayed critical task appears in history.',
+        evidence_source: 'processed_history',
+        callout: 'legacy behavioral field',
+      },
+      {
+        label: 'Overdue tasks accumulating',
+        evidence: '3 active tasks are overdue.',
+        evidence_source: 'current_tasks',
+        avoidance: 'legacy field should be removed',
+        callout: 'legacy field should be removed',
+      },
+    ]);
+
+    assert.equal(watchouts.length, 1);
+    assert.equal(watchouts[0].label, 'Overdue tasks accumulating');
+    assert.equal(Object.hasOwn(watchouts[0], 'avoidance'), false);
+    assert.equal(Object.hasOwn(watchouts[0], 'callout'), false);
+    console.log('PASS weekly watchout normalization blocks behavioral labels and prompt-era fields');
+  } catch (err) {
+    failures++;
+    console.error('FAIL weekly watchout normalization blocks behavioral labels and prompt-era fields');
     console.error(err.message);
   }
 
