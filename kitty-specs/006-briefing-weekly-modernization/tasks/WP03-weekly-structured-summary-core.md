@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: Weekly Structured Summary Core
-lane: "for_review"
+lane: "doing"
 dependencies:
 - WP01
 base_branch: 006-briefing-weekly-modernization-WP01
@@ -17,7 +17,7 @@ subtasks:
 phase: Phase 2 - Parallel Core
 assignee: ''
 agent: "codex"
-shell_pid: "25012"
+shell_pid: "14756"
 review_status: ''
 reviewed_by: ''
 history:
@@ -214,3 +214,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 **Valid lanes**: `planned`, `doing`, `for_review`, `done`
 - 2026-03-13T17:27:05Z – codex – shell_pid=25012 – lane=doing – Assigned agent via workflow command
 - 2026-03-13T17:45:01Z – codex – shell_pid=25012 – lane=for_review – Ready for review: structured weekly summary output, reduced digest, watchout filtering, regression coverage
+- 2026-03-13T17:46:00Z – codex – shell_pid=14756 – lane=doing – Started review via workflow command
