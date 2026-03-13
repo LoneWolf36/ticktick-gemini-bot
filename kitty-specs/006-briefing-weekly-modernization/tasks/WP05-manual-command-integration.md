@@ -1,11 +1,14 @@
 ---
 work_package_id: WP05
 title: Manual Command Integration
-lane: planned
+lane: "doing"
 dependencies:
 - WP02
 - WP03
 - WP04
+base_branch: 006-briefing-weekly-modernization-WP05-merge-base
+base_commit: 662cc0a43dcb0690276ca1de62f0a31ace368336
+created_at: '2026-03-13T17:42:37.016796+00:00'
 subtasks:
 - T022
 - T023
@@ -15,7 +18,7 @@ subtasks:
 phase: Phase 3 - Surface Adapters
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "26620"
 review_status: ''
 reviewed_by: ''
 history:
