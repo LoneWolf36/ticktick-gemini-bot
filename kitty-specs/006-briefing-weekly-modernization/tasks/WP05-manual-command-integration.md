@@ -1,7 +1,7 @@
 ---
 work_package_id: WP05
 title: Manual Command Integration
-lane: "doing"
+lane: "done"
 dependencies:
 - WP02
 - WP03
@@ -19,8 +19,8 @@ phase: Phase 3 - Surface Adapters
 assignee: ''
 agent: "codex"
 shell_pid: "26620"
-review_status: ''
-reviewed_by: ''
+review_status: "approved"
+reviewed_by: "TickTick Bot"
 history:
 - timestamp: '2026-03-12T21:27:55Z'
   lane: planned
@@ -210,3 +210,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 
 **Valid lanes**: `planned`, `doing`, `for_review`, `done`
 - 2026-03-13T17:42:38Z – codex – shell_pid=26620 – lane=doing – Assigned agent via workflow command
+- 2026-03-13T17:55:57Z – codex – shell_pid=26620 – lane=done – Review passed: manual /briefing and /weekly use shared summary surfaces; auth/quota behavior preserved; diagnostics logging and regression coverage verified; dependent WP07 remains planned
