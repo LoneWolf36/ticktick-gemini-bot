@@ -1,7 +1,7 @@
 ---
 work_package_id: WP06
 title: Scheduler Integration and Delivery Parity
-lane: "doing"
+lane: "planned"
 dependencies:
 - WP02
 - WP03
@@ -19,8 +19,9 @@ phase: Phase 3 - Surface Adapters
 assignee: ''
 agent: "Codex"
 shell_pid: "17184"
-review_status: ''
-reviewed_by: ''
+review_status: "has_feedback"
+reviewed_by: "TickTick Bot"
+review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP06.md"
 history:
 - timestamp: '2026-03-12T21:27:55Z'
   lane: planned
@@ -48,11 +49,18 @@ requirement_refs:
 
 ## Review Feedback
 
-> Populated by `/spec-kitty.review` when changes are requested.
+**Reviewed by**: TickTick Bot
+**Status**: ❌ Changes Requested
+**Date**: 2026-03-13
+**Feedback file**: `C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP06.md`
 
-*[This section is empty initially. If reviewers add items here later, each item becomes mandatory implementation scope.]*  
+**Issue 1**: The scheduled weekly path does not pass explicit history availability into the shared weekly summary surface. In `services/scheduler.js`, `runWeeklyDigestJob()` computes `processed` and `thisWeek`, but calls `gemini.generateWeeklyDigestSummary(tasks, thisWeek, { entryPoint: 'scheduler', userId: chatId, urgentMode })` without `historyAvailable`. In `services/gemini.js`, `generateWeeklyDigestSummary()` then defaults `historyAvailable` to `true` via `options.historyAvailable !== false`, so the shared weekly composer never knows when processed-task history is actually missing. That breaks WP06 subtask T028 step 4 and the spec requirement that sparse-history handling stay inside the shared weekly summary surface.
 
----
+How to fix:
+- In `services/scheduler.js`, compute `historyAvailable` explicitly from the processed-task store state and pass it through to `generateWeeklyDigestSummary(...)`.
+- Keep the fallback behavior inside the shared weekly surface; do not patch it in the scheduler wrapper.
+- Add or extend a scheduler regression that covers the no-history case and asserts the shared weekly surface receives `historyAvailable: false`.
+
 
 ## Markdown Formatting
 
@@ -207,3 +215,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 - 2026-03-13T17:57:07Z – codex – shell_pid=28528 – lane=doing – Assigned agent via workflow command
 - 2026-03-13T18:07:55Z – codex – shell_pid=28528 – lane=for_review – Ready for review: scheduled daily and weekly jobs now use shared summary surfaces with scheduler-only wrappers preserved and regression coverage added
 - 2026-03-13T18:08:15Z – Codex – shell_pid=17184 – lane=doing – Started review via workflow command
+- 2026-03-13T18:09:25Z – Codex – shell_pid=17184 – lane=planned – Moved to planned
