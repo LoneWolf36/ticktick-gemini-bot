@@ -1,10 +1,13 @@
 ---
 work_package_id: WP07
 title: Observability and Regression Stabilization
-lane: planned
+lane: "doing"
 dependencies:
 - WP05
 - WP06
+base_branch: 006-briefing-weekly-modernization-WP05
+base_commit: b063d36809c6b27c372d2ded77e5dc264ec06ed1
+created_at: '2026-03-13T18:16:49.563968+00:00'
 subtasks:
 - T032
 - T033
@@ -14,7 +17,7 @@ subtasks:
 phase: Phase 4 - Stabilization
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "33552"
 review_status: ''
 reviewed_by: ''
 history:
