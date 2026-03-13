@@ -118,11 +118,11 @@
 **Requirements Refs**: FR-001, FR-002, FR-004, FR-007
 
 ### Included Subtasks
-- [ ] T017 Implement the daily section renderer in `services/summary-surfaces/summary-formatter.js`
-- [ ] T018 Implement the weekly section renderer in `services/summary-surfaces/summary-formatter.js`
-- [ ] T019 Preserve existing headers and urgent-mode reminder semantics through `bot/utils.js`
-- [ ] T020 Add Telegram-safety guards and stable section-order rules
-- [ ] T021 Add formatter-focused regression fixtures and assertions for both summary kinds
+- [x] T017 Implement the daily section renderer in `services/summary-surfaces/summary-formatter.js`
+- [x] T018 Implement the weekly section renderer in `services/summary-surfaces/summary-formatter.js`
+- [x] T019 Preserve existing headers and urgent-mode reminder semantics through `bot/utils.js`
+- [x] T020 Add Telegram-safety guards and stable section-order rules
+- [x] T021 Add formatter-focused regression fixtures and assertions for both summary kinds
 
 ### Implementation Notes
 - Formatter logic owns rendering only; it must not inspect raw task history or re-derive summary policy.
