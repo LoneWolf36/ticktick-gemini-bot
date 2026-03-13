@@ -13,6 +13,7 @@ import { TickTickAdapter } from '../services/ticktick-adapter.js';
 import { TickTickClient } from '../services/ticktick.js';
 import * as store from '../services/store.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
+import { runDailyBriefingJob, runWeeklyDigestJob } from '../services/scheduler.js';
 import {
   BRIEFING_SUMMARY_SECTION_KEYS,
   WEEKLY_SUMMARY_SECTION_KEYS,
@@ -775,6 +776,106 @@ test('registerCommands adds the urgent reminder to manual briefing surfaces when
   });
 
   assert.ok(replies.some((message) => typeof message === 'string' && message.includes('Urgent mode is currently active.')));
+});
+
+test('runDailyBriefingJob uses the shared briefing summary surface and keeps pending reminder outside the formatter', async () => {
+  await store.resetAll();
+  const userId = `scheduler-daily-${Date.now()}`;
+  await store.setChatId(userId);
+  await store.setUrgentMode(userId, true);
+  await store.markTaskPending('pending-1', { originalTitle: 'Review inbox capture' });
+
+  const sentMessages = [];
+  let summaryCalls = 0;
+  const ran = await runDailyBriefingJob({
+    bot: {
+      api: {
+        sendMessage: async (chatId, text) => {
+          sentMessages.push({ chatId, text });
+        },
+      },
+    },
+    ticktick: {
+      isAuthenticated: () => true,
+      getAllTasks: async () => buildSummaryActiveTasksFixture(),
+    },
+    gemini: {
+      isQuotaExhausted: () => false,
+      generateDailyBriefing: async () => {
+        throw new Error('legacy daily string path should not be used');
+      },
+      generateDailyBriefingSummary: async (_tasks, options) => {
+        summaryCalls += 1;
+        assert.equal(options.entryPoint, 'scheduler');
+        assert.equal(options.userId, userId);
+        assert.equal(options.urgentMode, true);
+        return {
+          formattedText: '**🌅 MORNING BRIEFING**\n\nShared surface body.\n\n**Urgent mode is currently active.**',
+        };
+      },
+    },
+  });
+
+  assert.equal(ran, true);
+  assert.equal(summaryCalls, 1);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].chatId, userId);
+  assert.match(sentMessages[0].text, /MORNING BRIEFING/);
+  assert.match(sentMessages[0].text, /Urgent mode is currently active/);
+  assert.match(sentMessages[0].text, /1 task\(s\) pending your review\. Run \/pending\./);
+  assert.ok(store.getStats().lastDailyBriefing);
+});
+
+test('runWeeklyDigestJob uses the shared weekly summary surface and preserves processed-history input', async () => {
+  await store.resetAll();
+  const userId = `scheduler-weekly-${Date.now()}`;
+  await store.setChatId(userId);
+  await store.setUrgentMode(userId, true);
+  await store.markTaskProcessed('hist-1', {
+    originalTitle: 'Completed architecture PR draft',
+    approved: true,
+    sentAt: new Date().toISOString(),
+  });
+
+  const sentMessages = [];
+  let summaryCalls = 0;
+  const ran = await runWeeklyDigestJob({
+    bot: {
+      api: {
+        sendMessage: async (chatId, text) => {
+          sentMessages.push({ chatId, text });
+        },
+      },
+    },
+    ticktick: {
+      isAuthenticated: () => true,
+      getAllTasks: async () => buildSummaryActiveTasksFixture(),
+    },
+    gemini: {
+      isQuotaExhausted: () => false,
+      generateWeeklyDigest: async () => {
+        throw new Error('legacy weekly string path should not be used');
+      },
+      generateWeeklyDigestSummary: async (_tasks, processedThisWeek, options) => {
+        summaryCalls += 1;
+        assert.equal(options.entryPoint, 'scheduler');
+        assert.equal(options.userId, userId);
+        assert.equal(options.urgentMode, true);
+        assert.deepEqual(Object.keys(processedThisWeek), ['hist-1']);
+        return {
+          formattedText: '**📊 WEEKLY ACCOUNTABILITY REVIEW**\n\nShared weekly surface.\n\n**Urgent mode is currently active.**',
+        };
+      },
+    },
+  });
+
+  assert.equal(ran, true);
+  assert.equal(summaryCalls, 1);
+  assert.equal(sentMessages.length, 1);
+  assert.equal(sentMessages[0].chatId, userId);
+  assert.match(sentMessages[0].text, /WEEKLY ACCOUNTABILITY REVIEW/);
+  assert.match(sentMessages[0].text, /Urgent mode is currently active/);
+  assert.ok(store.getStats().lastWeeklyDigest);
 });
 
 test('TickTickAdapter includes the existing projectId when updating only a due date', async () => {

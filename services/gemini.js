@@ -540,7 +540,7 @@ export class GeminiAnalyzer {
 
     // ─── Generate weekly digest ───────────────────────────────
 
-    async generateWeeklyDigest(allTasks, processedThisWeek, options = {}) {
+    async generateWeeklyDigestSummary(allTasks, processedThisWeek, options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
         const { ranking, orderedTasks } = this._prepareBriefingTasks(allTasks, {
             ...options,
@@ -569,7 +569,7 @@ export class GeminiAnalyzer {
         const parsed = this._safeParseJson(raw);
         const summaryPayload = parsed && typeof parsed === 'object' ? parsed : {};
 
-        const summaryResult = composeWeeklySummary({
+        return composeWeeklySummary({
             context: {
                 entryPoint: options.entryPoint || 'manual_command',
                 userId: options.userId ?? options.chatId ?? store.getChatId(),
@@ -584,7 +584,10 @@ export class GeminiAnalyzer {
             rankingResult: ranking,
             modelSummary: summaryPayload,
         });
+    }
 
+    async generateWeeklyDigest(allTasks, processedThisWeek, options = {}) {
+        const summaryResult = await this.generateWeeklyDigestSummary(allTasks, processedThisWeek, options);
         return summaryResult.formattedText;
     }
 
