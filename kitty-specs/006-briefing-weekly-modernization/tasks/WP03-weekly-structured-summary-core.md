@@ -1,9 +1,12 @@
 ---
 work_package_id: WP03
 title: Weekly Structured Summary Core
-lane: planned
+lane: "doing"
 dependencies:
 - WP01
+base_branch: 006-briefing-weekly-modernization-WP01
+base_commit: 81b1897ea138b8870e8750afd02aeab81961dc52
+created_at: '2026-03-13T17:27:02.894720+00:00'
 subtasks:
 - T011
 - T012
@@ -14,7 +17,7 @@ subtasks:
 phase: Phase 2 - Parallel Core
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "25012"
 review_status: ''
 reviewed_by: ''
 history:
