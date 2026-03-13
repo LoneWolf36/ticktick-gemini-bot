@@ -21,11 +21,11 @@
 **Requirements Refs**: FR-003, FR-004, FR-004a, FR-004b, FR-004c, FR-008
 
 ### Included Subtasks
-- [ ] T001 Create `services/summary-surfaces/` with `index.js`, `briefing-summary.js`, `weekly-summary.js`, and `summary-formatter.js` export seams
-- [ ] T002 Define shared summary schemas and section helpers in `services/schemas.js` and `services/summary-surfaces/index.js`
-- [ ] T003 [P] Create reusable summary input fixtures/builders in `tests/regression.test.js` and `tests/run-regression-tests.mjs`
-- [ ] T004 [P] Add contract-first regression checks for fixed top-level sections and non-behavioral weekly watchouts
-- [ ] T005 Freeze shared import names and temporary orchestration seams so downstream work packages can branch without redefining interfaces
+- [x] T001 Create `services/summary-surfaces/` with `index.js`, `briefing-summary.js`, `weekly-summary.js`, and `summary-formatter.js` export seams
+- [x] T002 Define shared summary schemas and section helpers in `services/schemas.js` and `services/summary-surfaces/index.js`
+- [x] T003 [P] Create reusable summary input fixtures/builders in `tests/regression.test.js` and `tests/run-regression-tests.mjs`
+- [x] T004 [P] Add contract-first regression checks for fixed top-level sections and non-behavioral weekly watchouts
+- [x] T005 Freeze shared import names and temporary orchestration seams so downstream work packages can branch without redefining interfaces
 
 ### Implementation Notes
 - Keep the new module split minimal and function-based.
