@@ -1,7 +1,7 @@
 ---
 work_package_id: WP04
 title: Deterministic Summary Formatter
-lane: "doing"
+lane: "for_review"
 dependencies:
 - WP01
 base_branch: 006-briefing-weekly-modernization-WP01
@@ -202,3 +202,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 
 **Valid lanes**: `planned`, `doing`, `for_review`, `done`
 - 2026-03-13T17:26:57Z – codex – shell_pid=28472 – lane=doing – Assigned agent via workflow command
+- 2026-03-13T17:38:33Z – codex – shell_pid=28472 – lane=for_review – Ready for review: deterministic daily/weekly formatter with header/reminder, telegram-safe diagnostics, formatter regression coverage
