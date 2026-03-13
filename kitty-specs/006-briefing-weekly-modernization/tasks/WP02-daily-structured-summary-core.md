@@ -1,9 +1,12 @@
 ---
 work_package_id: WP02
 title: Daily Structured Summary Core
-lane: planned
+lane: "doing"
 dependencies:
 - WP01
+base_branch: 006-briefing-weekly-modernization-WP01
+base_commit: 81b1897ea138b8870e8750afd02aeab81961dc52
+created_at: '2026-03-13T17:27:18.484669+00:00'
 subtasks:
 - T006
 - T007
@@ -13,7 +16,7 @@ subtasks:
 phase: Phase 2 - Parallel Core
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "31664"
 review_status: ''
 reviewed_by: ''
 history:
