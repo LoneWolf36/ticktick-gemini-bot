@@ -1,9 +1,12 @@
 ---
 work_package_id: WP04
 title: Deterministic Summary Formatter
-lane: planned
+lane: "doing"
 dependencies:
 - WP01
+base_branch: 006-briefing-weekly-modernization-WP01
+base_commit: 81b1897ea138b8870e8750afd02aeab81961dc52
+created_at: '2026-03-13T17:26:56.015642+00:00'
 subtasks:
 - T017
 - T018
@@ -13,7 +16,7 @@ subtasks:
 phase: Phase 2 - Parallel Core
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "28472"
 review_status: ''
 reviewed_by: ''
 history:
