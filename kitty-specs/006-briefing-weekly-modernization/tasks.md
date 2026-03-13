@@ -214,11 +214,11 @@
 **Requirements Refs**: FR-003, FR-006, FR-007
 
 ### Included Subtasks
-- [ ] T032 Normalize summary diagnostics field names across manual and scheduled execution
-- [ ] T033 Log source counts, degraded reasons, structured summary objects, and formatting decisions before delivery
-- [ ] T034 Add cross-path parity regressions comparing manual and scheduled behavior for equivalent inputs
-- [ ] T035 Validate `kitty-specs/006-briefing-weekly-modernization/quickstart.md` scenarios and patch any stale implementation notes or comments
-- [ ] T036 Remove obsolete legacy daily/weekly prompt-only helpers or dead code once parity coverage passes
+- [x] T032 Normalize summary diagnostics field names across manual and scheduled execution
+- [x] T033 Log source counts, degraded reasons, structured summary objects, and formatting decisions before delivery
+- [x] T034 Add cross-path parity regressions comparing manual and scheduled behavior for equivalent inputs
+- [x] T035 Validate `kitty-specs/006-briefing-weekly-modernization/quickstart.md` scenarios and patch any stale implementation notes or comments
+- [x] T036 Remove obsolete legacy daily/weekly prompt-only helpers or dead code once parity coverage passes
 
 ### Implementation Notes
 - Treat this package as the stabilization gate before review, not as a place to invent new feature behavior.
