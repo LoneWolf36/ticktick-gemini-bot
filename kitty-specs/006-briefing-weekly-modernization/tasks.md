@@ -182,11 +182,11 @@
 **Requirements Refs**: FR-003, FR-006, FR-007
 
 ### Included Subtasks
-- [ ] T027 Replace scheduled daily execution in `services/scheduler.js` to call the shared summary surface
-- [ ] T028 Replace scheduled weekly execution in `services/scheduler.js` to call the shared summary surface
-- [ ] T029 Keep the pending-review reminder as a scheduler-only post-format delivery wrapper
-- [ ] T030 Preserve quota skip, auth safety, and delivery-failure behavior while removing legacy string-only path dependence
-- [ ] T031 Add scheduler-focused parity coverage for the shared summary surface
+- [x] T027 Replace scheduled daily execution in `services/scheduler.js` to call the shared summary surface
+- [x] T028 Replace scheduled weekly execution in `services/scheduler.js` to call the shared summary surface
+- [x] T029 Keep the pending-review reminder as a scheduler-only post-format delivery wrapper
+- [x] T030 Preserve quota skip, auth safety, and delivery-failure behavior while removing legacy string-only path dependence
+- [x] T031 Add scheduler-focused parity coverage for the shared summary surface
 
 ### Implementation Notes
 - Scheduler wrappers should stay thin and reuse the same summary contracts as manual commands.
