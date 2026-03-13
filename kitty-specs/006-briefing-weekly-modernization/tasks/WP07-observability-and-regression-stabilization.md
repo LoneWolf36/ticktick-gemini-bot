@@ -1,7 +1,7 @@
 ---
 work_package_id: WP07
 title: Observability and Regression Stabilization
-lane: "doing"
+lane: "done"
 dependencies:
 - WP05
 - WP06
@@ -18,8 +18,8 @@ phase: Phase 4 - Stabilization
 assignee: ''
 agent: "Codex"
 shell_pid: "13648"
-review_status: ''
-reviewed_by: ''
+review_status: "approved"
+reviewed_by: "TickTick Bot"
 history:
 - timestamp: '2026-03-12T21:27:55Z'
   lane: planned
@@ -212,3 +212,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 - 2026-03-13T18:17:30Z – Codex – shell_pid=33552 – lane=doing – Blocked: WP07 depends on WP05 and WP06 merged into the shared baseline, but WP06 is back in planned with requested fixes and auto-merge-base creation failed on tests/regression.test.js. Proceeding from the WP05 base would mix unresolved scheduler work into the stabilization package.
 - 2026-03-13T18:49:50Z – Codex – shell_pid=33552 – lane=for_review – Ready for review: normalized diagnostics/logging, added manual-vs-scheduler parity regressions, removed legacy summary wrappers, and validated quickstart expectations
 - 2026-03-13T19:32:13Z – Codex – shell_pid=13648 – lane=doing – Started review via workflow command
+- 2026-03-13T19:34:03Z – Codex – shell_pid=13648 – lane=done – Review passed: diagnostics/logging normalized, manual and scheduler parity regressions verified, legacy summary wrappers removed; dependency code from WP05/WP06 present in reviewed branch stack; no dependents
