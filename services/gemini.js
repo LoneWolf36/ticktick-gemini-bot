@@ -456,7 +456,7 @@ export class GeminiAnalyzer {
 
     // ─── Generate daily briefing ──────────────────────────────
 
-    async generateDailyBriefingSummary(tasks, options = {}) {
+    async generateDailyBriefingModelSummary(tasks, options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
         const { ranking, orderedTasks } = this._prepareBriefingTasks(tasks, {
             ...options,
@@ -496,6 +496,22 @@ export class GeminiAnalyzer {
                 start_now: '',
                 notices: [],
             };
+
+        return {
+            modelSummary,
+            ranking,
+            orderedTasks,
+            recommendationState,
+        };
+    }
+
+    async generateDailyBriefingSummary(tasks, options = {}) {
+        const {
+            modelSummary,
+            ranking,
+            orderedTasks,
+            recommendationState,
+        } = await this.generateDailyBriefingModelSummary(tasks, options);
 
         return composeBriefingSummary({
             context: {

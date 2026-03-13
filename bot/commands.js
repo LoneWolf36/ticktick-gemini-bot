@@ -5,9 +5,10 @@ import { taskReviewKeyboard } from './callbacks.js';
 import {
     buildTaskCard,
     sleep, userLocaleString, isAuthorized, guardAccess, buildUndoEntry,
-    appendUrgentModeReminder, formatBriefingHeader, filterProcessedThisWeek, buildQuotaExhaustedMessage,
-    parseDateStringToTickTickISO, parseTelegramMarkdownToHTML, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent
+    filterProcessedThisWeek, buildQuotaExhaustedMessage,
+    parseDateStringToTickTickISO, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent
 } from './utils.js';
+import { composeBriefingSummary, composeWeeklySummary } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, normalizePriorityCandidate, rankPriorityCandidates } from '../services/execution-prioritization.js';
 import { detectUrgentModeIntent } from '../services/ax-intent.js';
 
@@ -16,7 +17,11 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         autoApplyLifeAdmin = false,
         autoApplyDrops = false,
         autoApplyMode = 'metadata-only',
+        summarySurface = null,
     } = config;
+
+    const composeBriefingSummaryFn = summarySurface?.composeBriefingSummary || composeBriefingSummary;
+    const composeWeeklySummaryFn = summarySurface?.composeWeeklySummary || composeWeeklySummary;
 
     const menuKeyboard = () => new InlineKeyboard()
         .text('🔍 Scan', 'menu:scan')
@@ -67,6 +72,27 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             : '';
         const message = `${result.confirmationText || '⚠️ Pipeline failed.'}${diagnostics}`;
         return compact ? message.replace(/\n+/g, ' | ') : message;
+    };
+
+    const buildSummaryContext = ({ kind, userId, urgentMode }) => ({
+        kind,
+        entryPoint: 'manual_command',
+        userId,
+        urgentMode,
+        tonePolicy: 'preserve_existing',
+        generatedAtIso: new Date().toISOString(),
+    });
+
+    const logSummarySurfaceResult = (kind, context, result, extra = {}) => {
+        const payload = {
+            kind,
+            entry_point: context.entryPoint,
+            user_id: context.userId ?? null,
+            summary: result?.summary || null,
+            diagnostics: result?.diagnostics || null,
+            ...extra,
+        };
+        console.log(`[SummarySurface:${kind}] ${JSON.stringify(payload)}`);
     };
 
     // ─── /start ───────────────────────────────────────────────
@@ -476,8 +502,21 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             const tasks = await ticktick.getAllTasks();
             const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
             const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
-            const briefing = await gemini.generateDailyBriefing(tasks, { userId, urgentMode });
-            await replyWithMarkdown(ctx, appendUrgentModeReminder(formatBriefingHeader({ kind: 'daily' }) + briefing, urgentMode));
+            const context = buildSummaryContext({ kind: 'briefing', userId, urgentMode });
+            const modelResult = await gemini.generateDailyBriefingModelSummary(tasks, {
+                entryPoint: context.entryPoint,
+                userId,
+                urgentMode,
+                generatedAtIso: context.generatedAtIso,
+            });
+            const briefingResult = composeBriefingSummaryFn({
+                context,
+                activeTasks: modelResult.orderedTasks,
+                rankingResult: modelResult.ranking,
+                modelSummary: modelResult.modelSummary,
+            });
+            logSummarySurfaceResult('briefing', context, briefingResult);
+            await replyWithMarkdown(ctx, briefingResult.formattedText);
             await store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
@@ -499,12 +538,30 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         await ctx.reply('📊 Generating your weekly review...');
         try {
             const tasks = await ticktick.getAllTasks();
-            const processed = store.getProcessedTasks();
+            const processed = store.getProcessedTasks() || {};
             const thisWeek = filterProcessedThisWeek(processed, ['processedAt']);
             const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
             const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
-            const digest = await gemini.generateWeeklyDigest(tasks, thisWeek, { userId, urgentMode });
-            await replyWithMarkdown(ctx, appendUrgentModeReminder(formatBriefingHeader({ kind: 'weekly' }) + digest, urgentMode));
+            const historyAvailable = processed && Object.keys(processed).length > 0;
+            const context = buildSummaryContext({ kind: 'weekly', userId, urgentMode });
+            const userContext = typeof process.env.USER_CONTEXT === 'string' ? process.env.USER_CONTEXT : '';
+            const goalThemeProfile = createGoalThemeProfile(userContext, { source: userContext ? 'env' : 'fallback' });
+            const rankingResult = rankPriorityCandidates(tasks, {
+                goalThemeProfile,
+                nowIso: context.generatedAtIso,
+                workStyleMode: 'unknown',
+                urgentMode,
+                stateSource: 'manual_command',
+            });
+            const weeklyResult = composeWeeklySummaryFn({
+                context,
+                activeTasks: tasks,
+                processedHistory: Object.values(thisWeek),
+                historyAvailable,
+                rankingResult,
+            });
+            logSummarySurfaceResult('weekly', context, weeklyResult, { history_available: historyAvailable });
+            await replyWithMarkdown(ctx, weeklyResult.formattedText);
             await store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {

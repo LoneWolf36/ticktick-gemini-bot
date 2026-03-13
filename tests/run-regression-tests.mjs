@@ -753,6 +753,24 @@ async function run() {
       },
     };
 
+    const summaryCalls = [];
+    const summarySurface = {
+      composeBriefingSummary: (args) => {
+        summaryCalls.push(args);
+        return {
+          summary: {
+            focus: 'Test focus',
+            priorities: [],
+            why_now: [],
+            start_now: '',
+            notices: [],
+          },
+          formattedText: '**🌄 MORNING BRIEFING**\n\n**Focus**: Test focus\n\n**Urgent mode is currently active.**',
+          diagnostics: { telegram_safe: true, tone_preserved: true, source_counts: { active_tasks: 0, processed_history: 0 } },
+        };
+      },
+    };
+
     registerCommands(
       bot,
       {
@@ -767,12 +785,16 @@ async function run() {
         isQuotaExhausted: () => false,
         quotaResumeTime: () => null,
         activeKeyInfo: () => null,
-        generateDailyBriefing: async () => 'Plan for today',
-        generateWeeklyDigest: async () => 'Weekly summary',
+        generateDailyBriefingModelSummary: async () => ({
+          modelSummary: { focus: 'Test focus', priorities: [], why_now: [], start_now: '', notices: [] },
+          ranking: { ranked: [], topRecommendation: null, degraded: false, degradedReason: 'none', context: {} },
+          orderedTasks: [],
+        }),
         generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
       },
       {},
       {},
+      { summarySurface },
     );
 
     const briefingHandler = handlers.commands.get('briefing');
@@ -789,11 +811,165 @@ async function run() {
       },
     });
 
+    assert.equal(summaryCalls.length, 1);
+    assert.equal(summaryCalls[0].context.entryPoint, 'manual_command');
+    assert.equal(summaryCalls[0].context.urgentMode, true);
     assert.ok(replies.some((message) => typeof message === 'string' && message.includes('Urgent mode is currently active.')));
-    console.log('PASS registerCommands appends urgent reminder to manual briefing');
+    console.log('PASS registerCommands uses shared briefing surface and urgent reminder');
   } catch (err) {
     failures++;
-    console.error('FAIL registerCommands appends urgent reminder to manual briefing');
+    console.error('FAIL registerCommands uses shared briefing surface and urgent reminder');
+    console.error(err.message);
+  }
+
+  try {
+    const handlers = { commands: new Map(), callbacks: [], events: [] };
+    const bot = {
+      command(name, handler) {
+        handlers.commands.set(name, handler);
+        return this;
+      },
+      callbackQuery(pattern, handler) {
+        handlers.callbacks.push({ pattern, handler });
+        return this;
+      },
+      on(eventName, handler) {
+        handlers.events.push({ eventName, handler });
+        return this;
+      },
+    };
+
+    const weeklyCalls = [];
+    const summarySurface = {
+      composeWeeklySummary: (args) => {
+        weeklyCalls.push(args);
+        return {
+          summary: {
+            progress: [],
+            carry_forward: [],
+            next_focus: [],
+            watchouts: [],
+            notices: [],
+          },
+          formattedText: '**📊 WEEKLY ACCOUNTABILITY REVIEW**\n\n**Progress**:\n- None',
+          diagnostics: { telegram_safe: true, tone_preserved: true, source_counts: { active_tasks: 0, processed_history: 0 } },
+        };
+      },
+    };
+
+    registerCommands(
+      bot,
+      {
+        isAuthenticated: () => true,
+        getCacheAgeSeconds: () => null,
+        getAuthUrl: () => 'https://example.test/auth',
+        getAllTasks: async () => [],
+        getAllTasksCached: async () => [],
+        getLastFetchedProjects: () => [],
+      },
+      {
+        isQuotaExhausted: () => false,
+        quotaResumeTime: () => null,
+        activeKeyInfo: () => null,
+        generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
+      },
+      {},
+      {},
+      { summarySurface },
+    );
+
+    const weeklyHandler = handlers.commands.get('weekly');
+    assert.equal(typeof weeklyHandler, 'function');
+
+    const replies = [];
+    const userId = Date.now();
+    await store.setUrgentMode(userId, false);
+    await weeklyHandler({
+      chat: { id: userId },
+      from: { id: userId },
+      reply: async (message) => {
+        replies.push(message);
+      },
+    });
+
+    assert.equal(weeklyCalls.length, 1);
+    assert.equal(weeklyCalls[0].context.entryPoint, 'manual_command');
+    assert.ok(replies.some((message) => typeof message === 'string' && message.includes('WEEKLY ACCOUNTABILITY REVIEW')));
+    console.log('PASS registerCommands uses shared weekly surface');
+  } catch (err) {
+    failures++;
+    console.error('FAIL registerCommands uses shared weekly surface');
+    console.error(err.message);
+  }
+
+  try {
+    const handlers = { commands: new Map(), callbacks: [], events: [] };
+    const bot = {
+      command(name, handler) {
+        handlers.commands.set(name, handler);
+        return this;
+      },
+      callbackQuery(pattern, handler) {
+        handlers.callbacks.push({ pattern, handler });
+        return this;
+      },
+      on(eventName, handler) {
+        handlers.events.push({ eventName, handler });
+        return this;
+      },
+    };
+
+    const summarySurface = {
+      composeBriefingSummary: () => {
+        throw new Error('composeBriefingSummary should not be called when quota is exhausted');
+      },
+      composeWeeklySummary: () => {
+        throw new Error('composeWeeklySummary should not be called when quota is exhausted');
+      },
+    };
+
+    registerCommands(
+      bot,
+      {
+        isAuthenticated: () => true,
+        getCacheAgeSeconds: () => null,
+        getAuthUrl: () => 'https://example.test/auth',
+        getAllTasks: async () => [],
+        getAllTasksCached: async () => [],
+        getLastFetchedProjects: () => [],
+      },
+      {
+        isQuotaExhausted: () => true,
+        quotaResumeTime: () => null,
+        activeKeyInfo: () => null,
+        generateDailyBriefingModelSummary: async () => {
+          throw new Error('generateDailyBriefingModelSummary should not be called when quota is exhausted');
+        },
+        generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
+      },
+      {},
+      {},
+      { summarySurface },
+    );
+
+    const replies = [];
+    const userId = Date.now();
+    const ctx = {
+      chat: { id: userId },
+      from: { id: userId },
+      reply: async (message) => {
+        replies.push(message);
+      },
+    };
+
+    await handlers.commands.get('briefing')(ctx);
+    await handlers.commands.get('weekly')(ctx);
+
+    assert.ok(replies.some((message) => /quota exhausted/i.test(message)));
+    console.log('PASS registerCommands short-circuits on quota exhaustion');
+  } catch (err) {
+    failures++;
+    console.error('FAIL registerCommands short-circuits on quota exhaustion');
     console.error(err.message);
   }
 
