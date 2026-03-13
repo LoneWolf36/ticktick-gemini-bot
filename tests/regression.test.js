@@ -1143,6 +1143,40 @@ test('execution prioritization does not synthesize wall-clock time when nowIso i
   assert.equal(context.nowIso, null);
 });
 
+test('GeminiAnalyzer generateDailyBriefing returns formatted text for command and scheduler callers', async () => {
+  const analyzer = new GeminiAnalyzer(['dummy-key']);
+  analyzer._generateWithFailover = async () => ({
+    response: {
+      text: () => JSON.stringify({
+        focus: 'Ship the architecture PR before lower-leverage work.',
+        priorities: [
+          {
+            task_id: 'task-focus',
+            title: 'Ship weekly architecture PR',
+            project_name: 'Career',
+            due_date: '2026-03-12',
+            priority_label: 'career-critical',
+            rationale_text: 'Directly moves the highest-priority goal.',
+          },
+        ],
+        why_now: ['Directly moves the highest-priority goal.'],
+        start_now: 'Open the PR checklist and draft the next commit.',
+        notices: [],
+      }),
+    },
+  });
+
+  const briefing = await analyzer.generateDailyBriefing(buildSummaryActiveTasksFixture(), {
+    userId: 'boundary-user',
+    urgentMode: false,
+  });
+
+  assert.equal(typeof briefing, 'string');
+  assert.match(briefing, /\*\*Focus\*\*/);
+  assert.match(briefing, /Ship weekly architecture PR/);
+  assert.doesNotMatch(briefing, /\[object Object\]/);
+});
+
 test('execution prioritization parses mixed bullet and numbered goals inside the GOALS section', () => {
   const rawContext = `GOALS:
 - Protect health and recovery

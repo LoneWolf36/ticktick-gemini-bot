@@ -1043,6 +1043,45 @@ async function run() {
   }
 
   try {
+    const analyzer = new GeminiAnalyzer(['dummy-key']);
+    analyzer._generateWithFailover = async () => ({
+      response: {
+        text: () => JSON.stringify({
+          focus: 'Ship the architecture PR before lower-leverage work.',
+          priorities: [
+            {
+              task_id: 'task-focus',
+              title: 'Ship weekly architecture PR',
+              project_name: 'Career',
+              due_date: '2026-03-12',
+              priority_label: 'career-critical',
+              rationale_text: 'Directly moves the highest-priority goal.',
+            },
+          ],
+          why_now: ['Directly moves the highest-priority goal.'],
+          start_now: 'Open the PR checklist and draft the next commit.',
+          notices: [],
+        }),
+      },
+    });
+
+    const briefing = await analyzer.generateDailyBriefing(buildSummaryActiveTasksFixture(), {
+      userId: 'boundary-user',
+      urgentMode: false,
+    });
+
+    assert.equal(typeof briefing, 'string');
+    assert.match(briefing, /\*\*Focus\*\*/);
+    assert.match(briefing, /Ship weekly architecture PR/);
+    assert.doesNotMatch(briefing, /\[object Object\]/);
+    console.log('PASS Gemini generateDailyBriefing preserves string output for live callers');
+  } catch (err) {
+    failures++;
+    console.error('FAIL Gemini generateDailyBriefing preserves string output for live callers');
+    console.error(err.message);
+  }
+
+  try {
     assert.match(buildUrgentModePromptNote(true), /URGENT MODE is active/i);
     assert.match(buildUrgentModePromptNote(true), /direct, sharp language/i);
     assert.equal(buildUrgentModePromptNote(false), '');

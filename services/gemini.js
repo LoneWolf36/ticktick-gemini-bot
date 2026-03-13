@@ -5,6 +5,7 @@ import { existsSync } from 'fs';
 import path from 'path';
 import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from '../bot/utils.js';
 import { briefingSummarySchema, reorgSchema } from './schemas.js';
+import { composeBriefingSummary } from './summary-surfaces/index.js';
 import * as store from './store.js';
 import {
     createGoalThemeProfile,
@@ -455,7 +456,7 @@ export class GeminiAnalyzer {
 
     // ─── Generate daily briefing ──────────────────────────────
 
-    async generateDailyBriefing(tasks, options = {}) {
+    async generateDailyBriefingSummary(tasks, options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
         const { ranking, orderedTasks } = this._prepareBriefingTasks(tasks, {
             ...options,
@@ -486,18 +487,35 @@ export class GeminiAnalyzer {
         const result = await this._generateWithFailover(() => this.briefingModel, prompt, { transientBaseMs: 15 });
         const raw = result.response.text().trim();
         const parsed = this._safeParseJson(raw);
+        const modelSummary = parsed && typeof parsed === 'object'
+            ? parsed
+            : {
+                focus: '',
+                priorities: [],
+                why_now: [],
+                start_now: '',
+                notices: [],
+            };
 
-        if (parsed && typeof parsed === 'object') {
-            return parsed;
-        }
+        return composeBriefingSummary({
+            context: {
+                kind: 'briefing',
+                entryPoint: options.entryPoint || 'manual_command',
+                userId: options.userId ?? options.chatId ?? null,
+                generatedAtIso: options.generatedAtIso || new Date().toISOString(),
+                timezone: options.timezone || null,
+                urgentMode: recommendationState.urgentMode,
+                tonePolicy: 'preserve_existing',
+            },
+            activeTasks: orderedTasks,
+            rankingResult: ranking,
+            modelSummary,
+        });
+    }
 
-        return {
-            focus: '',
-            priorities: [],
-            why_now: [],
-            start_now: '',
-            notices: [],
-        };
+    async generateDailyBriefing(tasks, options = {}) {
+        const result = await this.generateDailyBriefingSummary(tasks, options);
+        return result.formattedText;
     }
 
     // ─── Generate weekly digest ───────────────────────────────
