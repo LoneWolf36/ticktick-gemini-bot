@@ -1,10 +1,28 @@
 {
+  "accept_commit": null,
+  "acceptance_history": [
+    {
+      "accepted_at": "2026-03-13T19:39:37Z",
+      "accepted_by": "Codex",
+      "accepted_from_commit": "d9333157ab33067c5fdc7a0bd03f848d39ad22dd",
+      "branch": "master",
+      "mode": "local",
+      "validation_commands": [
+        "node tests/run-regression-tests.mjs",
+        "node --test tests/regression.test.js"
+      ]
+    }
+  ],
+  "acceptance_mode": "local",
+  "accepted_at": "2026-03-13T19:39:37Z",
+  "accepted_by": "Codex",
+  "accepted_from_commit": "d9333157ab33067c5fdc7a0bd03f848d39ad22dd",
   "feature_number": "006",
-  "slug": "006-briefing-weekly-modernization",
   "feature_slug": "006-briefing-weekly-modernization",
   "friendly_name": "Briefing and Weekly Pipeline Modernization",
   "mission": "software-dev",
-  "target_branch": "master",
+  "slug": "006-briefing-weekly-modernization",
   "source_description": "Move /briefing and /weekly off the legacy Gemini path and onto shared structured modules with deterministic formatting.",
+  "target_branch": "master",
   "vcs": "git"
 }
