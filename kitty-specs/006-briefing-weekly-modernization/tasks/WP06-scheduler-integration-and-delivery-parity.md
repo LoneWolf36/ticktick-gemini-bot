@@ -1,7 +1,7 @@
 ---
 work_package_id: WP06
 title: Scheduler Integration and Delivery Parity
-lane: "doing"
+lane: "done"
 dependencies:
 - WP02
 - WP03
@@ -219,3 +219,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 - 2026-03-13T18:12:49Z – codex – shell_pid=25084 – lane=doing – Started implementation via workflow command
 - 2026-03-13T18:14:27Z – codex – shell_pid=25084 – lane=for_review – Ready for review: weekly scheduler now passes explicit history availability into shared summary surface and no-history parity coverage is added
 - 2026-03-13T18:15:34Z – codex – shell_pid=2996 – lane=doing – Started review via workflow command
+- 2026-03-13T18:16:12Z – codex – shell_pid=2996 – lane=done – Review passed: scheduler daily and weekly paths use shared summary surfaces; weekly history availability fix verified; scheduler parity regressions pass
