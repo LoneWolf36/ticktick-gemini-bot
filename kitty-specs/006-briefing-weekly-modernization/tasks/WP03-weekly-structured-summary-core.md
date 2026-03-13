@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: Weekly Structured Summary Core
-lane: "doing"
+lane: "for_review"
 dependencies:
 - WP01
 base_branch: 006-briefing-weekly-modernization-WP01
@@ -213,3 +213,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 
 **Valid lanes**: `planned`, `doing`, `for_review`, `done`
 - 2026-03-13T17:27:05Z – codex – shell_pid=25012 – lane=doing – Assigned agent via workflow command
+- 2026-03-13T17:45:01Z – codex – shell_pid=25012 – lane=for_review – Ready for review: structured weekly summary output, reduced digest, watchout filtering, regression coverage
