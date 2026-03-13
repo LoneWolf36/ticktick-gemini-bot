@@ -1,7 +1,7 @@
 ---
 work_package_id: WP01
 title: Foundation - Shared Summary Surface Contracts
-lane: "doing"
+lane: "for_review"
 dependencies: []
 base_branch: master
 base_commit: aae6aa2d3d95386d8c29718b8302d2a2248d5467
@@ -205,3 +205,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 
 **Valid lanes**: `planned`, `doing`, `for_review`, `done`
 - 2026-03-13T16:52:12Z – Codex – shell_pid=2764 – lane=doing – Assigned agent via workflow command
+- 2026-03-13T17:00:21Z – Codex – shell_pid=2764 – lane=for_review – Ready for review: shared summary surface seams, schemas, fixtures, and contract tests are implemented and passing
