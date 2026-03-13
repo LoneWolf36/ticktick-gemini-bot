@@ -1,7 +1,7 @@
 ---
 work_package_id: WP02
 title: Daily Structured Summary Core
-lane: "for_review"
+lane: "doing"
 dependencies:
 - WP01
 base_branch: 006-briefing-weekly-modernization-WP01
@@ -16,7 +16,7 @@ subtasks:
 phase: Phase 2 - Parallel Core
 assignee: ''
 agent: "Codex"
-shell_pid: "10136"
+shell_pid: "31792"
 review_status: "has_feedback"
 reviewed_by: "TickTick Bot"
 review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP02.md"
@@ -220,3 +220,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 - 2026-03-13T17:35:31Z – Codex – shell_pid=25588 – lane=planned – Moved to planned
 - 2026-03-13T17:36:31Z – Codex – shell_pid=10136 – lane=doing – Started implementation via workflow command
 - 2026-03-13T17:40:24Z – Codex – shell_pid=10136 – lane=for_review – Ready for review: restored daily briefing string compatibility and added live caller regression coverage
+- 2026-03-13T17:41:12Z – Codex – shell_pid=31792 – lane=doing – Started review via workflow command
