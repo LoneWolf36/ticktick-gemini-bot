@@ -1,7 +1,7 @@
 ---
 work_package_id: WP02
 title: Daily Structured Summary Core
-lane: "doing"
+lane: "planned"
 dependencies:
 - WP01
 base_branch: 006-briefing-weekly-modernization-WP01
@@ -17,8 +17,9 @@ phase: Phase 2 - Parallel Core
 assignee: ''
 agent: "Codex"
 shell_pid: "25588"
-review_status: ''
-reviewed_by: ''
+review_status: "has_feedback"
+reviewed_by: "TickTick Bot"
+review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP02.md"
 history:
 - timestamp: '2026-03-12T21:19:42Z'
   lane: planned
@@ -48,11 +49,23 @@ requirement_refs:
 
 ## Review Feedback
 
-> Populated by `/spec-kitty.review` when changes are requested.
+**Reviewed by**: TickTick Bot
+**Status**: ❌ Changes Requested
+**Date**: 2026-03-13
+**Feedback file**: `C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP02.md`
 
-*[This section is empty initially. If reviewers add items here later, each item becomes mandatory implementation scope.]*  
+**Issue 1**: `services/gemini.js:458` changes `generateDailyBriefing()` from returning the rendered daily string to returning a structured object, but the live consumers still treat the result as a string in `bot/commands.js:479` and `services/scheduler.js:193`. That means manual `/briefing` and scheduled daily briefings will concatenate an object into the outgoing message (`[object Object]`) instead of usable text. This is a blocking behavioral regression on the primary surface.
 
----
+How to fix:
+- Either keep `generateDailyBriefing()` returning the legacy string until WP04 wires the formatter, while exposing the structured object through a separate method, or
+- Update the call path in a compatible way so the existing `/briefing` and scheduler delivery code receive formatted text instead of the raw object.
+- Add a regression that exercises the real daily call boundary instead of only composer-level tests, so this contract mismatch is caught.
+
+Dependent rebase warning:
+- WP05 and WP06 depend on WP02. After the fix lands, those agents should rebase with:
+  - `cd .worktrees/006-briefing-weekly-modernization-WP05 && git rebase 006-briefing-weekly-modernization-WP02`
+  - `cd .worktrees/006-briefing-weekly-modernization-WP06 && git rebase 006-briefing-weekly-modernization-WP02`
+
 
 ## Markdown Formatting
 
@@ -204,3 +217,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 - 2026-03-13T17:27:21Z – Codex – shell_pid=31664 – lane=doing – Assigned agent via workflow command
 - 2026-03-13T17:33:08Z – Codex – shell_pid=31664 – lane=for_review – Ready for review: structured daily Gemini output, composer merging, and daily regression coverage
 - 2026-03-13T17:34:07Z – Codex – shell_pid=25588 – lane=doing – Started review via workflow command
+- 2026-03-13T17:35:31Z – Codex – shell_pid=25588 – lane=planned – Moved to planned
