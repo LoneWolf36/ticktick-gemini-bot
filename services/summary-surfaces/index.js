@@ -187,6 +187,7 @@ export function composeBriefingSummary({
     context = {},
     activeTasks = [],
     rankingResult = null,
+    modelSummary = null,
 } = {}) {
     const normalizedContext = normalizeSummaryRequestContext(BRIEFING_KIND, context);
     const summary = ensureBriefingSections(
@@ -194,6 +195,7 @@ export function composeBriefingSummary({
             context: normalizedContext,
             activeTasks: toArray(activeTasks),
             rankingResult,
+            modelSummary,
         }),
     );
     const formattedText = formatSummary({ kind: BRIEFING_KIND, summary, context: normalizedContext });

@@ -190,6 +190,85 @@ test('composeBriefingSummary always returns fixed briefing top-level sections', 
   assert.equal(Array.isArray(result.summary.notices), true);
 });
 
+test('composeBriefingSummary prefers structured model focus and priorities', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture();
+  const modelSummary = {
+    focus: 'Ship the architecture PR before low-leverage work.',
+    priorities: [
+      {
+        task_id: activeTasks[0].id,
+        title: '',
+        project_name: null,
+        due_date: null,
+        priority_label: 'career-critical',
+        rationale_text: 'Directly moves the core goal.',
+      },
+    ],
+    why_now: ['Directly moves the core goal.'],
+    start_now: 'Open the PR checklist and draft the next commit.',
+    notices: [],
+  };
+
+  const result = composeBriefingSummary({
+    context,
+    activeTasks,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.equal(result.summary.focus, modelSummary.focus);
+  assert.equal(result.summary.priorities[0].task_id, activeTasks[0].id);
+  assert.equal(result.summary.priorities[0].title, activeTasks[0].title);
+  assert.equal(result.summary.start_now, modelSummary.start_now);
+});
+
+test('composeBriefingSummary adds sparse-task notices without filler', () => {
+  const activeTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture();
+  const modelSummary = {
+    focus: '',
+    priorities: [],
+    why_now: [],
+    start_now: '',
+    notices: [],
+  };
+
+  const result = composeBriefingSummary({
+    context,
+    activeTasks,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.equal(result.summary.priorities.length, 1);
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'sparse_tasks'));
+});
+
+test('composeBriefingSummary adds degraded-ranking notice when ranking is degraded', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks, { degraded: true });
+  const context = buildSummaryResolvedStateFixture();
+  const modelSummary = {
+    focus: 'Keep momentum on ranked work.',
+    priorities: [],
+    why_now: [],
+    start_now: 'Open the top task and take the first step.',
+    notices: [],
+  };
+
+  const result = composeBriefingSummary({
+    context,
+    activeTasks,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'degraded_ranking'));
+});
+
 test('composeWeeklySummary always returns fixed weekly top-level sections', () => {
   const activeTasks = buildSummaryActiveTasksFixture();
   const processedHistory = buildSummaryProcessedHistoryFixture();
@@ -1183,6 +1262,40 @@ test('execution prioritization does not synthesize wall-clock time when nowIso i
   });
 
   assert.equal(context.nowIso, null);
+});
+
+test('GeminiAnalyzer generateDailyBriefing returns formatted text for command and scheduler callers', async () => {
+  const analyzer = new GeminiAnalyzer(['dummy-key']);
+  analyzer._generateWithFailover = async () => ({
+    response: {
+      text: () => JSON.stringify({
+        focus: 'Ship the architecture PR before lower-leverage work.',
+        priorities: [
+          {
+            task_id: 'task-focus',
+            title: 'Ship weekly architecture PR',
+            project_name: 'Career',
+            due_date: '2026-03-12',
+            priority_label: 'career-critical',
+            rationale_text: 'Directly moves the highest-priority goal.',
+          },
+        ],
+        why_now: ['Directly moves the highest-priority goal.'],
+        start_now: 'Open the PR checklist and draft the next commit.',
+        notices: [],
+      }),
+    },
+  });
+
+  const briefing = await analyzer.generateDailyBriefing(buildSummaryActiveTasksFixture(), {
+    userId: 'boundary-user',
+    urgentMode: false,
+  });
+
+  assert.equal(typeof briefing, 'string');
+  assert.match(briefing, /\*\*Focus\*\*/);
+  assert.match(briefing, /Ship weekly architecture PR/);
+  assert.doesNotMatch(briefing, /\[object Object\]/);
 });
 
 test('execution prioritization parses mixed bullet and numbered goals inside the GOALS section', () => {

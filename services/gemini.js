@@ -4,9 +4,9 @@ import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import path from 'path';
 import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from '../bot/utils.js';
-import { reorgSchema, weeklySummarySchema } from './schemas.js';
+import { briefingSummarySchema, reorgSchema, weeklySummarySchema } from './schemas.js';
 import * as store from './store.js';
-import { composeWeeklySummary } from './summary-surfaces/index.js';
+import { composeBriefingSummary, composeWeeklySummary } from './summary-surfaces/index.js';
 import {
     createGoalThemeProfile,
     inferPriorityValueFromTask,
@@ -40,34 +40,28 @@ if (existsSync(USER_CONTEXT_FILE)) {
 // ─── Daily Briefing Prompt ──────────────────────────────────
 const BRIEFING_PROMPT = `${USER_CONTEXT}
 
-Generate today's focused plan.
+Generate today's focused plan as structured JSON only.
 
 Rules:
-- Maximum 3 tasks.
-- First item MUST be career-critical (🔴) if one exists.
-- Flag overdue items with ⚠️.
-- Do not list everything — choose highest leverage only.
-- If too many tasks exist, ignore lower-impact ones.
+- Maximum 3 tasks in priorities.
+- First priority MUST be career-critical if one exists.
+- Avoid behavioral callouts; focus on task evidence and ranking rationale.
+- If data is sparse, return compact output without filler.
 
-Structure:
-1. One-line focus for the day.
-2. 2–3 tasks.
-3. One direct callout if avoidance is visible.
-4. End with ONE action he can start in 5 minutes.
+Return a JSON object with these fields:
+- focus: string
+- priorities: array of { task_id, title, project_name, due_date, priority_label, rationale_text }
+- why_now: array of short strings
+- start_now: string
+- notices: array of { code, message, severity, evidence_source }
 
-Output:
-Plain text formatted for Telegram. Use **asterisks** for bold emphasis.
-Do not use markdown headings (#, ##, ###) or separator lines made of hashes.
-Short. Direct. No fluff.
-
-<example_format>
-**Focus**: Shipping core features over polishing.
-1. 🔴 Complete API endpoint
-2. 🟡 Update documentation
-3. 🟡 Review PRs
-⚠️ You have been avoiding the Auth fix. Eat the frog.
-**Start now**: Open auth.js and map the initial functions.
-</example_format>
+Constraints:
+- Use snake_case keys exactly as listed.
+- notices.code must be one of: sparse_tasks, degraded_ranking, urgent_mode_active, delivery_context
+- notices.severity must be info or warning
+- notices.evidence_source must be tasks, processed_history, state, or system
+- Do not add extra keys.
+- Output strict JSON only (no markdown, no prose).
 `;
 
 // ─── Weekly Digest Prompt ───────────────────────────────────
@@ -239,6 +233,8 @@ export class GeminiAnalyzer {
             model: 'gemini-2.5-flash',
             systemInstruction: BRIEFING_PROMPT,
             generationConfig: {
+                responseMimeType: "application/json",
+                responseSchema: briefingSummarySchema,
                 temperature: 0.8,
                 topP: 0.9,
                 maxOutputTokens: 4096,
@@ -480,7 +476,7 @@ export class GeminiAnalyzer {
 
     // ─── Generate daily briefing ──────────────────────────────
 
-    async generateDailyBriefing(tasks, options = {}) {
+    async generateDailyBriefingSummary(tasks, options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
         const { ranking, orderedTasks } = this._prepareBriefingTasks(tasks, {
             ...options,
@@ -509,7 +505,37 @@ export class GeminiAnalyzer {
 
         const prompt = `${urgentModePromptNote ? `${urgentModePromptNote}\n\n` : ''}Today is ${today}.\n\nShared priority guidance:\n${rankedPreview || 'No ranked guidance available.'}\n\nActive tasks (${orderedTasks.length} total):\n${taskList}`;
         const result = await this._generateWithFailover(() => this.briefingModel, prompt, { transientBaseMs: 15 });
-        return result.response.text().trim();
+        const raw = result.response.text().trim();
+        const parsed = this._safeParseJson(raw);
+        const modelSummary = parsed && typeof parsed === 'object'
+            ? parsed
+            : {
+                focus: '',
+                priorities: [],
+                why_now: [],
+                start_now: '',
+                notices: [],
+            };
+
+        return composeBriefingSummary({
+            context: {
+                kind: 'briefing',
+                entryPoint: options.entryPoint || 'manual_command',
+                userId: options.userId ?? options.chatId ?? null,
+                generatedAtIso: options.generatedAtIso || new Date().toISOString(),
+                timezone: options.timezone || null,
+                urgentMode: recommendationState.urgentMode,
+                tonePolicy: 'preserve_existing',
+            },
+            activeTasks: orderedTasks,
+            rankingResult: ranking,
+            modelSummary,
+        });
+    }
+
+    async generateDailyBriefing(tasks, options = {}) {
+        const result = await this.generateDailyBriefingSummary(tasks, options);
+        return result.formattedText;
     }
 
     // ─── Generate weekly digest ───────────────────────────────

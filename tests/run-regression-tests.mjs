@@ -213,6 +213,100 @@ async function run() {
 
   try {
     const activeTasks = buildSummaryActiveTasksFixture();
+    const rankingResult = buildSummaryRankingFixture(activeTasks);
+    const context = buildSummaryResolvedStateFixture();
+    const modelSummary = {
+      focus: 'Ship the architecture PR before low-leverage work.',
+      priorities: [
+        {
+          task_id: activeTasks[0].id,
+          title: '',
+          project_name: null,
+          due_date: null,
+          priority_label: 'career-critical',
+          rationale_text: 'Directly moves the core goal.',
+        },
+      ],
+      why_now: ['Directly moves the core goal.'],
+      start_now: 'Open the PR checklist and draft the next commit.',
+      notices: [],
+    };
+
+    const result = composeBriefingSummary({
+      context,
+      activeTasks,
+      rankingResult,
+      modelSummary,
+    });
+
+    assert.equal(result.summary.focus, modelSummary.focus);
+    assert.equal(result.summary.priorities[0].task_id, activeTasks[0].id);
+    assert.equal(result.summary.priorities[0].title, activeTasks[0].title);
+    assert.equal(result.summary.start_now, modelSummary.start_now);
+    console.log('PASS composeBriefingSummary prefers structured model focus and priorities');
+  } catch (err) {
+    failures++;
+    console.error('FAIL composeBriefingSummary prefers structured model focus and priorities');
+    console.error(err.message);
+  }
+
+  try {
+    const activeTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+    const rankingResult = buildSummaryRankingFixture(activeTasks);
+    const context = buildSummaryResolvedStateFixture();
+    const modelSummary = {
+      focus: '',
+      priorities: [],
+      why_now: [],
+      start_now: '',
+      notices: [],
+    };
+
+    const result = composeBriefingSummary({
+      context,
+      activeTasks,
+      rankingResult,
+      modelSummary,
+    });
+
+    assert.equal(result.summary.priorities.length, 1);
+    assert.ok(result.summary.notices.some((notice) => notice.code === 'sparse_tasks'));
+    console.log('PASS composeBriefingSummary adds sparse-task notices without filler');
+  } catch (err) {
+    failures++;
+    console.error('FAIL composeBriefingSummary adds sparse-task notices without filler');
+    console.error(err.message);
+  }
+
+  try {
+    const activeTasks = buildSummaryActiveTasksFixture();
+    const rankingResult = buildSummaryRankingFixture(activeTasks, { degraded: true });
+    const context = buildSummaryResolvedStateFixture();
+    const modelSummary = {
+      focus: 'Keep momentum on ranked work.',
+      priorities: [],
+      why_now: [],
+      start_now: 'Open the top task and take the first step.',
+      notices: [],
+    };
+
+    const result = composeBriefingSummary({
+      context,
+      activeTasks,
+      rankingResult,
+      modelSummary,
+    });
+
+    assert.ok(result.summary.notices.some((notice) => notice.code === 'degraded_ranking'));
+    console.log('PASS composeBriefingSummary adds degraded-ranking notices');
+  } catch (err) {
+    failures++;
+    console.error('FAIL composeBriefingSummary adds degraded-ranking notices');
+    console.error(err.message);
+  }
+
+  try {
+    const activeTasks = buildSummaryActiveTasksFixture();
     const processedHistory = buildSummaryProcessedHistoryFixture();
     const rankingResult = buildSummaryRankingFixture(activeTasks);
     const context = {
@@ -1081,6 +1175,45 @@ async function run() {
   } catch (err) {
     failures++;
     console.error('FAIL Gemini briefing preparation uses shared ranking');
+    console.error(err.message);
+  }
+
+  try {
+    const analyzer = new GeminiAnalyzer(['dummy-key']);
+    analyzer._generateWithFailover = async () => ({
+      response: {
+        text: () => JSON.stringify({
+          focus: 'Ship the architecture PR before lower-leverage work.',
+          priorities: [
+            {
+              task_id: 'task-focus',
+              title: 'Ship weekly architecture PR',
+              project_name: 'Career',
+              due_date: '2026-03-12',
+              priority_label: 'career-critical',
+              rationale_text: 'Directly moves the highest-priority goal.',
+            },
+          ],
+          why_now: ['Directly moves the highest-priority goal.'],
+          start_now: 'Open the PR checklist and draft the next commit.',
+          notices: [],
+        }),
+      },
+    });
+
+    const briefing = await analyzer.generateDailyBriefing(buildSummaryActiveTasksFixture(), {
+      userId: 'boundary-user',
+      urgentMode: false,
+    });
+
+    assert.equal(typeof briefing, 'string');
+    assert.match(briefing, /\*\*Focus\*\*/);
+    assert.match(briefing, /Ship weekly architecture PR/);
+    assert.doesNotMatch(briefing, /\[object Object\]/);
+    console.log('PASS Gemini generateDailyBriefing preserves string output for live callers');
+  } catch (err) {
+    failures++;
+    console.error('FAIL Gemini generateDailyBriefing preserves string output for live callers');
     console.error(err.message);
   }
 
