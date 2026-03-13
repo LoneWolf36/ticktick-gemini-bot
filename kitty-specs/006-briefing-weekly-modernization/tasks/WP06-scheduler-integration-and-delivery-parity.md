@@ -16,7 +16,7 @@ subtasks:
 - T030
 - T031
 phase: Phase 3 - Surface Adapters
-assignee: ''
+assignee: 'codex'
 agent: "codex"
 shell_pid: "2996"
 review_status: "has_feedback"

@@ -14,7 +14,7 @@ subtasks:
 - T009
 - T010
 phase: Phase 2 - Parallel Core
-assignee: ''
+assignee: 'codex'
 agent: "Codex"
 shell_pid: "31792"
 review_status: "has_feedback"

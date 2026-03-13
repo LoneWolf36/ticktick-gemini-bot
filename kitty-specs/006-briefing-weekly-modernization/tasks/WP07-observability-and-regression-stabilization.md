@@ -15,7 +15,7 @@ subtasks:
 - T035
 - T036
 phase: Phase 4 - Stabilization
-assignee: ''
+assignee: 'codex'
 agent: "Codex"
 shell_pid: "13648"
 review_status: "approved"

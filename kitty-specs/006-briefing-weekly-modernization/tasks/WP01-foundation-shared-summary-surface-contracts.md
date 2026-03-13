@@ -13,7 +13,7 @@ subtasks:
 - T004
 - T005
 phase: Phase 1 - Foundation
-assignee: ''
+assignee: 'codex'
 agent: "Codex"
 shell_pid: "29216"
 review_status: "approved"

@@ -16,7 +16,7 @@ subtasks:
 - T025
 - T026
 phase: Phase 3 - Surface Adapters
-assignee: ''
+assignee: 'codex'
 agent: "codex"
 shell_pid: "26620"
 review_status: "approved"

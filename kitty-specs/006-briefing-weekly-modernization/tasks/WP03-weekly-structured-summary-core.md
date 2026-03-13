@@ -15,7 +15,7 @@ subtasks:
 - T015
 - T016
 phase: Phase 2 - Parallel Core
-assignee: ''
+assignee: 'codex'
 agent: "codex"
 shell_pid: "14756"
 review_status: "approved"
