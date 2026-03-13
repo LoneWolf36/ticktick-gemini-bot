@@ -1,8 +1,11 @@
 ---
 work_package_id: WP01
 title: Foundation - Shared Summary Surface Contracts
-lane: planned
+lane: "doing"
 dependencies: []
+base_branch: master
+base_commit: aae6aa2d3d95386d8c29718b8302d2a2248d5467
+created_at: '2026-03-13T16:52:10.205876+00:00'
 subtasks:
 - T001
 - T002
@@ -12,7 +15,7 @@ subtasks:
 phase: Phase 1 - Foundation
 assignee: ''
 agent: ''
-shell_pid: ''
+shell_pid: "2764"
 review_status: ''
 reviewed_by: ''
 history:
