@@ -78,6 +78,7 @@ export function normalizeWeeklyWatchouts(watchouts = []) {
 
             if (!label || !evidence || !evidenceSource) return null;
             if (isBehaviorLabel(label)) return null;
+            if (evidenceSource === 'missing_data') return null;
 
             return {
                 label,
@@ -219,6 +220,7 @@ export function composeWeeklySummary({
     processedHistory = [],
     historyAvailable = true,
     rankingResult = null,
+    modelSummary = {},
 } = {}) {
     const normalizedContext = normalizeSummaryRequestContext(WEEKLY_KIND, context);
     const summary = ensureWeeklySections(
@@ -228,6 +230,7 @@ export function composeWeeklySummary({
             processedHistory: toArray(processedHistory),
             historyAvailable: historyAvailable === true,
             rankingResult,
+            modelSummary,
         }),
     );
     const formattedText = formatSummary({ kind: WEEKLY_KIND, summary, context: normalizedContext });

@@ -4,8 +4,9 @@ import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import path from 'path';
 import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from '../bot/utils.js';
-import { reorgSchema } from './schemas.js';
+import { reorgSchema, weeklySummarySchema } from './schemas.js';
 import * as store from './store.js';
+import { composeWeeklySummary } from './summary-surfaces/index.js';
 import {
     createGoalThemeProfile,
     inferPriorityValueFromTask,
@@ -111,7 +112,25 @@ Do not use markdown headings (#, ##, ###) or separator lines made of hashes.
 </example_format>
 `;
 
+const WEEKLY_SUMMARY_PROMPT = `${USER_CONTEXT}
 
+Generate a weekly accountability summary as STRICT JSON.
+
+Output rules:
+- Return JSON only. No markdown, no prose, no code fences.
+- Use exactly these top-level keys: progress, carry_forward, next_focus, watchouts, notices.
+- progress: array of short strings describing completed outcomes grounded in processed history.
+- carry_forward: array of objects { task_id, title, reason } for active tasks that carry into next week.
+- next_focus: array of short strings for the top 3 tasks to focus next.
+- watchouts: array of objects { label, evidence, evidence_source }.
+  - evidence_source must be "current_tasks" or "processed_history".
+  - Do not include behavioral labels or callouts.
+  - Do not include avoidance, needle-mover ratios, or callout language.
+- notices: array of objects { code, message, severity, evidence_source }.
+  - Use code "missing_history" when processed history is sparse or missing.
+
+Keep the summary concise, evidence-based, and non-behavioral.
+`;
 
 const REORG_PROMPT = `${USER_CONTEXT}
 
@@ -229,11 +248,13 @@ export class GeminiAnalyzer {
 
         this.weeklyModel = genAI.getGenerativeModel({
             model: 'gemini-2.5-flash',
-            systemInstruction: WEEKLY_PROMPT,
+            systemInstruction: WEEKLY_SUMMARY_PROMPT,
             generationConfig: {
-                temperature: 0.8,
+                responseMimeType: 'application/json',
+                responseSchema: weeklySummarySchema,
+                temperature: 0.4,
                 topP: 0.9,
-                maxOutputTokens: 8192,
+                maxOutputTokens: 4096,
             },
             thinkingConfig: { thinkingBudget: 1024 },
         });
@@ -495,18 +516,50 @@ export class GeminiAnalyzer {
 
     async generateWeeklyDigest(allTasks, processedThisWeek, options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
-        const taskList = allTasks
-            .map((t, i) => `${i + 1}. "${t.title}" [${t.projectName || 'Inbox'}]`)
+        const { ranking, orderedTasks } = this._prepareBriefingTasks(allTasks, {
+            ...options,
+            ...recommendationState,
+        });
+
+        const taskList = orderedTasks
+            .map((t, i) => {
+                let line = `${i + 1}. "${t.title}" [${t.projectName || 'Inbox'}]`;
+                if (t.dueDate) line += ` - due: ${t.dueDate}`;
+                if (t.priority !== undefined) line += ` priority=${t.priority}`;
+                return line;
+            })
             .join('\n');
 
-        const processed = Object.entries(processedThisWeek)
-            .map(([_, d]) => formatProcessedTask(d))
+        const processedEntries = Object.entries(processedThisWeek || {})
+            .map(([taskId, data]) => ({ taskId, ...data }));
+        const processed = processedEntries
+            .map((entry) => formatProcessedTask(entry))
             .join('\n');
 
         const urgentModePromptNote = buildUrgentModePromptNote(recommendationState.urgentMode);
-        const prompt = `${urgentModePromptNote ? `${urgentModePromptNote}\n\n` : ''}Current active tasks (${allTasks.length}):\n${taskList}\n\nTasks analyzed this week:\n${processed || 'None'}`;
+        const prompt = `${urgentModePromptNote ? `${urgentModePromptNote}\n\n` : ''}Current active tasks (${orderedTasks.length}):\n${taskList || 'None'}\n\nProcessed tasks this week (${processedEntries.length}):\n${processed || 'None'}`;
         const result = await this._generateWithFailover(() => this.weeklyModel, prompt, { transientBaseMs: 15 });
-        return result.response.text().trim();
+        const raw = result.response.text().trim();
+        const parsed = this._safeParseJson(raw);
+        const summaryPayload = parsed && typeof parsed === 'object' ? parsed : {};
+
+        const summaryResult = composeWeeklySummary({
+            context: {
+                entryPoint: options.entryPoint || 'manual_command',
+                userId: options.userId ?? options.chatId ?? store.getChatId(),
+                generatedAtIso: options.generatedAtIso || new Date().toISOString(),
+                timezone: options.timezone || null,
+                urgentMode: recommendationState.urgentMode,
+                tonePolicy: options.tonePolicy || 'preserve_existing',
+            },
+            activeTasks: orderedTasks,
+            processedHistory: processedEntries,
+            historyAvailable: options.historyAvailable !== false,
+            rankingResult: ranking,
+            modelSummary: summaryPayload,
+        });
+
+        return summaryResult.formattedText;
     }
 
 

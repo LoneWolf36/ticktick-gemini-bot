@@ -213,6 +213,127 @@ test('composeWeeklySummary always returns fixed weekly top-level sections', () =
   assert.equal(Array.isArray(result.summary.notices), true);
 });
 
+test('composeWeeklySummary uses structured model summary but keeps next_focus grounded', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildSummaryProcessedHistoryFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+  };
+  const modelSummary = {
+    progress: ['Completed: Shipped weekly architecture PR'],
+    carry_forward: [
+      {
+        task_id: 'task-support',
+        title: 'Prepare system design notes',
+        reason: 'Still open with planned follow-up.',
+      },
+    ],
+    next_focus: ['Random model suggestion'],
+    watchouts: [
+      {
+        label: 'Overdue tasks accumulating',
+        evidence: '1 active task is overdue right now.',
+        evidence_source: 'current_tasks',
+      },
+    ],
+    notices: [
+      {
+        code: 'delivery_context',
+        message: 'Model summary received.',
+        severity: 'info',
+        evidence_source: 'system',
+      },
+    ],
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.ok(result.summary.progress.includes('Completed: Shipped weekly architecture PR'));
+  assert.equal(result.summary.next_focus.includes('Random model suggestion'), false);
+  assert.equal(result.summary.next_focus[0], activeTasks[0].title);
+});
+
+test('composeWeeklySummary reduces digest and adds missing history notice when history is missing', () => {
+  const activeTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+  const processedHistory = [];
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+  };
+  const modelSummary = {
+    progress: ['Completed: Placeholder progress'],
+    watchouts: [
+      {
+        label: 'Dropped tasks this week',
+        evidence: '1 processed item was dropped.',
+        evidence_source: 'processed_history',
+      },
+    ],
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: false,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.equal(result.summary.progress.length, 0);
+  assert.ok(result.summary.carry_forward.length > 0);
+  assert.ok(result.summary.next_focus.length > 0);
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'missing_history'));
+});
+
+test('composeWeeklySummary drops watchouts without evidence backing', () => {
+  const activeTasks = buildSummaryActiveTasksFixture().map((task) => ({
+    ...task,
+    dueDate: '2026-03-20',
+  }));
+  const processedHistory = [];
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+  };
+  const modelSummary = {
+    watchouts: [
+      {
+        label: 'Dropped tasks this week',
+        evidence: '1 processed item was dropped.',
+        evidence_source: 'processed_history',
+      },
+      {
+        label: 'History unavailable',
+        evidence: 'Processed-task history was unavailable.',
+        evidence_source: 'missing_data',
+      },
+    ],
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.equal(result.summary.watchouts.length, 0);
+});
+
 test('weekly watchout normalization rejects behavioral labels and strips prompt-era fields', () => {
   const watchouts = normalizeWeeklyWatchouts([
     {
