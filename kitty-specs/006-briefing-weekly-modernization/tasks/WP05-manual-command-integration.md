@@ -1,7 +1,7 @@
 ---
 work_package_id: WP05
 title: Manual Command Integration
-lane: "done"
+lane: "for_review"
 dependencies:
 - WP02
 - WP03
@@ -211,3 +211,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 **Valid lanes**: `planned`, `doing`, `for_review`, `done`
 - 2026-03-13T17:42:38Z – codex – shell_pid=26620 – lane=doing – Assigned agent via workflow command
 - 2026-03-13T17:55:57Z – codex – shell_pid=26620 – lane=done – Review passed: manual /briefing and /weekly use shared summary surfaces; auth/quota behavior preserved; diagnostics logging and regression coverage verified; dependent WP07 remains planned
+- 2026-03-13T17:56:24Z – codex – shell_pid=26620 – lane=for_review – Ready for review: wire manual briefing/weekly to shared summary surface, add logging + tests
