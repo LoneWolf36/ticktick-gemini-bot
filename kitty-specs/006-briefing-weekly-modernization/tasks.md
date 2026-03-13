@@ -53,11 +53,11 @@
 **Requirements Refs**: FR-001, FR-004, FR-004a, FR-004b, FR-005, FR-007, FR-008
 
 ### Included Subtasks
-- [ ] T006 Implement structured daily-generation request and response parsing in `services/gemini.js`
-- [ ] T007 Build the daily summary composer in `services/summary-surfaces/briefing-summary.js`
-- [ ] T008 Wire `services/execution-prioritization.js` ranking output into daily `focus`, `priorities`, and `why_now` without local policy drift
-- [ ] T009 Implement sparse-task and degraded-ranking notices with an actionable `start_now`
-- [ ] T010 Add daily summary regression coverage that inspects structured output before formatting
+- [x] T006 Implement structured daily-generation request and response parsing in `services/gemini.js`
+- [x] T007 Build the daily summary composer in `services/summary-surfaces/briefing-summary.js`
+- [x] T008 Wire `services/execution-prioritization.js` ranking output into daily `focus`, `priorities`, and `why_now` without local policy drift
+- [x] T009 Implement sparse-task and degraded-ranking notices with an actionable `start_now`
+- [x] T010 Add daily summary regression coverage that inspects structured output before formatting
 
 ### Implementation Notes
 - Daily summary logic should depend on the shared contracts from WP01 rather than inventing new fields.
