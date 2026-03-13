@@ -150,11 +150,11 @@
 **Requirements Refs**: FR-001, FR-002, FR-003, FR-004, FR-006, FR-007
 
 ### Included Subtasks
-- [ ] T022 Replace `/briefing` command execution in `bot/commands.js` to call the shared summary surface
-- [ ] T023 Replace `/weekly` command execution in `bot/commands.js` to call the shared summary surface
-- [ ] T024 Preserve existing auth, quota, and user-facing error handling while removing legacy string-only path dependence
-- [ ] T025 Inspect and log structured summary output plus formatter decisions in manual command paths
-- [ ] T026 Add manual command regression coverage for shared-surface use and tone-sensitive output invariants
+- [x] T022 Replace `/briefing` command execution in `bot/commands.js` to call the shared summary surface
+- [x] T023 Replace `/weekly` command execution in `bot/commands.js` to call the shared summary surface
+- [x] T024 Preserve existing auth, quota, and user-facing error handling while removing legacy string-only path dependence
+- [x] T025 Inspect and log structured summary output plus formatter decisions in manual command paths
+- [x] T026 Add manual command regression coverage for shared-surface use and tone-sensitive output invariants
 
 ### Implementation Notes
 - This package should not rework scheduler behavior.
