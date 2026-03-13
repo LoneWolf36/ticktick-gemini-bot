@@ -1,7 +1,7 @@
 ---
 work_package_id: WP03
 title: Weekly Structured Summary Core
-lane: "doing"
+lane: "done"
 dependencies:
 - WP01
 base_branch: 006-briefing-weekly-modernization-WP01
@@ -18,8 +18,8 @@ phase: Phase 2 - Parallel Core
 assignee: ''
 agent: "codex"
 shell_pid: "14756"
-review_status: ''
-reviewed_by: ''
+review_status: "approved"
+reviewed_by: "TickTick Bot"
 history:
 - timestamp: '2026-03-12T21:19:42Z'
   lane: planned
@@ -215,3 +215,4 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 - 2026-03-13T17:27:05Z – codex – shell_pid=25012 – lane=doing – Assigned agent via workflow command
 - 2026-03-13T17:45:01Z – codex – shell_pid=25012 – lane=for_review – Ready for review: structured weekly summary output, reduced digest, watchout filtering, regression coverage
 - 2026-03-13T17:46:00Z – codex – shell_pid=14756 – lane=doing – Started review via workflow command
+- 2026-03-13T17:47:36Z – codex – shell_pid=14756 – lane=done – Review passed: structured weekly summary path verified; WP01 dependency matches code coupling but is not yet merged to master; dependents WP05 doing, WP06 planned
