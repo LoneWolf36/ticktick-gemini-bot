@@ -1,0 +1,12 @@
+# Auto-generated from constitution.md — do not edit directly.
+# Run 'spec-kitty constitution sync' to regenerate.
+
+schema_version: 1.0.0
+extracted_at: '2026-03-19T02:33:12.606854+00:00'
+constitution_hash: sha256:340f1d6a2a04ed20aceb8ef369d3704316fadaa3e231143d7b3279c04feef063
+source_path: .kittify/constitution/constitution.md
+extraction_mode: hybrid
+sections_parsed:
+  structured: 1
+  ai_assisted: 28
+  skipped: 0
