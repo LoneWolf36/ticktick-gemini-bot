@@ -1,7 +1,17 @@
 import { TickTickClient } from './ticktick.js';
 
 const PROJECT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const VALID_PRIORITIES = [0, 1, 3, 5]; // TickTick valid priority values
+const HEX_24_REGEX = /^[0-9a-fA-F]{24}$/;
 
+/**
+ * TickTick Adapter - Narrow interface for all TickTick REST API interactions.
+ * Wraps TickTickClient with validation, error classification, and structured logging.
+ * 
+ * @example
+ * const adapter = new TickTickAdapter(new TickTickClient(credentials));
+ * await adapter.createTask({ title: 'My Task', projectId: 'abc123...' });
+ */
 export class TickTickAdapter {
     constructor(client) {
         if (!(client instanceof TickTickClient)) {
@@ -12,6 +22,13 @@ export class TickTickAdapter {
         this._projectCacheTs = 0;
     }
 
+    /**
+     * Logs adapter operations with structured format.
+     * @param {string} operation - Operation name (e.g., 'createTask', 'updateTask')
+     * @param {object|string} data - Data to log (will be JSON.stringify'd)
+     * @param {boolean} isError - Whether this is an error log
+     * @private
+     */
     _log(operation, data, isError = false) {
         const timestamp = new Date().toISOString();
         const msg = `[Adapter] ${operation}: ${JSON.stringify(data)}`;
@@ -22,6 +39,137 @@ export class TickTickAdapter {
         }
     }
 
+    /**
+     * Classifies an error for retry decision-making by the pipeline.
+     * @param {Error} error - The error to classify
+     * @param {string} operation - The operation that failed
+     * @returns {Error} Classified error with code, operation, and statusCode properties
+     * @private
+     */
+    _classifyError(error, operation) {
+        const classified = new Error(error.message);
+        classified.code = this._getErrorCode(error);
+        classified.operation = operation;
+        classified.statusCode = error.response?.status;
+        classified.originalError = error;
+        return classified;
+    }
+
+    /**
+     * Determines error code based on error type and response.
+     * @param {Error} error - The error to analyze
+     * @returns {string} Error code: AUTH_ERROR, NOT_FOUND, RATE_LIMITED, SERVER_ERROR, NETWORK_ERROR, or API_ERROR
+     * @private
+     */
+    _getErrorCode(error) {
+        if (error.response?.status === 401 || error.response?.status === 403) return 'AUTH_ERROR';
+        if (error.response?.status === 404) return 'NOT_FOUND';
+        if (error.response?.status === 429) return 'RATE_LIMITED';
+        if (error.response?.status >= 500) return 'SERVER_ERROR';
+        if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') return 'NETWORK_ERROR';
+        return 'API_ERROR';
+    }
+
+    /**
+     * Validates a 24-character hex string project ID.
+     * @param {string|null|undefined} projectId - Project ID to validate
+     * @param {string} context - Context for error message (e.g., 'completeTask', 'updateTask')
+     * @returns {string|null} Validated project ID or null if input was null/undefined
+     * @throws {Error} If projectId is provided but invalid
+     * @private
+     */
+    _validateProjectId(projectId, context) {
+        if (projectId === null || projectId === undefined) {
+            return null;
+        }
+        if (typeof projectId !== 'string') {
+            const err = new Error(`${context} requires projectId to be a 24-character hex string, got ${typeof projectId}`);
+            err.code = 'VALIDATION_ERROR';
+            throw err;
+        }
+        if (!HEX_24_REGEX.test(projectId)) {
+            const err = new Error(`${context} requires projectId to be a 24-character hex string, got "${projectId}" (length: ${projectId.length})`);
+            err.code = 'VALIDATION_ERROR';
+            throw err;
+        }
+        return projectId;
+    }
+
+    /**
+     * Validates priority value against TickTick's allowed values.
+     * @param {number|null|undefined} priority - Priority to validate
+     * @returns {number|null} Validated priority or null if input was null/undefined
+     * @throws {Error} If priority is provided but not in [0, 1, 3, 5]
+     * @private
+     */
+    _validatePriority(priority) {
+        if (priority === null || priority === undefined) {
+            return null;
+        }
+        if (typeof priority !== 'number' || !VALID_PRIORITIES.includes(priority)) {
+            const err = new Error(`Invalid priority value: ${priority}. Must be one of [0, 1, 3, 5]`);
+            err.code = 'VALIDATION_ERROR';
+            throw err;
+        }
+        return priority;
+    }
+
+    /**
+     * Validates and sanitizes task title.
+     * @param {string|null|undefined} title - Title to validate
+     * @returns {string|null} Trimmed title or null if input was null/undefined
+     * @throws {Error} If title is empty after trimming
+     * @private
+     */
+    _validateTitle(title) {
+        if (title === null || title === undefined) {
+            return null;
+        }
+        if (typeof title !== 'string') {
+            const err = new Error(`Title must be a string, got ${typeof title}`);
+            err.code = 'VALIDATION_ERROR';
+            throw err;
+        }
+        const trimmed = title.trim();
+        if (trimmed.length === 0) {
+            const err = new Error('Title cannot be empty or whitespace only');
+            err.code = 'VALIDATION_ERROR';
+            throw err;
+        }
+        return trimmed;
+    }
+
+    /**
+     * Validates due date string format.
+     * @param {string|null|undefined} dueDate - Due date to validate
+     * @returns {string|null} Validated ISO date string or null if input was null/undefined
+     * @throws {Error} If dueDate is not a valid ISO date string
+     * @private
+     */
+    _validateDueDate(dueDate) {
+        if (dueDate === null || dueDate === undefined) {
+            return null;
+        }
+        if (typeof dueDate !== 'string') {
+            const err = new Error(`dueDate must be an ISO date string, got ${typeof dueDate}`);
+            err.code = 'VALIDATION_ERROR';
+            throw err;
+        }
+        const parsed = new Date(dueDate);
+        if (isNaN(parsed.getTime())) {
+            const err = new Error(`Invalid ISO date string: "${dueDate}"`);
+            err.code = 'VALIDATION_ERROR';
+            throw err;
+        }
+        return dueDate;
+    }
+
+    /**
+     * Lists all TickTick projects with caching.
+     * @param {boolean} forceRefresh - Force refresh cache
+     * @returns {Promise<Array<{id: string, name: string}>>} Array of project objects
+     * @throws {Error} Classified error with code if API call fails
+     */
     async listProjects(forceRefresh = false) {
         const start = Date.now();
         this._log('listProjects', { forceRefresh });
@@ -42,11 +190,22 @@ export class TickTickAdapter {
             return projects;
         } catch (error) {
             const elapsed = Date.now() - start;
-            this._log('listProjects', `FAILED { error: "${error.message}", ${elapsed}ms }`, true);
-            throw error;
+            const classified = this._classifyError(error, 'listProjects');
+            this._log('listProjects', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            throw classified;
         }
     }
 
+    /**
+     * Finds a project by name using fuzzy matching (exact > startsWith > contains).
+     * @param {string|null|undefined} nameHint - Project name or partial name to search for
+     * @returns {Promise<{id: string, name: string}|null>} Matching project or null if not found
+     * @throws {Error} Classified error with code if API call fails
+     * 
+     * @example
+     * const project = await adapter.findProjectByName('Work');
+     * if (project) console.log(`Found: ${project.name} (${project.id})`);
+     */
     async findProjectByName(nameHint) {
         const start = Date.now();
         this._log('findProjectByName', { nameHint });
@@ -94,21 +253,48 @@ export class TickTickAdapter {
             return match;
         } catch (error) {
             const elapsed = Date.now() - start;
-            this._log('findProjectByName', `FAILED { error: "${error.message}", ${elapsed}ms }`, true);
-            throw error;
+            const classified = this._classifyError(error, 'findProjectByName');
+            this._log('findProjectByName', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            throw classified;
         }
     }
 
+    /**
+     * Creates a single task in TickTick with field validation.
+     * @param {Object} normalizedAction - Normalized action object from pipeline
+     * @param {string} normalizedAction.title - Task title (required, non-empty)
+     * @param {string} [normalizedAction.content] - Task description/notes
+     * @param {string} [normalizedAction.dueDate] - ISO 8601 date string (e.g., '2025-04-01T09:00:00.000Z')
+     * @param {number} [normalizedAction.priority] - Priority level: 0=none, 1=low, 3=medium, 5=high
+     * @param {string} [normalizedAction.projectId] - 24-char hex project ID (falls back to default if null)
+     * @param {string} [normalizedAction.repeatFlag] - Recurrence rule (e.g., 'FREQ=DAILY', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR')
+     * @returns {Promise<Object>} Created task object from TickTick API
+     * @throws {Error} Classified error with code 'VALIDATION_ERROR' for invalid fields, or API error codes
+     * 
+     * @example
+     * const task = await adapter.createTask({
+     *   title: 'Review PR #123',
+     *   projectId: 'abc123def456ghi789jkl012',
+     *   priority: 3,
+     *   dueDate: '2025-04-01T17:00:00.000Z'
+     * });
+     */
     async createTask(normalizedAction) {
         const start = Date.now();
-        this._log('createTask', { title: normalizedAction.title, projectId: normalizedAction.projectId });
+        this._log('createTask', { title: normalizedAction?.title, projectId: normalizedAction?.projectId });
         try {
+            // Validate fields before sending to API
+            const validatedTitle = this._validateTitle(normalizedAction.title);
+            const validatedPriority = this._validatePriority(normalizedAction.priority);
+            const validatedProjectId = this._validateProjectId(normalizedAction.projectId, 'createTask');
+            const validatedDueDate = this._validateDueDate(normalizedAction.dueDate);
+
             const taskData = {};
-            if (normalizedAction.title !== undefined && normalizedAction.title !== null) taskData.title = normalizedAction.title;
+            if (validatedTitle !== null) taskData.title = validatedTitle;
             if (normalizedAction.content !== undefined && normalizedAction.content !== null) taskData.content = normalizedAction.content;
-            if (normalizedAction.dueDate !== undefined && normalizedAction.dueDate !== null) taskData.dueDate = normalizedAction.dueDate;
-            if (normalizedAction.priority !== undefined && normalizedAction.priority !== null) taskData.priority = normalizedAction.priority;
-            if (normalizedAction.projectId !== undefined && normalizedAction.projectId !== null) taskData.projectId = normalizedAction.projectId;
+            if (validatedDueDate !== null) taskData.dueDate = validatedDueDate;
+            if (validatedPriority !== null) taskData.priority = validatedPriority;
+            if (validatedProjectId !== null) taskData.projectId = validatedProjectId;
             if (normalizedAction.repeatFlag !== undefined && normalizedAction.repeatFlag !== null) taskData.repeatFlag = normalizedAction.repeatFlag;
 
             const createdTask = await this._client.createTask(taskData);
@@ -117,23 +303,56 @@ export class TickTickAdapter {
             return createdTask;
         } catch (error) {
             const elapsed = Date.now() - start;
-            this._log('createTask', `FAILED { error: "${error.message}", ${elapsed}ms }`, true);
+            // Skip classification for validation errors (already classified)
+            if (!error.code) {
+                const classified = this._classifyError(error, 'createTask');
+                this._log('createTask', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+                throw classified;
+            }
+            this._log('createTask', `FAILED { error: "${error.message}", code: "${error.code}", ${elapsed}ms }`, true);
             throw error;
         }
     }
 
+    /**
+     * Creates multiple tasks sequentially with per-item failure tracking.
+     * @param {Array<Object>} normalizedActions - Array of normalized action objects
+     * @returns {Promise<{created: Array<Object>, failed: Array<{action: Object, error: string, code?: string}>}>} Batch results
+     * @throws {Error} Classified error with code if batch processing fails catastrophically
+     * 
+     * @example
+     * const results = await adapter.createTasksBatch([
+     *   { title: 'Task 1', projectId: '...' },
+     *   { title: 'Task 2', projectId: '...' }
+     * ]);
+     * console.log(`Created: ${results.created.length}, Failed: ${results.failed.length}`);
+     */
     async createTasksBatch(normalizedActions) {
         const start = Date.now();
-        this._log('createTasksBatch', { count: normalizedActions.length });
+        this._log('createTasksBatch', { count: normalizedActions?.length });
+
+        // Early return for empty input (T005)
+        if (!normalizedActions || normalizedActions.length === 0) {
+            this._log('createTasksBatch', 'SUCCESS { created: 0, failed: 0, reason: "empty input" }');
+            return { created: [], failed: [] };
+        }
 
         const results = { created: [], failed: [] };
 
-        for (const action of normalizedActions) {
+        // Sequential execution for simplicity and debuggability (T005)
+        for (let i = 0; i < normalizedActions.length; i++) {
+            const action = normalizedActions[i];
             try {
                 const createdTask = await this.createTask(action);
                 results.created.push(createdTask);
             } catch (error) {
-                results.failed.push({ action, error: error.message });
+                // Per-item failure logging with action details (T005)
+                this._log('createTasksBatch', `FAILED item ${i + 1}/${normalizedActions.length} { title: "${action?.title}", error: "${error.message}", code: "${error.code || 'UNKNOWN'}" }`, true);
+                results.failed.push({
+                    action,
+                    error: error.message,
+                    code: error.code || 'UNKNOWN'
+                });
             }
         }
 
@@ -142,13 +361,23 @@ export class TickTickAdapter {
         return results;
     }
 
+    /**
+     * Gets a snapshot of task state for later restoration.
+     * @param {string} taskId - 24-char hex task ID
+     * @param {string} projectId - 24-char hex project ID (required for API lookup)
+     * @returns {Promise<Object>} Task snapshot with id, projectId, title, content, priority, dueDate, repeatFlag, status
+     * @throws {Error} Classified error with code if API call fails or validation fails
+     * 
+     * @example
+     * const snapshot = await adapter.getTaskSnapshot('task123...', 'proj456...');
+     * // Later: await adapter.restoreTask('task123...', snapshot);
+     */
     async getTaskSnapshot(taskId, projectId) {
         const start = Date.now();
         this._log('getTaskSnapshot', { taskId, projectId });
         try {
-            if (!taskId || !projectId) {
-                throw new Error('getTaskSnapshot requires both taskId and projectId');
-            }
+            this._validateProjectId(taskId, 'getTaskSnapshot (taskId)');
+            this._validateProjectId(projectId, 'getTaskSnapshot (projectId)');
 
             const task = await this._client.getTask(projectId, taskId);
             const snapshot = {
@@ -167,19 +396,48 @@ export class TickTickAdapter {
             return snapshot;
         } catch (error) {
             const elapsed = Date.now() - start;
-            this._log('getTaskSnapshot', `FAILED { error: "${error.message}", ${elapsed}ms }`, true);
-            throw error;
+            const classified = this._classifyError(error, 'getTaskSnapshot');
+            this._log('getTaskSnapshot', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            throw classified;
         }
     }
 
+    /**
+     * Updates a task with optional content merge behavior.
+     * @param {string} taskId - 24-char hex task ID
+     * @param {Object} normalizedAction - Normalized action with update fields
+     * @param {string} [normalizedAction.title] - New title (replaces existing)
+     * @param {string} [normalizedAction.content] - Content to merge or replace
+     * @param {boolean} [normalizedAction.mergeContent=true] - If false, replace content entirely; if true/undefined, merge with existing
+     * @param {string} [normalizedAction.dueDate] - New due date
+     * @param {number} [normalizedAction.priority] - New priority
+     * @param {string} [normalizedAction.projectId] - Target project ID (move task if different from original)
+     * @param {string} [normalizedAction.originalProjectId] - Original project ID (for cross-project moves)
+     * @param {string} [normalizedAction.repeatFlag] - New recurrence rule
+     * @returns {Promise<Object>} Updated task object from TickTick API
+     * @throws {Error} Classified error with code if API call fails or validation fails
+     * 
+     * @example
+     * // Merge content (default behavior)
+     * await adapter.updateTask('task123...', { content: 'Additional note' });
+     * 
+     * @example
+     * // Replace content entirely
+     * await adapter.updateTask('task123...', { content: 'New content only', mergeContent: false });
+     */
     async updateTask(taskId, normalizedAction) {
         const start = Date.now();
         const projectId = normalizedAction.originalProjectId || normalizedAction.projectId;
         this._log('updateTask', { taskId, projectId });
         try {
+            this._validateProjectId(taskId, 'updateTask (taskId)');
+            
             if (!projectId) {
-                throw new Error('updateTask requires a projectId either in normalizedAction.originalProjectId or normalizedAction.projectId to fetch the existing task');
+                const err = new Error('updateTask requires a projectId either in normalizedAction.originalProjectId or normalizedAction.projectId to fetch the existing task');
+                err.code = 'VALIDATION_ERROR';
+                throw err;
             }
+            this._validateProjectId(projectId, 'updateTask (projectId)');
 
             const existingTask = await this._client.getTask(projectId, taskId);
             const sourceProjectId = normalizedAction.originalProjectId || existingTask.projectId || projectId;
@@ -193,19 +451,24 @@ export class TickTickAdapter {
             if (targetProjectId !== undefined && targetProjectId !== null) updatePayload.projectId = targetProjectId;
             if (normalizedAction.repeatFlag !== undefined) updatePayload.repeatFlag = normalizedAction.repeatFlag;
 
-            // Handle content merge (FR-007)
+            // Handle content merge with mergeContent flag (T006)
             if (normalizedAction.content !== undefined) {
                 const newContent = normalizedAction.content || '';
                 const oldContent = existingTask.content || '';
+                const shouldMerge = normalizedAction.mergeContent !== false; // Default to true
 
-                if (oldContent) {
+                if (!shouldMerge) {
+                    // Replace content entirely (T006)
+                    updatePayload.content = newContent;
+                } else if (oldContent) {
                     if (oldContent === newContent || newContent === '') {
-                        // No change or clearing content (though intent usually has something)
+                        // No change or clearing content
                     } else if (newContent.includes(oldContent)) {
                         // Already merged by normalizer or caller
                         updatePayload.content = newContent;
                     } else if (oldContent.includes(newContent)) {
-                        // New content already part of old content
+                        // New content already part of old content - keep old
+                        updatePayload.content = oldContent;
                     } else {
                         // Append new content with standard separator
                         updatePayload.content = `${oldContent}\n---\n${newContent}`;
@@ -225,20 +488,35 @@ export class TickTickAdapter {
             return updatedTask;
         } catch (error) {
             const elapsed = Date.now() - start;
-            this._log('updateTask', `FAILED { error: "${error.message}", ${elapsed}ms }`, true);
-            throw error;
+            const classified = this._classifyError(error, 'updateTask');
+            this._log('updateTask', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            throw classified;
         }
     }
 
+    /**
+     * Restores a task to a previous state from snapshot.
+     * @param {string} taskId - 24-char hex task ID
+     * @param {Object} snapshot - Task snapshot from getTaskSnapshot
+     * @param {string} snapshot.title - Task title
+     * @param {string|null} [snapshot.content] - Task content
+     * @param {string|null} [snapshot.dueDate] - Task due date
+     * @param {number|null} [snapshot.priority] - Task priority
+     * @param {string|null} [snapshot.projectId] - Task project ID
+     * @param {string|null} [snapshot.repeatFlag] - Task recurrence rule
+     * @returns {Promise<Object>} Restored task object from TickTick API
+     * @throws {Error} Classified error with code if API call fails or validation fails
+     */
     async restoreTask(taskId, snapshot) {
         const start = Date.now();
         this._log('restoreTask', { taskId, snapshotTaskId: snapshot?.id, projectId: snapshot?.projectId ?? null });
         try {
-            if (!taskId) {
-                throw new Error('restoreTask requires a taskId');
-            }
+            this._validateProjectId(taskId, 'restoreTask (taskId)');
+            
             if (!snapshot || typeof snapshot !== 'object') {
-                throw new Error('restoreTask requires a snapshot');
+                const err = new Error('restoreTask requires a snapshot object');
+                err.code = 'VALIDATION_ERROR';
+                throw err;
             }
 
             const payload = {
@@ -256,38 +534,69 @@ export class TickTickAdapter {
             return restoredTask;
         } catch (error) {
             const elapsed = Date.now() - start;
-            this._log('restoreTask', `FAILED { error: "${error.message}", ${elapsed}ms }`, true);
-            throw error;
+            const classified = this._classifyError(error, 'restoreTask');
+            this._log('restoreTask', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            throw classified;
         }
     }
 
+    /**
+     * Marks a task as complete in TickTick.
+     * Note: Requires both taskId and projectId per TickTick API requirements.
+     * @param {string} taskId - 24-char hex task ID
+     * @param {string} projectId - 24-char hex project ID (required by TickTick API)
+     * @returns {Promise<{completed: boolean, taskId: string}>} Confirmation object
+     * @throws {Error} Classified error with code if API call fails or validation fails
+     * 
+     * @example
+     * await adapter.completeTask('task123...', 'proj456...');
+     */
     async completeTask(taskId, projectId) {
         const start = Date.now();
         this._log('completeTask', { taskId, projectId });
         try {
+            this._validateProjectId(taskId, 'completeTask (taskId)');
+            this._validateProjectId(projectId, 'completeTask (projectId)');
+
             await this._client.completeTask(projectId, taskId);
             const elapsed = Date.now() - start;
             this._log('completeTask', `SUCCESS { id: "${taskId}", ${elapsed}ms }`);
             return { completed: true, taskId };
         } catch (error) {
             const elapsed = Date.now() - start;
-            this._log('completeTask', `FAILED { error: "${error.message}", ${elapsed}ms }`, true);
-            throw error;
+            const classified = this._classifyError(error, 'completeTask');
+            this._log('completeTask', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            throw classified;
         }
     }
 
+    /**
+     * Permanently deletes a task from TickTick.
+     * Note: Requires both taskId and projectId per TickTick API requirements.
+     * @param {string} taskId - 24-char hex task ID
+     * @param {string} projectId - 24-char hex project ID (required by TickTick API)
+     * @returns {Promise<{deleted: boolean, taskId: string}>} Confirmation object
+     * @throws {Error} Classified error with code if API call fails or validation fails
+     * 
+     * @example
+     * await adapter.deleteTask('task123...', 'proj456...');
+     */
     async deleteTask(taskId, projectId) {
         const start = Date.now();
         this._log('deleteTask', { taskId, projectId });
         try {
+            this._validateProjectId(taskId, 'deleteTask (taskId)');
+            this._validateProjectId(projectId, 'deleteTask (projectId)');
+
             await this._client.deleteTask(projectId, taskId);
             const elapsed = Date.now() - start;
             this._log('deleteTask', `SUCCESS { id: "${taskId}", ${elapsed}ms }`);
             return { deleted: true, taskId };
         } catch (error) {
             const elapsed = Date.now() - start;
-            this._log('deleteTask', `FAILED { error: "${error.message}", ${elapsed}ms }`, true);
-            throw error;
+            const classified = this._classifyError(error, 'deleteTask');
+            this._log('deleteTask', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            throw classified;
         }
     }
 }

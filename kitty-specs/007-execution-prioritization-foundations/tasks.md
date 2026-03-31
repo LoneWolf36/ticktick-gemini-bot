@@ -163,3 +163,11 @@
 | T016 | Add downstream inheritance regressions | WP04 | P1 | Yes |
 | T017 | Add unknown-state and degraded-path regressions | WP04 | P1 | Yes |
 | T018 | Update adoption notes for adjacent tracks | WP04 | P1 | Yes |
+
+<!-- status-model:start -->
+## Canonical Status (Generated)
+- WP01: done
+- WP02: done
+- WP03: done
+- WP04: done
+<!-- status-model:end -->

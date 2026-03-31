@@ -1,7 +1,6 @@
 ---
 work_package_id: WP01
 title: Ranking Contract and Inputs
-lane: "done"
 dependencies: []
 subtasks:
 - T001
@@ -9,17 +8,6 @@ subtasks:
 - T003
 - T004
 phase: Phase 1 - Contract Definition
-assignee: ''
-agent: "codex"
-shell_pid: "11900"
-review_status: "approved"
-reviewed_by: "TickTick Bot"
-history:
-- timestamp: '2026-03-10T23:54:11Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
 requirement_refs:
 - FR-001
 - FR-002

@@ -1,7 +1,6 @@
 ---
 work_package_id: WP07
 title: Observability and Regression Stabilization
-lane: "done"
 dependencies:
 - WP05
 - WP06
@@ -15,17 +14,6 @@ subtasks:
 - T035
 - T036
 phase: Phase 4 - Stabilization
-assignee: 'codex'
-agent: "Codex"
-shell_pid: "13648"
-review_status: "approved"
-reviewed_by: "TickTick Bot"
-history:
-- timestamp: '2026-03-12T21:27:55Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
 requirement_refs:
 - FR-003
 - FR-006

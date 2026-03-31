@@ -254,3 +254,8 @@
 | T020 | Add direct failure-path pipeline regressions | WP06 | P0 | Yes |
 | T021 | Add burst-concurrency contract regressions | WP06 | P0 | Yes |
 | T022 | Update live doubles and validation notes for hardened contract | WP06 | P0 | Yes |
+
+<!-- status-model:start -->
+## Canonical Status (Generated)
+- WP05: done
+<!-- status-model:end -->

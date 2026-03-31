@@ -1,7 +1,6 @@
 ---
 work_package_id: WP06
 title: Failure, Rollback, and Burst Regression Finalization
-lane: "done"
 dependencies:
 - WP03
 - WP04
@@ -16,24 +15,14 @@ subtasks:
 - T021
 - T022
 phase: Phase 5 - Regression Hardening
-assignee: ''
-agent: "Codex"
-shell_pid: "15240"
-review_status: "has_feedback"
-reviewed_by: "TickTick Bot"
-review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP06.md"
-history:
-- timestamp: '2026-03-11T17:50:00Z'
-  lane: planned
-  agent: codex
-  shell_pid: ''
-  action: Created final convergence package for failure, rollback, telemetry, and burst-concurrency regressions
 requirement_refs:
 - FR-003
 - FR-004
 - FR-005
 - FR-006
 - FR-007
+- FR-008
+- FR-009
 - FR-010
 ---
 

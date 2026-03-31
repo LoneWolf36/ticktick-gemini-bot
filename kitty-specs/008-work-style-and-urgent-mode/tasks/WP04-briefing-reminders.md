@@ -1,7 +1,6 @@
 ---
 work_package_id: WP04
 title: Briefing Reminders
-lane: "done"
 dependencies:
 - WP01
 base_branch: 008-work-style-and-urgent-mode-WP01
@@ -12,17 +11,6 @@ subtasks:
 - T011
 - T012
 phase: Phase 2 - Parallel Execution
-assignee: ''
-agent: "codex"
-shell_pid: "6796"
-review_status: "acknowledged"
-reviewed_by: "TickTick Bot"
-history:
-- timestamp: '2026-03-11T05:44:14Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP04 – Briefing Reminders

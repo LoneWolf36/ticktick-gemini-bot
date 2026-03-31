@@ -36,3 +36,11 @@
 - Never commit `.env`, `services/user_context.js`, OAuth tokens, Telegram chat IDs, or Redis credentials.
 - Start local setup from `.env.example` and `services/user_context.example.js`.
 - When adding a required environment variable, update both `README.md` and `render.yaml`.
+
+## Spec Kitty v3.0.0 Notes
+- **Work Package Frontmatter**: WP files in `kitty-specs/**/tasks/WP*.md` use minimal frontmatter. Deprecated fields removed in v3.0.0 migration:
+  - Removed: `lane`, `agent`, `shell_pid`, `review_status`, `reviewed_by`, `history`, `assignee`, `progress`, `review_feedback_file`
+  - Kept: `work_package_id`, `title`, `dependencies`, `subtasks`, `base_branch`, `base_commit`, `created_at`, `phase`, `requirement_refs`
+- **State Tracking**: WP state is now tracked exclusively via `status.events.jsonl` files in each feature directory
+- **Command Templates**: Planning commands in `.agent/workflows/spec-kitty-*.toml` reference v3.0.0
+- **Platform**: Development platform updated to Linux (was Windows)

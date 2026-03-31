@@ -5,7 +5,7 @@ prompt = '''
 
 # /spec-kitty.accept - Validate Feature Readiness
 
-**Version**: 0.11.0+
+**Version**: 3.0.0
 **Purpose**: Validate all work packages are complete and feature is ready to merge.
 
 ## 📍 WORKING DIRECTORY: Run from MAIN repository

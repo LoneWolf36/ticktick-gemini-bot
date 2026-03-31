@@ -1,7 +1,6 @@
 ---
 work_package_id: WP01
 title: Canonical Pipeline Context Foundation
-lane: "done"
 dependencies: []
 base_branch: master
 base_commit: 8c54eceaa745a46db9622848e7ddf85b8336c0d6
@@ -12,18 +11,6 @@ subtasks:
 - T003
 - T004
 phase: Phase 1 - Context Foundation
-assignee: ''
-agent: "Codex"
-shell_pid: "12216"
-review_status: "has_feedback"
-reviewed_by: "TickTick Bot"
-review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP01.md"
-history:
-- timestamp: '2026-03-11T17:18:05Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
 requirement_refs:
 - FR-001
 - FR-002

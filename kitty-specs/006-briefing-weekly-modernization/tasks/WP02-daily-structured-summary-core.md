@@ -1,7 +1,6 @@
 ---
 work_package_id: WP02
 title: Daily Structured Summary Core
-lane: "done"
 dependencies:
 - WP01
 base_branch: 006-briefing-weekly-modernization-WP01
@@ -14,18 +13,6 @@ subtasks:
 - T009
 - T010
 phase: Phase 2 - Parallel Core
-assignee: 'codex'
-agent: "Codex"
-shell_pid: "31792"
-review_status: "has_feedback"
-reviewed_by: "TickTick Bot"
-review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP02.md"
-history:
-- timestamp: '2026-03-12T21:19:42Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
 requirement_refs:
 - FR-001
 - FR-004

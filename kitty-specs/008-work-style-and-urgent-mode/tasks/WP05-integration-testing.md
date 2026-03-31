@@ -1,7 +1,6 @@
 ---
 work_package_id: WP05
 title: Integration & E2E Testing
-lane: "done"
 dependencies:
 - WP02
 - WP03
@@ -14,17 +13,6 @@ subtasks:
 - T014
 - T015
 phase: Phase 3 - Integration
-assignee: ''
-agent: "codex"
-shell_pid: "25204"
-review_status: "acknowledged"
-reviewed_by: "TickTick Bot"
-history:
-- timestamp: '2026-03-11T05:44:14Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP05 – Integration & E2E Testing

@@ -1,7 +1,6 @@
 ---
 work_package_id: WP01
 title: State Management Contract
-lane: "done"
 dependencies: []
 base_branch: master
 base_commit: 50c1642627d0e5fa1fc224c01c79180363d207a8
@@ -11,17 +10,6 @@ subtasks:
 - T002
 - T003
 phase: Phase 1 - Foundation
-assignee: ''
-agent: "codex"
-shell_pid: "21648"
-review_status: "approved"
-reviewed_by: "TickTick Bot"
-history:
-- timestamp: '2026-03-11T05:44:14Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP01 – State Management Contract

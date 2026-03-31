@@ -1,18 +1,8 @@
 ---
-work_package_id: "WP01"
-title: "TickTick Adapter Module"
-lane: "done"
+work_package_id: WP01
+title: TickTick Adapter Module
 dependencies: []
-subtasks: ["T001", "T002", "T003", "T004", "T005", "T006", "T007", "T008"]
-agent: "Gemini"
-shell_pid: "20788"
-review_status: "has_feedback"
-reviewed_by: "TickTick Bot"
-review_feedback_file: 'C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP01.md'
-history:
-  - date: "2026-03-09"
-    action: "created"
-    by: "spec-kitty.tasks"
+subtasks: [T001, T002, T003, T004, T005, T006, T007, T008]
 ---
 
 # WP01 — TickTick Adapter Module

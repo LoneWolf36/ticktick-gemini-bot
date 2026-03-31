@@ -1,7 +1,6 @@
 ---
 work_package_id: WP05
 title: Retry, Rollback, and Observability Hardening
-lane: "done"
 dependencies:
 - WP01
 - WP03
@@ -14,22 +13,6 @@ subtasks:
 - T015
 - T016
 phase: Phase 4 - Execution Hardening
-assignee: ''
-agent: "codex"
-shell_pid: "12656"
-review_status: "approved"
-reviewed_by: "TickTick Bot"
-history:
-- timestamp: '2026-03-11T17:18:05Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
-- timestamp: '2026-03-11T17:50:00Z'
-  lane: planned
-  agent: codex
-  shell_pid: ''
-  action: Narrowed to implementation hardening so rollback and observability tests can converge later in WP06
 requirement_refs:
 - FR-007
 - FR-008

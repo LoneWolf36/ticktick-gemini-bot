@@ -1,7 +1,6 @@
 ---
 work_package_id: WP05
 title: Manual Command Integration
-lane: "done"
 dependencies:
 - WP02
 - WP03
@@ -16,17 +15,6 @@ subtasks:
 - T025
 - T026
 phase: Phase 3 - Surface Adapters
-assignee: 'codex'
-agent: "codex"
-shell_pid: "26620"
-review_status: "approved"
-reviewed_by: "TickTick Bot"
-history:
-- timestamp: '2026-03-12T21:27:55Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
 requirement_refs:
 - FR-001
 - FR-002

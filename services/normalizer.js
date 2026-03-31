@@ -7,12 +7,16 @@
 const DATE_PATTERNS = /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next\s+\w+|this\s+\w+)\b/gi;
 const PRIORITY_PATTERNS = /^(urgent|important|critical|asap|high priority)[:\s-]*/i;
 const BRACKET_PREFIX = /^\[.*?\]\s*/;
+const LEADING_ARTICLES = /^(a|an|the)\s+/i;
+
+// Common verbs to detect verb-led titles (not exhaustive, but covers common cases)
+const VERB_PATTERNS = /^(add|book|buy|call|cancel|check|clean|complete|create|delete|do|download|draft|email|exercise|fetch|file|finish|fix|get|go|have|join|learn|make|meet|organize|pay|plan|prepare|practice|read|register|remove|reply|review|schedule|send|set|setup|start|study|submit|take|talk|test|update|upload|verify|visit|wait|walk|watch|write)\b/i;
 
 // Content normalization constants
 const FILLER_PATTERNS = [
     /you('ve| have) got this!?/gi,
     /stay (focused|motivated|on track)!?/gi,
-    /remember (your|to|that).*$/gim,
+    /remember (your goals?|that this|to stay|to keep).*$/gim,  // Only strip coaching, not actionable items
     /this (is important|aligns|helps|supports).*$/gim,
     /priority (justification|reasoning|rationale):.*$/gim,
     /consider (breaking|splitting|starting).*$/gim,
@@ -150,14 +154,28 @@ function _formatISO(date, timezone = 'Europe/Dublin', endOfDay = true) {
 }
 
 /**
- * Normalizes a title to be concise, verb-led, and noise-free.
+ * Normalizes a title to be concise, verb-led, and noise-free per FR-006.
+ * 
+ * Transformations applied in order:
+ * 1. Trim whitespace
+ * 2. Strip bracket prefixes like "[Work] "
+ * 3. Strip priority markers (e.g., "URGENT: ", "Critical - ")
+ * 4. Strip date references (e.g., "tomorrow", "next week")
+ * 5. Strip leading articles ("A", "An", "The")
+ * 6. Ensure verb-led (add "Do" prefix if no verb detected)
+ * 7. Capitalize first letter (sentence case)
+ * 8. Truncate to maxLength at word boundary with ellipsis
+ * 
+ * @param {string} rawTitle - The raw title from AX intent
+ * @param {number} maxLength - Maximum character limit (default 100)
+ * @returns {string} Cleaned, verb-led title
  */
-function _normalizeTitle(rawTitle, maxLength = 80) {
+function _normalizeTitle(rawTitle, maxLength = 100) {
     if (!rawTitle) return '';
 
     let title = rawTitle.trim();
 
-    // Strip bracket prefixes like "[Work] "
+    // Strip bracket prefixes like "[Work] " or "[Personal] "
     title = title.replace(BRACKET_PREFIX, '');
 
     // Strip priority markers
@@ -167,15 +185,24 @@ function _normalizeTitle(rawTitle, maxLength = 80) {
     title = title.replace(DATE_PATTERNS, '').replace(/\s+/g, ' ').trim();
 
     // Handle if title becomes empty after stripping
-    if (!title) return rawTitle.trim();
+    if (!title) {
+        // Return original trimmed and capitalized
+        const original = rawTitle.trim();
+        return original.charAt(0).toUpperCase() + original.slice(1).toLowerCase();
+    }
 
-    // Capitalize first letter
+    // Strip leading articles
+    title = title.replace(LEADING_ARTICLES, '');
+
+    // Ensure verb-led: add "Do" prefix if no verb detected
+    if (!VERB_PATTERNS.test(title)) {
+        title = 'Do ' + title;
+    }
+
+    // Capitalize first letter (sentence case) - preserve proper nouns
     title = title.charAt(0).toUpperCase() + title.slice(1);
 
-    // Strip leading articles if followed by verb (basic heuristic)
-    title = title.replace(/^(A|The|An)\s+(?=\w+)/i, '');
-
-    // Truncate
+    // Truncate at word boundary
     if (title.length > maxLength) {
         const truncated = title.substring(0, maxLength);
         const lastSpace = truncated.lastIndexOf(' ');
@@ -186,12 +213,29 @@ function _normalizeTitle(rawTitle, maxLength = 80) {
 }
 
 /**
- * Filters content, keeping useful references and preserving existing content.
+ * Filters content, keeping only useful references (URLs, locations, instructions)
+ * and preserving existing content during updates per FR-007.
+ * 
+ * Content cleaning steps:
+ * 1. Strip motivational/coaching filler phrases
+ * 2. Strip analysis noise and priority justifications
+ * 3. Preserve URLs, locations, specific instructions, technical details
+ * 4. Preserve actionable sub-step lists
+ * 5. For updates: merge with existing content if new content adds value
+ * 
+ * @param {string|null} rawContent - Raw content from AX intent
+ * @param {string|null} existingContent - Existing task content (for updates)
+ * @returns {string|null} Cleaned content or null if empty
  */
 function _normalizeContent(rawContent, existingContent) {
     let newContent = rawContent ? rawContent.trim() : null;
 
     if (newContent) {
+        // Extract and preserve useful elements before stripping filler
+        const urls = newContent.match(/https?:\/\/[^\s]+/gi) || [];
+        const hasLocation = /\b(at|near|in|on)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\b/i.test(newContent);
+        const hasInstructions = /\b(step|instruction|note|important|remember to|make sure|don't|do not)\b/i.test(newContent);
+        
         // Strip filler patterns
         for (const pattern of FILLER_PATTERNS) {
             newContent = newContent.replace(pattern, '').trim();
@@ -199,6 +243,12 @@ function _normalizeContent(rawContent, existingContent) {
 
         // Clean up multiple newlines/spaces
         newContent = newContent.replace(/\n{3,}/g, '\n\n').trim();
+
+        // If content is empty after stripping, check if we extracted useful elements
+        if (!newContent && urls.length > 0) {
+            // Keep only URLs if everything else was filler
+            newContent = urls.join('\n');
+        }
 
         if (!newContent) {
             newContent = null;
@@ -211,10 +261,20 @@ function _normalizeContent(rawContent, existingContent) {
             return existingContent;
         }
 
+        // Check if new content adds value (not just noise)
+        const newValueIsUseful = _contentAddsValue(newContent, existingContent);
+        
+        if (!newValueIsUseful) {
+            // New content is just noise, keep existing unchanged
+            return existingContent;
+        }
+
         // Basic duplication check (if new content is substring of existing)
         if (existingContent.includes(newContent)) {
             return existingContent;
         }
+        
+        // Append new content below existing, separated by divider
         return `${existingContent}\n---\n${newContent}`;
     }
 
@@ -222,7 +282,56 @@ function _normalizeContent(rawContent, existingContent) {
 }
 
 /**
- * Converts natural-language recurrence hints to RRULE strings.
+ * Determines if new content adds value beyond existing content.
+ * Checks for URLs, locations, instructions, or actionable items not already present.
+ * 
+ * @param {string} newContent - New content to evaluate
+ * @param {string} existingContent - Existing content to compare against
+ * @returns {boolean} True if new content adds value
+ */
+function _contentAddsValue(newContent, existingContent) {
+    if (!newContent) return false;
+    
+    const newLower = newContent.toLowerCase();
+    const existingLower = existingContent.toLowerCase();
+    
+    // Extract URLs from new content
+    const newUrls = newContent.match(/https?:\/\/[^\s]+/gi) || [];
+    const existingUrls = existingContent.match(/https?:\/\/[^\s]+/gi) || [];
+    
+    // Check if new content has URLs not in existing
+    const hasNewUrls = newUrls.some(url => !existingUrls.includes(url));
+    
+    // Check for location references not in existing
+    const locationPattern = /\b(at|near|in|on)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\b/gi;
+    const newLocations = newContent.match(locationPattern) || [];
+    const hasNewLocations = newLocations.some(loc => !existingLower.includes(loc.toLowerCase()));
+    
+    // Check for actionable instructions not in existing (case-insensitive)
+    const instructionKeywords = ['step', 'instruction', 'note', 'important', 'remember to', 'make sure', 'call', 'email', 'send', 'submit', 'complete'];
+    const hasNewInstructions = instructionKeywords.some(keyword => 
+        newLower.includes(keyword) && !existingLower.includes(keyword)
+    );
+    
+    // Check if new content has significant length (more than just a few words)
+    const wordCount = newContent.split(/\s+/).length;
+    const hasSubstantialContent = wordCount >= 5;
+    
+    return hasNewUrls || hasNewLocations || hasNewInstructions || hasSubstantialContent;
+}
+
+/**
+ * Converts natural-language recurrence hints to RRULE strings per FR-008.
+ * 
+ * Supported patterns:
+ * - Simple: "daily", "weekdays", "weekends", "weekly", "biweekly", "monthly", "yearly"
+ * - "every <day>": "every monday", "every sunday"
+ * - "every <day> and <day>": "every tuesday and thursday"
+ * - "weekly on <day>": "weekly on monday", "weekly on friday"
+ * - "every other day": RRULE:FREQ=DAILY;INTERVAL=2
+ * 
+ * @param {string|null} repeatHint - Natural language recurrence hint
+ * @returns {string|null} RRULE string or null if unrecognized
  */
 function _convertRepeatHint(repeatHint) {
     if (!repeatHint) return null;
@@ -232,6 +341,26 @@ function _convertRepeatHint(repeatHint) {
     // Check explicit mappings (e.g. daily, weekdays)
     if (REPEAT_MAPPINGS[normalized]) {
         return REPEAT_MAPPINGS[normalized];
+    }
+
+    // Handle "every weekday" as synonym for "weekdays"
+    if (normalized === 'every weekday') {
+        return REPEAT_MAPPINGS['weekdays'];
+    }
+
+    // Handle "every other day"
+    if (normalized === 'every other day') {
+        return 'RRULE:FREQ=DAILY;INTERVAL=2';
+    }
+
+    // Handle "weekly on <day>" pattern
+    const weeklyOnMatch = normalized.match(/^weekly\s+on\s+(\w+)$/);
+    if (weeklyOnMatch) {
+        const dayName = weeklyOnMatch[1].toLowerCase();
+        const dayCode = DAY_MAPPINGS[dayName];
+        if (dayCode) {
+            return `RRULE:FREQ=WEEKLY;BYDAY=${dayCode}`;
+        }
     }
 
     // Handle "every <day>" patterns
@@ -245,6 +374,7 @@ function _convertRepeatHint(repeatHint) {
             return REPEAT_MAPPINGS['weekdays'];
         }
 
+        // Parse multiple days: "every tuesday and thursday" or "every mon, wed, fri"
         const days = remainder.split(/(?:and|,|&)/).map(d => d.trim());
         const matchedDays = days.map(d => DAY_MAPPINGS[d]).filter(Boolean);
 
@@ -379,8 +509,10 @@ function _validateAction(action, minConfidence = 0.5) {
         errors.push(`Confidence ${action.confidence} below threshold ${minConfidence}`);
     }
 
-    if (action.priority !== null && ![0, 1, 3, 5].includes(action.priority)) {
-        errors.push(`Invalid priority: ${action.priority}`);
+    // Validate original priority (before normalization)
+    if (action.originalPriority !== undefined && action.originalPriority !== null && 
+        ![0, 1, 3, 5].includes(action.originalPriority)) {
+        errors.push(`Invalid priority: ${action.originalPriority}`);
     }
 
     if (action.projectId && !/^[a-fA-F0-9]{24}$/.test(action.projectId)) {
@@ -444,6 +576,10 @@ export function normalizeAction(intentAction, options = {}) {
         minConfidence = 0.5
     } = options;
 
+    // Normalize priority but keep original for validation
+    const originalPriority = intentAction.priority;
+    const normalizedPriority = [0, 1, 3, 5].includes(originalPriority) ? originalPriority : null;
+
     const normalized = {
         type: _resolveActionType(intentAction, options.existingTask),
         confidence: intentAction.confidence !== undefined ? intentAction.confidence : 1.0,
@@ -451,7 +587,8 @@ export function normalizeAction(intentAction, options = {}) {
         originalProjectId: options.existingTask?.projectId || null,
         title: _normalizeTitle(intentAction.title, maxTitleLength),
         content: _normalizeContent(intentAction.content, existingTaskContent),
-        priority: [0, 1, 3, 5].includes(intentAction.priority) ? intentAction.priority : null,
+        priority: normalizedPriority,
+        originalPriority: originalPriority,  // Keep for validation
         projectId: _resolveProject(intentAction.projectHint, projects, defaultProjectId),
         dueDate: _expandDueDate(intentAction.dueDate, options),
         repeatFlag: _convertRepeatHint(intentAction.repeatHint),

@@ -1,7 +1,6 @@
 ---
 work_package_id: WP02
 title: Entry-Point Context Wiring
-lane: "done"
 dependencies:
 - WP01
 base_branch: 003-pipeline-hardening-and-regression-WP01
@@ -12,23 +11,6 @@ subtasks:
 - T006
 - T007
 phase: Phase 2 - Story 1 Context Wiring
-assignee: ''
-agent: "Codex"
-shell_pid: "26852"
-review_status: "has_feedback"
-reviewed_by: "TickTick Bot"
-review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP02.md"
-history:
-- timestamp: '2026-03-11T17:18:05Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
-- timestamp: '2026-03-11T17:50:00Z'
-  lane: planned
-  agent: codex
-  shell_pid: ''
-  action: Scope tightened to caller wiring so Story 1 regression work can run in parallel in WP04
 requirement_refs:
 - FR-001
 - FR-002

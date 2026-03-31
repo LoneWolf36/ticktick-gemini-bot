@@ -1,7 +1,6 @@
 ---
 work_package_id: WP06
 title: Scheduler Integration and Delivery Parity
-lane: "done"
 dependencies:
 - WP02
 - WP03
@@ -16,18 +15,6 @@ subtasks:
 - T030
 - T031
 phase: Phase 3 - Surface Adapters
-assignee: 'codex'
-agent: "codex"
-shell_pid: "2996"
-review_status: "has_feedback"
-reviewed_by: "TickTick Bot"
-review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP06.md"
-history:
-- timestamp: '2026-03-12T21:27:55Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
 requirement_refs:
 - FR-003
 - FR-006

@@ -1,7 +1,6 @@
 ---
 work_package_id: WP02
 title: Telegram Bot Interface
-lane: "done"
 dependencies:
 - WP01
 base_branch: 008-work-style-and-urgent-mode-WP01
@@ -12,18 +11,6 @@ subtasks:
 - T005
 - T006
 phase: Phase 2 - Parallel Execution
-assignee: ''
-agent: "codex"
-shell_pid: "12188"
-review_status: "acknowledged"
-reviewed_by: "TickTick Bot"
-review_feedback_file: "C:\\Users\\Huzefa Khan\\AppData\\Local\\Temp\\spec-kitty-review-feedback-WP02.md"
-history:
-- timestamp: '2026-03-11T05:44:14Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
 ---
 
 # Work Package Prompt: WP02 - Telegram Bot Interface

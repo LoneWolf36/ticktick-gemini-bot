@@ -1099,24 +1099,24 @@ test('TickTickAdapter includes the existing projectId when updating only a due d
   let updatePayload = null;
   const client = Object.create(TickTickClient.prototype);
   client.getTask = async () => ({
-    id: 'task-1',
-    projectId: 'project-1',
+    id: '507f1f77bcf86cd799439011',
+    projectId: '507f191e810c19729de860ea',
     content: '',
     priority: 0,
     status: 0,
   });
   client.updateTask = async (_taskId, payload) => {
     updatePayload = payload;
-    return { id: 'task-1', ...payload };
+    return { id: '507f1f77bcf86cd799439011', ...payload };
   };
 
   const adapter = new TickTickAdapter(client);
-  await adapter.updateTask('task-1', {
-    originalProjectId: 'project-1',
+  await adapter.updateTask('507f1f77bcf86cd799439011', {
+    originalProjectId: '507f191e810c19729de860ea',
     dueDate: '2026-03-11T09:30:00.000+0000',
   });
 
-  assert.equal(updatePayload.projectId, 'project-1');
+  assert.equal(updatePayload.projectId, '507f191e810c19729de860ea');
   assert.equal(updatePayload.dueDate, '2026-03-11T09:30:00.000+0000');
   assert.equal(Object.hasOwn(updatePayload, 'originalProjectId'), false);
 });
@@ -1380,7 +1380,7 @@ test('executeActions policy sweep inherits urgent maintenance priority from shar
   const currentTasks = [
     {
       id: 'rent-1',
-      title: 'Pay rent',
+      title: 'Schedule maintenance check',
       projectId: 'p-inbox',
       projectName: 'Inbox',
       priority: 0,

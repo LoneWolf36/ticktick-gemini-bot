@@ -1,7 +1,6 @@
 ---
 work_package_id: WP04
 title: Integration Seams and Regression Coverage
-lane: "done"
 dependencies:
 - WP01
 - WP02
@@ -13,17 +12,6 @@ subtasks:
 - T017
 - T018
 phase: Phase 4 - Adoption and Verification
-assignee: ''
-agent: "codex"
-shell_pid: "11900"
-review_status: "approved"
-reviewed_by: "TickTick Bot"
-history:
-- timestamp: '2026-03-10T23:54:11Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
 requirement_refs:
 - FR-010
 ---

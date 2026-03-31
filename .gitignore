@@ -19,3 +19,8 @@ services/user_context.js
 .github/copilot/
 .kittify/.dashboard
 .kittify/missions/__pycache__/
+.kittify/runtime/
+.kittify/merge-state.json
+.kittify/events/
+.kittify/dossiers/
+kitty-specs/**/.kittify/dossiers/

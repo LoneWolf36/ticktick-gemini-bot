@@ -1,7 +1,6 @@
 ---
 work_package_id: WP04
 title: Deterministic Summary Formatter
-lane: "done"
 dependencies:
 - WP01
 base_branch: 006-briefing-weekly-modernization-WP01
@@ -14,17 +13,6 @@ subtasks:
 - T020
 - T021
 phase: Phase 2 - Parallel Core
-assignee: 'codex'
-agent: "codex"
-shell_pid: "31572"
-review_status: "approved"
-reviewed_by: "TickTick Bot"
-history:
-- timestamp: '2026-03-12T21:27:55Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
 requirement_refs:
 - FR-001
 - FR-002

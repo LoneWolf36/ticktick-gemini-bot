@@ -6,5 +6,6 @@
   "mission": "software-dev",
   "target_branch": "master",
   "source_description": "Add a safe structured mutation path for update, complete, and delete operations when the user clearly refers to one existing task.",
-  "vcs": "git"
+  "vcs": "git",
+  "created_at": "2026-03-12T14:21:00.642891+00:00"
 }

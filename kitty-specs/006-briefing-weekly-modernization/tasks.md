@@ -284,3 +284,12 @@
 | T034 | Add cross-path parity regressions | WP07 | P2 | No |
 | T035 | Validate quickstart scenarios and stale notes | WP07 | P2 | No |
 | T036 | Remove obsolete legacy daily/weekly helpers | WP07 | P2 | No |
+
+<!-- status-model:start -->
+## Canonical Status (Generated)
+- WP01: done
+- WP03: done
+- WP04: done
+- WP05: done
+- WP07: done
+<!-- status-model:end -->

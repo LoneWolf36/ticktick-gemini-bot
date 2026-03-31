@@ -1,7 +1,6 @@
 ---
 work_package_id: WP04
 title: Direct Pipeline Harness and Story 1 Coverage
-lane: "done"
 dependencies:
 - WP01
 subtasks:
@@ -9,23 +8,6 @@ subtasks:
 - T018
 - T019
 phase: Phase 2 - Direct Harness Foundation
-assignee: ''
-agent: "codex"
-shell_pid: "24356"
-review_status: "has_feedback"
-reviewed_by: "TickTick Bot"
-review_feedback_file: "C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP04.md"
-history:
-- timestamp: '2026-03-11T17:18:05Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
-- timestamp: '2026-03-11T17:50:00Z'
-  lane: planned
-  agent: codex
-  shell_pid: ''
-  action: Split out direct harness work from later regression closure to maximize parallelism
 requirement_refs:
 - FR-001
 - FR-002

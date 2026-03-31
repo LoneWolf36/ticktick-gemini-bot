@@ -1,7 +1,6 @@
 ---
 work_package_id: WP01
 title: Foundation - Shared Summary Surface Contracts
-lane: "done"
 dependencies: []
 base_branch: master
 base_commit: aae6aa2d3d95386d8c29718b8302d2a2248d5467
@@ -13,17 +12,6 @@ subtasks:
 - T004
 - T005
 phase: Phase 1 - Foundation
-assignee: 'codex'
-agent: "Codex"
-shell_pid: "29216"
-review_status: "approved"
-reviewed_by: "TickTick Bot"
-history:
-- timestamp: '2026-03-12T21:19:42Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
 requirement_refs:
 - FR-003
 - FR-004

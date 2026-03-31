@@ -175,3 +175,11 @@ description: "Work package task list template for feature implementation"
 | T013       | E2E test User Story 1 | WP05         | P0       | No        |
 | T014       | E2E test User Story 2 | WP05         | P0       | No        |
 | T015       | E2E test User Story 3 | WP05         | P0       | No        |
+
+<!-- status-model:start -->
+## Canonical Status (Generated)
+- WP01: done
+- WP02: done
+- WP04: done
+- WP05: done
+<!-- status-model:end -->

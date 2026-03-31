@@ -6,10 +6,10 @@ import {
     buildTaskCard,
     sleep, userLocaleString, isAuthorized, guardAccess, buildUndoEntry,
     filterProcessedThisWeek, buildQuotaExhaustedMessage,
-    parseDateStringToTickTickISO, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent
+    parseDateStringToTickTickISO, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent, pendingToAnalysis
 } from './utils.js';
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
-import { createGoalThemeProfile, normalizePriorityCandidate, rankPriorityCandidates } from '../services/execution-prioritization.js';
+import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
 import { detectUrgentModeIntent } from '../services/ax-intent.js';
 
 export function registerCommands(bot, ticktick, gemini, adapter, pipeline, config = {}) {
@@ -728,85 +728,6 @@ export async function executeActions(actions, adapter, currentTasks, options = {
         typeof options.userContext === 'string' ? options.userContext : (process.env.USER_CONTEXT || ''),
         { source: typeof options.userContext === 'string' ? 'user_context' : (process.env.USER_CONTEXT ? 'env' : 'fallback') },
     );
-    const policyDecisionCache = new Map();
-
-    const getPolicySweepDecision = (task) => {
-        const cacheKey = task?.id || task?.taskId || `${task?.title || ''}|${task?.projectName || ''}|${task?.dueDate || ''}`;
-        if (policyDecisionCache.has(cacheKey)) {
-            return policyDecisionCache.get(cacheKey);
-        }
-
-        const ranking = rankPriorityCandidates(
-            [normalizePriorityCandidate(task)],
-            {
-                goalThemeProfile: policyGoalThemeProfile,
-                nowIso: options.nowIso,
-                workStyleMode: options.workStyleMode,
-                urgentMode: options.urgentMode,
-                stateSource: options.stateSource,
-            },
-        );
-        const decision = ranking.topRecommendation || null;
-        policyDecisionCache.set(cacheKey, decision);
-        return decision;
-    };
-
-    const inferPriorityLabel = (task, explicitPriority = undefined) => {
-        const normalizedPriority = explicitPriority ?? task?.priority;
-        if (normalizedPriority === 5) return 'career-critical';
-        if (normalizedPriority === 1) return 'life-admin';
-        if (normalizedPriority === 3) return 'important';
-
-        const decision = getPolicySweepDecision(task);
-        const rationaleText = decision?.rationaleText?.toLowerCase() || '';
-        if (decision?.rationaleCode === 'goal_alignment') {
-            return 'career-critical';
-        }
-        if (decision?.rationaleCode === 'urgency' || decision?.exceptionApplied === true) {
-            return 'important';
-        }
-        if (rationaleText.includes('career-signaling')) {
-            return 'career-critical';
-        }
-        if (rationaleText.includes('consequential admin')) {
-            return 'life-admin';
-        }
-
-        // Fallback-only legacy bucket inference when the shared result is intentionally degraded.
-        const haystack = `${task?.title || ''} ${task?.projectName || ''}`.toLowerCase();
-        if (/\b(system design|dsa|interview|resume|leetcode|backend|career|study|assignment|exam)\b/i.test(haystack)) {
-            return 'career-critical';
-        }
-        if (/\b(bank|bill|grocery|admin|errand|password|credential|home|apartment|rent|insurance)\b/i.test(haystack)) {
-            return 'life-admin';
-        }
-        return 'important';
-    };
-
-    const inferPriorityForPolicy = (task) => {
-        const label = inferPriorityLabel(task);
-        if (label === 'career-critical') return 5;
-        if (label === 'life-admin') return 1;
-        return 3;
-    };
-
-    const inferProjectIdForPolicy = (task, projects = []) => {
-        if (!Array.isArray(projects) || projects.length === 0) return null;
-        const text = `${task?.title || ''} ${task?.projectName || ''} ${task?.content || ''}`.toLowerCase();
-        const byFragment = (fragment) =>
-            projects.find((p) => (p.name || '').toLowerCase().includes(fragment))?.id || null;
-        const inferredPriorityLabel = inferPriorityLabel(task);
-        if (/\b(health|sleep|exercise|workout|doctor|therapy|recovery|burnout|mental)\b/.test(text)) {
-            return byFragment('health') || byFragment('personal') || null;
-        }
-        if (inferredPriorityLabel === 'career-critical') {
-            return byFragment('career') || byFragment('study') || null;
-        }
-        if (inferredPriorityLabel === 'life-admin' || /\b(bank|bill|grocery|get |print|admin|errand|shopping|passport|visa|password|credential|wifi|home)\b/.test(text)) {
-            return byFragment('admin') || byFragment('personal') || null;
-        }
-        return byFragment('admin') || byFragment('personal') || null;
-    };
 
     const buildPolicySweepActions = (planned, tasks, projects = [], scopeTaskIds = null, sweepAllActive = false) => {
         const actionByTask = new Map();
@@ -841,13 +762,13 @@ export async function executeActions(actions, adapter, currentTasks, options = {
             const hasValidPlannedPriority = [1, 3, 5].includes(plannedPriority);
             const hasValidCurrentPriority = [1, 3, 5].includes(task.priority);
             if (!hasValidPlannedPriority && !hasValidCurrentPriority) {
-                fix.priority = inferPriorityForPolicy(task);
+                fix.priority = inferPriorityValueFromTask(task, { goalThemeProfile: policyGoalThemeProfile, nowIso: options.nowIso, workStyleMode: options.workStyleMode, urgentMode: options.urgentMode });
             } else if (plannedPriority === 0) {
-                fix.priority = inferPriorityForPolicy(task);
+                fix.priority = inferPriorityValueFromTask(task, { goalThemeProfile: policyGoalThemeProfile, nowIso: options.nowIso, workStyleMode: options.workStyleMode, urgentMode: options.urgentMode });
             }
 
             if (inInbox && !pendingUpdate?.changes?.projectId) {
-                const targetProjectId = inferProjectIdForPolicy(task, projects);
+                const targetProjectId = inferProjectIdFromTask(task, projects, { goalThemeProfile: policyGoalThemeProfile, nowIso: options.nowIso, workStyleMode: options.workStyleMode, urgentMode: options.urgentMode });
                 if (targetProjectId && targetProjectId !== task.projectId) {
                     fix.projectId = targetProjectId;
                 }
@@ -893,9 +814,9 @@ export async function executeActions(actions, adapter, currentTasks, options = {
         }
     }
 
-    const resolveDueDate = (value, task, explicitPriority) => {
+    const resolveDueDate = (value, explicitPriority) => {
         if (!value) return null;
-        let priorityLabel = inferPriorityLabel(task, explicitPriority);
+        const priorityLabel = explicitPriority === 5 ? 'career-critical' : explicitPriority === 1 ? 'life-admin' : 'important';
         return scheduleToDate(value, { priorityLabel }) || parseDateStringToTickTickISO(value, { priorityLabel, slotMode: 'priority' });
     };
 
@@ -906,7 +827,7 @@ export async function executeActions(actions, adapter, currentTasks, options = {
             if (action.type === 'create') {
                 const changes = action.changes || {};
                 if (changes.title) {
-                    let safeDueDate = resolveDueDate(changes.dueDate, {}, changes.priority);
+                    let safeDueDate = resolveDueDate(changes.dueDate, changes.priority);
                     const createPayload = { ...changes, title: changes.title };
                     if (safeDueDate) createPayload.dueDate = safeDueDate;
 
@@ -942,7 +863,7 @@ export async function executeActions(actions, adapter, currentTasks, options = {
                     continue;
                 }
 
-                let safeDueDate = resolveDueDate(changes.dueDate || changes.suggested_schedule, task, changes.priority);
+                let safeDueDate = resolveDueDate(changes.dueDate || changes.suggested_schedule, changes.priority);
 
                 const updatePayload = {
                     ...changes,
@@ -982,7 +903,7 @@ export async function executeActions(actions, adapter, currentTasks, options = {
                     dropChanges.dueDate !== undefined;
 
                 if (hasTickTickMutation) {
-                    const safeDueDate = resolveDueDate(dropChanges.dueDate, task, 0);
+                    const safeDueDate = resolveDueDate(dropChanges.dueDate, 0);
                     const updatePayload = {
                         projectId: dropChanges.projectId || task.projectId,
                         originalProjectId: task.projectId,

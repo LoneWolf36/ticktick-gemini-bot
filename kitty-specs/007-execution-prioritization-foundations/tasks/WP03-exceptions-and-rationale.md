@@ -1,7 +1,6 @@
 ---
 work_package_id: WP03
 title: Exceptions and Rationale
-lane: "done"
 dependencies:
 - WP02
 subtasks:
@@ -10,17 +9,6 @@ subtasks:
 - T012
 - T013
 phase: Phase 3 - Recovery-Aware Overrides
-assignee: ''
-agent: "codex"
-shell_pid: "11900"
-review_status: "approved"
-reviewed_by: "TickTick Bot"
-history:
-- timestamp: '2026-03-10T23:54:11Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
 requirement_refs:
 - FR-005
 - FR-007

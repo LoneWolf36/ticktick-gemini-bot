@@ -172,7 +172,7 @@ export class TickTickClient {
 
     async getAllTasks() {
         const projects = await this.getProjects();
-        this._cachedProjects = projects; // Cache for use by Gemini analyzeTask
+        this._cachedProjects = projects;
         const allTasks = [];
 
         for (const project of projects) {

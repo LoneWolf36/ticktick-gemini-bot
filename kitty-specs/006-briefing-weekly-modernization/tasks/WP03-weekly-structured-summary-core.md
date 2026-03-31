@@ -1,7 +1,6 @@
 ---
 work_package_id: WP03
 title: Weekly Structured Summary Core
-lane: "done"
 dependencies:
 - WP01
 base_branch: 006-briefing-weekly-modernization-WP01
@@ -15,17 +14,6 @@ subtasks:
 - T015
 - T016
 phase: Phase 2 - Parallel Core
-assignee: 'codex'
-agent: "codex"
-shell_pid: "14756"
-review_status: "approved"
-reviewed_by: "TickTick Bot"
-history:
-- timestamp: '2026-03-12T21:19:42Z'
-  lane: planned
-  agent: system
-  shell_pid: ''
-  action: Prompt generated via /spec-kitty.tasks
 requirement_refs:
 - FR-002
 - FR-004
