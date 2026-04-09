@@ -13,15 +13,45 @@ Functions are dependency-light (stdlib only) and fully typed.
 
 from __future__ import annotations
 
+import importlib.util
 import json
 import re
 import subprocess
+import sys
 from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
+from types import ModuleType
 from typing import Dict, List, Optional, Tuple
 
 from specify_cli.core.paths import get_main_repo_root, locate_project_root
+
+# ---------------------------------------------------------------------------
+# Module loading utility
+# ---------------------------------------------------------------------------
+
+
+def load_module_from_file(filepath: Path, module_name: str) -> ModuleType:
+    """Load a Python module directly from a file path.
+
+    Args:
+        filepath: Path to the Python file to load.
+        module_name: Name to assign to the loaded module.
+
+    Returns:
+        The loaded and executed module object.
+
+    Raises:
+        ImportError: If the module spec cannot be created or loaded.
+    """
+    spec = importlib.util.spec_from_file_location(module_name, str(filepath))
+    if spec is None or spec.loader is None:
+        raise ImportError(f"Cannot create spec for {filepath}")
+    mod = importlib.util.module_from_spec(spec)
+    sys.modules[module_name] = mod
+    spec.loader.exec_module(mod)
+    return mod
+
 
 # ---------------------------------------------------------------------------
 # Constants
@@ -750,6 +780,7 @@ __all__ = [
     "git_status_lines",
     "is_legacy_format",
     "load_meta",
+    "load_module_from_file",
     "locate_work_package",
     "match_frontmatter_line",
     "normalize_note",

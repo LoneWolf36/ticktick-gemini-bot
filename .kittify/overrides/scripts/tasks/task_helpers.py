@@ -41,6 +41,7 @@ _SHARED_SYMBOLS = [
     "git_status_lines",
     "is_legacy_format",
     "load_meta",
+    "load_module_from_file",
     "locate_work_package",
     "match_frontmatter_line",
     "normalize_note",
@@ -50,17 +51,6 @@ _SHARED_SYMBOLS = [
     "set_scalar",
     "split_frontmatter",
 ]
-
-
-def _load_module_from_file(filepath: Path, module_name: str) -> ModuleType:
-    """Load a Python module directly from a file path."""
-    spec = importlib.util.spec_from_file_location(module_name, str(filepath))
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot create spec for {filepath}")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = mod
-    spec.loader.exec_module(mod)
-    return mod
 
 
 def _import_shared() -> ModuleType:
@@ -78,12 +68,12 @@ def _import_shared() -> ModuleType:
     # Strategy 2: sibling file (.kittify/scripts/tasks/task_helpers_shared.py)
     local_shared = script_dir / "task_helpers_shared.py"
     if local_shared.is_file():
-        return _load_module_from_file(local_shared, "task_helpers_shared")
+        return load_module_from_file(local_shared, "task_helpers_shared")
 
     # Strategy 3: source tree (src/specify_cli/scripts/tasks/ -> src/specify_cli/)
     source_shared = script_dir.parents[1] / "task_helpers_shared.py"
     if source_shared.is_file():
-        return _load_module_from_file(
+        return load_module_from_file(
             source_shared, "specify_cli.task_helpers_shared"
         )
 

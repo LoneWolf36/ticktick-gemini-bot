@@ -24,6 +24,7 @@ from typing import Mapping, Optional
 
 from task_helpers import (
     TaskCliError,
+    load_module_from_file,
     run_git,
 )
 
@@ -31,17 +32,6 @@ from task_helpers import (
 # ---------------------------------------------------------------------------
 # Core module import resolution
 # ---------------------------------------------------------------------------
-
-def _load_module_from_file(filepath: Path, module_name: str) -> ModuleType:
-    """Load a Python module directly from a file path."""
-    spec = importlib.util.spec_from_file_location(module_name, str(filepath))
-    if spec is None or spec.loader is None:
-        raise ImportError(f"Cannot create spec for {filepath}")
-    mod = importlib.util.module_from_spec(spec)
-    sys.modules[module_name] = mod
-    spec.loader.exec_module(mod)
-    return mod
-
 
 def _import_acceptance_core() -> ModuleType:
     """Import the acceptance core module from the best available source."""
@@ -58,12 +48,12 @@ def _import_acceptance_core() -> ModuleType:
     # Strategy 2: sibling file (.kittify/scripts/tasks/acceptance_core.py)
     local_core = script_dir / "acceptance_core.py"
     if local_core.is_file():
-        return _load_module_from_file(local_core, "acceptance_core")
+        return load_module_from_file(local_core, "acceptance_core")
 
     # Strategy 3: source tree (src/specify_cli/scripts/tasks/ -> src/specify_cli/core/)
     source_core = script_dir.parents[1] / "core" / "acceptance_core.py"
     if source_core.is_file():
-        return _load_module_from_file(
+        return load_module_from_file(
             source_core, "specify_cli.core.acceptance_core"
         )
 
