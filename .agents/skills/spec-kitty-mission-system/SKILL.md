@@ -1,0 +1,1 @@
+/home/lonewolf09/.agents/skills/spec-kitty-mission-system/SKILL.md
