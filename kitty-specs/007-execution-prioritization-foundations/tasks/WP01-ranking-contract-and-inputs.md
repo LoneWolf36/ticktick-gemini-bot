@@ -2,16 +2,23 @@
 work_package_id: WP01
 title: Ranking Contract and Inputs
 dependencies: []
+requirement_refs:
+- FR-001
+- FR-002
+- FR-003
 subtasks:
 - T001
 - T002
 - T003
 - T004
 phase: Phase 1 - Contract Definition
-requirement_refs:
-- FR-001
-- FR-002
-- FR-003
+authoritative_surface: kitty-specs/007-execution-prioritization-foundations/
+execution_mode: code_change
+mission_id: 01KNT55PMYXNH3ATTB29REH4RR
+owned_files:
+- kitty-specs/007-execution-prioritization-foundations/data-model.md
+- kitty-specs/007-execution-prioritization-foundations/research.md
+wp_code: WP01
 ---
 
 # Work Package Prompt: WP01 - Ranking Contract and Inputs

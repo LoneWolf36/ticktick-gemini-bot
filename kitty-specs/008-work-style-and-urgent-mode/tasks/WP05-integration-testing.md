@@ -13,6 +13,15 @@ subtasks:
 - T014
 - T015
 phase: Phase 3 - Integration
+authoritative_surface: ''
+execution_mode: code_change
+mission_id: 01KNT55PMZK4VQERH6AB2FE18B
+owned_files:
+- kitty-specs/008-work-style-and-urgent-mode/plan.md
+- kitty-specs/008-work-style-and-urgent-mode/tasks.md
+- tests/e2e-live-checklist.mjs
+- tests/e2e-live-ticktick.mjs
+wp_code: WP05
 ---
 
 # Work Package Prompt: WP05 – Integration & E2E Testing

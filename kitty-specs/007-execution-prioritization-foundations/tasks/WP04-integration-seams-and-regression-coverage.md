@@ -5,6 +5,8 @@ dependencies:
 - WP01
 - WP02
 - WP03
+requirement_refs:
+- FR-010
 subtasks:
 - T014
 - T015
@@ -12,8 +14,15 @@ subtasks:
 - T017
 - T018
 phase: Phase 4 - Adoption and Verification
-requirement_refs:
-- FR-010
+authoritative_surface: ''
+execution_mode: code_change
+mission_id: 01KNT55PMYXNH3ATTB29REH4RR
+owned_files:
+- kitty-specs/007-execution-prioritization-foundations/data-model.md
+- kitty-specs/007-execution-prioritization-foundations/research.md
+- tests/regression.test.js
+- tests/run-regression-tests.mjs
+wp_code: WP04
 ---
 
 # Work Package Prompt: WP04 - Integration Seams and Regression Coverage

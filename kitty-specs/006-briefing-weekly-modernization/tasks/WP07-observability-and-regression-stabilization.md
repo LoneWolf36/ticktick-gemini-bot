@@ -4,6 +4,10 @@ title: Observability and Regression Stabilization
 dependencies:
 - WP05
 - WP06
+requirement_refs:
+- FR-003
+- FR-006
+- FR-007
 base_branch: 006-briefing-weekly-modernization-WP05
 base_commit: b063d36809c6b27c372d2ded77e5dc264ec06ed1
 created_at: '2026-03-13T18:16:49.563968+00:00'
@@ -14,10 +18,22 @@ subtasks:
 - T035
 - T036
 phase: Phase 4 - Stabilization
-requirement_refs:
-- FR-003
-- FR-006
-- FR-007
+authoritative_surface: ''
+execution_mode: code_change
+mission_id: 01KNT55PMYXNH3ATTB29REH4RQ
+owned_files:
+- kitty-specs/006-briefing-weekly-modernization/contracts/summary-surfaces.openapi.yaml
+- kitty-specs/006-briefing-weekly-modernization/data-model.md
+- kitty-specs/006-briefing-weekly-modernization/plan.md
+- kitty-specs/006-briefing-weekly-modernization/quickstart.md
+- kitty-specs/006-briefing-weekly-modernization/research.md
+- kitty-specs/006-briefing-weekly-modernization/spec.md
+- tests/e2e-live-checklist.mjs
+- tests/e2e-live-ticktick.mjs
+- tests/regression.test.js
+- tests/regression.test.js.
+- tests/run-regression-tests.mjs
+wp_code: WP07
 ---
 
 # Work Package Prompt: WP07 - Observability and Regression Stabilization

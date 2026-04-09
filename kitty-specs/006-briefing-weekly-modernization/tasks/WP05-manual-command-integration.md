@@ -5,6 +5,13 @@ dependencies:
 - WP02
 - WP03
 - WP04
+requirement_refs:
+- FR-001
+- FR-002
+- FR-003
+- FR-004
+- FR-006
+- FR-007
 base_branch: 006-briefing-weekly-modernization-WP05-merge-base
 base_commit: 662cc0a43dcb0690276ca1de62f0a31ace368336
 created_at: '2026-03-13T17:42:37.016796+00:00'
@@ -15,13 +22,19 @@ subtasks:
 - T025
 - T026
 phase: Phase 3 - Surface Adapters
-requirement_refs:
-- FR-001
-- FR-002
-- FR-003
-- FR-004
-- FR-006
-- FR-007
+authoritative_surface: ''
+execution_mode: code_change
+mission_id: 01KNT55PMYXNH3ATTB29REH4RQ
+owned_files:
+- kitty-specs/006-briefing-weekly-modernization/contracts/summary-surfaces.openapi.yaml
+- kitty-specs/006-briefing-weekly-modernization/data-model.md
+- kitty-specs/006-briefing-weekly-modernization/plan.md
+- kitty-specs/006-briefing-weekly-modernization/quickstart.md
+- kitty-specs/006-briefing-weekly-modernization/research.md
+- kitty-specs/006-briefing-weekly-modernization/spec.md
+- tests/regression.test.js
+- tests/run-regression-tests.mjs
+wp_code: WP05
 ---
 
 # Work Package Prompt: WP05 - Manual Command Integration

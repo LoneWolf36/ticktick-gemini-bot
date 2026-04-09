@@ -6,6 +6,12 @@ base_branch: 001-task-operations-pipeline-WP04-merge-base
 base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
 created_at: '2026-03-10T15:24:28.423102+00:00'
 subtasks: [T017, T018, T019, T020]
+authoritative_surface: src/
+execution_mode: code_change
+mission_id: 01KNT55PMWQ9GQH7JH6E61VDZD
+owned_files:
+- src/**
+wp_code: WP04
 ---
 
 # WP04 — Normalizer: Project Resolution, Dates & Validation

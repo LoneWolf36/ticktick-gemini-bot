@@ -4,155 +4,151 @@ title: Retry, Rollback, and Observability Hardening
 dependencies:
 - WP01
 - WP03
+requirement_refs:
+- FR-007
+- FR-008
+- FR-009
 base_branch: 003-pipeline-hardening-and-regression-WP05-merge-base
-base_commit: 1e390162039ac4c9bf35864ef90e45e25f225add
-created_at: '2026-03-11T20:33:26.419166+00:00'
+base_commit: 111cae226a11249ff7a2270848cd289dfdd6b596
+created_at: '2026-04-01T00:22:34+01:00'
 subtasks:
 - T013
 - T014
 - T015
 - T016
 phase: Phase 4 - Execution Hardening
-requirement_refs:
-- FR-007
-- FR-008
-- FR-009
+authoritative_surface: kitty-specs/003-pipeline-hardening-and-regression/
+execution_mode: code_change
+mission_id: 01KNT55PMXDGM4VDMWY0YT3CQV
+owned_files:
+- kitty-specs/003-pipeline-hardening-and-regression/contracts/telemetry-events.schema.json
+- kitty-specs/003-pipeline-hardening-and-regression/plan.md
+- kitty-specs/003-pipeline-hardening-and-regression/spec.md
+wp_code: WP05
 ---
 
 # Work Package Prompt: WP05 - Retry, Rollback, and Observability Hardening
 
-## Objectives and Success Criteria
+## IMPORTANT: Review Feedback Status
+
+**Read this first if you are implementing this task.**
+
+- **Has review feedback?** Check the current review state before starting.
+- **Address all review feedback** before marking the package complete.
+- **Report progress** by appending Activity Log entries in chronological order.
+
+---
+
+## Review Feedback
+
+> Populated by `/spec-kitty.review` when changes are requested.
+
+*[This section is empty initially. Any later feedback becomes mandatory scope.]*  
+
+---
+
+## Markdown Formatting
+
+Wrap HTML/XML tags in backticks: `` `<div>` ``, `` `<script>` ``  
+Use language identifiers in fenced code blocks.
+
+---
+
+## Objectives & Success Criteria
 
 - Track every executed action explicitly.
 - Retry one failed action once, then roll back earlier successful writes through compensating adapter calls.
-- Emit request-correlated logs, metrics hooks, and tracing scaffolding across request stages.
+- Emit request-correlated telemetry across request stages without breaking the adapter boundary.
+- Keep rollback behavior honest and explicitly classifiable when compensation is partial or unsupported.
 
-Success looks like:
-- per-action execution records with attempts, status, failure class, and rollback metadata
-- retry-once behavior for multi-action failures
-- rollback orchestration above `TickTickAdapter`
-- explicit classification when rollback itself fails
-- structured telemetry emitted for request, AX, normalization, execution, rollback, and terminal result
-
-## Context and Constraints
+## Context & Constraints
 
 - Implementation command: `spec-kitty implement WP05 --base WP03`
-- This package depends on:
-  - WP01 for canonical request context
-  - WP03 for explicit failure classes and message semantics
-- The constitution forbids scattering direct TickTick client calls outside the adapter. Respect that even when adding rollback.
-- Observability scope is full for this feature, but vendor integration is not required. Keep it local and vendor-neutral.
-
-Relevant documents:
-- `kitty-specs/003-pipeline-hardening-and-regression/spec.md`
-- `kitty-specs/003-pipeline-hardening-and-regression/research.md`
-- `kitty-specs/003-pipeline-hardening-and-regression/data-model.md`
-- `kitty-specs/003-pipeline-hardening-and-regression/contracts/pipeline.openapi.yaml`
-- `kitty-specs/003-pipeline-hardening-and-regression/contracts/telemetry-events.schema.json`
-
-Relevant code:
-- `services/pipeline.js`
-- `services/ticktick-adapter.js`
-- `services/ticktick.js`
-- `services/ax-intent.js`
-- `services/normalizer.js`
-
-Operational constraints:
-- Rollback must be best-effort and explicit, not magical.
-- Compensation behavior needs enough pre-write data to restore previous state when possible.
+- Canonical references:
+  - `kitty-specs/003-pipeline-hardening-and-regression/spec.md`
+  - `kitty-specs/003-pipeline-hardening-and-regression/plan.md`
+  - `kitty-specs/003-pipeline-hardening-and-regression/contracts/telemetry-events.schema.json`
+  - `services/pipeline.js`
+  - `services/pipeline-observability.js`
+  - `services/ticktick-adapter.js`
+  - `services/ticktick.js`
+- Rollback must stay above `TickTickAdapter`; do not bypass the adapter boundary.
+- Observability remains vendor-neutral and local/no-op by default.
 - Request IDs must flow through telemetry and execution records consistently.
+- Build on WP03 failure classes rather than creating a competing result model.
 
-## Subtasks and Detailed Guidance
+## Subtasks & Detailed Guidance
 
 ### Subtask T013 - Add execution records and rollback-step capture
 - **Purpose**: Make action-by-action execution inspectable and reversible.
 - **Steps**:
   1. Extend pipeline execution bookkeeping to create one execution record per normalized action.
-  2. Capture action index, normalized action payload, attempt count, execution status, error message, failure class, and optional rollback step.
-  3. Record enough pre-write state for later compensation, especially for update and delete flows.
-  4. Keep the record format aligned with `data-model.md`.
-- **Files**:
+  2. Capture attempt count, execution status, failure class, and rollback metadata.
+  3. Record enough pre-write state for later compensation, especially for update, delete, and complete flows.
+  4. Keep the execution-record contract stable enough for direct regression assertions.
+- **Files to Touch**:
   - `services/pipeline.js`
-  - possibly helper modules for rollback metadata
-- **Parallel**: No.
-- **Notes**:
-  - Keep the execution record stable enough for direct regression assertions in WP06.
+- **Tests / Acceptance Cues**:
+  - Every executed action has a stable execution record.
+  - Rollback steps are explicit rather than inferred from logs.
+- **Guardrails**:
+  - Do not store more snapshot data than later compensation actually needs.
 
 ### Subtask T014 - Implement retry-once then rollback orchestration
 - **Purpose**: Enforce the clarified multi-action failure policy without breaking the adapter boundary.
 - **Steps**:
   1. Add bounded retry behavior for action failures in multi-action requests.
-  2. If the retry still fails, walk previously successful actions in reverse order and execute compensating adapter operations.
-  3. Define compensation strategies deliberately for create, update, delete, and completion flows.
-  4. Stop short of pretending transactional guarantees that TickTick cannot offer.
-- **Files**:
+  2. If retry still fails, walk prior successful actions in reverse order and execute compensating adapter operations.
+  3. Define compensation strategies deliberately for create, update, complete, and delete.
+  4. Keep unsupported compensation cases explicit rather than silent.
+- **Files to Touch**:
   - `services/pipeline.js`
-  - `services/ticktick-adapter.js`
-- **Parallel**: No.
-- **Notes**:
-  - If a clean inverse does not exist for one operation, classify and document that behavior explicitly instead of silently skipping it.
+  - `services/ticktick-adapter.js` only if existing restore/read helpers need small expansion
+- **Tests / Acceptance Cues**:
+  - Retry occurs once.
+  - Failed retries trigger rollback of prior successful writes.
+  - Unsupported compensation paths surface as explicit rollback problems.
+- **Guardrails**:
+  - Do not pretend transactionality TickTick cannot provide.
 
-### Subtask T015 - Classify rollback outcomes and user-facing summaries
+### Subtask T015 - Classify rollback outcomes and summaries
 - **Purpose**: Ensure partial failure states are honest and deterministic.
 - **Steps**:
-  1. Add explicit rollback-related failure classes or status markers to the result envelope.
-  2. Distinguish adapter failure before rollback, rollback success after retry failure, and rollback failure while compensating earlier writes.
-  3. Render a deterministic summary so callers do not present misleading success text after rollback activity.
-  4. Keep developer diagnostics rich enough to inspect which action failed and which compensations ran.
-- **Files**:
+  1. Distinguish adapter failure before rollback, rollback success after retry failure, and rollback failure during compensation.
+  2. Surface deterministic summary fields and messages for rollback-aware outcomes.
+  3. Keep developer diagnostics rich enough to inspect which action failed and which rollback steps ran.
+  4. Reuse the WP03 failure model rather than creating a separate rollback output path.
+- **Files to Touch**:
   - `services/pipeline.js`
-- **Parallel**: No.
-- **Notes**:
-  - Build on WP03's mode-aware failure rendering rather than creating a competing output path.
+- **Tests / Acceptance Cues**:
+  - Rollback outcomes are explicit and classifiable.
+  - Caller code cannot mistake a rollback-heavy failure for success.
+- **Guardrails**:
+  - Do not split rollback messaging into a second caller-owned rendering layer.
 
 ### Subtask T016 - Add structured observability hooks
-- **Purpose**: Make the hardened pipeline inspectable without binding the feature to a specific telemetry vendor.
+- **Purpose**: Make the hardened pipeline inspectable without vendor lock-in.
 - **Steps**:
-  1. Introduce a structured event shape aligned with `telemetry-events.schema.json`.
-  2. Emit events or reusable hooks for request received, AX completed or failed, normalization completed, execution succeeded or failed, rollback succeeded or failed, and request completed or failed.
-  3. Include request ID, entry point, step, status, duration, failure class, action type, attempt count, and rollback state where relevant.
-  4. Keep metric and trace hooks lightweight and safe as no-ops if no sink is configured.
-- **Files**:
+  1. Keep structured event emission aligned with `telemetry-events.schema.json`.
+  2. Emit request, AX, normalization, execution, rollback, and terminal-result events through `services/pipeline-observability.js`.
+  3. Include stable correlation fields such as request ID, step, status, failure class, action type, attempt count, and rollback state.
+  4. Keep sink integration optional and safe as a no-op.
+- **Files to Touch**:
+  - `services/pipeline-observability.js`
   - `services/pipeline.js`
-  - optionally a new helper such as `services/pipeline-observability.js`
-  - `services/ticktick-adapter.js` if correlation must cross the adapter boundary
-- **Parallel**: Yes, after T013 defines execution-record fields.
-- **Notes**:
-  - Console logging can remain one sink, but structure the data before printing it.
+- **Tests / Acceptance Cues**:
+  - Request-correlated observability events can be asserted without a real vendor sink.
+  - Entry-point normalization and event structure remain stable.
+- **Guardrails**:
+  - Do not add a mandatory telemetry dependency for this feature.
 
-## Test Strategy
+## Definition of Done
 
-- Keep implementation deterministic enough for WP06 to add:
-  - retry-once regressions
-  - rollback-success and rollback-failure regressions
-  - structured observability assertions
-- Preferred local verification during this package:
-  - focused checks around execution record shape
-  - spot checks that telemetry hooks remain no-op safe when no sink is configured
-
-Verification commands:
-- `node tests/run-regression-tests.mjs`
-- `node --test tests/regression.test.js`
-
-## Risks and Mitigations
-
-- **Risk**: Completion and deletion rollback semantics may be weaker than create/update rollback.
-  - **Mitigation**: Capture pre-write state early and classify unsupported reversals explicitly instead of masking them.
-- **Risk**: Telemetry logic contaminates business flow with sink-specific code.
-  - **Mitigation**: Isolate event creation and sink dispatch behind small helper functions or modules.
-
-## Review Guidance
-
-- Verify all compensating writes still go through `TickTickAdapter`.
-- Verify rollback occurs only after one retry attempt has failed.
-- Verify rollback summaries are honest and do not look like full success.
-- Verify telemetry payloads carry request correlation and failure-class data consistently.
+- Per-action execution records exist and capture rollback metadata.
+- Retry-once then rollback behavior is explicit and adapter-safe.
+- Rollback outcomes are classified deterministically.
+- Structured observability hooks exist through the pipeline observability surface.
 
 ## Activity Log
 
-- 2026-03-11T17:18:05Z - system - lane=planned - Prompt created.
-- 2026-03-11T17:50:00Z - codex - lane=planned - Tightened scope so implementation hardening and final regression closure can proceed as separate packages.
-- 2026-03-11T20:33:30Z – Codex – shell_pid=31060 – lane=doing – Assigned agent via workflow command
-- 2026-03-11T20:51:55Z – Codex – shell_pid=31060 – lane=for_review – Ready for review: added per-action execution records, retry-once rollback handling, and structured pipeline telemetry with regression coverage.
-- 2026-03-11T22:16:52Z – codex – shell_pid=12656 – lane=doing – Started review via workflow command
-- 2026-03-11T22:20:14Z – codex – shell_pid=12656 – lane=done – Review passed: rollback + observability wiring looks consistent with spec
+- 2026-04-01: WP regenerated after audit; prior prompt replaced because it still embedded obsolete task-lane history instead of the current review-oriented format.

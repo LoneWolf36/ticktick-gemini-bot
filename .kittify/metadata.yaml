@@ -5,7 +5,14 @@
 spec_kitty:
   version: 3.0.0
   initialized_at: '2026-03-10T15:03:41.128674'
-  last_upgraded_at: '2026-03-31T00:00:00.000000'
+  last_upgraded_at: '2026-04-09T22:18:01.880539+00:00'
+  project_uuid: 01KNT55PMF6PFA08ADPNN4H5H5
+  schema_version: 3
+  schema_capabilities:
+  - canonical_context
+  - event_log_authority
+  - ownership_manifest
+  - thin_shims
 environment:
   python_version: 3.12.12
   platform: linux
@@ -16,21 +23,18 @@ migrations:
     applied_at: '2026-03-19T02:33:12.598148'
     result: skipped
     notes: Not applicable
-  - id: 2.0.0_constitution_directory
+  - id: 2.0.0_charter_directory
     applied_at: '2026-03-19T02:33:12.614247'
     result: success
-    notes: 'Moved .kittify/memory/constitution.md -> .kittify/constitution/constitution.md;
-      Initial extraction: 3 YAML files created'
+    notes: 'Moved .kittify/memory/constitution.md -> .kittify/constitution/constitution.md; Initial extraction: 3 YAML files created'
   - id: 2.0.0_historical_status_migration
     applied_at: '2026-03-19T02:33:12.716467'
     result: success
-    notes: '001-task-operations-pipeline: migrated (7 WPs, 7 events); 007-execution-prioritization-foundations:
-      migrated (4 WPs, 4 events)'
+    notes: '001-task-operations-pipeline: migrated (7 WPs, 7 events); 007-execution-prioritization-foundations: migrated (4 WPs, 4 events)'
   - id: 2.0.0_retire_git_hooks
     applied_at: '2026-03-19T02:33:12.717811'
     result: success
-    notes: 'Removed 3 managed git hook(s); Removed managed hook: pre-commit; Removed
-      managed hook: pre-commit-agent-check; Removed managed hook: pre-commit-encoding-check'
+    notes: 'Removed 3 managed git hook(s); Removed managed hook: pre-commit; Removed managed hook: pre-commit-agent-check; Removed managed hook: pre-commit-encoding-check'
   - id: 2.0.1_fix_generated_command_templates
     applied_at: '2026-03-19T02:33:12.734670'
     result: skipped
@@ -38,15 +42,7 @@ migrations:
   - id: 2.0.6_consistency_sweep
     applied_at: '2026-03-19T02:33:13.035490'
     result: success
-    notes: 'migrated 0 identical and 57 customized legacy runtime asset(s); 001-task-operations-pipeline:
-      normalized 7 work package files; 002-natural-language-task-mutations: wrote
-      baseline meta.json; 003-pipeline-hardening-and-regression: wrote baseline meta.json;
-      003-pipeline-hardening-and-regression: normalized 1 work package files; 004-post-migration-cleanup:
-      wrote baseline meta.json; 005-checklist-subtask-support: wrote baseline meta.json;
-      006-briefing-weekly-modernization: wrote baseline meta.json; 006-briefing-weekly-modernization:
-      normalized 5 work package files; 007-execution-prioritization-foundations: normalized
-      4 work package files; 008-work-style-and-urgent-mode: normalized 4 work package
-      files'
+    notes: 'migrated 0 identical and 57 customized legacy runtime asset(s); 001-task-operations-pipeline: normalized 7 work package files; 002-natural-language-task-mutations: wrote baseline meta.json; 003-pipeline-hardening-and-regression: wrote baseline meta.json; 003-pipeline-hardening-and-regression: normalized 1 work package files; 004-post-migration-cleanup: wrote baseline meta.json; 005-checklist-subtask-support: wrote baseline meta.json; 006-briefing-weekly-modernization: wrote baseline meta.json; 006-briefing-weekly-modernization: normalized 5 work package files; 007-execution-prioritization-foundations: normalized 4 work package files; 008-work-style-and-urgent-mode: normalized 4 work package files'
   - id: 2.0.7_fix_stale_overrides
     applied_at: '2026-03-19T02:33:13.039725'
     result: skipped
@@ -54,8 +50,7 @@ migrations:
   - id: 2.0.9_state_gitignore
     applied_at: '2026-03-22T16:44:43.053345'
     result: success
-    notes: 'Added runtime state entries to .gitignore: .kittify/runtime/, .kittify/merge-state.json,
-      .kittify/events/, .kittify/dossiers/, kitty-specs/**/.kittify/dossiers/'
+    notes: 'Added runtime state entries to .gitignore: .kittify/runtime/, .kittify/merge-state.json, .kittify/events/, .kittify/dossiers/, kitty-specs/**/.kittify/dossiers/'
   - id: 2.0.11_install_skills
     applied_at: '2026-03-22T16:44:43.128663'
     result: success
@@ -63,15 +58,12 @@ migrations:
   - id: 2.0.11_remove_clarify_command
     applied_at: '2026-03-22T16:44:43.142737'
     result: success
-    notes: 'Removed: .agent/workflows/spec-kitty.clarify.toml; Removed: .claude/commands/spec-kitty.clarify.md;
-      Removed: .codex/prompts/spec-kitty.clarify.md; Removed: .gemini/commands/spec-kitty.clarify.toml;
-      Removed: .opencode/command/spec-kitty.clarify.md; Removed 5 clarify command
-      artifacts'
+    notes: 'Removed: .agent/workflows/spec-kitty.clarify.toml; Removed: .claude/commands/spec-kitty.clarify.md; Removed: .codex/prompts/spec-kitty.clarify.md; Removed: .gemini/commands/spec-kitty.clarify.toml; Removed: .opencode/command/spec-kitty.clarify.md; Removed 5 clarify command artifacts'
   - id: 2.1.1_repair_skill_pack
     applied_at: '2026-03-22T16:44:43.171718'
     result: skipped
     notes: Not applicable
   - id: 3.0.0_frontmatter_cleanup
-    applied_at: '2026-03-31T00:00:00.000000'
+    applied_at: '2026-03-31T00:00:00'
     result: success
-    notes: 'Removed deprecated frontmatter fields (lane, review_status, reviewed_by, agent, shell_pid, history, assignee, progress) from 32 WP files across 5 features; Updated command templates; Platform fix win32 -> linux'
+    notes: Removed deprecated frontmatter fields (lane, review_status, reviewed_by, agent, shell_pid, history, assignee, progress) from 32 WP files across 5 features; Updated command templates; Platform fix win32 -> linux

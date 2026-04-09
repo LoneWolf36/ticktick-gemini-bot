@@ -11,6 +11,13 @@ subtasks:
 - T011
 - T012
 phase: Phase 2 - Parallel Execution
+authoritative_surface: kitty-specs/008-work-style-and-urgent-mode/
+execution_mode: code_change
+mission_id: 01KNT55PMZK4VQERH6AB2FE18B
+owned_files:
+- kitty-specs/008-work-style-and-urgent-mode/plan.md
+- kitty-specs/008-work-style-and-urgent-mode/tasks.md
+wp_code: WP04
 ---
 
 # Work Package Prompt: WP04 – Briefing Reminders

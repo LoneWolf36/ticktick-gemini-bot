@@ -6,6 +6,12 @@ base_branch: master
 base_commit: 3e20ce79dbdc55b31b87b5b6a086204d766a45ef
 created_at: '2026-03-10T14:44:32.241030+00:00'
 subtasks: [T009, T010, T011, T012]
+authoritative_surface: src/
+execution_mode: code_change
+mission_id: 01KNT55PMWQ9GQH7JH6E61VDZD
+owned_files:
+- src/**
+wp_code: WP02
 ---
 
 # WP02 — AX Setup & Intent Extraction

@@ -10,6 +10,13 @@ subtasks:
 - T002
 - T003
 phase: Phase 1 - Foundation
+authoritative_surface: kitty-specs/008-work-style-and-urgent-mode/
+execution_mode: code_change
+mission_id: 01KNT55PMZK4VQERH6AB2FE18B
+owned_files:
+- kitty-specs/008-work-style-and-urgent-mode/plan.md
+- kitty-specs/008-work-style-and-urgent-mode/tasks.md
+wp_code: WP01
 ---
 
 # Work Package Prompt: WP01 – State Management Contract

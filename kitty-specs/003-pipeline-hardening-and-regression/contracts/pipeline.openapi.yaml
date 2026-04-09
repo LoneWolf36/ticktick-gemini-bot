@@ -58,21 +58,34 @@ components:
           type: string
         entryPoint:
           type: string
-          enum:
-            - telegram_message
-            - telegram_review
-            - scheduler
+          minLength: 1
+          description: >
+            Non-empty entry point identifier supplied by the caller. Live
+            values include raw call-site values such as `telegram:freeform`,
+            `telegram:scan`, `telegram:review`, `scheduler:poll`,
+            `manual_command`, and test-only values such as `regression`.
+          examples:
+            - telegram:freeform
+            - telegram:review
+            - scheduler:poll
             - manual_command
         mode:
           type: string
-          enum:
-            - user
-            - dev
+          minLength: 1
+          description: >
+            Non-empty execution mode string. Live values include
+            `interactive`, `scan`, `review`, `poll`, and dev/debug aliases
+            used to enable diagnostic output.
+          examples:
+            - interactive
+            - review
+            - poll
         userMessage:
           type: string
         currentDate:
           type: string
-          description: ISO date or timestamp used for relative-date resolution before AX extraction
+          format: date
+          description: Normalized YYYY-MM-DD string used for relative-date resolution before AX extraction
         timezone:
           type: string
           description: Canonical timezone from stored user context
@@ -273,12 +286,24 @@ components:
       type: object
       additionalProperties: false
       required:
+        - class
         - failureClass
+        - stage
+        - summary
         - userMessage
         - requestId
         - retryable
         - rolledBack
       properties:
+        class:
+          type: string
+          enum:
+            - quota
+            - malformed_ax
+            - validation
+            - adapter
+            - rollback
+            - unexpected
         failureClass:
           type: string
           enum:
@@ -288,6 +313,19 @@ components:
             - adapter
             - rollback
             - unexpected
+        stage:
+          type:
+            - string
+            - 'null'
+        summary:
+          type:
+            - string
+            - 'null'
+        details:
+          type:
+            - object
+            - 'null'
+          additionalProperties: true
         userMessage:
           type: string
         developerMessage:
@@ -306,7 +344,6 @@ components:
       required:
         - type
         - requestId
-        - actions
         - results
         - errors
         - confirmationText
@@ -319,6 +356,14 @@ components:
             - error
         requestId:
           type: string
+        entryPoint:
+          type:
+            - string
+            - 'null'
+        mode:
+          type:
+            - string
+            - 'null'
         actions:
           type: array
           items:
@@ -337,3 +382,20 @@ components:
           anyOf:
             - $ref: '#/components/schemas/PipelineFailure'
             - type: 'null'
+        warnings:
+          type: array
+          items:
+            type: string
+        diagnostics:
+          type: array
+          items:
+            type: string
+        isDevMode:
+          type: boolean
+        nonTaskReason:
+          type: string
+        nonTaskDetails:
+          type:
+            - object
+            - 'null'
+          additionalProperties: true

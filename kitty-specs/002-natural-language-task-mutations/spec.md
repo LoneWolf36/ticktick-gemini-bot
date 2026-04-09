@@ -2,7 +2,7 @@
 
 **Feature Branch**: `002-natural-language-task-mutations`  
 **Created**: 2026-03-10  
-**Status**: Draft  
+**Status**: Accepted  
 **Mission**: software-dev  
 **Input**: Follow-on scope from `001-task-operations-pipeline`. Task creation is structured; update, complete, and delete need a safe mutation path for one clearly resolved target at a time.
 

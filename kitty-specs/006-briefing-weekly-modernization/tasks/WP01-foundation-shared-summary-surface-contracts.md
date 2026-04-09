@@ -2,6 +2,10 @@
 work_package_id: WP01
 title: Foundation - Shared Summary Surface Contracts
 dependencies: []
+requirement_refs:
+- FR-003
+- FR-004
+- FR-008
 base_branch: master
 base_commit: aae6aa2d3d95386d8c29718b8302d2a2248d5467
 created_at: '2026-03-13T16:52:10.205876+00:00'
@@ -12,10 +16,20 @@ subtasks:
 - T004
 - T005
 phase: Phase 1 - Foundation
-requirement_refs:
-- FR-003
-- FR-004
-- FR-008
+authoritative_surface: ''
+execution_mode: code_change
+mission_id: 01KNT55PMYXNH3ATTB29REH4RQ
+owned_files:
+- kitty-specs/006-briefing-weekly-modernization/contracts/summary-surfaces.openapi.yaml
+- kitty-specs/006-briefing-weekly-modernization/data-model.md
+- kitty-specs/006-briefing-weekly-modernization/plan.md
+- kitty-specs/006-briefing-weekly-modernization/quickstart.md
+- kitty-specs/006-briefing-weekly-modernization/research.md
+- kitty-specs/006-briefing-weekly-modernization/spec.md
+- tests/pipeline-harness.js
+- tests/regression.test.js
+- tests/run-regression-tests.mjs
+wp_code: WP01
 ---
 
 # Work Package Prompt: WP01 - Foundation - Shared Summary Surface Contracts

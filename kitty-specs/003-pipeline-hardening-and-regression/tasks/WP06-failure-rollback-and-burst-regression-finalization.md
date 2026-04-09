@@ -5,16 +5,6 @@ dependencies:
 - WP03
 - WP04
 - WP05
-base_branch: 003-pipeline-hardening-and-regression-WP06-merge-base
-base_commit: 963c9f2595c9fd89bfc624cb3c9924c0d47efa9b
-created_at: '2026-03-11T22:23:03.006100+00:00'
-subtasks:
-- T012
-- T017
-- T020
-- T021
-- T022
-phase: Phase 5 - Regression Hardening
 requirement_refs:
 - FR-003
 - FR-004
@@ -24,88 +14,130 @@ requirement_refs:
 - FR-008
 - FR-009
 - FR-010
+base_branch: 003-pipeline-hardening-and-regression-WP06-merge-base
+base_commit: 111cae226a11249ff7a2270848cd289dfdd6b596
+created_at: '2026-04-01T00:22:34+01:00'
+subtasks:
+- T012
+- T017
+- T020
+- T021
+- T022
+phase: Phase 5 - Regression Hardening
+authoritative_surface: ''
+execution_mode: code_change
+mission_id: 01KNT55PMXDGM4VDMWY0YT3CQV
+owned_files:
+- kitty-specs/003-pipeline-hardening-and-regression/plan.md
+- kitty-specs/003-pipeline-hardening-and-regression/spec.md
+- tests/e2e-live-checklist.mjs
+- tests/e2e-live-ticktick.mjs
+- tests/pipeline-harness.js
+- tests/regression.test.js
+- tests/run-regression-tests.mjs
+wp_code: WP06
 ---
 
 # Work Package Prompt: WP06 - Failure, Rollback, and Burst Regression Finalization
 
-## Objectives and Success Criteria
+## IMPORTANT: Review Feedback Status
 
-- Close the loop on the hardening work by extending the direct harness to cover failure semantics, rollback behavior, observability emission, and small concurrent bursts.
-- Keep the final regression scope isolated in one convergence package instead of scattering it across implementation packages.
+**Read this first if you are implementing this task.**
 
-Success looks like:
-- malformed AX, empty intent, validation, quota, adapter, rollback, and unexpected paths are covered through the direct harness
-- rollback success and rollback failure are both asserted through execution-record and message-shape contracts
-- structured observability emission is asserted without vendor lock-in
-- burst tests prove tens of concurrent mocked requests remain isolated and deterministic
+- **Has review feedback?** Check the current review state before starting.
+- **Address all review feedback** before marking the package complete.
+- **Report progress** by appending Activity Log entries in chronological order.
 
-## Context and Constraints
+---
+
+## Review Feedback
+
+> Populated by `/spec-kitty.review` when changes are requested.
+
+*[This section is empty initially. Any later feedback becomes mandatory scope.]*  
+
+---
+
+## Markdown Formatting
+
+Wrap HTML/XML tags in backticks: `` `<div>` ``, `` `<script>` ``  
+Use language identifiers in fenced code blocks.
+
+---
+
+## Objectives & Success Criteria
+
+- Close the loop on hardening by extending the direct harness to cover failure semantics, rollback behavior, observability emission, and small concurrent bursts.
+- Keep final regression coverage concentrated in the current direct pipeline test surfaces.
+- Leave live-check notes aligned with the hardened contract without making them the required acceptance path.
+- Make contract drift fail fast in tests.
+
+## Context & Constraints
 
 - Implementation command: `spec-kitty implement WP06 --base WP05`
-- This package depends on WP03, WP04, and WP05. It is the convergence package after the three parallel tracks and the hardening package complete.
-- Keep live API checks opt-in. Required regression coverage should remain mocked and deterministic.
-- Reuse the direct-pipeline doubles and fixtures established in WP04.
+- Canonical references:
+  - `kitty-specs/003-pipeline-hardening-and-regression/spec.md`
+  - `kitty-specs/003-pipeline-hardening-and-regression/plan.md`
+  - `tests/pipeline-harness.js`
+  - `tests/regression.test.js`
+  - `tests/run-regression-tests.mjs`
+  - `tests/e2e-live-ticktick.mjs`
+  - `tests/e2e-live-checklist.mjs`
+  - `services/pipeline.js`
+  - `services/pipeline-observability.js`
+- Reuse the direct-pipeline fixtures established in WP04.
+- Required regression coverage remains mocked and deterministic.
+- Live API scripts stay opt-in and should only be updated as support notes or result-shape compatibility references.
 
-Relevant documents:
-- `kitty-specs/003-pipeline-hardening-and-regression/spec.md`
-- `kitty-specs/003-pipeline-hardening-and-regression/plan.md`
-- `kitty-specs/003-pipeline-hardening-and-regression/quickstart.md`
-- `kitty-specs/003-pipeline-hardening-and-regression/contracts/pipeline.openapi.yaml`
-- `kitty-specs/003-pipeline-hardening-and-regression/contracts/telemetry-events.schema.json`
-
-Relevant code and tests:
-- `tests/regression.test.js`
-- `tests/run-regression-tests.mjs`
-- `tests/e2e-live-ticktick.mjs`
-- `tests/e2e-live-checklist.mjs`
-- `services/pipeline.js`
-- `services/ax-intent.js`
-- `services/normalizer.js`
-- `services/ticktick-adapter.js`
-
-## Subtasks and Detailed Guidance
+## Subtasks & Detailed Guidance
 
 ### Subtask T012 - Add Story 2 failure-path regressions
 - **Purpose**: Lock in the hardened failure semantics so they cannot drift silently.
 - **Steps**:
-  1. Add tests for malformed AX output that prove the pipeline fails safely.
-  2. Add tests for empty intent lists and validation failure behavior.
-  3. Add tests proving configured-key rotation happens before final quota failure.
-  4. Assert failure class plus message-shape behavior rather than brittle full error paragraphs.
-- **Files**:
+  1. Add direct regressions for malformed AX output.
+  2. Add direct regressions for empty intents and validation failure.
+  3. Add regressions proving configured-key rotation happens before terminal quota failure.
+  4. Assert failure class plus message-shape behavior rather than brittle full paragraphs.
+- **Files to Touch**:
   - `tests/regression.test.js`
   - `tests/run-regression-tests.mjs`
-- **Parallel**: Yes, once WP03 lands.
-- **Notes**:
-  - Prefer direct pipeline doubles over calling unrelated legacy helpers.
+- **Tests / Acceptance Cues**:
+  - Story 2 failure behavior is covered directly through the pipeline.
+  - Failure assertions remain stable even if wording changes slightly.
+- **Guardrails**:
+  - Prefer direct pipeline doubles over legacy helper paths.
 
 ### Subtask T017 - Add rollback and observability regressions
 - **Purpose**: Keep rollback and telemetry behavior from drifting after implementation.
 - **Steps**:
   1. Add direct tests for adapter failure after partial success plus successful rollback.
   2. Add direct tests for rollback failure classification.
-  3. Add assertions for emitted event structure or telemetry hook invocation.
+  3. Add assertions for emitted event structure or observability-hook invocation.
   4. Keep assertions focused on stable contract fields rather than raw log formatting.
-- **Files**:
+- **Files to Touch**:
   - `tests/regression.test.js`
   - `tests/run-regression-tests.mjs`
-- **Parallel**: Yes, once WP05 lands.
-- **Notes**:
-  - Verify request correlation survives retries and rollback.
+- **Tests / Acceptance Cues**:
+  - Request correlation survives retries and rollback.
+  - Observability assertions do not depend on a real vendor sink.
+- **Guardrails**:
+  - Do not broaden this into full logging snapshot tests.
 
 ### Subtask T020 - Add direct failure-path regressions
 - **Purpose**: Lock in the fail-closed behavior introduced by the hardening work.
 - **Steps**:
   1. Add direct tests for malformed AX output, validation failure, adapter failure, and quota rotation before final failure.
-  2. Add tests for rollback success and rollback failure using the new execution-record contract.
-  3. Keep one assertion path for user mode and another for dev mode if message shape differs materially.
-  4. Assert failure classes and rollback markers rather than brittle raw text blobs.
-- **Files**:
+  2. Add tests for rollback success and rollback failure using execution-record expectations.
+  3. Keep one assertion path for user mode and another for development-oriented mode only where message shape materially differs.
+  4. Assert failure classes and rollback markers instead of brittle raw text blobs.
+- **Files to Touch**:
   - `tests/regression.test.js`
   - `tests/run-regression-tests.mjs`
-- **Parallel**: Yes, after WP04 and WP05 are stable.
-- **Notes**:
-  - These tests are the main guard against accidental regression in failure semantics.
+- **Tests / Acceptance Cues**:
+  - Failure semantics are covered directly and comprehensively.
+  - Regression failures point at contract drift rather than formatting noise.
+- **Guardrails**:
+  - Do not duplicate earlier happy-path coverage.
 
 ### Subtask T021 - Add burst-concurrency regressions
 - **Purpose**: Prove the hardened contract holds under the clarified tens-of-requests scale assumption.
@@ -113,87 +145,40 @@ Relevant code and tests:
   1. Build a mocked burst test that launches tens of pipeline requests concurrently.
   2. Ensure each request gets a distinct request ID or deterministic injected ID.
   3. Assert that one request's failure does not corrupt neighboring outcomes.
-  4. Keep the burst test bounded and fast enough for routine local regression use.
-- **Files**:
+  4. Keep the burst test bounded and routine-friendly.
+- **Files to Touch**:
   - `tests/regression.test.js`
   - `tests/run-regression-tests.mjs`
-- **Parallel**: Yes, after request ID semantics and direct harness fixtures are stable.
-- **Notes**:
-  - This is not a live load test.
+- **Tests / Acceptance Cues**:
+  - Tens-of-requests burst behavior remains isolated and deterministic.
+  - Request IDs stay unique and stable.
+- **Guardrails**:
+  - Do not turn this into performance benchmarking or load infrastructure work.
 
-### Subtask T022 - Update live doubles and validation notes
-- **Purpose**: Keep the wider test surface compatible with the hardened result contract so future contributors do not reintroduce drift.
+### Subtask T022 - Update live doubles and hardened-contract notes
+- **Purpose**: Keep support scripts and notes aligned with the hardened result contract without making them the required acceptance path.
 - **Steps**:
   1. Review `tests/e2e-live-ticktick.mjs` and `tests/e2e-live-checklist.mjs` for assumptions about result shape.
-  2. Update those doubles only as needed so they remain compatible with the hardened pipeline contract.
-  3. Refresh feature-level validation notes or quickstart references if command expectations or regression steps changed materially.
-  4. Keep the documentation delta small and specific to the hardened pipeline behavior.
-- **Files**:
+  2. Update any notes or doubles that would confuse future maintainers about the hardened contract.
+  3. Keep documentation or support-note changes narrow and directly tied to the accepted feature scope.
+  4. Avoid introducing a second test harness through these files.
+- **Files to Touch**:
   - `tests/e2e-live-ticktick.mjs`
   - `tests/e2e-live-checklist.mjs`
-  - `kitty-specs/003-pipeline-hardening-and-regression/quickstart.md` if implementation drift requires it
-- **Parallel**: Yes.
-- **Notes**:
-  - Do not expand this into broad documentation cleanup.
+  - `tests/pipeline-harness.js` only if shared result-shape helpers need minor cleanup
+- **Tests / Acceptance Cues**:
+  - Future maintainers can run the direct regression suite and optional live checks without rediscovering result-shape assumptions.
+  - Support files do not contradict the hardened pipeline contract.
+- **Guardrails**:
+  - Keep required acceptance centered on mocked direct regressions.
 
-## Test Strategy
+## Definition of Done
 
-- Required:
-  - direct pipeline failure-path tests
-  - rollback and observability regression coverage
-  - burst-concurrency regression
-  - contract-drift assertions
-- Keep the primary commands:
-  - `node tests/run-regression-tests.mjs`
-  - `node --test tests/regression.test.js`
-
-Optional follow-up only if helpful:
-- spot-check the opt-in live scripts after the contract change lands
-
-## Risks and Mitigations
-
-- **Risk**: Final regression work duplicates earlier harness coverage instead of extending it.
-  - **Mitigation**: Reuse WP04 fixtures and keep this package focused on failure, rollback, telemetry, and burst behaviors only.
-- **Risk**: Burst tests become flaky due to wall-clock or randomness dependence.
-  - **Mitigation**: Inject request IDs, dates, and deterministic mocks explicitly.
-
-## Review Guidance
-
-- Verify success and failure coverage now spans the full feature spec without falling back to helper-only tests.
-- Verify rollback and telemetry assertions use stable contract fields.
-- Verify the burst test is mocked, bounded, and deterministic.
-- Verify live-script assumptions stay compatible with the hardened result envelope.
-
-## Review Feedback
-
-**Reviewed by**: TickTick Bot
-**Status**: ❌ Changes Requested
-**Date**: 2026-03-11
-**Feedback file**: `C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP06.md`
-
-**Issue 1 (blocking)**: `WP05` is declared as a dependency in `kitty-specs/003-pipeline-hardening-and-regression/tasks/WP06-failure-rollback-and-burst-regression-finalization.md`, but `WP05` is not merged into `master` yet.
-
-Evidence:
-- `git branch --merged master` includes `003-pipeline-hardening-and-regression-WP03` and `003-pipeline-hardening-and-regression-WP04`, but not `003-pipeline-hardening-and-regression-WP05`.
-- `git log master..HEAD --oneline` for the WP06 review branch includes `689d766 feat(WP05): add pipeline rollback and observability`, so the WP06 review diff is contaminated by dependency work rather than being isolated to WP06.
-
-Why this blocks approval:
-- The review workflow requires all declared dependencies to be merged to the target branch before approving the dependent WP.
-- Until `WP05` is merged, this review cannot confirm that WP06 is a clean convergence package on top of the current target branch.
-
-How to fix:
-1. Merge `WP05` into `master`.
-2. Rebase or recreate the `WP06` review branch/worktree on top of updated `master` so `git log master..HEAD` contains only WP06-specific review scope.
-3. Re-run the WP06 review after that.
-
+- Failure, rollback, and burst-concurrency regressions are covered through the direct pipeline test surfaces.
+- Observability emission is asserted structurally.
+- Contract drift fails fast in tests.
+- Optional live-check files no longer contradict the hardened result contract.
 
 ## Activity Log
 
-- 2026-03-11T17:50:00Z - codex - lane=planned - Prompt created.
-- 2026-03-11T22:23:04Z – Codex – shell_pid=30416 – lane=doing – Assigned agent via workflow command
-- 2026-03-11T22:27:56Z – Codex – shell_pid=30416 – lane=for_review – Ready for review: finalized direct failure-path, rollback, telemetry, and burst-concurrency regressions; updated pipeline harness and live doubles for hardened result compatibility.
-- 2026-03-11T22:30:58Z – Codex – shell_pid=15804 – lane=doing – Started review via workflow command
-- 2026-03-11T22:32:05Z – Codex – shell_pid=15804 – lane=planned – Moved to planned
-- 2026-03-11T22:36:03Z – Codex – shell_pid=15804 – lane=for_review – Dependency gate satisfied after merging WP05 into master; re-entering review.
-- 2026-03-11T22:36:12Z – Codex – shell_pid=15240 – lane=doing – Started review via workflow command
-- 2026-03-11T22:36:34Z – Codex – shell_pid=15240 – lane=done – Review passed: WP05 dependency merged to master; direct failure-path, rollback, telemetry, and burst-concurrency regressions verified green.
+- 2026-04-01: WP regenerated after audit; prior prompt replaced because it still embedded obsolete lane history instead of the current review-oriented format.

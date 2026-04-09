@@ -3,6 +3,11 @@ work_package_id: WP04
 title: Deterministic Summary Formatter
 dependencies:
 - WP01
+requirement_refs:
+- FR-001
+- FR-002
+- FR-004
+- FR-007
 base_branch: 006-briefing-weekly-modernization-WP01
 base_commit: 81b1897ea138b8870e8750afd02aeab81961dc52
 created_at: '2026-03-13T17:26:56.015642+00:00'
@@ -13,11 +18,19 @@ subtasks:
 - T020
 - T021
 phase: Phase 2 - Parallel Core
-requirement_refs:
-- FR-001
-- FR-002
-- FR-004
-- FR-007
+authoritative_surface: ''
+execution_mode: code_change
+mission_id: 01KNT55PMYXNH3ATTB29REH4RQ
+owned_files:
+- kitty-specs/006-briefing-weekly-modernization/contracts/summary-surfaces.openapi.yaml
+- kitty-specs/006-briefing-weekly-modernization/data-model.md
+- kitty-specs/006-briefing-weekly-modernization/plan.md
+- kitty-specs/006-briefing-weekly-modernization/quickstart.md
+- kitty-specs/006-briefing-weekly-modernization/research.md
+- kitty-specs/006-briefing-weekly-modernization/spec.md
+- tests/regression.test.js
+- tests/run-regression-tests.mjs
+wp_code: WP04
 ---
 
 # Work Package Prompt: WP04 - Deterministic Summary Formatter

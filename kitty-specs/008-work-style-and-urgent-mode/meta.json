@@ -25,5 +25,6 @@
   "slug": "008-work-style-and-urgent-mode",
   "source_description": "Define the explicit user-state model for recommendations: a single humane work-style mode, manual urgent-mode toggle, and weak inference fallback that never escalates intervention on its own.",
   "target_branch": "master",
-  "vcs": "git"
+  "vcs": "git",
+  "mission_id": "01KNT55PMZK4VQERH6AB2FE18B"
 }

@@ -6,6 +6,12 @@ base_branch: 001-task-operations-pipeline-WP05-merge-base
 base_commit: 0f42d9bc6193d92f754291f4095b071b21db9797
 created_at: '2026-03-10T15:26:18.435625+00:00'
 subtasks: [T021, T022, T026, T027]
+authoritative_surface: src/
+execution_mode: code_change
+mission_id: 01KNT55PMWQ9GQH7JH6E61VDZD
+owned_files:
+- src/**
+wp_code: WP05
 ---
 
 # WP05 — Pipeline Orchestrator & Telegram Integration

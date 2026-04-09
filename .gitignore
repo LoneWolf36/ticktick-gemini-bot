@@ -20,7 +20,8 @@ services/user_context.js
 .kittify/.dashboard
 .kittify/missions/__pycache__/
 .kittify/runtime/
-.kittify/merge-state.json
 .kittify/events/
 .kittify/dossiers/
 kitty-specs/**/.kittify/dossiers/
+.kittify/derived/
+.kittify/.migration-backup/

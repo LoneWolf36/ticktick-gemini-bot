@@ -3,15 +3,26 @@ work_package_id: WP03
 title: Exceptions and Rationale
 dependencies:
 - WP02
+requirement_refs:
+- FR-005
+- FR-007
 subtasks:
 - T010
 - T011
 - T012
 - T013
 phase: Phase 3 - Recovery-Aware Overrides
-requirement_refs:
-- FR-005
-- FR-007
+authoritative_surface: ''
+execution_mode: code_change
+mission_id: 01KNT55PMYXNH3ATTB29REH4RR
+owned_files:
+- kitty-specs/007-execution-prioritization-foundations/data-model.md
+- kitty-specs/007-execution-prioritization-foundations/plan.md
+- kitty-specs/007-execution-prioritization-foundations/research.md
+- kitty-specs/007-execution-prioritization-foundations/spec.md
+- tests/regression.test.js
+- tests/run-regression-tests.mjs
+wp_code: WP03
 ---
 
 # Work Package Prompt: WP03 - Exceptions and Rationale

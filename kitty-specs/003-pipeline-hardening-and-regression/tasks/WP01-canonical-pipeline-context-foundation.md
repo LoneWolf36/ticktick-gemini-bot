@@ -2,192 +2,152 @@
 work_package_id: WP01
 title: Canonical Pipeline Context Foundation
 dependencies: []
+requirement_refs:
+- FR-001
+- FR-002
+- FR-007
+- FR-008
 base_branch: master
-base_commit: 8c54eceaa745a46db9622848e7ddf85b8336c0d6
-created_at: '2026-03-11T18:06:41.078668+00:00'
+base_commit: 111cae226a11249ff7a2270848cd289dfdd6b596
+created_at: '2026-04-01T00:22:34+01:00'
 subtasks:
 - T001
 - T002
 - T003
 - T004
 phase: Phase 1 - Context Foundation
-requirement_refs:
-- FR-001
-- FR-002
-- FR-007
-- FR-008
+authoritative_surface: kitty-specs/003-pipeline-hardening-and-regression/
+execution_mode: code_change
+mission_id: 01KNT55PMXDGM4VDMWY0YT3CQV
+owned_files:
+- kitty-specs/003-pipeline-hardening-and-regression/plan.md
+- kitty-specs/003-pipeline-hardening-and-regression/spec.md
+wp_code: WP01
 ---
 
 # Work Package Prompt: WP01 - Canonical Pipeline Context Foundation
 
-## Objectives and Success Criteria
+## IMPORTANT: Review Feedback Status
 
-- Establish one canonical request context for all pipeline execution paths.
-- Remove ad-hoc context-field drift between pipeline, AX extraction, and normalization.
+**Read this first if you are implementing this task.**
+
+- **Has review feedback?** Check the current review state before starting.
+- **Address all review feedback** before marking the package complete.
+- **Report progress** by appending Activity Log entries in chronological order.
+
+---
+
+## Review Feedback
+
+> Populated by `/spec-kitty.review` when changes are requested.
+
+*[This section is empty initially. Any later feedback becomes mandatory scope.]*  
+
+---
+
+## Markdown Formatting
+
+Wrap HTML/XML tags in backticks: `` `<div>` ``, `` `<script>` ``  
+Use language identifiers in fenced code blocks.
+
+---
+
+## Objectives & Success Criteria
+
+- Establish one canonical request-context contract for all pipeline execution paths.
+- Remove ad-hoc field drift between the pipeline, AX extraction, and normalization.
 - Make request metadata explicit enough to support later failure classification, rollback, and observability work.
+- Keep the hardening work on the current architecture instead of introducing a second context path.
 
-Success looks like:
-- one clearly named context shape at the pipeline boundary
-- consistent fields for `requestId`, `entryPoint`, `mode`, `currentDate`, canonical timezone, project metadata, and existing task snapshots
-- fail-fast validation when a caller omits required fields in development mode
-- downstream work packages can build on this contract without guessing field names or ownership
-
-## Context and Constraints
+## Context & Constraints
 
 - Implementation command: `spec-kitty implement WP01`
-- This is the foundation package. Downstream packages assume it is complete.
-- The feature spec requires one canonical timezone source from stored user context, not per-caller environment defaults.
-- Keep the architecture boundary intact: `AX -> normalizer -> TickTickAdapter`.
-- Do not introduce a new runtime, orchestration framework, or external telemetry vendor here.
+- Canonical references:
+  - `kitty-specs/003-pipeline-hardening-and-regression/spec.md`
+  - `kitty-specs/003-pipeline-hardening-and-regression/plan.md`
+  - `services/pipeline.js`
+  - `services/pipeline-context.js`
+  - `services/user-settings.js`
+  - `services/ax-intent.js`
+  - `services/normalizer.js`
+- Treat `services/user-settings.js` as the canonical timezone source used by context assembly.
+- Preserve the write boundary: `AX -> normalizer -> TickTickAdapter`.
+- Do not move context assembly back into Telegram handlers or scheduler code.
+- Do not introduce a second settings/config module for request-time timezone resolution.
 
-Relevant documents:
-- `kitty-specs/003-pipeline-hardening-and-regression/spec.md`
-- `kitty-specs/003-pipeline-hardening-and-regression/plan.md`
-- `kitty-specs/003-pipeline-hardening-and-regression/research.md`
-- `kitty-specs/003-pipeline-hardening-and-regression/data-model.md`
-- `.kittify/memory/constitution.md`
-
-Relevant code:
-- `services/pipeline.js`
-- `services/ax-intent.js`
-- `services/normalizer.js`
-- `services/ticktick-adapter.js`
-- `bot/commands.js`
-- `services/scheduler.js`
-- `server.js`
-
-Hard constraints:
-- Preserve the adapter as the only write boundary.
-- Keep deterministic logic in application code rather than pushing validation or defaulting into prompts.
-- The request context must be reusable by Telegram, scheduler, and future direct callers.
-
-## Subtasks and Detailed Guidance
+## Subtasks & Detailed Guidance
 
 ### Subtask T001 - Define canonical request-context assembly
-- **Purpose**: Create the single source of truth for what a pipeline request contains before AX extraction starts.
+- **Purpose**: Make `services/pipeline-context.js` the single source of truth for what enters the pipeline.
 - **Steps**:
-  1. Decide whether the context builder belongs inside `services/pipeline.js` or in a new helper module under `services/`.
-  2. Define a stable object shape aligned with `data-model.md`:
-     - `requestId`
-     - `entryPoint`
-     - `mode`
-     - `userMessage`
-     - `currentDate`
-     - `timezone`
-     - `availableProjects`
-     - `existingTask`
-  3. Make the pipeline own assembly of any derived fields that do not belong in callers.
-  4. Keep the builder narrow: it should assemble and validate context, not execute writes or render user messages.
-- **Files**:
-  - `services/pipeline.js`
-  - optionally a new helper such as `services/pipeline-context.js`
-- **Parallel**: No.
-- **Notes**:
-  - Favor explicit field names over generic `options`.
-  - Make request IDs deterministic enough for tests to override while still defaulting safely in production.
-  - If a helper module is introduced, keep its exports named and minimal.
+  1. Confirm the canonical context shape includes `requestId`, `entryPoint`, `mode`, `userMessage`, `currentDate`, `timezone`, `availableProjects`, `availableProjectNames`, and `existingTask`.
+  2. Keep derived-field assembly in the context builder instead of spreading it across callers.
+  3. Ensure deterministic overrides for tests remain possible through injected `requestId` and date inputs.
+  4. Keep the builder narrow: assemble, normalize, and validate context only.
+- **Files to Touch**:
+  - `services/pipeline-context.js`
+  - `services/pipeline.js` if context-builder integration needs adjustment
+- **Tests / Acceptance Cues**:
+  - Missing required fields fail cleanly in development-oriented modes.
+  - The context builder can be reused by bot, scheduler, and harness callers.
+- **Guardrails**:
+  - Do not let the builder fetch unrelated runtime state or render user messages.
 
 ### Subtask T002 - Align AX extraction with canonical context
-- **Purpose**: Ensure AX receives the same contextual inputs on every call path so extraction stops depending on caller quirks.
+- **Purpose**: Ensure AX receives the same extraction inputs on every call path.
 - **Steps**:
-  1. Update the `services/ax-intent.js` interface expectations to accept the canonical context fields it actually needs.
-  2. Make `services/pipeline.js` translate the canonical request context into the AX input shape intentionally rather than forwarding loosely structured options.
-  3. Be explicit about which fields AX consumes today:
-     - current date
-     - available project names
-     - user message
-     - any other required extraction hints
-  4. If timezone is not directly consumed by AX today, keep it in canonical context anyway so downstream normalization and observability remain aligned.
-- **Files**:
-  - `services/ax-intent.js`
+  1. Review which context fields AX actually consumes today.
+  2. Make `services/pipeline.js` translate the canonical request context into AX input intentionally rather than forwarding loose options.
+  3. Keep the AX-facing project-name list derived from the canonical project objects.
+  4. Preserve current key-rotation behavior; this task is about context contract, not quota policy.
+- **Files to Touch**:
   - `services/pipeline.js`
-- **Parallel**: Yes, after T001 defines field names.
-- **Notes**:
-  - Avoid widening the AX contract unnecessarily.
-  - Preserve current key-rotation behavior; this package is about context shape, not failure semantics.
+  - `services/ax-intent.js`
+- **Tests / Acceptance Cues**:
+  - AX calls receive stable `currentDate`, `availableProjects`, and `requestId`-relevant context where expected.
+  - Telegram and harness callers no longer depend on caller-specific AX option shaping.
+- **Guardrails**:
+  - Avoid widening the AX contract beyond fields the pipeline already owns.
 
 ### Subtask T003 - Align normalization with canonical context
 - **Purpose**: Make date expansion and project resolution consume the same context contract as AX extraction.
 - **Steps**:
-  1. Review how `services/normalizer.js` currently uses `timezone`, `currentDate`, `projects`, and `existingTask`.
-  2. Replace any ad-hoc option plumbing in `services/pipeline.js` with fields derived from the canonical request context.
-  3. Ensure existing task content, original project ID, and project lookup data are still available to normalization without callers having to shape them manually.
-  4. Keep normalization deterministic and testable; do not make it reach outward to fetch state on its own.
-- **Files**:
+  1. Review how normalization currently consumes timezone, current date, projects, and existing task state.
+  2. Replace any ad-hoc option plumbing in `services/pipeline.js` with fields drawn from the canonical request context.
+  3. Ensure existing task snapshots and project lookup data remain available without callers shaping them manually.
+  4. Keep normalization deterministic and free of request-time fetching.
+- **Files to Touch**:
+  - `services/pipeline.js`
   - `services/normalizer.js`
-  - `services/pipeline.js`
-- **Parallel**: Yes, after T001 defines the shared context.
-- **Notes**:
-  - The canonical timezone must remain the one from stored user context, not whichever timezone happened to be passed by a caller.
-  - Preserve `TickTickAdapter` project lookup as the source for canonical project metadata.
+- **Tests / Acceptance Cues**:
+  - Relative-date and project-resolution behavior consume the canonical context shape instead of parallel option bags.
+  - Existing task-aware normalization paths remain intact.
+- **Guardrails**:
+  - Do not let normalization reach outward for timezone or project lists on its own.
 
-### Subtask T004 - Add contract validation and development diagnostics
-- **Purpose**: Catch context drift early instead of letting it surface as vague runtime behavior later.
+### Subtask T004 - Add fail-fast context validation and development diagnostics
+- **Purpose**: Catch contract drift early instead of letting it surface as downstream extraction or normalization bugs.
 - **Steps**:
-  1. Add a validation step near the start of pipeline execution that asserts required context fields are present and correctly shaped.
-  2. Keep the failure behavior mode-aware:
-     - development mode can include detailed diagnostics
-     - user-facing mode should remain compact once WP03 lands
-  3. Prefer explicit error messages that name the missing or malformed field.
-  4. Add internal comments only where the validation flow would otherwise be hard to follow.
-- **Files**:
+  1. Keep validation logic inside the context-builder surface.
+  2. Ensure development-oriented modes surface missing or malformed context fields explicitly.
+  3. Keep production/user behavior non-destructive and deterministic.
+  4. Make validation failures easy to assert in later regression work.
+- **Files to Touch**:
+  - `services/pipeline-context.js`
   - `services/pipeline.js`
-  - optionally `services/pipeline-context.js`
-- **Parallel**: No.
-- **Notes**:
-  - This should support later contract-drift regression tests.
-  - Do not swallow validation failures silently; they should be classifiable downstream.
+- **Tests / Acceptance Cues**:
+  - Invalid context produces a stable error path or diagnostics surface.
+  - Future contract drift is easier to detect from tests.
+- **Guardrails**:
+  - Do not build a second validation layer in every caller.
 
-## Test Strategy
+## Definition of Done
 
-- Add or update direct tests only if the context contract can be validated cleanly at this layer without duplicating the fuller regressions planned in later packages.
-- At minimum, keep the design compatible with later tests asserting:
-  - canonical timezone presence
-  - request ID presence
-  - stable AX input shape
-  - stable normalization option shape
-
-Suggested commands for later verification:
-- `node tests/run-regression-tests.mjs`
-- `node --test tests/regression.test.js`
-
-## Risks and Mitigations
-
-- **Risk**: The context builder becomes a dumping ground for unrelated logic.
-  - **Mitigation**: Restrict it to assembly, defaulting, and validation only.
-- **Risk**: Callers keep passing loose `timezone` options and bypass the canonical contract.
-  - **Mitigation**: Route all callers through one helper and remove duplicate field assembly where possible.
-- **Risk**: Request IDs become hard to control in tests.
-  - **Mitigation**: Allow injected request IDs in tests while defaulting them safely at runtime.
-
-## Review Guidance
-
-- Verify there is one obvious canonical request-context shape.
-- Verify AX and normalization consume it intentionally, not incidentally.
-- Verify no caller still owns authoritative timezone logic after this package.
-- Verify the adapter boundary remains untouched.
-
-## Review Feedback
-
-**Reviewed by**: TickTick Bot
-**Status**: ❌ Changes Requested
-**Date**: 2026-03-11
-**Feedback file**: `C:\Users\Huzefa Khan\AppData\Local\Temp\spec-kitty-review-feedback-WP01.md`
-
-**Issue 1**: `services/normalizer.js` now receives `currentDate` from the canonical context as a `YYYY-MM-DD` string, but `_coerceDate` parses it with `new Date(value)`. For negative-offset timezones (e.g., America/Los_Angeles), `new Date('YYYY-MM-DD')` resolves to UTC midnight and shifts the local date to the previous day. That makes "today/tomorrow/this-week" expansions off by one for users outside UTC+.
-
-**How to fix**: Avoid parsing date-only strings via `new Date(value)`. Prefer one of:
-- In `normalizeActions` options, pass a real Date object (e.g., the raw `now` used by the context builder) and keep the `currentDate` string only for AX.
-- Or update `_getNowComponents` to detect `YYYY-MM-DD` strings and parse year/month/day directly, computing `dayOfWeek` from those components without timezone shifting. Then use those components to build `baseDate` for due-date expansion.
-
-This is a correctness issue for any user who sets `USER_TIMEZONE` to a negative offset.
-
+- `services/pipeline-context.js` is the canonical request-context assembly path.
+- AX extraction and normalization consume the same context contract.
+- Canonical timezone sourcing is explicit and centralized.
+- Development-oriented validation catches missing or drifted fields early.
 
 ## Activity Log
 
-- 2026-03-11T17:18:05Z - system - lane=planned - Prompt created.
-- 2026-03-11T18:06:51Z – Codex – shell_pid=23616 – lane=doing – Assigned agent via workflow command
-- 2026-03-11T18:16:23Z – Codex – shell_pid=23616 – lane=for_review – Ready for review: added canonical pipeline context builder with validation and aligned AX/normalizer inputs
-- 2026-03-11T18:17:12Z – Codex – shell_pid=12216 – lane=doing – Started review via workflow command
-- 2026-03-11T18:20:22Z – Codex – shell_pid=12216 – lane=planned – Moved to planned
-- 2026-03-11T20:28:58Z – Codex – shell_pid=12216 – lane=done – Review passed: canonical context foundation verified; date-only timezone drift fixed
+- 2026-04-01: WP regenerated after audit; prior prompt replaced because it still reflected older Spec Kitty task-history conventions instead of the current v3 review-oriented prompt format.

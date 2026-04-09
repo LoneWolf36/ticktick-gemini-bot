@@ -50,7 +50,7 @@ Alternatives considered:
 
 Decision:
 - Standardize a single pipeline context object assembled at every entry point before `axIntent.extractIntents()` is called.
-- The context should include `requestId`, `entryPoint`, `userMessage`, `currentDate`, canonical timezone from stored user context, available projects, optional existing task snapshot, and execution mode (`user` or `dev`).
+- The context should include `requestId`, `entryPoint`, `userMessage`, `currentDate`, canonical timezone from stored user context, available projects, optional existing task snapshot, and the caller-supplied execution mode string (`interactive`, `scan`, `review`, `poll`, or dev/debug aliases).
 
 Rationale:
 - `services/pipeline.js` currently passes inconsistent context fields to AX and normalizer.

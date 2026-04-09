@@ -57,8 +57,8 @@ Canonical execution context assembled before AX extraction.
 
 Fields:
 - `requestId: string`
-- `entryPoint: "telegram_message" | "telegram_review" | "scheduler" | "manual_command"`
-- `mode: "user" | "dev"`
+- `entryPoint: string`
+- `mode: string`
 - `userMessage: string`
 - `currentDate: string`
 - `timezone: string`
@@ -66,8 +66,11 @@ Fields:
 - `existingTask: ExistingTaskSnapshot | null`
 
 Validation rules:
+- `entryPoint` must be a non-empty string. Call sites may pass raw values such as `telegram:freeform`, `telegram:scan`, `telegram:review`, `scheduler:poll`, `manual_command`, or test-only values such as `regression`.
+- `mode` must be a non-empty string. Current live modes include `interactive`, `scan`, `review`, `poll`, and dev/debug aliases used to toggle diagnostic output.
 - `timezone` must come from stored user context, not an environment default chosen at execution time.
 - `currentDate` must be formatted before AX runs so relative dates are deterministic.
+- `currentDate` is normalized to `YYYY-MM-DD` before AX runs, even when the incoming value starts as a timestamp.
 - `requestId` must be present on every request for observability correlation.
 
 ### ProjectRef
@@ -154,6 +157,10 @@ Terminal request failure envelope.
 
 Fields:
 - `failureClass: "quota" | "malformed_ax" | "validation" | "adapter" | "rollback" | "unexpected"`
+- `class: same as failureClass`
+- `stage: string | null`
+- `summary: string | null`
+- `details: object | null`
 - `userMessage: string`
 - `developerMessage: string | null`
 - `requestId: string`
@@ -167,16 +174,26 @@ Final result returned by `processMessage()`.
 Fields:
 - `type: "task" | "non-task" | "error"`
 - `requestId: string`
-- `actions: NormalizedPipelineAction[]`
 - `results: ActionExecutionRecord[]`
 - `errors: string[]`
 - `confirmationText: string`
-- `failure: PipelineFailure | null`
+- `entryPoint: string | null`
+- `mode: string | null`
+- `actions?: NormalizedPipelineAction[]`
+- `warnings?: string[]`
+- `failure?: PipelineFailure`
+- `diagnostics?: string[]`
+- `isDevMode?: boolean`
+- `nonTaskReason?: string`
+- `nonTaskDetails?: object | null`
 
 State expectations:
 - `non-task` means AX produced no actionable intent or all actions failed validation without writes.
 - `error` means the request terminated in a classified failure envelope.
 - `task` can include rolled-back writes, but final success is only valid when no unrecovered failure remains.
+- `actions` is present on `task` results, not on `non-task` or `error` results.
+- `nonTaskReason` and `nonTaskDetails` are present on `non-task` results.
+- `failure`, `diagnostics`, and `isDevMode` are present on `error` results.
 
 ### TelemetryEvent
 

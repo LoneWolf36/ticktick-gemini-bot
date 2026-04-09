@@ -5,6 +5,10 @@ dependencies:
 - WP02
 - WP03
 - WP04
+requirement_refs:
+- FR-003
+- FR-006
+- FR-007
 base_branch: 006-briefing-weekly-modernization-WP03
 base_commit: 834edfe28644dfee289147dd3f319cb0f9ce77d0
 created_at: '2026-03-13T17:57:05.361650+00:00'
@@ -15,10 +19,19 @@ subtasks:
 - T030
 - T031
 phase: Phase 3 - Surface Adapters
-requirement_refs:
-- FR-003
-- FR-006
-- FR-007
+authoritative_surface: ''
+execution_mode: code_change
+mission_id: 01KNT55PMYXNH3ATTB29REH4RQ
+owned_files:
+- kitty-specs/006-briefing-weekly-modernization/contracts/summary-surfaces.openapi.yaml
+- kitty-specs/006-briefing-weekly-modernization/data-model.md
+- kitty-specs/006-briefing-weekly-modernization/plan.md
+- kitty-specs/006-briefing-weekly-modernization/quickstart.md
+- kitty-specs/006-briefing-weekly-modernization/research.md
+- kitty-specs/006-briefing-weekly-modernization/spec.md
+- tests/regression.test.js
+- tests/run-regression-tests.mjs
+wp_code: WP06
 ---
 
 # Work Package Prompt: WP06 - Scheduler Integration and Delivery Parity

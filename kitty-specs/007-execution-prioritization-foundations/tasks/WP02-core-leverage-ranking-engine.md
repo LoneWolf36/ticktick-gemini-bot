@@ -3,6 +3,11 @@ work_package_id: WP02
 title: Core Leverage Ranking Engine
 dependencies:
 - WP01
+requirement_refs:
+- FR-004
+- FR-006
+- FR-008
+- FR-009
 subtasks:
 - T005
 - T006
@@ -10,11 +15,15 @@ subtasks:
 - T008
 - T009
 phase: Phase 2 - Core Policy Engine
-requirement_refs:
-- FR-004
-- FR-006
-- FR-008
-- FR-009
+authoritative_surface: ''
+execution_mode: code_change
+mission_id: 01KNT55PMYXNH3ATTB29REH4RR
+owned_files:
+- kitty-specs/007-execution-prioritization-foundations/plan.md
+- kitty-specs/007-execution-prioritization-foundations/spec.md
+- tests/regression.test.js
+- tests/run-regression-tests.mjs
+wp_code: WP02
 ---
 
 # Work Package Prompt: WP02 - Core Leverage Ranking Engine

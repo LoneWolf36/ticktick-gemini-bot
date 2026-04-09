@@ -3,6 +3,12 @@ work_package_id: WP01
 title: TickTick Adapter Module
 dependencies: []
 subtasks: [T001, T002, T003, T004, T005, T006, T007, T008]
+authoritative_surface: src/
+execution_mode: code_change
+mission_id: 01KNT55PMWQ9GQH7JH6E61VDZD
+owned_files:
+- src/**
+wp_code: WP01
 ---
 
 # WP01 — TickTick Adapter Module

@@ -2,7 +2,7 @@
 
 **Feature Branch**: `003-pipeline-hardening-and-regression`  
 **Created**: 2026-03-10  
-**Status**: Draft  
+**Status**: Accepted  
 **Mission**: software-dev  
 **Input**: Follow-on hardening from `001-task-operations-pipeline`. The new architecture is the core task path, but its contract, failure handling, and regression coverage still need to catch up.
 

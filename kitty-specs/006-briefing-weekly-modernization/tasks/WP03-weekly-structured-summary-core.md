@@ -3,6 +3,12 @@ work_package_id: WP03
 title: Weekly Structured Summary Core
 dependencies:
 - WP01
+requirement_refs:
+- FR-002
+- FR-004
+- FR-005
+- FR-007
+- FR-008
 base_branch: 006-briefing-weekly-modernization-WP01
 base_commit: 81b1897ea138b8870e8750afd02aeab81961dc52
 created_at: '2026-03-13T17:27:02.894720+00:00'
@@ -14,12 +20,18 @@ subtasks:
 - T015
 - T016
 phase: Phase 2 - Parallel Core
-requirement_refs:
-- FR-002
-- FR-004
-- FR-005
-- FR-007
-- FR-008
+authoritative_surface: ''
+execution_mode: code_change
+mission_id: 01KNT55PMYXNH3ATTB29REH4RQ
+owned_files:
+- kitty-specs/006-briefing-weekly-modernization/contracts/summary-surfaces.openapi.yaml
+- kitty-specs/006-briefing-weekly-modernization/data-model.md
+- kitty-specs/006-briefing-weekly-modernization/plan.md
+- kitty-specs/006-briefing-weekly-modernization/research.md
+- kitty-specs/006-briefing-weekly-modernization/spec.md
+- tests/regression.test.js
+- tests/run-regression-tests.mjs
+wp_code: WP03
 ---
 
 # Work Package Prompt: WP03 - Weekly Structured Summary Core

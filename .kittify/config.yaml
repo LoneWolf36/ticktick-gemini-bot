@@ -6,3 +6,7 @@ agents:
   - gemini
   - opencode
   - codex
+project:
+  uuid: 940d53fb-ce2f-4a36-9c31-059b7d76c950
+  slug: ticktick-gemini-bot
+  node_id: c3b978b1ee06

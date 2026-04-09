@@ -11,6 +11,15 @@ subtasks:
 - T005
 - T006
 phase: Phase 2 - Parallel Execution
+authoritative_surface: kitty-specs/008-work-style-and-urgent-mode/
+execution_mode: code_change
+mission_id: 01KNT55PMZK4VQERH6AB2FE18B
+owned_files:
+- kitty-specs/008-work-style-and-urgent-mode/plan.md
+- kitty-specs/008-work-style-and-urgent-mode/tasks.md
+- kitty-specs/008-work-style-and-urgent-mode/tasks/WP02-telegram-bot-interface.md
+- kitty-specs/008-work-style-and-urgent-mode/tasks/WP05-integration-testing.md
+wp_code: WP02
 ---
 
 # Work Package Prompt: WP02 - Telegram Bot Interface

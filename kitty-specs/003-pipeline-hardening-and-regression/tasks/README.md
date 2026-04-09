@@ -1,6 +1,6 @@
 # Tasks Directory
 
-This directory contains work package prompt files for `003-pipeline-hardening-and-regression`.
+This directory contains work-package prompt files for `003-pipeline-hardening-and-regression`.
 
 ## Directory Structure
 
@@ -15,25 +15,25 @@ tasks/
 `- README.md
 ```
 
-All work package files stay flat in `tasks/`. Lane status is tracked in YAML frontmatter, not by subdirectory.
+All work-package files stay flat in `tasks/`.
 
-## Valid Lanes
+## Spec Kitty v3 Notes
 
-- `planned`
-- `doing`
-- `for_review`
-- `done`
+- Work-package state is tracked in `../status.events.jsonl`, not in frontmatter lanes.
+- WP frontmatter is minimal and should only include the current v3 fields:
+  - `work_package_id`
+  - `title`
+  - `dependencies`
+  - `subtasks`
+  - `base_branch`
+  - `base_commit`
+  - `created_at`
+  - `phase`
+  - `requirement_refs`
+- Review feedback belongs in the body of each WP prompt, not in deprecated frontmatter keys.
 
-## Moving Between Lanes
+## Usage
 
-Use the CLI so frontmatter and activity log stay in sync:
-
-```bash
-spec-kitty agent tasks move-task <WPID> --to <lane>
-```
-
-Example:
-
-```bash
-spec-kitty agent tasks move-task WP01 --to doing
-```
+- Treat `tasks.md` as the dependency map for the feature.
+- Treat each `WP*.md` file as the implementation prompt for that work package.
+- Treat `../status.events.jsonl` as the source of truth for workflow state.
