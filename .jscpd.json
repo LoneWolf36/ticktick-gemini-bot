@@ -11,6 +11,7 @@
     "**/.codex/**",
     "**/.opencode/**",
     "**/.kittify/**",
+    "**/.worktrees/**",
     "**/coverage/**",
     "**/dist/**",
     "**/build/**"
