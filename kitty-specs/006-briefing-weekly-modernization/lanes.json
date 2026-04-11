@@ -1,0 +1,90 @@
+{
+  "version": 1,
+  "mission_slug": "006-briefing-weekly-modernization",
+  "mission_id": "01KNT55PMYXNH3ATTB29REH4RQ",
+  "mission_branch": "kitty/mission-006-briefing-weekly-modernization",
+  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
+  "lanes": [
+    {
+      "lane_id": "lane-a",
+      "wp_ids": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05",
+        "WP06",
+        "WP07"
+      ],
+      "write_scope": [
+        "kitty-specs/006-briefing-weekly-modernization/contracts/summary-surfaces.openapi.yaml",
+        "kitty-specs/006-briefing-weekly-modernization/data-model.md",
+        "kitty-specs/006-briefing-weekly-modernization/plan.md",
+        "kitty-specs/006-briefing-weekly-modernization/quickstart.md",
+        "kitty-specs/006-briefing-weekly-modernization/research.md",
+        "kitty-specs/006-briefing-weekly-modernization/spec.md",
+        "tests/e2e-live-checklist.mjs",
+        "tests/e2e-live-ticktick.mjs",
+        "tests/pipeline-harness.js",
+        "tests/regression.test.js",
+        "tests/regression.test.js.",
+        "tests/run-regression-tests.mjs"
+      ],
+      "predicted_surfaces": [
+        "api",
+        "artifact-rendering",
+        "legacy-cleanup"
+      ],
+      "depends_on_lanes": [],
+      "parallel_group": 0
+    }
+  ],
+  "computed_at": "2026-04-11T18:48:57.065276+00:00",
+  "computed_from": "dependency_graph+ownership",
+  "planning_artifact_wps": [],
+  "collapse_report": {
+    "events": [
+      {
+        "wp_a": "WP02",
+        "wp_b": "WP01",
+        "rule": "dependency",
+        "evidence": "WP02 depends on WP01"
+      },
+      {
+        "wp_a": "WP03",
+        "wp_b": "WP01",
+        "rule": "dependency",
+        "evidence": "WP03 depends on WP01"
+      },
+      {
+        "wp_a": "WP04",
+        "wp_b": "WP01",
+        "rule": "dependency",
+        "evidence": "WP04 depends on WP01"
+      },
+      {
+        "wp_a": "WP05",
+        "wp_b": "WP02",
+        "rule": "dependency",
+        "evidence": "WP05 depends on WP02"
+      },
+      {
+        "wp_a": "WP06",
+        "wp_b": "WP02",
+        "rule": "dependency",
+        "evidence": "WP06 depends on WP02"
+      },
+      {
+        "wp_a": "WP07",
+        "wp_b": "WP05",
+        "rule": "dependency",
+        "evidence": "WP07 depends on WP05"
+      }
+    ],
+    "total_merges": 6,
+    "independent_wps_collapsed": 0,
+    "by_rule": {
+      "dependency": 6
+    }
+  }
+}

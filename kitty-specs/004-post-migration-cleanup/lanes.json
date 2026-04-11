@@ -1,0 +1,79 @@
+{
+  "version": 1,
+  "mission_slug": "004-post-migration-cleanup",
+  "mission_id": "01KNT55PMXDGM4VDMWY0YT3CQW",
+  "mission_branch": "kitty/mission-004-post-migration-cleanup",
+  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
+  "lanes": [
+    {
+      "lane_id": "lane-a",
+      "wp_ids": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05"
+      ],
+      "write_scope": [
+        ".env.example",
+        "AGENTS.md",
+        "README.md",
+        "bot/commands.js",
+        "kitty-specs/001-task-operations-pipeline/plan.md",
+        "render.yaml",
+        "server.js",
+        "services/gemini.js",
+        "services/schemas.js",
+        "services/user_context.example.js",
+        "tests/e2e-live-checklist.mjs",
+        "tests/e2e-live-ticktick.mjs",
+        "tests/regression.test.js",
+        "tests/run-regression-tests.mjs"
+      ],
+      "predicted_surfaces": [
+        "api",
+        "artifact-rendering",
+        "legacy-cleanup",
+        "tracker-integration"
+      ],
+      "depends_on_lanes": [],
+      "parallel_group": 0
+    }
+  ],
+  "computed_at": "2026-04-11T18:48:56.977333+00:00",
+  "computed_from": "dependency_graph+ownership",
+  "planning_artifact_wps": [],
+  "collapse_report": {
+    "events": [
+      {
+        "wp_a": "WP02",
+        "wp_b": "WP01",
+        "rule": "dependency",
+        "evidence": "WP02 depends on WP01"
+      },
+      {
+        "wp_a": "WP03",
+        "wp_b": "WP01",
+        "rule": "dependency",
+        "evidence": "WP03 depends on WP01"
+      },
+      {
+        "wp_a": "WP04",
+        "wp_b": "WP02",
+        "rule": "dependency",
+        "evidence": "WP04 depends on WP02"
+      },
+      {
+        "wp_a": "WP05",
+        "wp_b": "WP01",
+        "rule": "dependency",
+        "evidence": "WP05 depends on WP01"
+      }
+    ],
+    "total_merges": 4,
+    "independent_wps_collapsed": 0,
+    "by_rule": {
+      "dependency": 4
+    }
+  }
+}

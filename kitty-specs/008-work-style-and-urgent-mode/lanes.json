@@ -1,0 +1,75 @@
+{
+  "version": 1,
+  "mission_slug": "008-work-style-and-urgent-mode",
+  "mission_id": "01KNT55PMZK4VQERH6AB2FE18B",
+  "mission_branch": "kitty/mission-008-work-style-and-urgent-mode",
+  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
+  "lanes": [
+    {
+      "lane_id": "lane-a",
+      "wp_ids": [
+        "WP01",
+        "WP02",
+        "WP03",
+        "WP04",
+        "WP05"
+      ],
+      "write_scope": [
+        "kitty-specs/008-work-style-and-urgent-mode/plan.md",
+        "kitty-specs/008-work-style-and-urgent-mode/tasks.md",
+        "kitty-specs/008-work-style-and-urgent-mode/tasks/WP02-telegram-bot-interface.md",
+        "kitty-specs/008-work-style-and-urgent-mode/tasks/WP03-ai-prompt-augmentation.md",
+        "kitty-specs/008-work-style-and-urgent-mode/tasks/WP05-integration-testing.md",
+        "kitty-specs/008-work-style-and-urgent-mode/tasks/WP05-integration-testing.md#L63",
+        "tests/e2e-live-checklist.mjs",
+        "tests/e2e-live-ticktick.mjs"
+      ],
+      "predicted_surfaces": [
+        "api",
+        "artifact-rendering",
+        "dashboard",
+        "legacy-cleanup",
+        "tests",
+        "tracker-integration"
+      ],
+      "depends_on_lanes": [],
+      "parallel_group": 0
+    }
+  ],
+  "computed_at": "2026-04-11T18:48:57.117413+00:00",
+  "computed_from": "dependency_graph+ownership",
+  "planning_artifact_wps": [],
+  "collapse_report": {
+    "events": [
+      {
+        "wp_a": "WP02",
+        "wp_b": "WP01",
+        "rule": "dependency",
+        "evidence": "WP02 depends on WP01"
+      },
+      {
+        "wp_a": "WP03",
+        "wp_b": "WP01",
+        "rule": "dependency",
+        "evidence": "WP03 depends on WP01"
+      },
+      {
+        "wp_a": "WP04",
+        "wp_b": "WP01",
+        "rule": "dependency",
+        "evidence": "WP04 depends on WP01"
+      },
+      {
+        "wp_a": "WP05",
+        "wp_b": "WP02",
+        "rule": "dependency",
+        "evidence": "WP05 depends on WP02"
+      }
+    ],
+    "total_merges": 4,
+    "independent_wps_collapsed": 0,
+    "by_rule": {
+      "dependency": 4
+    }
+  }
+}
