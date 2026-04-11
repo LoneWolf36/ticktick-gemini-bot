@@ -61,6 +61,7 @@ The system retains only the minimum signal history needed for short learning loo
 
 ### Functional Requirements
 
+- **FR-000**: Behavioral pattern surfacing MUST delegate to the weak inference surfacing rules defined in 008-work-style-and-urgent-mode. This spec (009) owns signal capture, retention windows, and privacy boundaries only — NOT pattern interpretation or user-facing surfacing language.
 - **FR-001**: Anti-procrastination support MUST remain passive by default in v1
 - **FR-002**: The long-term behavioral memory store MUST retain derived signals plus the explicitly enumerated minimal semantic metadata only
 - **FR-003**: Long-term behavioral memory MUST NOT retain raw user messages, raw task titles, free-form conversational archives, or open-ended semantic summaries for this feature

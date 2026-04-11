@@ -53,6 +53,7 @@ The system distinguishes between one task with sub-items and multiple standalone
 
 ### Functional Requirements
 
+- **FR-000**: The Intent Action shape defined in 001-task-operations-pipeline FR-001 is extended with an optional `checklist: string[]` field for create-type actions only. This extension does not affect mutation actions defined in 002-natural-language-task-mutations.
 - **FR-001**: AX extraction MUST support an optional checklist field for create actions
 - **FR-002**: The normalizer MUST clean checklist item text separately from parent task title normalization
 - **FR-003**: The pipeline MUST distinguish checklist intent from multi-task intent using explicit rules and clarification when ambiguity remains

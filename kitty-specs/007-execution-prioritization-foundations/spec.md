@@ -71,6 +71,7 @@ The user can understand why a task was recommended without needing to inspect op
 - **FR-008**: System MUST support recommendation output even when user state is unknown
 - **FR-009**: System MUST degrade honestly when leverage is ambiguous rather than pretending false precision
 - **FR-010**: Downstream features that recommend, summarize, or coach MUST inherit this ranking policy rather than defining local alternative priorities
+- **FR-011**: Work-style state and urgent-mode state MUST be resolved through the state resolver defined in 008-work-style-and-urgent-mode. This spec (007) consumes resolved state but does not own state persistence or toggle logic.
 
 ### Key Entities
 

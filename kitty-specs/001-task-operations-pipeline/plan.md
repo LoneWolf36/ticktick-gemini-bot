@@ -13,31 +13,37 @@ This plan details the implementation of the new task operations pipeline, replac
 - **Migration Strategy**: Clean cut. Replace old `runTaskIntake` and task parsing logic entirely without a fallback.
 - **Command Scope**: Migrate `/scan` and `/review` to AX and the new Adapter because they mutate state. Leave `/briefing` and `/weekly` on the legacy `gemini.js` for now to limit scope.
 
-## Phase 1: TickTick Adapter (Foundations)
-- [ ] Refactor `services/ticktick.js` into a compliant adapter module (`TickTickAdapter`).
-- [ ] Expose strict interface matching FR-015: `createTask`, `updateTask`, `completeTask`, `deleteTask`, `listProjects`, `findProjectByName`, `createTasksBatch`.
-- [ ] Keep existing infrastructure intact: OAuth2 token refresh, retry with exponential backoff, cache invalidation, and project-move transactional rollback.
+## Implementation Status
 
-## Phase 2: AX and Normalizer Layer
-- [ ] Add AX (`@ax-llm/ax`) to the project dependencies.
-- [ ] Configure AX with `apiKey` callback that delegates to the existing key rotation logic (AX supports `apiKey: () => Promise<string>`, called per request).
-- [ ] Add quota-exhaustion error handler: when AX throws after exhausting its built-in retries, mark the active key unavailable and rotate to the next key.
-- [ ] Define AX signatures (intents) matching the `Intent Action` spec: `type`, `title`, `content`, `priority`, `projectHint`, `dueDate`, `repeatHint`, `splitStrategy`.
-- [ ] Create the Deterministic Normalizer module to convert an `Intent Action` to a `Normalized Action`:
+**All phases completed.** See `tasks.md` and `status.events.jsonl` for completed work package details.
+
+## Original Plan (Archived)
+
+### Phase 1: TickTick Adapter (Foundations)
+- Refactor `services/ticktick.js` into a compliant adapter module (`TickTickAdapter`).
+- Expose strict interface matching FR-015: `createTask`, `updateTask`, `completeTask`, `deleteTask`, `listProjects`, `findProjectByName`, `createTasksBatch`.
+- Keep existing infrastructure intact: OAuth2 token refresh, retry with exponential backoff, cache invalidation, and project-move transactional rollback.
+
+### Phase 2: AX and Normalizer Layer
+- Add AX (`@ax-llm/ax`) to the project dependencies.
+- Configure AX with `apiKey` callback that delegates to the existing key rotation logic (AX supports `apiKey: () => Promise<string>`, called per request).
+- Add quota-exhaustion error handler: when AX throws after exhausting its built-in retries, mark the active key unavailable and rotate to the next key.
+- Define AX signatures (intents) matching the `Intent Action` spec: `type`, `title`, `content`, `priority`, `projectHint`, `dueDate`, `repeatHint`, `splitStrategy`.
+- Create the Deterministic Normalizer module to convert an `Intent Action` to a `Normalized Action`:
   - Apply title limits (truncate).
   - Strip motivational/filler content.
   - Convert `repeatHint` to TickTick compatible `repeatFlag` (RRULE).
   - Resolve `projectHint` to a concrete TickTick Project ID using the cached project list.
   - Preserve existing task content during updates (append/improve, never overwrite) per FR-007.
-- [ ] Wire single-task creation (Telegram DM → AX → Normalizer → Adapter → TickTick) as vertical smoke test.
+- Wire single-task creation (Telegram DM → AX → Normalizer → Adapter → TickTick) as vertical smoke test.
 
-## Phase 3: Pipeline Integration
-- [ ] Migrate Telegram direct message task creation to the new AX -> Normalizer -> Adapter pipeline.
-- [ ] Migrate `bot/commands.js` (specifically `/scan` and `/review` flows via `runTaskIntake`) to use the new pipeline.
-- [ ] Hook up `autoApply` and inline callback actions to use the new `TickTickAdapter`.
-- [ ] Implement graceful API failure handling (FR-016): when TickTick REST API is unavailable, preserve parsed intent and notify the user without losing data.
+### Phase 3: Pipeline Integration
+- Migrate Telegram direct message task creation to the new AX -> Normalizer -> Adapter pipeline.
+- Migrate `bot/commands.js` (specifically `/scan` and `/review` flows via `runTaskIntake`) to use the new pipeline.
+- Hook up `autoApply` and inline callback actions to use the new `TickTickAdapter`.
+- Implement graceful API failure handling (FR-016): when TickTick REST API is unavailable, preserve parsed intent and notify the user without losing data.
 
-## Phase 4: Verification and Clean Up
-- [ ] Execute E2E manual testing via Telegram interface (test creation, split tasks, recurrence mapping).
-- [ ] Remove legacy `converseSchema` and `gemini.converse()` task creation logic entirely.
-- [ ] Remove legacy `ANALYZE_PROMPT` usage where replaced by AX.
+### Phase 4: Verification and Clean Up
+- Execute E2E manual testing via Telegram interface (test creation, split tasks, recurrence mapping).
+- Remove legacy `converseSchema` and `gemini.converse()` task creation logic entirely.
+- Remove legacy `ANALYZE_PROMPT` usage where replaced by AX.

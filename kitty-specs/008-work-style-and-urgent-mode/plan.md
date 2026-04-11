@@ -41,17 +41,16 @@ kitty-specs/008-work-style-and-urgent-mode/
 ### Source Code
 
 ```
-src/
-├── bot/
-│   ├── commands.js      # Register /urgent toggle command
-│   └── callbacks.js     # Handle inline keyboard toggle if used
-├── services/
-│   ├── store.js         # Redis persistence for urgent mode state
-│   ├── gemini.js        # Apply urgent mode tone/ordering to AI prompts
-│   └── scheduler.js     # Append urgent mode reminders to scheduled briefings
-└── tests/
-    ├── e2e-live-ticktick.mjs  # Add E2E tests for urgent mode toggling and output checking
-    └── e2e-live-checklist.mjs
+bot/
+├── commands.js      # Register /urgent toggle command
+└── callbacks.js     # Handle inline keyboard toggle if used
+services/
+├── store.js         # Redis persistence for urgent mode state
+├── gemini.js        # Apply urgent mode tone/ordering to AI prompts
+└── scheduler.js     # Append urgent mode reminders to scheduled briefings
+tests/
+├── e2e-live-ticktick.mjs  # Add E2E tests for urgent mode toggling and output checking
+└── e2e-live-checklist.mjs
 ```
 
 **Structure Decision**: The feature spans the Bot Layer, Service Layer (Store/State), and AI/Briefing logic. We will modify existing files to inject the state resolution and augment prompts.

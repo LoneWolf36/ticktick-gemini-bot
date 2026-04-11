@@ -93,7 +93,7 @@ Manual commands and scheduled jobs use the same summary modules.
 - **FR-005b**: `/weekly.watchouts` MUST be limited to evidence-backed execution risks from current task state or processed-task history, plus explicit missing-data notices, and MUST NOT introduce behavioral interpretation in this feature
 - **FR-006**: Logging MUST capture source inputs, structured summary outputs, formatting decisions, and delivery failures
 - **FR-007**: User-facing briefing and weekly messages MUST remain concise and Telegram-safe after formatting
-- **FR-008**: Recommendation and reflection policy used by these summaries MUST be inherited from the shared foundation specs rather than invented locally
+- **FR-008**: Recommendation and reflection policy used by these summaries MUST be inherited from the shared foundation specs rather than invented locally. Urgent task classification for reminder purposes MUST use the shared urgency utility from `008-work-style-and-urgent-mode`; this feature does NOT reimplement urgency logic and queries the shared utility to determine which tasks are urgent.
 
 ### Key Entities
 

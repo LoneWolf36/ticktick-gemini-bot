@@ -180,6 +180,7 @@ description: "Work package task list template for feature implementation"
 ## Canonical Status (Generated)
 - WP01: done
 - WP02: done
+- WP03: done
 - WP04: done
 - WP05: done
 <!-- status-model:end -->
