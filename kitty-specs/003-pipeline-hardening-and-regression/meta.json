@@ -4,7 +4,7 @@
   "feature_slug": "003-pipeline-hardening-and-regression",
   "friendly_name": "Core Pipeline Hardening and Regression",
   "mission": "software-dev",
-  "target_branch": "master",
+  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
   "source_description": "Harden the structured task pipeline with clearer contracts, failure handling, and regression coverage for the new architecture.",
   "vcs": "git",
   "created_at": "2026-03-12T14:21:00.689255+00:00",

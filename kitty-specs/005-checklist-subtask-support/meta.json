@@ -4,7 +4,7 @@
   "feature_slug": "005-checklist-subtask-support",
   "friendly_name": "Checklist Creation Support",
   "mission": "software-dev",
-  "target_branch": "master",
+  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
   "source_description": "Add create-time checklist extraction so structured task creation can produce sub-steps without opening full checklist editing scope.",
   "vcs": "git",
   "created_at": "2026-03-12T14:21:00.985843+00:00",

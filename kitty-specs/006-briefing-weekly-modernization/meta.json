@@ -23,7 +23,7 @@
   "mission": "software-dev",
   "slug": "006-briefing-weekly-modernization",
   "source_description": "Move /briefing and /weekly off the legacy Gemini path and onto shared structured modules with deterministic formatting.",
-  "target_branch": "master",
+  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
   "vcs": "git",
   "created_at": "2026-03-12T18:12:05.849579+00:00",
   "mission_id": "01KNT55PMYXNH3ATTB29REH4RQ"
