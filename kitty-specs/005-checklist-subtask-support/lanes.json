@@ -3,7 +3,7 @@
   "mission_slug": "005-checklist-subtask-support",
   "mission_id": "01KNT55PMYXNH3ATTB29REH4RP",
   "mission_branch": "kitty/mission-005-checklist-subtask-support",
-  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
+  "target_branch": "master",
   "lanes": [
     {
       "lane_id": "lane-a",
