@@ -1,0 +1,120 @@
+name: feature-dev
+description: |
+  Use when: Implementing a feature or enhancement from a plan or issue description
+  in the TickTick + Gemini bot project.
+  Input: Feature description in natural language, or GitHub issue number
+  Output: Draft PR ready for review with validation complete
+
+  Full workflow:
+  1. Explore codebase and create implementation plan
+  2. Implement all tasks with validation
+  3. Run full validation suite
+  4. Create draft PR with template
+  5. Review and self-fix
+  6. Report results
+
+  NOT for: Bug fixes (use fix-issue), executing existing plans, code reviews.
+
+provider: qwen
+model: qwen-coder
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 0: PLAN
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: plan
+    command: plan-feature
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: IMPLEMENT
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: implement
+    command: implement
+    depends_on: [plan]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: VALIDATE
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: validate
+    command: validate
+    depends_on: [implement]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: CREATE PR
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: create-pr
+    prompt: |
+      Create a draft pull request for the current branch.
+
+      ## Context
+      - **Feature**: $ARGUMENTS
+      - **Plan**: See $ARTIFACTS_DIR/plan.md
+
+      ## Instructions
+      1. Check git status — ensure all changes are committed.
+         Include required co-author: Co-Authored-By: Codex GPT-5 <noreply@openai.com>
+      2. Push the branch: `git push -u origin HEAD`
+      3. Read artifacts from `$ARTIFACTS_DIR/` for context
+      4. Check for existing PR: `gh pr list --head $(git branch --show-current)`
+      5. Create DRAFT PR: `gh pr create --draft --base $BASE_BRANCH`
+         - Title: concise, imperative, under 70 chars
+         - Body: fill every section from PR template if available
+      6. Save PR info:
+         ```bash
+         PR_NUMBER=$(gh pr view --json number -q '.number')
+         echo "$PR_NUMBER" > "$ARTIFACTS_DIR/.pr-number"
+         PR_URL=$(gh pr view --json url -q '.url')
+         echo "$PR_URL" > "$ARTIFACTS_DIR/.pr-url"
+         ```
+    depends_on: [validate]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: REVIEW & SELF-FIX
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: review
+    command: review
+    depends_on: [create-pr]
+    context: fresh
+
+  - id: self-fix
+    prompt: |
+      Address all review findings.
+      1. Read review at $ARTIFACTS_DIR/review.md
+      2. Fix each issue
+      3. Re-run validation (see validate)
+      4. Commit with Co-Authored-By line
+      5. Push fixes
+      6. Write summary to $ARTIFACTS_DIR/self-fix.md
+    depends_on: [review]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: SUMMARY
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: summary
+    prompt: |
+      Generate a workflow summary.
+
+      ## Steps
+      1. Gather artifacts: plan.md, implementation.md, validation.md, review.md, self-fix.md
+      2. Read PR URL from $ARTIFACTS_DIR/.pr-url
+      3. Write summary to $ARTIFACTS_DIR/summary.md with:
+         - What was implemented
+         - Files changed (table)
+         - Validation results (table)
+         - PR link
+         - Any follow-up items
+
+      Output the summary to the user.
+    depends_on: [self-fix]
+    context: fresh

@@ -1,0 +1,9 @@
+worktree:
+  baseBranch: master
+
+ai:
+  provider: qwen
+  model: qwen-coder
+
+docs:
+  path: docs/
