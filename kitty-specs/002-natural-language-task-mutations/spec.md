@@ -57,7 +57,7 @@ When multiple tasks could match the user's instruction, the system asks a focuse
 ## Edge Cases
 
 - Pronoun-based references such as "move that one to Friday" should trigger follow-up rather than guesswork.
-- If the target task was already completed or deleted externally, the adapter failure should be surfaced clearly.
+- If the target task was already completed or deleted externally, the adapter failure should be surfaced clearly; adapter failures during mutation are handled per the hardened failure paths defined in `003-pipeline-hardening-and-regression` FR-003 and FR-004.
 - If mutation intent and create intent are mixed in one message, the system may reject the combined request and ask for a simpler instruction until multi-action orchestration is specified separately.
 
 ## Out Of Scope
@@ -65,6 +65,7 @@ When multiple tasks could match the user's instruction, the system asks a focuse
 - Batch mutations such as "move all gym tasks to next week"
 - High-risk bulk delete flows
 - Rich mixed-action requests that combine create and mutate behavior in one message
+- Mutating checklist items on existing tasks (see `005-checklist-subtask-support` for create-time checklist scope; mutation semantics are deferred)
 
 ## Requirements
 
@@ -73,9 +74,9 @@ When multiple tasks could match the user's instruction, the system asks a focuse
 - **FR-001**: System MUST extract free-form mutation intent for `update`, `complete`, and `delete` using AX structured output
 - **FR-002**: System MUST resolve target tasks deterministically from the current TickTick task set before executing any mutation
 - **FR-003**: System MUST prefer exact title matches before fuzzy matches and MUST ask a follow-up question when multiple plausible targets remain
-- **FR-004**: System MUST route all successful mutations through `TickTickAdapter`
+- **FR-004**: System MUST route all successful mutations through `TickTickAdapter`; mutation actions flow through the same pipeline contract defined in `001-task-operations-pipeline` FR-004
 - **FR-005**: Update flows MUST preserve existing task content unless the user explicitly requests a content change
-- **FR-006**: User-facing confirmations MUST remain terse and clarification prompts MUST stay narrow
+- **FR-006**: User-facing confirmations MUST remain terse and clarification prompts MUST stay narrow; response verbosity respects the current work-style state defined in `008-work-style-and-urgent-mode`
 - **FR-007**: Logging MUST capture mutation intent, candidate targets, the final chosen target, and the reason a mutation was skipped
 - **FR-008**: Delete operations MUST fail closed when resolution is uncertain
 - **FR-009**: This feature MUST apply to one resolved target per mutation action in v1

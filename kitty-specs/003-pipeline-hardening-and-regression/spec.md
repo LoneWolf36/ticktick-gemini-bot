@@ -73,6 +73,7 @@ The regression suite covers the pipeline and adapter path directly rather than m
 
 - Product-level ranking policy, work-style state, urgent-mode semantics, and behavioral memory rules
 - Reflection-surface contract tests that depend on later foundation specs
+- Regression coverage for checklist creation (005), briefing/weekly commands (006), execution prioritization (007), work-style state resolution (008), and behavioral signal generation (009) should be added as separate regression test additions once those specs are accepted.
 
 ## Requirements
 
@@ -83,7 +84,9 @@ The regression suite covers the pipeline and adapter path directly rather than m
 - **FR-003**: The pipeline MUST handle malformed AX output, empty intent lists, and validation failures without unhandled exceptions
 - **FR-004**: The pipeline MUST attempt another configured Gemini key before returning a quota failure, and MUST surface final quota exhaustion and adapter failure states with deterministic messages that are compact for end users
 - **FR-005**: The regression suite MUST cover the pipeline directly, not only legacy execution helpers
+- **FR-005a**: Future regression extensions should cover behavioral signal generation paths defined in `009-behavioral-signals-and-memory`.
 - **FR-006**: Tests MUST cover create, update, complete, delete, non-task, validation-failure, and adapter-failure paths
+- **FR-006a**: Tests SHOULD verify the shared urgency utility from `008-work-style-and-urgent-mode` returns consistent classifications across all callers once that spec is implemented.
 - **FR-007**: Logging MUST remain sufficient to trace raw input, AX contract input, normalized output, adapter execution, and error paths
 - **FR-008**: Hardening work MUST preserve the single write boundary through `TickTickAdapter`
 - **FR-009**: For multi-action requests, the pipeline MUST retry a failed action once and roll back prior writes if the retry fails before returning a user-facing failure

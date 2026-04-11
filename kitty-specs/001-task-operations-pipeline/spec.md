@@ -28,7 +28,7 @@ The user sends a plain Telegram message like "Book dentist appointment Thursday"
 
 The user sends a message containing multiple tasks like "book flight, pack bag, and call uber friday" and the system creates separate TickTick tasks for each one.
 
-**Why this priority**: Equally critical as single-task creation. Users with ADHD frequently brain-dump multiple tasks in one message. Failing to split them creates incorrect or merged tasks.
+**Why this priority**: Equally critical as single-task creation. Users with ADHD frequently brain-dump multiple tasks in one message. Failing to split them creates incorrect or merged tasks. This user story handles independent multi-task intent; for checklist/sub-step intent (one task with sub-items), see `005-checklist-subtask-support`.
 
 **Independent Test**: Send a multi-intent message and verify each intent becomes a separate task with its own clean title, correct date (if specified), and appropriate project.
 
@@ -131,7 +131,7 @@ When the user mentions a project or category (explicitly or implicitly), the sys
 
 ### Edge Cases
 
-- What happens when the TickTick REST API is unavailable? The system should fail gracefully with a user-facing error message and not lose the parsed intent.
+- What happens when the TickTick REST API is unavailable? The system should fail gracefully with a user-facing error message and not lose the parsed intent. Failure handling for API unavailability is hardened per `003-pipeline-hardening-and-regression` FR-004.
 - What happens when AX returns a malformed or low-confidence intent? The normalizer rejects it and the bot asks the user to rephrase.
 - What happens when a message contains zero actionable task content (e.g., "hello")? The system should not create a task and should respond conversationally.
 - What happens when the user sends a message with conflicting recurrence signals (e.g., "every weekday but only on Tuesday")? The system should ask for clarification.
@@ -150,11 +150,11 @@ When the user mentions a project or category (explicitly or implicitly), the sys
 - **FR-007**: Task content MUST only contain useful references (URLs, locations, instructions) and MUST NOT contain coaching prose, motivational filler, or analysis noise. If a task has previous content within it, then it must be preserved as is or with better formatting and not overwritten.
 - **FR-008**: System MUST create a single recurring TickTick task (with proper `repeatFlag`) when the user expresses recurring intent, not multiple manual copies
 - **FR-009**: System MUST create separate one-off tasks when the user names distinct dates for separate sessions (multi-day splitting)
-- **FR-010**: System MUST resolve project/category deterministically against known TickTick projects, falling back to a safe default when resolution is ambiguous
-- **FR-011**: System MUST respond silently (terse confirmation only) for clear task operations and MUST NOT produce verbose analysis output
+- **FR-010**: System MUST resolve project/category deterministically against known TickTick projects, falling back to a safe default when resolution is ambiguous. Project resolution priority follows the ranking policy defined in `007-execution-prioritization-foundations`.
+- **FR-011**: System MUST respond silently (terse confirmation only) for clear task operations and MUST NOT produce verbose analysis output. Response verbosity respects the current work-style state defined in `008-work-style-and-urgent-mode`.
 - **FR-012**: System MUST ask follow-up questions only when a request is genuinely ambiguous in a way that would create incorrect tasks
 - **FR-013**: System MUST validate AX output before execution and reject actions with invalid fields, low confidence, or malformed data
-- **FR-014**: System MUST log the full pipeline: raw user request, AX intent output, normalized actions, adapter requests, adapter results, and validation failures
+- **FR-014**: System MUST log the full pipeline: raw user request, AX intent output, normalized actions, adapter requests, adapter results, and validation failures. Pipeline events are captured as behavioral signals per `009-behavioral-signals-and-memory` for pattern detection.
 - **FR-015**: The TickTick adapter MUST expose a narrow interface: `createTask`, `updateTask`, `completeTask`, `deleteTask`, `listProjects`, `findProjectByName`, and optionally `createTasksBatch`
 - **FR-016**: System MUST handle TickTick REST API unavailability gracefully without losing parsed intent
 
