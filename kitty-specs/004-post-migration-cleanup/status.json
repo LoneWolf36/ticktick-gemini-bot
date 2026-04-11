@@ -1,0 +1,56 @@
+{
+  "event_count": 5,
+  "last_event_id": "01KNYW0RG4M9N079YJ9KP2T8E5",
+  "materialized_at": "2026-04-11T18:14:13.252895+00:00",
+  "mission_number": "004",
+  "mission_slug": "004-post-migration-cleanup",
+  "mission_type": "software-dev",
+  "summary": {
+    "approved": 0,
+    "blocked": 0,
+    "canceled": 0,
+    "claimed": 0,
+    "done": 0,
+    "for_review": 0,
+    "in_progress": 0,
+    "in_review": 0,
+    "planned": 5
+  },
+  "work_packages": {
+    "WP01": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0RBK7YPMYC7R6T4RXE8Z",
+      "last_transition_at": "2026-04-11T18:14:13.107547+00:00"
+    },
+    "WP02": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0RERJYG435ESZDPE23WB",
+      "last_transition_at": "2026-04-11T18:14:13.208219+00:00"
+    },
+    "WP03": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0RF32E689ZV8GH7SKDKW",
+      "last_transition_at": "2026-04-11T18:14:13.219659+00:00"
+    },
+    "WP04": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0RFNCRX9WVFPQ9E6CAHJ",
+      "last_transition_at": "2026-04-11T18:14:13.237049+00:00"
+    },
+    "WP05": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0RG4M9N079YJ9KP2T8E5",
+      "last_transition_at": "2026-04-11T18:14:13.252895+00:00"
+    }
+  }
+}

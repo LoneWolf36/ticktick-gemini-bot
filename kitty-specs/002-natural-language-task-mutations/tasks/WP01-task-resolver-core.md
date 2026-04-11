@@ -46,13 +46,13 @@ wp_code: WP01
 
 > Populated by `/spec-kitty.review` when changes are requested.
 
-*[This section is empty initially. Any later feedback becomes mandatory scope.]*  
+*[This section is empty initially. Any later feedback becomes mandatory scope.]*
 
 ---
 
 ## Markdown Formatting
 
-Wrap HTML/XML tags in backticks: `` `<div>` ``, `` `<script>` ``  
+Wrap HTML/XML tags in backticks: `` `<div>` ``, `` `<script>` ``
 Use language identifiers in fenced code blocks.
 
 ---
@@ -63,6 +63,72 @@ Use language identifiers in fenced code blocks.
 - Bias toward safety: exact title matches should win immediately, while fuzzy handling must stay conservative and test-backed.
 - Make the resolver output directly consumable by `services/pipeline.js` so later packages do not need another translation layer.
 - Freeze the resolver contract with focused unit tests before any pipeline wiring starts.
+
+## Product Vision Alignment Gate
+
+This WP is governed by `Product Vision and Behavioural Scope.md` and must be reviewed as part of the behavioral support system, not as isolated plumbing.
+
+**Feature-specific reason this WP exists**: This feature reduces task-maintenance friction while protecting trust: the user can clean up or complete work quickly, but the system must never mutate the wrong task just to appear helpful.
+
+**Implementation must**:
+- Resolve exactly one target before any update, completion, or deletion.
+- Ask narrow clarification questions when target confidence is low or when pronouns and fuzzy references create ambiguity.
+- Keep mutation confirmations terse so the task system remains an execution aid rather than another inbox to read.
+
+**Implementation must not**:
+- Any bulk or multi-target mutation is introduced without an accepted spec.
+- A delete or complete operation proceeds on fuzzy confidence alone.
+- The user is forced into command syntax for clear natural-language maintenance.
+
+**Acceptance gate for this WP**: before moving this package out of `planned` or returning it for review, the implementer must state how the change reduces procrastination, improves task clarity, improves prioritization, preserves cognitive lightness, or protects trust. If none of those are true, the package is out of scope.
+
+## Implement-Review No-Drift Contract
+
+This WP is not complete merely because the implementation compiles, tests pass, or the local checklist is checked. It is complete only when the implementer and reviewer can prove that the change supports the behavioral support system described in `Product Vision and Behavioural Scope.md`.
+
+### Product Vision Role This WP Must Preserve
+
+This mission gives the user a low-friction way to correct, complete, reschedule, or delete existing work by language. It exists to reduce task-management overhead, not to encourage endless list grooming. It must fail closed when target identity or intent is uncertain, because confident mutation of the wrong task is worse than asking a short clarification.
+
+### Required Implementer Evidence
+
+The implementer must leave enough evidence for review to answer all of the following without guessing:
+
+1. Which Product Vision clause or behavioral scope section does this WP serve?
+2. Which FR, NFR, plan step, task entry, or acceptance criterion does the implementation satisfy?
+3. What user-visible behavior changes because of this WP?
+4. How does the change reduce procrastination, improve task clarity, improve prioritization, improve recovery/trust, or improve behavioral awareness?
+5. What does the implementation deliberately avoid so it does not become a passive task manager, generic reminder app, over-planning assistant, busywork optimizer, or judgmental boss?
+6. What automated tests, regression checks, manual transcripts, or static inspections prove the intended behavior?
+7. Which later mission or WP depends on this behavior, and what drift would it create downstream if implemented incorrectly?
+
+### Required Reviewer Checks
+
+The reviewer must reject the WP unless all of the following are true:
+
+- The behavior is traceable from Product Vision -> mission spec -> plan/tasks -> WP instructions -> implementation evidence.
+- The change preserves the accepted architecture and does not bypass canonical paths defined by earlier missions.
+- The user-facing result is concise, concrete, and action-oriented unless the spec explicitly requires reflection or clarification.
+- Ambiguity, low confidence, and missing context are handled honestly rather than hidden behind confident output.
+- The change does not add MVP-forbidden platform scope such as auth, billing, rate limiting, or multi-tenant isolation.
+- Tests or equivalent evidence cover the behavioral contract, not just the happy-path technical operation.
+- Any completed-WP edits preserve Spec Kitty frontmatter and event-sourced status history; changed behavior is documented rather than silently rewritten.
+
+### Drift Rejection Triggers
+
+Reject, reopen, or move work back to planned if this WP enables any of the following:
+
+- The assistant helps the user organize more without helping them execute what matters.
+- The assistant chooses or mutates tasks confidently when it should clarify, fail closed, or mark inference as weak.
+- The assistant rewards low-value busywork, cosmetic cleanup, or motion-as-progress.
+- The assistant becomes verbose, punitive, generic, or motivational in a way the Product Vision explicitly rejects.
+- The implementation stores raw user/task content where only derived behavioral metadata is allowed.
+- The change creates a second implementation path that future agents could use instead of the accepted pipeline.
+- The reviewer cannot state why this WP is necessary for the final 001-009 product.
+
+### Done-State And Future Rework Note
+
+If this WP is already marked done, this contract does not rewrite Spec Kitty history. It governs future audits, reopened work, bug fixes, and final mission review. If any later change alters the behavior described here, the WP may be moved back to planned or reopened so the implement-review loop can re-establish product-vision fidelity.
 
 ## Context & Constraints
 
@@ -176,3 +242,29 @@ Use language identifiers in fenced code blocks.
 ## Activity Log
 
 - 2026-04-01: WP regenerated after review-first audit; prior prompt replaced because it drifted from the repo structure and current Spec Kitty contract.
+
+---
+
+## Review Comments (Added 2026-04-11)
+
+### Status: Not Started
+### Alignment with Product Vision: Aligned
+
+#### What This WP Was Supposed to Deliver:
+A deterministic task resolver module (services/task-resolver.js) that takes a mutation targetQuery plus active tasks and returns resolved/clarification/not_found outcomes. Unit tests, fixtures, and a frozen contract for downstream consumption.
+
+#### What's Actually Done:
+WP is in "planned" lane per status.events.jsonl. The WP prompt was regenerated on 2026-04-01 after a review-first audit found the previous prompt had drifted from the repo structure. No implementation has started.
+
+#### Gaps Found:
+- **Critical**: This WP is entirely planned but not implemented. The task resolver is a prerequisite for all mutation WPs (WP02-WP07) in spec 002.
+- The WP scope is well-defined and appropriately narrow — just the resolver, no pipeline wiring.
+- Good guardrails: no direct TickTick API calls, no store access, no NLP beyond string matching.
+
+#### Product Vision Alignment Issues:
+- Aligned in design. The resolver's clarification/not_found outcomes directly support "If the system is unsure what matters, it should ask directly" — returning clarification candidates enables the system to ask rather than guess.
+- Conservative fuzzy matching and explicit not_found support "Correctness matters more than confidence."
+
+#### Recommendations:
+- This is a blocking prerequisite for the entire spec 002 mutation feature. Implementation should begin here before any downstream mutation WPs.
+- The WP prompt is well-crafted after the regeneration — no changes needed to scope.

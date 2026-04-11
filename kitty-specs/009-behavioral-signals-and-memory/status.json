@@ -1,0 +1,70 @@
+{
+  "event_count": 7,
+  "last_event_id": "01KNYW6DZK7F9FFA371Q17RC3K",
+  "materialized_at": "2026-04-11T18:17:19.091393+00:00",
+  "mission_number": "009",
+  "mission_slug": "009-behavioral-signals-and-memory",
+  "mission_type": "software-dev",
+  "summary": {
+    "approved": 0,
+    "blocked": 0,
+    "canceled": 0,
+    "claimed": 0,
+    "done": 0,
+    "for_review": 0,
+    "in_progress": 0,
+    "in_review": 0,
+    "planned": 7
+  },
+  "work_packages": {
+    "WP01": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW6DSKDMYB2Z9M2SEYZZQA",
+      "last_transition_at": "2026-04-11T18:17:18.899812+00:00"
+    },
+    "WP02": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW6DXXJE63F2F7KJ3JN91E",
+      "last_transition_at": "2026-04-11T18:17:19.037658+00:00"
+    },
+    "WP03": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW6DY79ZVCGEDKBMZ3TDK1",
+      "last_transition_at": "2026-04-11T18:17:19.047689+00:00"
+    },
+    "WP04": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW6DYG98TTCDYTQHC3WBBA",
+      "last_transition_at": "2026-04-11T18:17:19.056854+00:00"
+    },
+    "WP05": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW6DYVJK4JNMTB3V173MDX",
+      "last_transition_at": "2026-04-11T18:17:19.067337+00:00"
+    },
+    "WP06": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW6DZ6JMD08F4VE8PXVK8S",
+      "last_transition_at": "2026-04-11T18:17:19.079027+00:00"
+    },
+    "WP07": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW6DZK7F9FFA371Q17RC3K",
+      "last_transition_at": "2026-04-11T18:17:19.091393+00:00"
+    }
+  }
+}

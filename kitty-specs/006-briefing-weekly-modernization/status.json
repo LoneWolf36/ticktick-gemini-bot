@@ -1,8 +1,10 @@
 {
-  "event_count": 5,
-  "feature_slug": "006-briefing-weekly-modernization",
-  "last_event_id": "01KM1Z167960FGPGZKN6F07REY",
-  "materialized_at": "2026-03-19T02:33:12.914807+00:00",
+  "event_count": 7,
+  "last_event_id": "01KNYW0X2D1ET1PXP63G5W6X4Z",
+  "materialized_at": "2026-04-11T18:14:17.933226+00:00",
+  "mission_number": "006",
+  "mission_slug": "006-briefing-weekly-modernization",
+  "mission_type": "software-dev",
   "summary": {
     "approved": 0,
     "blocked": 0,
@@ -11,7 +13,8 @@
     "done": 5,
     "for_review": 0,
     "in_progress": 0,
-    "planned": 0
+    "in_review": 0,
+    "planned": 2
   },
   "work_packages": {
     "WP01": {
@@ -20,6 +23,13 @@
       "lane": "done",
       "last_event_id": "01KM1Z166NZN7BNNYM0ZWPGYM2",
       "last_transition_at": "2026-03-12T21:19:42Z"
+    },
+    "WP02": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0WZ76KPB3TN206G1WE2Q",
+      "last_transition_at": "2026-04-11T18:14:17.831955+00:00"
     },
     "WP03": {
       "actor": "migration",
@@ -41,6 +51,13 @@
       "lane": "done",
       "last_event_id": "01KM1Z1673EKY8JZREWF0309ZE",
       "last_transition_at": "2026-03-12T21:27:55Z"
+    },
+    "WP06": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0X2D1ET1PXP63G5W6X4Z",
+      "last_transition_at": "2026-04-11T18:14:17.933226+00:00"
     },
     "WP07": {
       "actor": "migration",

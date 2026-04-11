@@ -1,8 +1,10 @@
 {
-  "event_count": 1,
-  "feature_slug": "003-pipeline-hardening-and-regression",
-  "last_event_id": "01KM1Z166C04NKRB6X8MD0Z4B5",
-  "materialized_at": "2026-03-19T02:33:12.856378+00:00",
+  "event_count": 6,
+  "last_event_id": "01KNYW0PB823XEAWAVYQ9RZRWB",
+  "materialized_at": "2026-04-11T18:14:11.048595+00:00",
+  "mission_number": "003",
+  "mission_slug": "003-pipeline-hardening-and-regression",
+  "mission_type": "software-dev",
   "summary": {
     "approved": 0,
     "blocked": 0,
@@ -11,15 +13,51 @@
     "done": 1,
     "for_review": 0,
     "in_progress": 0,
-    "planned": 0
+    "in_review": 0,
+    "planned": 5
   },
   "work_packages": {
+    "WP01": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0P5Y1N3JCVPKDHF9RN2G",
+      "last_transition_at": "2026-04-11T18:14:10.878593+00:00"
+    },
+    "WP02": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0PA4NNWZ2F7YG1ZQPWX2",
+      "last_transition_at": "2026-04-11T18:14:11.012765+00:00"
+    },
+    "WP03": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0PADM6SD3BDVTZYRDF52",
+      "last_transition_at": "2026-04-11T18:14:11.021749+00:00"
+    },
+    "WP04": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0PAQG9FVQ3A82SBRPKBP",
+      "last_transition_at": "2026-04-11T18:14:11.032018+00:00"
+    },
     "WP05": {
       "actor": "migration",
       "force_count": 1,
       "lane": "done",
       "last_event_id": "01KM1Z166C04NKRB6X8MD0Z4B5",
       "last_transition_at": "2026-03-11T17:18:05Z"
+    },
+    "WP06": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0PB823XEAWAVYQ9RZRWB",
+      "last_transition_at": "2026-04-11T18:14:11.048595+00:00"
     }
   }
 }

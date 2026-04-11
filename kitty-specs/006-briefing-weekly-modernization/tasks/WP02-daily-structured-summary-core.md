@@ -39,7 +39,7 @@ wp_code: WP02
 
 **Read this first if you are implementing this task.**
 
-- **Has review feedback?** Check the `review_status` field above. If it says `has_feedback`, read the Review Feedback section immediately.
+- **Has review feedback?** Check Spec Kitty status and event history before starting. If feedback exists, read the Review Feedback section immediately.
 - **You must address all feedback** before the work is complete.
 - **Mark as acknowledged** when you begin addressing review feedback.
 - **Report progress** by appending Activity Log entries in chronological order.
@@ -65,10 +65,9 @@ Dependent rebase warning:
   - `cd .worktrees/006-briefing-weekly-modernization-WP05 && git rebase 006-briefing-weekly-modernization-WP02`
   - `cd .worktrees/006-briefing-weekly-modernization-WP06 && git rebase 006-briefing-weekly-modernization-WP02`
 
-
 ## Markdown Formatting
 
-Wrap HTML/XML tags in backticks: `` `<div>` ``, `` `<script>` ``  
+Wrap HTML/XML tags in backticks: `` `<div>` ``, `` `<script>` ``
 Use language identifiers in fenced code blocks.
 
 ---
@@ -80,6 +79,72 @@ Use language identifiers in fenced code blocks.
 - Keep daily content aligned with shared ranking policy from `services/execution-prioritization.js`.
 - Add honest sparse-data behavior without introducing filler or local ranking heuristics.
 
+## Product Vision Alignment Gate
+
+This WP is governed by `Product Vision and Behavioural Scope.md` and must be reviewed as part of the behavioral support system, not as isolated plumbing.
+
+**Feature-specific reason this WP exists**: This feature makes morning and weekly surfaces trustworthy, brief, and action-oriented. Summaries are only useful if they help the user return to what matters without reading a report.
+
+**Implementation must**:
+- Daily briefing should usually surface no more than three meaningful tasks, with at least one long-term-goal-aligned action when available.
+- Weekly output must separate factual history from behavioral interpretation and avoid unsupported pattern claims reserved for behavioral memory.
+- Fallbacks must be honest about sparse data and still give a small next action instead of pretending certainty.
+
+**Implementation must not**:
+- Briefing output becomes verbose, generic, or motivational filler.
+- Weekly summaries infer avoidance patterns without enough evidence or without the 009 privacy/confidence contract.
+- Formatting depends on model prose instead of deterministic rendering for stable Telegram output.
+
+**Acceptance gate for this WP**: before moving this package out of `planned` or returning it for review, the implementer must state how the change reduces procrastination, improves task clarity, improves prioritization, preserves cognitive lightness, or protects trust. If none of those are true, the package is out of scope.
+
+## Implement-Review No-Drift Contract
+
+This WP is not complete merely because the implementation compiles, tests pass, or the local checklist is checked. It is complete only when the implementer and reviewer can prove that the change supports the behavioral support system described in `Product Vision and Behavioural Scope.md`.
+
+### Product Vision Role This WP Must Preserve
+
+This mission creates the main behavioral support surfaces: morning start, daily plan, weekly review, and end-of-day reflection. It must feel like a trusted assistant that helps the user return to what matters. It must stay cognitively light: no interrogation, no generic productivity lecture, no fabricated insight from sparse data.
+
+### Required Implementer Evidence
+
+The implementer must leave enough evidence for review to answer all of the following without guessing:
+
+1. Which Product Vision clause or behavioral scope section does this WP serve?
+2. Which FR, NFR, plan step, task entry, or acceptance criterion does the implementation satisfy?
+3. What user-visible behavior changes because of this WP?
+4. How does the change reduce procrastination, improve task clarity, improve prioritization, improve recovery/trust, or improve behavioral awareness?
+5. What does the implementation deliberately avoid so it does not become a passive task manager, generic reminder app, over-planning assistant, busywork optimizer, or judgmental boss?
+6. What automated tests, regression checks, manual transcripts, or static inspections prove the intended behavior?
+7. Which later mission or WP depends on this behavior, and what drift would it create downstream if implemented incorrectly?
+
+### Required Reviewer Checks
+
+The reviewer must reject the WP unless all of the following are true:
+
+- The behavior is traceable from Product Vision -> mission spec -> plan/tasks -> WP instructions -> implementation evidence.
+- The change preserves the accepted architecture and does not bypass canonical paths defined by earlier missions.
+- The user-facing result is concise, concrete, and action-oriented unless the spec explicitly requires reflection or clarification.
+- Ambiguity, low confidence, and missing context are handled honestly rather than hidden behind confident output.
+- The change does not add MVP-forbidden platform scope such as auth, billing, rate limiting, or multi-tenant isolation.
+- Tests or equivalent evidence cover the behavioral contract, not just the happy-path technical operation.
+- Any completed-WP edits preserve Spec Kitty frontmatter and event-sourced status history; changed behavior is documented rather than silently rewritten.
+
+### Drift Rejection Triggers
+
+Reject, reopen, or move work back to planned if this WP enables any of the following:
+
+- The assistant helps the user organize more without helping them execute what matters.
+- The assistant chooses or mutates tasks confidently when it should clarify, fail closed, or mark inference as weak.
+- The assistant rewards low-value busywork, cosmetic cleanup, or motion-as-progress.
+- The assistant becomes verbose, punitive, generic, or motivational in a way the Product Vision explicitly rejects.
+- The implementation stores raw user/task content where only derived behavioral metadata is allowed.
+- The change creates a second implementation path that future agents could use instead of the accepted pipeline.
+- The reviewer cannot state why this WP is necessary for the final 001-009 product.
+
+### Done-State And Future Rework Note
+
+If this WP is already marked done, this contract does not rewrite Spec Kitty history. It governs future audits, reopened work, bug fixes, and final mission review. If any later change alters the behavior described here, the WP may be moved back to planned or reopened so the implement-review loop can re-establish product-vision fidelity.
+
 ## Context & Constraints
 
 - Implementation command: `spec-kitty implement WP02 --base WP01`
@@ -89,7 +154,7 @@ Use language identifiers in fenced code blocks.
   - `kitty-specs/006-briefing-weekly-modernization/research.md`
   - `kitty-specs/006-briefing-weekly-modernization/data-model.md`
   - `kitty-specs/006-briefing-weekly-modernization/contracts/summary-surfaces.openapi.yaml`
-  - `.kittify/memory/constitution.md`
+  - `.kittify/memory/charter.md`
 - Start from the contracts and export seams established by WP01. Do not redefine them.
 - Preserve tone closely, but do not rely on model-generated final formatting. This package owns structured content, not the final Telegram renderer.
 - Daily summary logic must inherit shared prioritization policy and must not re-rank tasks locally.
@@ -221,3 +286,27 @@ Use `spec-kitty agent tasks move-task <WPID> --to <lane> --note "message"` or ed
 - 2026-03-13T17:40:24Z – Codex – shell_pid=10136 – lane=for_review – Ready for review: restored daily briefing string compatibility and added live caller regression coverage
 - 2026-03-13T17:41:12Z – Codex – shell_pid=31792 – lane=doing – Started review via workflow command
 - 2026-03-13T17:41:50Z – Codex – shell_pid=31792 – lane=done – Review passed: daily structured summary core verified; live caller string compatibility restored; dependency check clear; dependents WP05/WP06 still planned
+
+---
+
+## Review Comments (Added 2026-04-11)
+
+### Status: Done
+### Alignment with Product Vision: Aligned
+
+#### What This WP Was Supposed to Deliver:
+Move daily briefing from free-form string to structured output (focus/priorities/why_now/start_now/notices). Wire shared ranking. Implement sparse-task fallback.
+
+#### What's Actually Done:
+Marked done after two review cycles. Initial review found a blocking regression (generateDailyBriefing returned object instead of string, breaking live consumers). Fix was applied: restored string compatibility while exposing structured object separately. Second review passed.
+
+#### Gaps Found:
+- The initial review finding (Issue 1) was a significant integration bug — changing return type without updating consumers. This was caught and fixed, but it highlights the risk of stacked WPs depending on unmerged work.
+- Otherwise well-executed.
+
+#### Product Vision Alignment Issues:
+- Strongly aligned. Structured daily output with sparse-task fallback directly supports "honest about uncertainty" and "minimally verbose."
+- Ranking inheritance from shared prioritization prevents the daily summary from inventing its own priorities — supporting "correctness matters more than confidence."
+
+#### Recommendations:
+- No action needed. The review process caught the integration bug before it reached production.

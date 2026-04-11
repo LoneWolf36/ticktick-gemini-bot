@@ -1,0 +1,63 @@
+{
+  "event_count": 6,
+  "last_event_id": "01KNYW0TP16NRCW3TF97KP7SXP",
+  "materialized_at": "2026-04-11T18:14:15.489689+00:00",
+  "mission_number": "005",
+  "mission_slug": "005-checklist-subtask-support",
+  "mission_type": "software-dev",
+  "summary": {
+    "approved": 0,
+    "blocked": 0,
+    "canceled": 0,
+    "claimed": 0,
+    "done": 0,
+    "for_review": 0,
+    "in_progress": 0,
+    "in_review": 0,
+    "planned": 6
+  },
+  "work_packages": {
+    "WP01": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0THYZ54NFEZ2DN1VT8RM",
+      "last_transition_at": "2026-04-11T18:14:15.358353+00:00"
+    },
+    "WP02": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0TMWD5TSF2B1RZT0XE0K",
+      "last_transition_at": "2026-04-11T18:14:15.452274+00:00"
+    },
+    "WP03": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0TN559205R0KWATZCRW9",
+      "last_transition_at": "2026-04-11T18:14:15.461850+00:00"
+    },
+    "WP04": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0TNE2JSZWFDM8BNAQDFK",
+      "last_transition_at": "2026-04-11T18:14:15.470417+00:00"
+    },
+    "WP05": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0TNSCGQ377JY7QN2CEK1",
+      "last_transition_at": "2026-04-11T18:14:15.481218+00:00"
+    },
+    "WP06": {
+      "actor": "finalize-tasks",
+      "force_count": 1,
+      "lane": "planned",
+      "last_event_id": "01KNYW0TP16NRCW3TF97KP7SXP",
+      "last_transition_at": "2026-04-11T18:14:15.489689+00:00"
+    }
+  }
+}
