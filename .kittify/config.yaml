@@ -6,6 +6,7 @@ agents:
   - gemini
   - opencode
   - codex
+  - qwen
 project:
   uuid: 940d53fb-ce2f-4a36-9c31-059b7d76c950
   slug: ticktick-gemini-bot

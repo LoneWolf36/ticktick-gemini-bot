@@ -54,13 +54,13 @@ wp_code: WP06
 
 > Populated by `/spec-kitty.review` when changes are requested.
 
-*[This section is empty initially. Any later feedback becomes mandatory scope.]*  
+*[This section is empty initially. Any later feedback becomes mandatory scope.]*
 
 ---
 
 ## Markdown Formatting
 
-Wrap HTML/XML tags in backticks: `` `<div>` ``, `` `<script>` ``  
+Wrap HTML/XML tags in backticks: `` `<div>` ``, `` `<script>` ``
 Use language identifiers in fenced code blocks.
 
 ---
@@ -71,6 +71,72 @@ Use language identifiers in fenced code blocks.
 - Keep final regression coverage concentrated in the current direct pipeline test surfaces.
 - Leave live-check notes aligned with the hardened contract without making them the required acceptance path.
 - Make contract drift fail fast in tests.
+
+## Product Vision Alignment Gate
+
+This WP is governed by `Product Vision and Behavioural Scope.md` and must be reviewed as part of the behavioral support system, not as isolated plumbing.
+
+**Feature-specific reason this WP exists**: This feature makes the behavioral assistant dependable under failure. If the pipeline breaks, the user loses trust and returns to manual over-planning, so failures must be compact, honest, logged, and non-destructive.
+
+**Implementation must**:
+- Handle malformed model output, quota exhaustion, adapter failure, and partial multi-action failures without losing context or silently corrupting tasks.
+- Keep user-facing failures compact while preserving enough developer diagnostics to fix root causes.
+- Test the live architecture directly, especially paths that affect user trust: create, mutate, clarify, fail closed, and roll back.
+
+**Implementation must not**:
+- The pipeline returns misleading success after partial failure.
+- Diagnostics leak into user-facing Telegram copy.
+- Regression tests mainly exercise dead legacy helpers instead of the structured path.
+
+**Acceptance gate for this WP**: before moving this package out of `planned` or returning it for review, the implementer must state how the change reduces procrastination, improves task clarity, improves prioritization, preserves cognitive lightness, or protects trust. If none of those are true, the package is out of scope.
+
+## Implement-Review No-Drift Contract
+
+This WP is not complete merely because the implementation compiles, tests pass, or the local checklist is checked. It is complete only when the implementer and reviewer can prove that the change supports the behavioral support system described in `Product Vision and Behavioural Scope.md`.
+
+### Product Vision Role This WP Must Preserve
+
+This mission protects trust when model calls, TickTick calls, parsing, context, or downstream services fail. The product vision requires correctness over confidence. This mission must make failures honest, recoverable, and cognitively light instead of hiding uncertainty or leaving the user with a broken invisible workflow.
+
+### Required Implementer Evidence
+
+The implementer must leave enough evidence for review to answer all of the following without guessing:
+
+1. Which Product Vision clause or behavioral scope section does this WP serve?
+2. Which FR, NFR, plan step, task entry, or acceptance criterion does the implementation satisfy?
+3. What user-visible behavior changes because of this WP?
+4. How does the change reduce procrastination, improve task clarity, improve prioritization, improve recovery/trust, or improve behavioral awareness?
+5. What does the implementation deliberately avoid so it does not become a passive task manager, generic reminder app, over-planning assistant, busywork optimizer, or judgmental boss?
+6. What automated tests, regression checks, manual transcripts, or static inspections prove the intended behavior?
+7. Which later mission or WP depends on this behavior, and what drift would it create downstream if implemented incorrectly?
+
+### Required Reviewer Checks
+
+The reviewer must reject the WP unless all of the following are true:
+
+- The behavior is traceable from Product Vision -> mission spec -> plan/tasks -> WP instructions -> implementation evidence.
+- The change preserves the accepted architecture and does not bypass canonical paths defined by earlier missions.
+- The user-facing result is concise, concrete, and action-oriented unless the spec explicitly requires reflection or clarification.
+- Ambiguity, low confidence, and missing context are handled honestly rather than hidden behind confident output.
+- The change does not add MVP-forbidden platform scope such as auth, billing, rate limiting, or multi-tenant isolation.
+- Tests or equivalent evidence cover the behavioral contract, not just the happy-path technical operation.
+- Any completed-WP edits preserve Spec Kitty frontmatter and event-sourced status history; changed behavior is documented rather than silently rewritten.
+
+### Drift Rejection Triggers
+
+Reject, reopen, or move work back to planned if this WP enables any of the following:
+
+- The assistant helps the user organize more without helping them execute what matters.
+- The assistant chooses or mutates tasks confidently when it should clarify, fail closed, or mark inference as weak.
+- The assistant rewards low-value busywork, cosmetic cleanup, or motion-as-progress.
+- The assistant becomes verbose, punitive, generic, or motivational in a way the Product Vision explicitly rejects.
+- The implementation stores raw user/task content where only derived behavioral metadata is allowed.
+- The change creates a second implementation path that future agents could use instead of the accepted pipeline.
+- The reviewer cannot state why this WP is necessary for the final 001-009 product.
+
+### Done-State And Future Rework Note
+
+If this WP is already marked done, this contract does not rewrite Spec Kitty history. It governs future audits, reopened work, bug fixes, and final mission review. If any later change alters the behavior described here, the WP may be moved back to planned or reopened so the implement-review loop can re-establish product-vision fidelity.
 
 ## Context & Constraints
 
@@ -182,3 +248,25 @@ Use language identifiers in fenced code blocks.
 ## Activity Log
 
 - 2026-04-01: WP regenerated after audit; prior prompt replaced because it still embedded obsolete lane history instead of the current review-oriented format.
+
+---
+
+## Review Comments (Added 2026-04-11)
+
+### Status: Not Started
+### Alignment with Product Vision: Aligned
+
+#### What This WP Was Supposed to Deliver:
+Final regression coverage for failure paths, rollback, observability, burst concurrency. Update live-check scripts.
+
+#### What's Actually Done:
+Not started. Depends on WP03, WP04, WP05.
+
+#### Gaps Found:
+- Not started. This is the stabilization gate for spec 003. Well-scoped: test coverage only, no new behavior.
+
+#### Product Vision Alignment Issues:
+- Aligned. Burst isolation ensures one request's failure doesn't corrupt others — supporting reliability under real-world conditions.
+
+#### Recommendations:
+- Blocking on WP03-WP05. Final quality gate for the hardening spec.

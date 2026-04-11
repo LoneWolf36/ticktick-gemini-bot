@@ -1,6 +1,6 @@
 # Work Packages: Natural-Language Task Mutations
 
-**Inputs**: `spec.md`, `plan.md`, and the implemented `001-task-operations-pipeline` surfaces in `services/`, `bot/`, and `tests/`  
+**Inputs**: `spec.md`, `plan.md`, and the implemented `001-task-operations-pipeline` surfaces in `services/`, `bot/`, and `tests/`
 **Prerequisites**: `spec.md`, `plan.md`, and the current post-`001` codebase on `master`
 
 **Tests**: Required. This feature changes the mutation path for existing tasks and must ship with resolver, pipeline, bot, callback, and regression coverage.
@@ -11,11 +11,102 @@
 
 ---
 
+## Product Vision Alignment Contract
+
+This work-package task list is governed by `Product Vision and Behavioural Scope.md`. It is acceptable only if it helps the user act on what matters, reduce procrastination, and build better judgment over time.
+
+**Feature-specific alignment**: This feature reduces task-maintenance friction while protecting trust: the user can clean up or complete work quickly, but the system must never mutate the wrong task just to appear helpful.
+
+**Non-negotiable gates**:
+- The artifact must treat the product as a behavioral support system for task execution, not as a generic task manager.
+- The artifact must reduce cognitive load: fewer choices, shorter copy, narrower questions, and no unnecessary review loops.
+- The artifact must prefer fewer correct tasks over many plausible tasks.
+- The artifact must distinguish meaningful progress from busywork and must not optimize for motion, task count, or planning volume.
+- The artifact must be honest about uncertainty: ask directly or fail closed when confidence is low.
+- The artifact may be assertive only when the evidence or user-invoked mode justifies it.
+- The artifact must preserve the MVP boundary: one personal user first; no auth, billing, rate limiting, or multi-tenant expansion unless a separate accepted spec requires it.
+
+**This artifact must preserve**:
+- Resolve exactly one target before any update, completion, or deletion.
+- Ask narrow clarification questions when target confidence is low or when pronouns and fuzzy references create ambiguity.
+- Keep mutation confirmations terse so the task system remains an execution aid rather than another inbox to read.
+
+**Reject or revise this artifact if**:
+- Any bulk or multi-target mutation is introduced without an accepted spec.
+- A delete or complete operation proceeds on fuzzy confidence alone.
+- The user is forced into command syntax for clear natural-language maintenance.
+
+**Reviewer acceptance standard**: review must fail if the artifact can be implemented as a passive list-management feature, if it increases planning burden without improving execution, or if it gives confident guidance where the product vision requires clarification.
+
+## No-Drift Product Realization Contract
+
+This artifact is part of the 001-009 chain that must produce the product described in `Product Vision and Behavioural Scope.md`. Local technical completion is not sufficient. A work package in this mission is acceptable only when the implementation, review evidence, and tests prove that the behavior moves the user toward important long-term goals by improving task clarity, prioritization, execution, or behavioral awareness.
+
+### Mission Role In The Complete System
+
+This mission gives the user a low-friction way to correct, complete, reschedule, or delete existing work by language. It exists to reduce task-management overhead, not to encourage endless list grooming. It must fail closed when target identity or intent is uncertain, because confident mutation of the wrong task is worse than asking a short clarification.
+
+### Required Product Behavior For This Mission
+
+- Natural-language mutations identify the correct target task or ask for clarification instead of guessing.
+- Completion, deletion, update, schedule, and recurrence changes preserve user intent and avoid destructive side effects.
+- The system remains concise and operational; it does not turn updates into planning sessions unless ambiguity requires it.
+- Mutation behavior supports trust: the user can quickly correct the plan without being punished by extra ceremony.
+
+### Cross-Mission Dependency And Drift Risk
+
+This mission depends on 001 task operations and feeds every later surface that assumes the user can keep task state current without manual TickTick cleanup.
+
+### Evidence Required Before Any WP Approval
+
+Every implement-review cycle for this mission must produce reviewer-visible evidence for all of the following:
+
+1. The specific Product Vision clause or behavioral scope section served by the change.
+2. The local FR, NFR, plan step, task, or WP requirement implemented by the change.
+3. The concrete user-visible behavior that changed, including whether the change affects capture, clarification, planning, ranking, intervention, reflection, recovery, or behavioral memory.
+4. The anti-drift rule the change preserves: not a passive task manager, not generic reminders, not over-planning support, not busywork optimization, not false certainty, and not SaaS scope expansion.
+5. The automated test, regression script, manual transcript, or inspection evidence that proves the behavior.
+6. The downstream missions that rely on this behavior and what would break if it drifted.
+
+### Complete 001-009 Acceptance Criteria
+
+After all WPs in missions 001 through 009 have passed implementation, review, and mission-level acceptance, the integrated product must satisfy every item below. If any item is not demonstrably true, the 001-009 chain is not complete.
+
+1. The user can capture clear, vague, multi-task, checklist, recurring, and mutation requests safely through the accepted pipeline without legacy path drift.
+2. Ambiguous or destructive actions clarify or fail closed instead of guessing.
+3. The daily plan usually contains no more than three tasks, is realistic for the user context, and includes long-term-goal work when such work exists and is plausible.
+4. The system distinguishes important work from low-value busywork and actively avoids rewarding motion-as-progress.
+5. Urgent mode is temporary, minimal, direct, and action-oriented; it is not the default tone and it does not mutate TickTick state unless the user explicitly asks for a task operation.
+6. Weak behavioral or priority inference is never presented as fact. The assistant asks, labels uncertainty, or stays quiet.
+7. Behavioral memory stores derived signals only, uses retention limits, and supports inspection/reset so memory remains a coaching aid rather than surveillance.
+8. Morning start stays short; end-of-day reflection stays brief, context-aware, and non-punitive.
+9. Ignored guidance causes adaptation or backing off, not louder nagging.
+10. The implementation avoids MVP scope creep: no auth, billing, rate limiting, multi-tenant isolation, or SaaS infrastructure unless an accepted spec explicitly requires it.
+11. User-facing copy is compact, concrete, non-judgmental, and oriented toward the next useful action.
+12. No raw user message, raw task title, or raw task description is persisted in long-term behavioral memory.
+
+### Mandatory Rejection Conditions
+
+A reviewer must reject or reopen work in this mission if any of these are true:
+
+- The change can pass local tests while still encouraging list management instead of task execution.
+- The assistant accepts the user's first input as correct when the spec requires challenge, clarification, or safe failure.
+- The change increases verbosity, ceremony, or planning overhead without improving action clarity or prioritization.
+- The change optimizes low-value tasks, cosmetic organization, or generic reminders while ignoring meaningful progress.
+- The change presents weak inference as certainty or invents goals, constraints, priorities, or behavioral patterns.
+- The change stores raw user/task content in behavioral memory or logs where the mission only allows derived signals.
+- The change introduces auth, billing, rate limiting, multi-tenant isolation, or platform-scale infrastructure not accepted by spec.
+- The reviewer cannot trace the change from Product Vision -> spec/plan/task -> code/docs -> test evidence.
+
+### Claim Boundary
+
+When this mission is marked done, the claim is not merely that its files changed or tests passed. The claim is that this mission now contributes its defined role to the complete behavioral support system. The stronger statement, "after running 001 through 009 the product exactly matches the vision", is only valid when every mission enforces this contract, every WP has review evidence, and a final mission review confirms spec-to-code-to-test-to-product-vision fidelity across the whole chain.
+
 ## Work Package WP01: Task Resolver Core (Priority: P0)
 
-**Goal**: Create the deterministic resolver that maps one user-supplied `targetQuery` to one active TickTick task, a clarification set, or a not-found result.  
-**Independent Test**: Resolver unit tests prove exact-match preference, conservative fuzzy handling, ambiguity detection, and not-found behavior without touching the pipeline.  
-**Prompt**: `kitty-specs/002-natural-language-task-mutations/tasks/WP01-task-resolver-core.md`  
+**Goal**: Create the deterministic resolver that maps one user-supplied `targetQuery` to one active TickTick task, a clarification set, or a not-found result.
+**Independent Test**: Resolver unit tests prove exact-match preference, conservative fuzzy handling, ambiguity detection, and not-found behavior without touching the pipeline.
+**Prompt**: `kitty-specs/002-natural-language-task-mutations/tasks/WP01-task-resolver-core.md`
 **Estimated Prompt Size**: ~320 lines
 
 **Requirements Refs**: FR-002, FR-003, FR-008, FR-009
@@ -45,9 +136,9 @@
 
 ## Work Package WP02: AX Mutation Intent Extension (Priority: P0)
 
-**Goal**: Extend AX extraction and runtime validation so mutation actions carry `targetQuery` while preserving current create-flow compatibility.  
-**Independent Test**: AX unit coverage proves create actions still validate, while mutation actions emit `targetQuery` plus only the change fields the user actually requested.  
-**Prompt**: `kitty-specs/002-natural-language-task-mutations/tasks/WP02-ax-mutation-intent.md`  
+**Goal**: Extend AX extraction and runtime validation so mutation actions carry `targetQuery` while preserving current create-flow compatibility.
+**Independent Test**: AX unit coverage proves create actions still validate, while mutation actions emit `targetQuery` plus only the change fields the user actually requested.
+**Prompt**: `kitty-specs/002-natural-language-task-mutations/tasks/WP02-ax-mutation-intent.md`
 **Estimated Prompt Size**: ~300 lines
 
 **Requirements Refs**: FR-001, FR-006, FR-009
@@ -77,9 +168,9 @@
 
 ## Work Package WP03: Mutation Normalizer (Priority: P1)
 
-**Goal**: Extend the existing normalizer so resolved mutation intents become valid write actions without losing existing-task context or content-preservation guarantees.  
-**Independent Test**: Normalizer tests prove resolved mutation intents require task context, preserve content on update by default, and reject unsupported mixed or underspecified mutation shapes.  
-**Prompt**: `kitty-specs/002-natural-language-task-mutations/tasks/WP03-mutation-normalizer.md`  
+**Goal**: Extend the existing normalizer so resolved mutation intents become valid write actions without losing existing-task context or content-preservation guarantees.
+**Independent Test**: Normalizer tests prove resolved mutation intents require task context, preserve content on update by default, and reject unsupported mixed or underspecified mutation shapes.
+**Prompt**: `kitty-specs/002-natural-language-task-mutations/tasks/WP03-mutation-normalizer.md`
 **Estimated Prompt Size**: ~300 lines
 
 **Requirements Refs**: FR-001, FR-005, FR-009
@@ -108,9 +199,9 @@
 
 ## Work Package WP04: Pipeline Integration (Priority: P1)
 
-**Goal**: Add adapter-backed task listing, target resolution, mutation routing, and new pipeline result types without replacing the existing `001` execution path.  
-**Independent Test**: Pipeline regressions prove a free-form mutation request can become `task`, `clarification`, or `not-found`, and that successful writes still reuse `_executeActions()`.  
-**Prompt**: `kitty-specs/002-natural-language-task-mutations/tasks/WP04-pipeline-integration.md`  
+**Goal**: Add adapter-backed task listing, target resolution, mutation routing, and new pipeline result types without replacing the existing `001` execution path.
+**Independent Test**: Pipeline regressions prove a free-form mutation request can become `task`, `clarification`, or `not-found`, and that successful writes still reuse `_executeActions()`.
+**Prompt**: `kitty-specs/002-natural-language-task-mutations/tasks/WP04-pipeline-integration.md`
 **Estimated Prompt Size**: ~360 lines
 
 **Requirements Refs**: FR-002, FR-003, FR-004, FR-006, FR-007, FR-008, FR-009
@@ -140,9 +231,9 @@
 
 ## Work Package WP05: Bot Message Handler (Priority: P1)
 
-**Goal**: Update the free-form Telegram entrypoint so it can surface `clarification` and `not-found` mutation results while keeping the existing command surface unchanged.  
-**Independent Test**: Bot-layer regressions prove free-form messages now handle `task`, `clarification`, `not-found`, `non-task`, and `error` results correctly without adding new commands.  
-**Prompt**: `kitty-specs/002-natural-language-task-mutations/tasks/WP05-bot-message-handler.md`  
+**Goal**: Update the free-form Telegram entrypoint so it can surface `clarification` and `not-found` mutation results while keeping the existing command surface unchanged.
+**Independent Test**: Bot-layer regressions prove free-form messages now handle `task`, `clarification`, `not-found`, `non-task`, and `error` results correctly without adding new commands.
+**Prompt**: `kitty-specs/002-natural-language-task-mutations/tasks/WP05-bot-message-handler.md`
 **Estimated Prompt Size**: ~300 lines
 
 **Requirements Refs**: FR-003, FR-006, FR-007, FR-008
@@ -171,9 +262,9 @@
 
 ## Work Package WP06: Clarification UI Flow (Priority: P1)
 
-**Goal**: Add callback-based clarification resume so the user can choose among ambiguous candidates and continue through the same pipeline safely.  
-**Independent Test**: Callback regressions prove selecting a candidate resumes the mutation, cancel clears pending state, and stale selections fail safely.  
-**Prompt**: `kitty-specs/002-natural-language-task-mutations/tasks/WP06-clarification-ui-flow.md`  
+**Goal**: Add callback-based clarification resume so the user can choose among ambiguous candidates and continue through the same pipeline safely.
+**Independent Test**: Callback regressions prove selecting a candidate resumes the mutation, cancel clears pending state, and stale selections fail safely.
+**Prompt**: `kitty-specs/002-natural-language-task-mutations/tasks/WP06-clarification-ui-flow.md`
 **Estimated Prompt Size**: ~300 lines
 
 **Requirements Refs**: FR-003, FR-006, FR-008, FR-009
@@ -202,9 +293,9 @@
 
 ## Work Package WP07: Testing & Hardening (Priority: P2)
 
-**Goal**: Finish the feature with end-to-end mutation regressions, observability assertions, and cleanup of stale assumptions introduced by the old broken task package.  
-**Independent Test**: The full regression suite covers free-form update/complete/delete, exact-match success, ambiguity fail-closed, not-found behavior, and logging of resolver decisions.  
-**Prompt**: `kitty-specs/002-natural-language-task-mutations/tasks/WP07-testing-hardening.md`  
+**Goal**: Finish the feature with end-to-end mutation regressions, observability assertions, and cleanup of stale assumptions introduced by the old broken task package.
+**Independent Test**: The full regression suite covers free-form update/complete/delete, exact-match success, ambiguity fail-closed, not-found behavior, and logging of resolver decisions.
+**Prompt**: `kitty-specs/002-natural-language-task-mutations/tasks/WP07-testing-hardening.md`
 **Estimated Prompt Size**: ~280 lines
 
 **Requirements Refs**: FR-005, FR-006, FR-007, FR-008
