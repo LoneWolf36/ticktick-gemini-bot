@@ -1,0 +1,87 @@
+name: spec-kitty-mission-audit
+description: |
+  Use when: Auditing a completed or partially completed Spec Kitty mission
+  against Product Vision and no-drift contracts before deciding whether to
+  reopen WPs or continue implementation.
+
+  Input format:
+    <mission-slug>
+
+  This workflow is mission-level and review-only. It creates baseline acceptance
+  artifacts, then runs Qwen as an auditor to decide whether the mission is truly
+  aligned or whether specific WPs must be reopened.
+
+nodes:
+  - id: baseline
+    bash: |
+      set -euo pipefail
+
+      mission_slug="$ARGUMENTS"
+      if [ -z "$mission_slug" ]; then
+          echo "Mission slug is required" >&2
+          exit 1
+      fi
+
+      spec-kitty agent tasks status --mission "$mission_slug" --json > "$ARTIFACTS_DIR/mission-status.json"
+      spec-kitty agent mission accept --mission "$mission_slug" --json --no-commit > "$ARTIFACTS_DIR/mission-accept.json" || true
+
+      {
+          echo "mission_slug=$mission_slug"
+          echo "product_vision=$(pwd)/Product Vision and Behavioural Scope.md"
+          echo "repo_root=$(pwd)"
+          echo "branch=$(git branch --show-current)"
+          echo "head=$(git rev-parse --short HEAD)"
+      } > "$ARTIFACTS_DIR/baseline.txt"
+
+      echo "$mission_slug" > "$ARTIFACTS_DIR/mission-slug.txt"
+
+  - id: run-audit
+    depends_on: [baseline]
+    timeout: 7200000
+    bash: |
+      set -euo pipefail
+
+      qwen_prompt="$ARTIFACTS_DIR/qwen-mission-audit.md"
+      cat > "$qwen_prompt" <<'EOF'
+      You are Qwen Coder running through Archon as a mission auditor for Spec Kitty.
+
+      Mission slug:
+      __MISSION_SLUG__
+
+      Mandatory workflow:
+      1. Read Product Vision and Behavioural Scope.md in full.
+      2. Read the mission's spec.md, plan.md, tasks.md, status artifacts, and WP files.
+      3. Inspect the repository code and tests actually implementing that mission.
+      4. Use mission-status.json and mission-accept.json as baseline evidence, not as proof.
+      5. Decide whether the mission genuinely supports the behavioral support system
+         or whether some WPs drift from the product vision.
+      6. Do not edit repository files. This workflow is audit-only.
+      7. Write __ARTIFACTS_DIR__/mission-audit.md with:
+         - overall verdict: ACCEPT or REOPEN
+         - mission role in the final 001-009 product
+         - strongest evidence of alignment
+         - strongest evidence of drift
+         - exact WPs to reopen, if any
+         - exact file references
+         - recommended next action
+      8. Write __ARTIFACTS_DIR__/mission-audit.json with keys:
+         verdict, reopen_wps, strengths, findings, evidence_gaps, recommended_next_step
+
+      Your final terminal response must match mission-audit.md.
+      EOF
+      sed -i "s|__MISSION_SLUG__|$(cat "$ARTIFACTS_DIR/mission-slug.txt")|g" "$qwen_prompt"
+      sed -i "s|__ARTIFACTS_DIR__|$ARTIFACTS_DIR|g" "$qwen_prompt"
+
+      qwen -y -m coder-model -p "$(cat "$qwen_prompt")" | tee "$ARTIFACTS_DIR/qwen-mission-audit.stdout"
+
+  - id: postflight
+    depends_on: [run-audit]
+    bash: |
+      set -euo pipefail
+
+      if [ ! -f "$ARTIFACTS_DIR/mission-audit.md" ]; then
+          echo "Missing mission audit report: $ARTIFACTS_DIR/mission-audit.md" >&2
+          exit 1
+      fi
+
+      cat "$ARTIFACTS_DIR/mission-audit.md"
