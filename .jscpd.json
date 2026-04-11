@@ -1,0 +1,23 @@
+{
+  "threshold": 5,
+  "reporters": ["console", "html", "json"],
+  "ignore": [
+    "**/node_modules/**",
+    "**/.git/**",
+    "**/kitty-specs/**",
+    "**/.agent/**",
+    "**/.agents/**",
+    "**/.claude/**",
+    "**/.codex/**",
+    "**/.opencode/**",
+    "**/.kittify/**",
+    "**/coverage/**",
+    "**/dist/**",
+    "**/build/**"
+  ],
+  "absolute": true,
+  "gitignore": true,
+  "minTokens": 50,
+  "minLines": 10,
+  "config": "ci"
+}

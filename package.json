@@ -6,7 +6,14 @@
     "type": "module",
     "scripts": {
         "start": "node server.js",
-        "dev": "node --watch server.js"
+        "dev": "node --watch server.js",
+        "check:duplicates": "./scripts/check-duplicates.sh",
+        "check:jscpd": "jscpd --threshold 5",
+        "check:python-similarity": "pylint --disable=all --enable=similarities,R0801 .kittify/overrides/scripts/**/*.py || true",
+        "lint:duplicates": "jscpd",
+        "lint:duplicates:fix": "jscpd --mode strict",
+        "lint:python:similarity": "pylint --disable=all --enable=similarities,R0801 .kittify/overrides/scripts/*.py .kittify/overrides/scripts/tasks/*.py || true",
+        "lint": "npm run check:duplicates"
     },
     "dependencies": {
         "@ax-llm/ax": "^19.0.13",
@@ -18,5 +25,8 @@
         "grammy": "^1.30.0",
         "ioredis": "^5.9.3",
         "node-cron": "^3.0.3"
+    },
+    "devDependencies": {
+        "jscpd": "^4.0.8"
     }
 }

@@ -1,0 +1,12 @@
+[MAIN]
+extension-pkg-allow-list=
+
+[MESSAGES CONTROL]
+enable=similarities
+disable=all
+
+[SIMILARITIES]
+min-similarity-lines=5
+ignore-comments=yes
+ignore-docstrings=yes
+ignore-imports=yes

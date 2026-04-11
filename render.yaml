@@ -6,6 +6,9 @@ services:
     name: ticktick-gemini-bot
     runtime: docker
     plan: free    # Change to 'starter' ($7/mo) for always-on without pinger
+    # Pre-deploy quality gate: duplicate code detection runs in Dockerfile
+    # Build stage includes: npm install && npm run check:duplicates
+    healthCheckPath: /health
     envVars:
       - key: TELEGRAM_BOT_TOKEN
         sync: false

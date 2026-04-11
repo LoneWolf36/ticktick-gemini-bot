@@ -1,0 +1,23 @@
+#!/bin/sh
+echo "Running duplicate code checks..."
+
+# Run JSCPD with higher threshold for pre-commit (catch only major issues)
+npx jscpd --threshold 10 --min-lines 10 || {
+  echo ""
+  echo "⚠️  Significant code duplication detected!"
+  echo "   Please refactor the duplicates before committing."
+  echo "   See docs/jscpd-baseline.html for details."
+  exit 1
+}
+
+# Run Python similarity check
+pylint --disable=all --enable=similarities,R0801 \
+  .kittify/overrides/scripts/**/*.py 2>&1 | grep -q "duplicate-code" && {
+  echo ""
+  echo "⚠️  Python code duplication detected."
+  echo "   Consider refactoring the similar code blocks."
+  # Warning only, don't block commit
+}
+
+echo "✅ Duplicate checks passed"
+exit 0
