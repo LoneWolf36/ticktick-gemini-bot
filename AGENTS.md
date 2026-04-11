@@ -1,10 +1,55 @@
 # Repository Guidelines
 
+## Product Vision
+
+This product is a **behavioral support system for task execution** — not a task manager. It helps the user consistently move toward important long-term goals by reducing procrastination, improving task clarity, improving prioritization, and gently rewiring unhelpful behavioral patterns over time.
+
+**Core problem**: The user has used TickTick for years but still struggles to use it effectively — creating tasks but not executing them, focusing on busywork instead of meaningful progress.
+
+**The system should help the user**:
+- Stop mistaking motion for progress
+- Stop over-planning as a form of avoidance
+- Stop focusing on low-priority tasks that feel productive
+- Keep returning to what actually matters
+
+**What it should feel like**: A trusted assistant that understands the user over time, a coach willing to be assertive when needed, a system that knows when to challenge and when to step back.
+
+**What it should NOT feel like**: A passive list manager, a generic reminder app, or a system that blindly accepts the user's first input as correct.
+
+See `Product Vision and Behavioural Scope.md` for the complete product document.
+
+## Architecture Principles
+
+### YAGNI (You Aren't Gonna Need It)
+- Build only what is needed today, not what might be needed at 100+ users
+- The MVP is for 1 user (eventually 5-10). No auth, billing, rate limiting, or multi-tenant isolation yet
+- If a feature is not referenced by an accepted spec, do not build it
+- Placeholders for future expansion are fine — but do not implement them now
+
+### DRY (Don't Repeat Yourself)
+- Extract shared utilities when duplication is clearly harmful (>50 lines, or >3 call sites)
+- Do not extract helpers for 2-line patterns that are unlikely to change
+- When in doubt: extract if it improves readability, skip if it adds indirection
+
+### Simplicity First
+- Prefer JSON files over databases for single-user state (except on Render where filesystem is ephemeral)
+- Prefer direct API calls over framework wrappers when the framework adds no value
+- Prefer one implementation pattern over multiple competing patterns
+- If a solution needs explanation, it's probably too complex
+
+### Architectural Decisions (Recorded for Future Reference)
+
+**Redis**: Kept for Render deployment (ephemeral filesystem). For local dev or VPS hosting, JSON file fallback works. Future simplification: remove dual-backend code, commit to one backend, remove separate `user:{userId}:urgent_mode` keys.
+
+**AX Framework (@ax-llm/ax)**: Currently used for structured intent extraction in `services/ax-intent.js`. Analysis shows Gemini's native `responseSchema` provides stronger guarantees than AX's text-based schema instructions. **Future action**: Replace AX with direct Gemini calls using `responseSchema`. Estimated effort: ~100-150 lines replacement code. Not urgent — the current implementation works.
+
+**TickTick Checklist API**: Expected to be supported. Task creation endpoint (`POST /task`) accepts `items` array with `{title, status}` objects based on API structure analysis. No documented item limit. `desc` field provides checklist-level context. No separate checklist endpoint exists — checklists are inline in the task object. **Note**: Not yet used in production code; verify with a live API call before building checklist features (spec 005).
+
 ## Project Structure & Module Organization
 - `server.js` boots Express, the Telegram bot, the scheduler, and TickTick/Gemini clients.
 - `bot/` contains Telegram-facing behavior: `commands.js`, `callbacks.js`, and formatting helpers in `utils.js`.
 - `services/` contains core logic and integrations. Keep task execution in `ticktick-adapter.js`, normalization in `normalizer.js`, and orchestration in `pipeline.js`.
-- `tests/` holds regression and end-to-end scripts. `kitty-specs/001-task-operations-pipeline/` stores the active spec, plan, and work-package notes.
+- `tests/` holds regression scripts. `kitty-specs/` stores specs, plans, and work-package notes.
 - Deployment files live at the root: `Dockerfile` and `render.yaml`. Local context starts from `services/user_context.example.js`.
 
 ## Build, Test, and Development Commands
