@@ -37,23 +37,36 @@
 - Start local setup from `.env.example` and `services/user_context.example.js`.
 - When adding a required environment variable, update both `README.md` and `render.yaml`.
 
-## Spec Kitty v3.0.1 Notes (Latest - Upgraded 2026-03-31)
-- **CLI Version**: Upgraded from v2.1.3 to v3.0.1 (2026-03-31)
+## Spec Kitty v3.1.1 Notes (Latest - Upgraded 2026-04-09)
+- **CLI Version**: Upgraded from v3.0.1 to v3.1.1 (2026-04-09)
 - **Work Package Frontmatter**: WP files in `kitty-specs/**/tasks/WP*.md` use minimal frontmatter. Deprecated fields removed in v3.0.0 migration:
   - Removed: `lane`, `agent`, `shell_pid`, `review_status`, `reviewed_by`, `history`, `assignee`, `progress`, `review_feedback_file`
   - Kept: `work_package_id`, `title`, `dependencies`, `subtasks`, `base_branch`, `base_commit`, `created_at`, `phase`, `requirement_refs`
 - **State Tracking**: WP state is tracked exclusively via `status.events.jsonl` files in each feature directory
-- **Command Templates**: Planning commands in `.agent/workflows/spec-kitty-*.toml` reference v3.0.0+
+- **Command Templates**: Planning commands in `.agent/workflows/spec-kitty-*.toml` reference v3.1.0+
 - **Platform**: Development platform is Linux
-- **Feature Detection**: Commands require explicit `--feature <slug>` flag (no auto-detection in v3.0.0+)
+- **Mission Detection**: Commands now use `--mission <slug>` flag (deprecated `--feature` flag)
+- **Charter vs Constitution**: `spec-kitty charter` replaces `spec-kitty constitution` across all surfaces
 - **Migration History**: 
+  - v3.0.1 → v3.1.1 upgrade completed 2026-04-09
   - v2.1.3 → v3.0.1 upgrade completed 2026-03-31
   - Previous migration (v1.0.3 → v2.0.9 → v2.1.3) completed 2026-03-19
   - Frontmatter migration events logged in `kitty-specs/**/status.events.jsonl`
 
+### Key Changes in v3.1.0+
+- **Charter Rename**: `spec-kitty constitution` is replaced by `spec-kitty charter`
+- **Canonical Flag**: `--mission` is now the official flag for identifying features/missions. `--feature` is deprecated and hidden
+- **WP Manifest Format**: `wps.yaml` is now the primary dependency source for task finalization
+- **Read-Only Status Commands**: Read-only status commands no longer dirty the Git working tree
+- **Explicit Merge Strategy**: Introduces `--strategy` flag (`MERGE`/`SQUASH`/`REBASE`) and `config.yaml` support
+- **Clean Git State**: Read-only commands (`status`, `next` query mode, `dashboard`) no longer dirty the working tree
+- **Execution Resilience**: Adds `merge --resume`, `implement --recover`, and `doctor` for stale-claim diagnostics
+- **Planning-Artifact Execution**: Now runs in the repository root outside the lane graph (instead of lane worktrees)
+- **Review Resilience**: Introduces versioned review-cycle artifacts, focused fix prompts, and dirty-state classification
+
 ### Key Changes in v3.0.0+
 - **Deterministic Branch Contract**: Commands use `target_branch`/`base_branch` from `create-feature --json` output
-- **No Auto-Detection**: Feature slug must be provided explicitly via `--feature` flag
+- **No Auto-Detection**: Mission slug must be provided explicitly via `--mission` flag
 - **Direct Repo Execution**: Planning commands (`/spec-kitty.specify`, `/spec-kitty.plan`) work in planning repository (no worktrees)
 - **Worktrees for Implementation Only**: Worktrees created during `/spec-kitty.implement WP##` for isolated implementation work
 - **Event-Sourced State**: All WP state transitions recorded in `status.events.jsonl` with `event_id`, `actor`, `reason`, and `evidence`

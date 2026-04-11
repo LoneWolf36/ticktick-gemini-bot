@@ -28,7 +28,7 @@ spec-kitty agent tasks status
 To specify a feature explicitly:
 
 ```bash
-spec-kitty agent tasks status --feature 012-documentation-mission
+spec-kitty agent tasks status --mission 012-documentation-mission
 ```
 
 The command displays a rich kanban board with:

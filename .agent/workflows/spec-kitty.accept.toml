@@ -46,7 +46,7 @@ Ask one focused question per item and confirm the summary before continuing. End
 
 1. Compile the acceptance options into an argument list:
    - Always include `--actor "gemini"`.
-   - Append `--feature "<slug>"` when the user supplied a slug.
+   - Append `--mission "<slug>"` when the user supplied a slug.
    - Append `--mode <mode>` (`pr`, `local`, or `checklist`).
    - Append `--test "<command>"` for each validation command provided.
 2. Run `spec-kitty agent --json {{args}}` (the CLI wrapper) with the assembled arguments **and** `--json`.

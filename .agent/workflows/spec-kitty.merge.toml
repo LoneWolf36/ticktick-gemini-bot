@@ -13,7 +13,7 @@ The checkout branch can be whatever branch the developer is using.
 1. Generate deterministic merge plan first:
 
 ```bash
-spec-kitty merge --feature <feature-slug> --dry-run --json
+spec-kitty merge --mission <feature-slug> --dry-run --json
 ```
 
 2. Confirm effective merge tips from JSON (`effective_wp_branches`).
@@ -21,7 +21,7 @@ spec-kitty merge --feature <feature-slug> --dry-run --json
 3. Execute the actual merge once:
 
 ```bash
-spec-kitty merge --feature <feature-slug>
+spec-kitty merge --mission <feature-slug>
 ```
 
 ## Prohibited Behavior
