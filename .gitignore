@@ -17,6 +17,8 @@ services/user_context.js
 .roo/
 .amazonq/
 .github/copilot/
+.archon/artifacts/
+.archon/logs/
 .kittify/.dashboard
 .kittify/missions/__pycache__/
 .kittify/runtime/
