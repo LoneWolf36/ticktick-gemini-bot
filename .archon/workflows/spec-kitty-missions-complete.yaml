@@ -171,7 +171,7 @@ nodes:
   - id: f002-validation-fallback
     command: spec-kitty-implement-review-fixes
     depends_on: [f002-final-validation]
-    trigger_rule: on_failure
+    trigger_rule: all_done
     context: fresh
 
   # Checkpoint: save progress before next phase
@@ -282,7 +282,7 @@ nodes:
   - id: f003-validation-fallback
     command: spec-kitty-implement-review-fixes
     depends_on: [f003-final-validation]
-    trigger_rule: on_failure
+    trigger_rule: all_done
     context: fresh
 
   # Checkpoint: save progress before next phase
@@ -393,7 +393,7 @@ nodes:
   - id: f004-validation-fallback
     command: spec-kitty-implement-review-fixes
     depends_on: [f004-final-validation]
-    trigger_rule: on_failure
+    trigger_rule: all_done
     context: fresh
 
   # Checkpoint: save progress before next phase
@@ -514,7 +514,7 @@ nodes:
   - id: f005-validation-fallback
     command: spec-kitty-implement-review-fixes
     depends_on: [f005-final-validation]
-    trigger_rule: on_failure
+    trigger_rule: all_done
     context: fresh
 
   # Checkpoint: save progress before next phase
@@ -605,7 +605,7 @@ nodes:
   - id: f006-008-validation-fallback
     command: spec-kitty-implement-review-fixes
     depends_on: [f006-008-final-validation]
-    trigger_rule: on_failure
+    trigger_rule: all_done
     context: fresh
 
   # Checkpoint: save progress before next phase
@@ -736,7 +736,7 @@ nodes:
   - id: f009-validation-fallback
     command: spec-kitty-implement-review-fixes
     depends_on: [f009-final-validation]
-    trigger_rule: on_failure
+    trigger_rule: all_done
     context: fresh
 
   # Checkpoint: save progress before global validation
