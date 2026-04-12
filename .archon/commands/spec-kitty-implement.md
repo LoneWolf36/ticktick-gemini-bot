@@ -111,10 +111,15 @@ During implementation, verify:
 
 ### 3.3 After Each File Change
 
-Verify the change compiles/works:
+Verify the change compiles/works and track result explicitly:
 ```bash
-# Quick syntax check
-node -c services/new-file.js 2>/dev/null || echo "Syntax check skipped (not applicable)"
+# Quick syntax check with explicit pass/fail tracking
+if node -c services/new-file.js 2>/dev/null; then
+  echo "✅ Syntax check passed: services/new-file.js"
+else
+  echo "❌ Syntax check failed: services/new-file.js"
+  exit 1
+fi
 ```
 
 ---
@@ -123,10 +128,14 @@ node -c services/new-file.js 2>/dev/null || echo "Syntax check skipped (not appl
 
 ### 4.1 Run Focused Tests
 
-Test the specific files you changed:
+Test the specific files you changed with explicit result tracking:
 ```bash
 # Run tests for changed modules
-node --test tests/related-test-file.test.js 2>/dev/null || echo "No specific tests yet"
+if node --test tests/related-test-file.test.js 2>/dev/null; then
+  echo "✅ Tests passed"
+else
+  echo "⚠️  No specific tests found or tests failed — check output above"
+fi
 ```
 
 ### 4.2 Fix Test Failures
@@ -144,7 +153,9 @@ If tests fail:
 ```bash
 git add -A
 git diff --cached --stat
-git commit -m "feat({mission}): implement WP{NN} - {wp title}
+
+# Build commit message
+COMMIT_MSG="feat({mission}): implement WP{NN} - {wp title}
 
 {Brief description of what was implemented}
 
@@ -154,19 +165,54 @@ Subtasks completed:
 
 Files changed:
 - {file1} — {what changed}
-- {file2} — {what changed}
+- {file2} — {what changed}"
+
+# Append co-author lines from config (if CO_AUTHOR_TRAILERS env var is set)
+if [ -n "$CO_AUTHOR_TRAILERS" ]; then
+  COMMIT_MSG="$COMMIT_MSG
+
+$CO_AUTHOR_TRAILERS"
+else
+  # Default co-author if not configured
+  COMMIT_MSG="$COMMIT_MSG
 
 Co-Authored-By: Codex GPT-5 <noreply@openai.com>"
+fi
+
+git commit -m "$COMMIT_MSG"
 ```
 
 ---
 
 ## Phase 5: UPDATE WP STATUS
 
-Append to the mission's status.events.jsonl:
+### 5.1 Write to status.events.jsonl
+
+Append a completion event to the mission's status file:
 ```bash
-# This will be handled by the workflow's status update mechanism
-echo "WP ${WP_ID} implementation complete for mission ${MISSION_SLUG}"
+STATUS_FILE="kitty-specs/{mission-slug}/status.events.jsonl"
+TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+
+# Create the event JSON
+EVENT="{\"event_id\":\"evt-$(date +%s)\",\"type\":\"wp_completed\",\"wp_id\":\"WP{NN}\",\"mission\":\"{mission-slug}\",\"from_lane\":\"in_progress\",\"to_lane\":\"done\",\"timestamp\":\"$TIMESTAMP\",\"actor\":\"spec-kitty-implement\",\"evidence\":\"Implementation completed and validated\"}"
+
+# Append to status file
+mkdir -p "$(dirname "$STATUS_FILE")"
+echo "$EVENT" >> "$STATUS_FILE"
+
+echo "✅ WP{NN} status updated in $STATUS_FILE"
+```
+
+### 5.2 Verify Status Update
+
+Confirm the event was written:
+```bash
+if grep -q "WP{NN}" "$STATUS_FILE" 2>/dev/null; then
+  echo "✅ Status verification passed: WP{NN} found in status.events.jsonl"
+else
+  echo "❌ Status verification failed: WP{NN} not found in status.events.jsonl"
+  exit 1
+fi
 ```
 
 ---

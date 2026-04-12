@@ -1,0 +1,1274 @@
+# ═══════════════════════════════════════════════════════════════════
+# UNIVERSAL SPEC-KITTY MISSION WORKFLOW — Reusable Template
+# ═══════════════════════════════════════════════════════════════════
+#
+# VERSION: 2.0.0
+# COMPATIBILITY: Archon v3.1.1+, Spec-Kitty v3.1.1+
+#
+# ───────────────────────────────────────────────────────────────────
+# WHAT THIS IS
+# ───────────────────────────────────────────────────────────────────
+# A plug-and-play Archon workflow that wraps the spec-kitty CLI to
+# implement ANY set of spec-based missions across ANY project.
+#
+# It does NOT replace spec-kitty — it orchestrates it:
+#   - Calls `spec-kitty implement --mission <slug> WP##` for each WP
+#   - Calls `spec-kitty move-task` to update status
+#   - Runs project validation commands between WPs
+#   - Gates every feature behind 5-agent parallel review
+#   - Loops review → fix → re-review up to 3 times
+#   - Escalates to systematic-debugger after 5 debugger retries
+#   - Saves checkpoints between every phase
+#
+# ───────────────────────────────────────────────────────────────────
+# HOW TO ADAPT FOR YOUR PROJECT
+# ───────────────────────────────────────────────────────────────────
+# 1. Copy this file to .archon/workflows/{your-workflow-name}.yaml
+# 2. Copy workflow-config.example.json → workflow-config.json
+# 3. Fill in the config.json with your project details
+# 4. This YAML references ${config.*} variables — they resolve at runtime
+# 5. No hard-coded paths, names, or project-specific details in this file
+#
+# ───────────────────────────────────────────────────────────────────
+# REQUIRED CONFIG FIELDS (in workflow-config.json)
+# ───────────────────────────────────────────────────────────────────
+# {
+#   "project": {
+#     "root": ".",                          # Project root directory
+#     "specDirectory": "kitty-specs",       # Dir containing specs
+#     "baseBranch": "master",               # Git base branch
+#     "validationCommands": [               # Commands to validate code
+#       "npm test",
+#       "npm run lint"
+#     ]
+#   },
+#   "missions": [                           # Array of missions
+#     {
+#       "id": "001",                        # Mission ID
+#       "slug": "001-mission-name",         # Mission directory slug
+#       "workPackages": [                   # WPs in execution order
+#         {
+#           "id": "WP01",                   # WP identifier
+#           "file": "tasks/WP01-name.md",   # Path relative to mission dir
+#           "dependencies": ["WP00"],       # WP IDs that must finish first
+#           "skipIfComplete": true          # Skip if already done
+#         }
+#       ]
+#     }
+#   ],
+#   "review": {
+#     "agents": [ ... ],                    # Review agent pool (see schema)
+#     "quorum": { ... },                    # Passing criteria
+#     "timeout": 600,                       # Seconds per review
+#     "parallelLimit": 5                    # Max parallel reviewers
+#   },
+#   "resilience": {
+#     "retry": { ... },                     # Retry config
+#     "circuitBreaker": { ... },            # When to escalate
+#     "checkpoint": { ... }                 # Checkpoint/resume config
+#   }
+# }
+#
+# ───────────────────────────────────────────────────────────────────
+# REQUIRED COMMANDS (in .archon/commands/)
+# ───────────────────────────────────────────────────────────────────
+# This workflow expects these commands to exist:
+#   - spec-kitty-implement        → wraps `spec-kitty implement --mission`
+#   - spec-kitty-validate         → runs project validation commands
+#   - spec-kitty-validate-full    → runs full test suite + regression
+#   - spec-kitty-review-architecture  → wraps architect-review agent
+#   - spec-kitty-review-security      → wraps security-auditor agent
+#   - spec-kitty-review-testing       → wraps tdd-orchestrator agent
+#   - spec-kitty-review-code-quality  → wraps clean-coder agent
+#   - spec-kitty-review-product-vision → custom product vision review
+#   - spec-kitty-synthesize-review      → synthesizes all review findings
+#   - spec-kitty-implement-review-fixes → applies fixes from review synthesis
+#   - spec-kitty-checkpoint-save        → saves workflow checkpoint
+#   - spec-kitty-completion-summary     → generates final summary
+#
+# Each command .md file should:
+#   1. Accept $ARGUMENTS as "<mission-slug> <WP-id>"
+#   2. Invoke the appropriate spec-kitty CLI or skill
+#   3. Write review reports to $ARTIFACTS_DIR/
+#   4. Exit 0 on success, non-zero on failure
+#
+# ───────────────────────────────────────────────────────────────────
+# WORKFLOW EXECUTION MODEL
+# ───────────────────────────────────────────────────────────────────
+#
+# For EACH mission (sequential):
+#   For EACH work package in mission (respecting dependencies):
+#     1. IMPLEMENT:  spec-kitty implement --mission <slug> <WP>
+#     2. VALIDATE:   run project validationCommands
+#     3. MOVE-TASK:  spec-kitty move-task --mission <slug> <WP> --to done
+#
+#   After ALL WPs in mission:
+#     4. MULTI-AGENT REVIEW GATE (5 parallel agents):
+#        - architect-review    (mandatory, YAGNI/DRY/simplicity)
+#        - security-auditor    (mandatory, OWASP/secrets/input validation)
+#        - tdd-orchestrator    (test coverage/edge cases)
+#        - clean-coder         (code quality/naming/structure)
+#        - product-vision      (custom: alignment with product vision)
+#
+#     5. SYNTHESIZE: Combine all review findings into prioritized fix list
+#        trigger_rule: all_done (waits for ALL 5 reviews)
+#
+#     6. REVIEW-FIX LOOP (max 3 cycles):
+#        a. Implement fixes (clean-coder agent)
+#        b. Run FULL validation
+#        c. RE-RUN ALL 5 review agents (full re-review, not incremental)
+#        d. Synthesize again
+#        e. If all pass → proceed
+#        f. If still failing after 3 cycles → systematic-debugger
+#
+#     7. SYSTEMATIC-DEBUGGER ESCALATION (max 5 retries):
+#        a. Systematic-debugger analyzes root cause
+#        b. clean-coder implements targeted fixes
+#        c. Full validation + full 5-agent re-review
+#        d. Retry up to 5 times
+#        e. If still failing → ESCALATE TO HUMAN (circuit breaker)
+#
+#     8. CHECKPOINT: Save mission completion state
+#     9. Proceed to next mission
+#
+# ═══════════════════════════════════════════════════════════════════
+
+name: spec-kitty-universal-missions
+description: |
+  Use when: Executing spec-kitty missions for ANY project with strict
+  quality gates, multi-agent review, and systematic debugging escalation.
+
+  This is a UNIVERSAL TEMPLATE — all project-specific details come from
+  ${config.*} variable substitution in workflow-config.json.
+
+  For EACH mission:
+  1. Execute WPs in dependency order
+  2. Validate after each WP
+  3. Gate behind 5-agent parallel review
+  4. Loop review → fix → re-review (max 3 cycles)
+  5. Escalate to systematic-debugger (max 5 retries)
+  6. Circuit-breaker → human escalation if all else fails
+
+  Quality bar: MAXIMUM
+  - All validation commands pass
+  - All mandatory review agents pass
+  - Quorum met (weighted or count-based per config)
+  - Product vision alignment verified
+  - Checkpoint saved
+
+  Input: "run spec-kitty missions" or "implement all features"
+  NOT for: Creating new specs, planning features (specs must already exist).
+
+# ───────────────────────────────────────────────────────────────────
+# PROVIDER & MODEL — Override in workflow-config.json ai section
+# ───────────────────────────────────────────────────────────────────
+provider: ${config.ai.provider}
+model: ${config.ai.model}
+
+# ═══════════════════════════════════════════════════════════════════
+# PROJECT CONTEXT — Filled from workflow-config.json
+# ═══════════════════════════════════════════════════════════════════
+#
+# The following variables are resolved at runtime from workflow-config.json:
+#
+#   ${config.project.root}              — Project root directory
+#   ${config.project.specDirectory}     — Directory containing mission specs
+#   ${config.project.baseBranch}        — Git base branch
+#   ${config.project.validationCommands} — Array of validation commands
+#   ${config.missions}                  — Array of mission definitions
+#   ${config.review.agents}             — Review agent pool
+#   ${config.review.quorum}             — Quorum/passing criteria
+#   ${config.resilience.retry.maxAttempts}          — Max retry per agent
+#   ${config.resilience.circuitBreaker.failureThreshold} — When to escalate
+#   ${config.resilience.checkpoint.directory}         — Checkpoint dir
+#   ${config.resilience.checkpoint.maxFixAttempts}    — Max fix loops
+#
+# ───────────────────────────────────────────────────────────────────
+# CODING PRINCIPLES (Gate Criteria — applied at every review)
+# ───────────────────────────────────────────────────────────────────
+# These principles are enforced at every review gate:
+#
+# YAGNI:     Build only what is spec'd. No speculative features.
+# DRY:       Extract when duplication is harmful (>50 lines or >3 sites).
+# SIMPLICITY: Prefer simple over clever. JSON over DB for small state.
+# SOLID:     Single responsibility, clear interfaces, proper abstraction.
+# NO-DRIFT:  Architecture must not drift from accepted patterns.
+#
+# Every review agent evaluates against these principles.
+# Any violation rated as "blocker" prevents gate passage.
+#
+# ═══════════════════════════════════════════════════════════════════
+# NODE DEFINITIONS
+# ═══════════════════════════════════════════════════════════════════
+#
+# NOTE: This template uses a MISSION TEMPLATE PATTERN.
+# Copy the "MISSION TEMPLATE" block below for each mission in your
+# workflow-config.json, replacing {MISSION_SLUG} and WP IDs.
+#
+# For automated generation, a pre-processor can expand missions from
+# workflow-config.json into concrete node definitions.
+#
+# ═══════════════════════════════════════════════════════════════════
+
+nodes:
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 0: INITIALIZATION
+  # ═══════════════════════════════════════════════════════════════
+
+  # Validate configuration before starting any work
+  - id: init-validate-config
+    command: shell
+    args:
+      script: |
+        # Verify workflow-config.json exists and is valid JSON
+        if [ ! -f ".archon/workflow-config.json" ]; then
+          echo "ERROR: workflow-config.json not found in .archon/"
+          echo "Copy workflow-config.example.json and adapt for your project."
+          exit 1
+        fi
+        # Validate JSON syntax
+        if ! python3 -c "import json; json.load(open('.archon/workflow-config.json'))" 2>/dev/null; then
+          echo "ERROR: workflow-config.json is not valid JSON"
+          exit 1
+        fi
+        echo "Configuration validated successfully"
+    context: fresh
+
+  # Load project context into environment
+  - id: init-load-project-context
+    command: shell
+    args:
+      script: |
+        echo "Loading project context..."
+        echo "Project root: ${config.project.root}"
+        echo "Spec directory: ${config.project.specDirectory}"
+        echo "Base branch: ${config.project.baseBranch}"
+        echo "Missions to execute: $(echo '${config.missions}' | python3 -c 'import json,sys; data=json.load(sys.stdin); print(len(data))')"
+    depends_on: [init-validate-config]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # MISSION TEMPLATE — COPY THIS BLOCK FOR EACH MISSION
+  # ═══════════════════════════════════════════════════════════════
+  #
+  # Instructions:
+  # 1. Replace {MISSION_NUM} with mission ID (e.g., 001, 002)
+  # 2. Replace {MISSION_SLUG} with mission slug (e.g., 001-task-operations)
+  # 3. Add/remove WP implement/validate node pairs as needed
+  # 4. Ensure depends_on chains respect WP dependencies from config
+  # 5. The review gate and escalation structure is identical for all missions
+  #
+  # Example for Mission {MISSION_NUM}: {MISSION_SLUG}
+  # ─────────────────────────────────────────────────────────────
+
+  # ─── WP01: Implement ────────────────────────────────────────
+  - id: m{MISSION_NUM}-wp01-implement
+    command: spec-kitty-implement
+    args:
+      mission: "{MISSION_SLUG}"
+      workPackage: "WP01"
+    context: fresh
+
+  # ─── WP01: Validate ────────────────────────────────────────
+  - id: m{MISSION_NUM}-wp01-validate
+    command: spec-kitty-validate
+    depends_on: [m{MISSION_NUM}-wp01-implement]
+    context: fresh
+
+  # ─── WP01: Failure fallback (retry once) ────────────────────
+  - id: m{MISSION_NUM}-wp01-validate-fallback
+    command: spec-kitty-implement
+    args:
+      mission: "{MISSION_SLUG}"
+      workPackage: "WP01"
+      retry: true
+    depends_on: [m{MISSION_NUM}-wp01-validate]
+    trigger_rule: on_failure
+    context: fresh
+
+  # ─── WP01: Re-validate after fallback ──────────────────────
+  - id: m{MISSION_NUM}-wp01-revalidate
+    command: spec-kitty-validate
+    depends_on: [m{MISSION_NUM}-wp01-validate-fallback]
+    context: fresh
+
+  # ─── WP01: Move task to done ───────────────────────────────
+  - id: m{MISSION_NUM}-wp01-move-task
+    command: shell
+    args:
+      script: |
+        spec-kitty move-task --mission {MISSION_SLUG} WP01 --to done
+    depends_on: [m{MISSION_NUM}-wp01-validate]
+    context: fresh
+
+  # ─── WP02: Implement (depends on WP01) ─────────────────────
+  # Add similar WP02, WP03, etc. nodes following the same pattern.
+  # Use depends_on to enforce WP dependencies from config.
+  #
+  # - id: m{MISSION_NUM}-wp02-implement
+  #   command: spec-kitty-implement
+  #   args:
+  #     mission: "{MISSION_SLUG}"
+  #     workPackage: "WP02"
+  #   depends_on: [m{MISSION_NUM}-wp01-validate]  # WP dependency
+  #   context: fresh
+  #
+  # - id: m{MISSION_NUM}-wp02-validate
+  #   command: spec-kitty-validate
+  #   depends_on: [m{MISSION_NUM}-wp02-implement]
+  #   context: fresh
+  #
+  # ... repeat for all WPs in this mission ...
+
+  # ─── LAST WP Validate (reference for review gate) ───────────
+  # This node ID is used as the dependency anchor for the review gate.
+  # Replace with the actual last WP validate node ID for this mission.
+  - id: m{MISSION_NUM}-wp-last-validate
+    command: spec-kitty-validate
+    depends_on: [m{MISSION_NUM}-wp01-validate]  # Replace with actual last WP
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # MULTI-AGENT REVIEW GATE (5 parallel specialized agents)
+  # ═══════════════════════════════════════════════════════════════
+  #
+  # After ALL WPs in a mission are complete, run 5 parallel reviews.
+  # Each review uses a SPECIALIZED AGENT from the config agent pool.
+  # Agent selection is dynamic based on spec content analysis.
+  #
+  # trigger_rule: all_done — synthesis waits for ALL reviews.
+  # If ANY review fails, the entire review-fix loop activates.
+  #
+  # ─── Review Agent 1: Architecture ───────────────────────────
+  # Agent: architect-review (from config.review.agents)
+  # Focus: YAGNI, DRY, Simplicity, SOLID, no overengineering
+  - id: m{MISSION_NUM}-review-architecture
+    command: spec-kitty-review-architecture
+    args:
+      mission: "{MISSION_SLUG}"
+      agent: ${config.review.agents[architect-review]}
+    depends_on: [m{MISSION_NUM}-wp-last-validate]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  # ─── Review Agent 2: Security ──────────────────────────────
+  # Agent: security-auditor (from config.review.agents)
+  # Focus: OWASP, secrets, input validation, auth patterns
+  - id: m{MISSION_NUM}-review-security
+    command: spec-kitty-review-security
+    args:
+      mission: "{MISSION_SLUG}"
+      agent: ${config.review.agents[security-auditor]}
+    depends_on: [m{MISSION_NUM}-wp-last-validate]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  # ─── Review Agent 3: Test Coverage ─────────────────────────
+  # Agent: tdd-orchestrator (from config.review.agents)
+  # Focus: Test coverage, edge cases, behavioral contracts
+  - id: m{MISSION_NUM}-review-testing
+    command: spec-kitty-review-testing
+    args:
+      mission: "{MISSION_SLUG}"
+      agent: ${config.review.agents[tdd-orchestrator]}
+    depends_on: [m{MISSION_NUM}-wp-last-validate]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  # ─── Review Agent 4: Code Quality ──────────────────────────
+  # Agent: clean-coder (from config.review.agents)
+  # Focus: Naming, structure, clean code, comments, readability
+  - id: m{MISSION_NUM}-review-code-quality
+    command: spec-kitty-review-code-quality
+    args:
+      mission: "{MISSION_SLUG}"
+      agent: ${config.review.agents[clean-coder]}
+    depends_on: [m{MISSION_NUM}-wp-last-validate]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  # ─── Review Agent 5: Product Vision ────────────────────────
+  # Agent: Custom prompt specialized for this product's vision
+  # Focus: Alignment with Product Vision document, behavioral goals
+  - id: m{MISSION_NUM}-review-product-vision
+    command: spec-kitty-review-product-vision
+    args:
+      mission: "{MISSION_SLUG}"
+      productVisionFile: "Product Vision and Behavioural Scope.md"
+    depends_on: [m{MISSION_NUM}-wp-last-validate]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  # ═══════════════════════════════════════════════════════════════
+  # REVIEW SYNTHESIS — Must wait for ALL 5 reviews
+  # ═══════════════════════════════════════════════════════════════
+  #
+  # CRITICAL: trigger_rule is all_done, NOT one_success.
+  # Synthesis must have ALL review results to produce accurate findings.
+  #
+  - id: m{MISSION_NUM}-synthesize-review
+    command: spec-kitty-synthesize-review
+    args:
+      mission: "{MISSION_SLUG}"
+      expectedReviews:
+        - architecture
+        - security
+        - testing
+        - code-quality
+        - product-vision
+    depends_on:
+      [m{MISSION_NUM}-review-architecture, m{MISSION_NUM}-review-security, m{MISSION_NUM}-review-testing, m{MISSION_NUM}-review-code-quality, m{MISSION_NUM}-review-product-vision]
+    trigger_rule: all_done
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # REVIEW-FIX LOOP CYCLE 1
+  # ═══════════════════════════════════════════════════════════════
+
+  # Implement fixes from synthesis
+  - id: m{MISSION_NUM}-fixes-cycle-1
+    command: spec-kitty-implement-review-fixes
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 1
+      synthesisFile: "${config.resilience.checkpoint.directory}/synthesis-m{MISSION_NUM}.md"
+    depends_on: [m{MISSION_NUM}-synthesize-review]
+    context: fresh
+
+  # Full validation after fixes
+  - id: m{MISSION_NUM}-validation-cycle-1
+    command: spec-kitty-validate-full
+    depends_on: [m{MISSION_NUM}-fixes-cycle-1]
+    context: fresh
+
+  # ─── FULL RE-REVIEW (ALL 5 agents again) ───────────────────
+  # When fixes are applied, ALL 5 review agents re-run from scratch.
+  # This is NOT incremental — it's a complete fresh review.
+
+  - id: m{MISSION_NUM}-rereview-arch-cycle-1
+    command: spec-kitty-review-architecture
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 1
+    depends_on: [m{MISSION_NUM}-validation-cycle-1]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-rereview-sec-cycle-1
+    command: spec-kitty-review-security
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 1
+    depends_on: [m{MISSION_NUM}-validation-cycle-1]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-rereview-test-cycle-1
+    command: spec-kitty-review-testing
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 1
+    depends_on: [m{MISSION_NUM}-validation-cycle-1]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-rereview-quality-cycle-1
+    command: spec-kitty-review-code-quality
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 1
+    depends_on: [m{MISSION_NUM}-validation-cycle-1]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-rereview-vision-cycle-1
+    command: spec-kitty-review-product-vision
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 1
+    depends_on: [m{MISSION_NUM}-validation-cycle-1]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  # Re-synthesize after full re-review
+  - id: m{MISSION_NUM}-rereview-synthesize-cycle-1
+    command: spec-kitty-synthesize-review
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 1
+    depends_on:
+      [m{MISSION_NUM}-rereview-arch-cycle-1, m{MISSION_NUM}-rereview-sec-cycle-1, m{MISSION_NUM}-rereview-test-cycle-1, m{MISSION_NUM}-rereview-quality-cycle-1, m{MISSION_NUM}-rereview-vision-cycle-1]
+    trigger_rule: all_done
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # REVIEW-FIX LOOP CYCLE 2
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: m{MISSION_NUM}-fixes-cycle-2
+    command: spec-kitty-implement-review-fixes
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 2
+    depends_on: [m{MISSION_NUM}-rereview-synthesize-cycle-1]
+    context: fresh
+
+  - id: m{MISSION_NUM}-validation-cycle-2
+    command: spec-kitty-validate-full
+    depends_on: [m{MISSION_NUM}-fixes-cycle-2]
+    context: fresh
+
+  # Full re-review (all 5 agents)
+  - id: m{MISSION_NUM}-rereview-arch-cycle-2
+    command: spec-kitty-review-architecture
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 2
+    depends_on: [m{MISSION_NUM}-validation-cycle-2]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-rereview-sec-cycle-2
+    command: spec-kitty-review-security
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 2
+    depends_on: [m{MISSION_NUM}-validation-cycle-2]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-rereview-test-cycle-2
+    command: spec-kitty-review-testing
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 2
+    depends_on: [m{MISSION_NUM}-validation-cycle-2]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-rereview-quality-cycle-2
+    command: spec-kitty-review-code-quality
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 2
+    depends_on: [m{MISSION_NUM}-validation-cycle-2]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-rereview-vision-cycle-2
+    command: spec-kitty-review-product-vision
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 2
+    depends_on: [m{MISSION_NUM}-validation-cycle-2]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-rereview-synthesize-cycle-2
+    command: spec-kitty-synthesize-review
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 2
+    depends_on:
+      [m{MISSION_NUM}-rereview-arch-cycle-2, m{MISSION_NUM}-rereview-sec-cycle-2, m{MISSION_NUM}-rereview-test-cycle-2, m{MISSION_NUM}-rereview-quality-cycle-2, m{MISSION_NUM}-rereview-vision-cycle-2]
+    trigger_rule: all_done
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # REVIEW-FIX LOOP CYCLE 3 (FINAL — then escalate to debugger)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: m{MISSION_NUM}-fixes-cycle-3
+    command: spec-kitty-implement-review-fixes
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 3
+    depends_on: [m{MISSION_NUM}-rereview-synthesize-cycle-2]
+    context: fresh
+
+  - id: m{MISSION_NUM}-validation-cycle-3
+    command: spec-kitty-validate-full
+    depends_on: [m{MISSION_NUM}-fixes-cycle-3]
+    context: fresh
+
+  # Full re-review (all 5 agents)
+  - id: m{MISSION_NUM}-rereview-arch-cycle-3
+    command: spec-kitty-review-architecture
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 3
+    depends_on: [m{MISSION_NUM}-validation-cycle-3]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-rereview-sec-cycle-3
+    command: spec-kitty-review-security
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 3
+    depends_on: [m{MISSION_NUM}-validation-cycle-3]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-rereview-test-cycle-3
+    command: spec-kitty-review-testing
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 3
+    depends_on: [m{MISSION_NUM}-validation-cycle-3]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-rereview-quality-cycle-3
+    command: spec-kitty-review-code-quality
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 3
+    depends_on: [m{MISSION_NUM}-validation-cycle-3]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-rereview-vision-cycle-3
+    command: spec-kitty-review-product-vision
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 3
+    depends_on: [m{MISSION_NUM}-validation-cycle-3]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-rereview-synthesize-cycle-3
+    command: spec-kitty-synthesize-review
+    args:
+      mission: "{MISSION_SLUG}"
+      cycle: 3
+    depends_on:
+      [m{MISSION_NUM}-rereview-arch-cycle-3, m{MISSION_NUM}-rereview-sec-cycle-3, m{MISSION_NUM}-rereview-test-cycle-3, m{MISSION_NUM}-rereview-quality-cycle-3, m{MISSION_NUM}-rereview-vision-cycle-3]
+    trigger_rule: all_done
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # SYSTEMATIC-DEBUGGER ESCALATION (after 3 review-fix cycles fail)
+  # ═══════════════════════════════════════════════════════════════
+  #
+  # If all 3 review-fix cycles fail to achieve quorum:
+  # 1. Systematic-debugger pauses and analyzes root cause
+  # 2. clean-coder implements targeted fixes
+  # 3. Full validation + full 5-agent re-review
+  # 4. Retry up to 5 times
+  # 5. If still failing → circuit breaker → human escalation
+  #
+  # ─── Debugger Retry 1 ──────────────────────────────────────
+  - id: m{MISSION_NUM}-debugger-retry-1
+    command: shell
+    args:
+      script: |
+        echo "═══════════════════════════════════════════════════════"
+        echo "SYSTEMATIC DEBUGGER — Mission {MISSION_SLUG}, Retry 1/5"
+        echo "═══════════════════════════════════════════════════════"
+        echo ""
+        echo "Analyzing root cause of review failures..."
+        echo "Previous cycles: 3 review-fix loops exhausted"
+        echo ""
+        echo "Steps:"
+        echo "1. Collect all review reports and synthesis findings"
+        echo "2. Identify recurring failure patterns"
+        echo "3. Determine if failures are systemic or surface-level"
+        echo "4. clean-coder agent implements targeted fixes"
+        echo "5. Full validation + full 5-agent re-review"
+        echo ""
+        echo "If this retry fails → debugger retry 2/5"
+        echo "After 5 debugger retries → ESCALATE TO HUMAN"
+    depends_on: [m{MISSION_NUM}-rereview-synthesize-cycle-3]
+    context: fresh
+
+  - id: m{MISSION_NUM}-debugger-fix-1
+    command: spec-kitty-implement-review-fixes
+    args:
+      mission: "{MISSION_SLUG}"
+      mode: debugger-assisted
+      debuggerRetry: 1
+    depends_on: [m{MISSION_NUM}-debugger-retry-1]
+    context: fresh
+
+  - id: m{MISSION_NUM}-debugger-validation-1
+    command: spec-kitty-validate-full
+    depends_on: [m{MISSION_NUM}-debugger-fix-1]
+    context: fresh
+
+  # Full re-review after debugger fix (all 5 agents)
+  - id: m{MISSION_NUM}-debugger-rereview-arch-1
+    command: spec-kitty-review-architecture
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 1
+    depends_on: [m{MISSION_NUM}-debugger-validation-1]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-sec-1
+    command: spec-kitty-review-security
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 1
+    depends_on: [m{MISSION_NUM}-debugger-validation-1]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-test-1
+    command: spec-kitty-review-testing
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 1
+    depends_on: [m{MISSION_NUM}-debugger-validation-1]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-quality-1
+    command: spec-kitty-review-code-quality
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 1
+    depends_on: [m{MISSION_NUM}-debugger-validation-1]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-vision-1
+    command: spec-kitty-review-product-vision
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 1
+    depends_on: [m{MISSION_NUM}-debugger-validation-1]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-synthesize-1
+    command: spec-kitty-synthesize-review
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 1
+    depends_on:
+      [m{MISSION_NUM}-debugger-rereview-arch-1, m{MISSION_NUM}-debugger-rereview-sec-1, m{MISSION_NUM}-debugger-rereview-test-1, m{MISSION_NUM}-debugger-rereview-quality-1, m{MISSION_NUM}-debugger-rereview-vision-1]
+    trigger_rule: all_done
+    context: fresh
+
+  # ─── Debugger Retry 2 ──────────────────────────────────────
+  - id: m{MISSION_NUM}-debugger-retry-2
+    command: shell
+    args:
+      script: |
+        echo "SYSTEMATIC DEBUGGER — Mission {MISSION_SLUG}, Retry 2/5"
+        echo "Debugger retry 1 did not achieve review quorum."
+        echo "Deepening root cause analysis..."
+    depends_on: [m{MISSION_NUM}-debugger-synthesize-1]
+    context: fresh
+
+  - id: m{MISSION_NUM}-debugger-fix-2
+    command: spec-kitty-implement-review-fixes
+    args:
+      mission: "{MISSION_SLUG}"
+      mode: debugger-assisted
+      debuggerRetry: 2
+    depends_on: [m{MISSION_NUM}-debugger-retry-2]
+    context: fresh
+
+  - id: m{MISSION_NUM}-debugger-validation-2
+    command: spec-kitty-validate-full
+    depends_on: [m{MISSION_NUM}-debugger-fix-2]
+    context: fresh
+
+  - id: m{MISSION_NUM}-debugger-rereview-arch-2
+    command: spec-kitty-review-architecture
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 2
+    depends_on: [m{MISSION_NUM}-debugger-validation-2]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-sec-2
+    command: spec-kitty-review-security
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 2
+    depends_on: [m{MISSION_NUM}-debugger-validation-2]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-test-2
+    command: spec-kitty-review-testing
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 2
+    depends_on: [m{MISSION_NUM}-debugger-validation-2]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-quality-2
+    command: spec-kitty-review-code-quality
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 2
+    depends_on: [m{MISSION_NUM}-debugger-validation-2]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-vision-2
+    command: spec-kitty-review-product-vision
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 2
+    depends_on: [m{MISSION_NUM}-debugger-validation-2]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-synthesize-2
+    command: spec-kitty-synthesize-review
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 2
+    depends_on:
+      [m{MISSION_NUM}-debugger-rereview-arch-2, m{MISSION_NUM}-debugger-rereview-sec-2, m{MISSION_NUM}-debugger-rereview-test-2, m{MISSION_NUM}-debugger-rereview-quality-2, m{MISSION_NUM}-debugger-rereview-vision-2]
+    trigger_rule: all_done
+    context: fresh
+
+  # ─── Debugger Retry 3 ──────────────────────────────────────
+  - id: m{MISSION_NUM}-debugger-retry-3
+    command: shell
+    args:
+      script: |
+        echo "SYSTEMATIC DEBUGGER — Mission {MISSION_SLUG}, Retry 3/5"
+        echo "Debugger retries 1-2 did not achieve review quorum."
+        echo "Performing deep architectural root cause analysis..."
+    depends_on: [m{MISSION_NUM}-debugger-synthesize-2]
+    context: fresh
+
+  - id: m{MISSION_NUM}-debugger-fix-3
+    command: spec-kitty-implement-review-fixes
+    args:
+      mission: "{MISSION_SLUG}"
+      mode: debugger-assisted
+      debuggerRetry: 3
+    depends_on: [m{MISSION_NUM}-debugger-retry-3]
+    context: fresh
+
+  - id: m{MISSION_NUM}-debugger-validation-3
+    command: spec-kitty-validate-full
+    depends_on: [m{MISSION_NUM}-debugger-fix-3]
+    context: fresh
+
+  - id: m{MISSION_NUM}-debugger-rereview-arch-3
+    command: spec-kitty-review-architecture
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 3
+    depends_on: [m{MISSION_NUM}-debugger-validation-3]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-sec-3
+    command: spec-kitty-review-security
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 3
+    depends_on: [m{MISSION_NUM}-debugger-validation-3]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-test-3
+    command: spec-kitty-review-testing
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 3
+    depends_on: [m{MISSION_NUM}-debugger-validation-3]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-quality-3
+    command: spec-kitty-review-code-quality
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 3
+    depends_on: [m{MISSION_NUM}-debugger-validation-3]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-vision-3
+    command: spec-kitty-review-product-vision
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 3
+    depends_on: [m{MISSION_NUM}-debugger-validation-3]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-synthesize-3
+    command: spec-kitty-synthesize-review
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 3
+    depends_on:
+      [m{MISSION_NUM}-debugger-rereview-arch-3, m{MISSION_NUM}-debugger-rereview-sec-3, m{MISSION_NUM}-debugger-rereview-test-3, m{MISSION_NUM}-debugger-rereview-quality-3, m{MISSION_NUM}-debugger-rereview-vision-3]
+    trigger_rule: all_done
+    context: fresh
+
+  # ─── Debugger Retry 4 ──────────────────────────────────────
+  - id: m{MISSION_NUM}-debugger-retry-4
+    command: shell
+    args:
+      script: |
+        echo "SYSTEMATIC DEBUGGER — Mission {MISSION_SLUG}, Retry 4/5"
+        echo "WARNING: Approaching escalation threshold."
+        echo "This is the second-to-last automated attempt."
+    depends_on: [m{MISSION_NUM}-debugger-synthesize-3]
+    context: fresh
+
+  - id: m{MISSION_NUM}-debugger-fix-4
+    command: spec-kitty-implement-review-fixes
+    args:
+      mission: "{MISSION_SLUG}"
+      mode: debugger-assisted
+      debuggerRetry: 4
+    depends_on: [m{MISSION_NUM}-debugger-retry-4]
+    context: fresh
+
+  - id: m{MISSION_NUM}-debugger-validation-4
+    command: spec-kitty-validate-full
+    depends_on: [m{MISSION_NUM}-debugger-fix-4]
+    context: fresh
+
+  - id: m{MISSION_NUM}-debugger-rereview-arch-4
+    command: spec-kitty-review-architecture
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 4
+    depends_on: [m{MISSION_NUM}-debugger-validation-4]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-sec-4
+    command: spec-kitty-review-security
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 4
+    depends_on: [m{MISSION_NUM}-debugger-validation-4]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-test-4
+    command: spec-kitty-review-testing
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 4
+    depends_on: [m{MISSION_NUM}-debugger-validation-4]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-quality-4
+    command: spec-kitty-review-code-quality
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 4
+    depends_on: [m{MISSION_NUM}-debugger-validation-4]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-vision-4
+    command: spec-kitty-review-product-vision
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 4
+    depends_on: [m{MISSION_NUM}-debugger-validation-4]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-synthesize-4
+    command: spec-kitty-synthesize-review
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 4
+    depends_on:
+      [m{MISSION_NUM}-debugger-rereview-arch-4, m{MISSION_NUM}-debugger-rereview-sec-4, m{MISSION_NUM}-debugger-rereview-test-4, m{MISSION_NUM}-debugger-rereview-quality-4, m{MISSION_NUM}-debugger-rereview-vision-4]
+    trigger_rule: all_done
+    context: fresh
+
+  # ─── Debugger Retry 5 (FINAL automated attempt) ────────────
+  - id: m{MISSION_NUM}-debugger-retry-5
+    command: shell
+    args:
+      script: |
+        echo "═══════════════════════════════════════════════════════"
+        echo "SYSTEMATIC DEBUGGER — Mission {MISSION_SLUG}, Retry 5/5"
+        echo "═══════════════════════════════════════════════════════"
+        echo "FINAL automated retry. If this fails:"
+        echo "→ Circuit breaker triggers"
+        echo "→ Human escalation with full diagnostic report"
+        echo "→ All review reports, synthesis, and debugger analysis included"
+    depends_on: [m{MISSION_NUM}-debugger-synthesize-4]
+    context: fresh
+
+  - id: m{MISSION_NUM}-debugger-fix-5
+    command: spec-kitty-implement-review-fixes
+    args:
+      mission: "{MISSION_SLUG}"
+      mode: debugger-assisted
+      debuggerRetry: 5
+    depends_on: [m{MISSION_NUM}-debugger-retry-5]
+    context: fresh
+
+  - id: m{MISSION_NUM}-debugger-validation-5
+    command: spec-kitty-validate-full
+    depends_on: [m{MISSION_NUM}-debugger-fix-5]
+    context: fresh
+
+  - id: m{MISSION_NUM}-debugger-rereview-arch-5
+    command: spec-kitty-review-architecture
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 5
+    depends_on: [m{MISSION_NUM}-debugger-validation-5]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-sec-5
+    command: spec-kitty-review-security
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 5
+    depends_on: [m{MISSION_NUM}-debugger-validation-5]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-test-5
+    command: spec-kitty-review-testing
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 5
+    depends_on: [m{MISSION_NUM}-debugger-validation-5]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-quality-5
+    command: spec-kitty-review-code-quality
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 5
+    depends_on: [m{MISSION_NUM}-debugger-validation-5]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-rereview-vision-5
+    command: spec-kitty-review-product-vision
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 5
+    depends_on: [m{MISSION_NUM}-debugger-validation-5]
+    context: fresh
+    timeout: ${config.review.timeout}
+
+  - id: m{MISSION_NUM}-debugger-synthesize-5
+    command: spec-kitty-synthesize-review
+    args:
+      mission: "{MISSION_SLUG}"
+      debuggerRetry: 5
+    depends_on:
+      [m{MISSION_NUM}-debugger-rereview-arch-5, m{MISSION_NUM}-debugger-rereview-sec-5, m{MISSION_NUM}-debugger-rereview-test-5, m{MISSION_NUM}-debugger-rereview-quality-5, m{MISSION_NUM}-debugger-rereview-vision-5]
+    trigger_rule: all_done
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # CIRCUIT BREAKER — Human Escalation
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: m{MISSION_NUM}-circuit-breaker
+    command: shell
+    args:
+      script: |
+        echo "═══════════════════════════════════════════════════════"
+        echo "CIRCUIT BREAKER TRIPPED — Mission {MISSION_SLUG}"
+        echo "═══════════════════════════════════════════════════════"
+        echo ""
+        echo "All automated remediation exhausted:"
+        echo "  - 3 review-fix cycles: FAILED"
+        echo "  - 5 debugger retries: FAILED"
+        echo "  - Total review re-runs: 8 full 5-agent reviews"
+        echo ""
+        echo "ESCALATING TO HUMAN INTERVENTION"
+        echo ""
+        echo "Diagnostic package available at:"
+        echo "  ${config.resilience.checkpoint.directory}/m{MISSION_NUM}/"
+        echo "    - All 8 review synthesis reports"
+        echo "  - All 5 agent reports per cycle (40 total)"
+        echo "    - Debugger analysis logs"
+        echo "    - Git diff of all attempted fixes"
+        echo "    - Validation failure logs"
+        echo ""
+        echo "Recommended human actions:"
+        echo "1. Review synthesis reports to identify systemic issue"
+        echo "2. Consider if spec needs revision (not just code)"
+        echo "3. Check for architectural mismatch requiring redesign"
+        echo "4. Decide: fix manually, revise spec, or skip mission"
+        echo ""
+        echo "Pausing for ${config.resilience.circuitBreaker.escalationConfig.pauseTimeoutMinutes} minutes..."
+    depends_on: [m{MISSION_NUM}-debugger-synthesize-5]
+    trigger_rule: on_failure
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # MISSION CHECKPOINT — Save completion state
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: m{MISSION_NUM}-checkpoint
+    command: spec-kitty-checkpoint-save
+    args:
+      mission: "{MISSION_SLUG}"
+      checkpointDir: "${config.resilience.checkpoint.directory}"
+      snapshotBefore: true
+    depends_on: [m{MISSION_NUM}-rereview-synthesize-cycle-1]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # END OF MISSION TEMPLATE — REPEAT FOR EACH MISSION
+  # ═══════════════════════════════════════════════════════════════
+
+  # ─────────────────────────────────────────────────────────────
+  # MISSION 002 TEMPLATE (example — copy and adapt)
+  # ─────────────────────────────────────────────────────────────
+  #
+  # Replace {MISSION_NUM} with 002, {MISSION_SLUG} with your slug.
+  # Add WP nodes following the same pattern.
+  # Chain depends_on from the previous mission's checkpoint.
+  #
+  # - id: m002-wp01-implement
+  #   command: spec-kitty-implement
+  #   args:
+  #     mission: "002-your-mission-slug"
+  #     workPackage: "WP01"
+  #   depends_on: [m001-checkpoint]  # Chain to previous mission
+  #   context: fresh
+  #
+  # ... (follow same pattern as Mission 001 above) ...
+
+  # ═══════════════════════════════════════════════════════════════
+  # GLOBAL VALIDATION AND SUMMARY (after ALL missions)
+  # ═══════════════════════════════════════════════════════════════
+
+  # Global regression test — runs after final mission checkpoint
+  - id: global-regression
+    command: spec-kitty-validate-full
+    args:
+      scope: global
+    depends_on: [m001-checkpoint]  # Replace with last mission checkpoint
+    context: fresh
+
+  # Completion summary
+  - id: global-summary
+    command: spec-kitty-completion-summary
+    args:
+      missions: ${config.missions}
+    depends_on: [global-regression]
+    context: fresh
+
+# ═══════════════════════════════════════════════════════════════════
+# EXPLICIT GATES — Checklist at every feature completion
+# ═══════════════════════════════════════════════════════════════════
+#
+# These gates are evaluated at each mission checkpoint before proceeding:
+#
+# GATE 1: WP Completion Gate
+#   ☐ All WPs in mission implemented
+#   ☐ All WPs validated (validationCommands pass)
+#   ☐ All WPs moved to done (status.events.jsonl updated)
+#
+# GATE 2: Coding Principles Gate
+#   ☐ YAGNI compliance verified (no speculative features)
+#   ☐ DRY compliance verified (no harmful duplication)
+#   ☐ Simplicity verified (no overengineering)
+#   ☐ SOLID principles applied
+#   ☐ No architectural drift from accepted patterns
+#
+# GATE 3: Review Quorum Gate
+#   ☐ All 5 review agents completed (architecture, security, testing,
+#     code-quality, product-vision)
+#   ☐ Mandatory agents passed (architecture + security at minimum)
+#   ☐ Quorum met per config (minimumPassing count or weightedThreshold)
+#   ☐ No blocker-level findings unresolved
+#
+# GATE 4: Validation Gate
+#   ☐ All project validationCommands pass (tests, lint, regression)
+#   ☐ No new test failures introduced
+#   ☐ Build/compile passes
+#
+# GATE 5: Product Vision Gate
+#   ☐ Implementation aligns with product vision document
+#   ☐ No features outside accepted spec scope
+#   ☐ Behavioral support system principles maintained
+#
+# GATE 6: Checkpoint Gate
+#   ☐ Checkpoint file written
+#   ☐ Git state clean (all changes committed)
+#   ☐ status.events.jsonl reflects current state
+#   ☐ Artifacts saved to checkpoint directory
+#
+# If ANY gate fails:
+#   → Enter review-fix loop (up to 3 cycles)
+#   → If still failing → systematic-debugger (up to 5 retries)
+#   → If still failing → circuit breaker → human escalation
+#
+# ═══════════════════════════════════════════════════════════════════
+# AUDIT RE-TRIGGER RULE
+# ═══════════════════════════════════════════════════════════════════
+#
+# Special rule: If audits find issues BUT spec-kitty implement/review
+# passed clean (no blockers detected by the agents), the ENTIRE
+# review loop must re-run to address recognized comments:
+#
+# 1. Audit finds issues during post-review analysis
+# 2. Verify that original review agents passed (clean exit, no blockers)
+# 3. If clean: re-enter the full review-fix loop from cycle 1
+#    - Implement fixes for audit findings
+#    - Full validation
+#    - Full 5-agent re-review
+#    - Re-synthesize
+#    - Continue until quorum met or max cycles exhausted
+# 4. This ensures audit findings are not silently ignored just because
+#    the initial review agents missed them
+#
+# ═══════════════════════════════════════════════════════════════════
+# VARIABLE REFERENCE
+# ═══════════════════════════════════════════════════════════════════
+#
+# All ${config.*} variables resolve from workflow-config.json:
+#
+# ${config.project.root}                           — Project root
+# ${config.project.specDirectory}                  — Spec directory
+# ${config.project.baseBranch}                     — Base branch
+# ${config.project.validationCommands}             — Validation commands
+# ${config.missions}                               — Mission array
+# ${config.review.agents}                          — Agent pool
+# ${config.review.quorum}                          — Quorum config
+# ${config.review.timeout}                         — Review timeout (sec)
+# ${config.review.parallelLimit}                   — Max parallel agents
+# ${config.resilience.retry.maxAttempts}           — Max retries per agent
+# ${config.resilience.retry.backoffMultiplier}     — Backoff multiplier
+# ${config.resilience.retry.initialDelaySeconds}   — Initial retry delay
+# ${config.resilience.retry.maxDelaySeconds}       — Max retry delay
+# ${config.resilience.circuitBreaker.failureThreshold}    — Failure threshold
+# ${config.resilience.circuitBreaker.escalationChannel}   — Escalation method
+# ${config.resilience.circuitBreaker.escalationConfig.message} — Escalation msg
+# ${config.resilience.circuitBreaker.escalationConfig.pauseTimeoutMinutes} — Pause
+# ${config.resilience.circuitBreaker.autoResumeWithReducedQuorum} — Auto resume
+# ${config.resilience.checkpoint.enabled}           — Checkpoints on/off
+# ${config.resilience.checkpoint.directory}         — Checkpoint directory
+# ${config.resilience.checkpoint.snapshotBeforeFix} — Snapshot before fix
+# ${config.resilience.checkpoint.maxFixAttempts}    — Max fix attempts
+# ${config.resilience.checkpoint.retentionDays}     — Checkpoint retention
+# ${config.resilience.rollback.strategy}            — Rollback strategy
+# ${config.resilience.rollback.autoRollbackOnFailure} — Auto rollback
+# ${config.ai.provider}                            — AI provider
+# ${config.ai.model}                               — AI model
+# ${config.ai.temperature}                         — AI temperature
+# ${config.ai.maxTokens}                           — AI max tokens
+#
+# ═══════════════════════════════════════════════════════════════════

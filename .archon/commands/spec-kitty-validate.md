@@ -17,12 +17,32 @@ This is a **Node.js behavioral support system** with strict quality standards.
 
 ---
 
-## Phase 1: LINT
+## Phase 0: SETUP
 
-### 1.1 Run Linter
+### 0.1 Ensure Artifacts Directory Exists
 
 ```bash
-npm run lint 2>&1 || echo "Lint check completed (check output above)"
+mkdir -p "$ARTIFACTS_DIR"
+echo "✅ Artifacts directory ready: $ARTIFACTS_DIR"
+```
+
+---
+
+## Phase 1: LINT
+
+### 1.1 Run Linter with Explicit Pass/Fail Tracking
+
+```bash
+echo "=== Running Lint Check ==="
+if npm run lint 2>&1; then
+  LINT_RESULT="Pass"
+  LINT_NOTES="Zero errors and zero warnings"
+  echo "✅ Lint check passed"
+else
+  LINT_RESULT="Fail"
+  LINT_NOTES="Lint errors found — see output above"
+  echo "❌ Lint check failed"
+fi
 ```
 
 **Must pass with zero errors and zero warnings.**
@@ -37,18 +57,36 @@ npm run lint 2>&1 || echo "Lint check completed (check output above)"
 
 ## Phase 2: TESTS
 
-### 2.1 Run Unit Tests
+### 2.1 Run Unit Tests with Explicit Pass/Fail Tracking
 
 ```bash
-node --test tests/*.test.js 2>&1 | tail -30 || echo "Tests completed (check output above)"
+echo "=== Running Unit Tests ==="
+if node --test tests/*.test.js 2>&1 | tail -30; then
+  TEST_RESULT="Pass"
+  TEST_NOTES="All tests passed"
+  echo "✅ Unit tests passed"
+else
+  TEST_RESULT="Fail"
+  TEST_NOTES="Some tests failed — check output above"
+  echo "❌ Unit tests failed"
+fi
 ```
 
 **All NEW tests must pass.** Pre-existing failures should be noted but not block progress.
 
-### 2.2 Run Regression Tests
+### 2.2 Run Regression Tests with Explicit Tracking
 
 ```bash
-node tests/run-regression-tests.mjs 2>&1 | tail -20 || echo "Regression tests completed"
+echo "=== Running Regression Tests ==="
+if node tests/run-regression-tests.mjs 2>&1 | tail -20; then
+  REGRESSION_RESULT="Pass"
+  REGRESSION_NOTES="No new failures introduced"
+  echo "✅ Regression tests passed"
+else
+  REGRESSION_RESULT="Fail"
+  REGRESSION_NOTES="Regression failures detected — check output"
+  echo "❌ Regression tests failed"
+fi
 ```
 
 **No NEW failures** should be introduced. Pre-existing regression failures are acceptable if count doesn't increase.
@@ -57,11 +95,20 @@ node tests/run-regression-tests.mjs 2>&1 | tail -20 || echo "Regression tests co
 
 ## Phase 3: DUPLICATION CHECK
 
-### 3.1 Check for Code Duplication
+### 3.1 Check for Code Duplication with Explicit Tracking
 
 ```bash
+echo "=== Running Duplication Check ==="
 # Run JSCPD if available
-npx jscpd --config .jscpd.json 2>/dev/null || echo "Duplication check skipped (no config)"
+if npx jscpd --config .jscpd.json 2>/dev/null; then
+  DUPLICATION_RESULT="Pass"
+  DUPLICATION_NOTES="No significant duplication detected"
+  echo "✅ Duplication check passed"
+else
+  DUPLICATION_RESULT="Skipped"
+  DUPLICATION_NOTES="JSCPD not configured or failed"
+  echo "⚠️  Duplication check skipped (no config)"
+fi
 ```
 
 **No significant new duplication** beyond baseline should be introduced.
@@ -82,10 +129,10 @@ Write validation results to `$ARTIFACTS_DIR/validation-{wp-id}.md`:
 
 | Check | Command | Result | Notes |
 |-------|---------|--------|-------|
-| Lint | `npm run lint` | Pass/Fail | {errors if any} |
-| Unit Tests | `node --test` | Pass/Fail | {N passed, N failed} |
-| Regression | `run-regression-tests.mjs` | Pass/Fail | {baseline vs current} |
-| Duplication | `jscpd` | Pass/Fail/Skipped | {duplication %} |
+| Lint | \`npm run lint\` | $LINT_RESULT | $LINT_NOTES |
+| Unit Tests | \`node --test\` | $TEST_RESULT | $TEST_NOTES |
+| Regression | \`run-regression-tests.mjs\` | $REGRESSION_RESULT | $REGRESSION_NOTES |
+| Duplication | \`jscpd\` | $DUPLICATION_RESULT | $DUPLICATION_NOTES |
 
 ## New Test Coverage
 {Describe what new tests were added or updated}
@@ -94,7 +141,7 @@ Write validation results to `$ARTIFACTS_DIR/validation-{wp-id}.md`:
 {List any pre-existing test failures that are unrelated to this WP}
 
 ## Summary
-{Overall status: ALL GREEN or issues found}
+Overall status: $LINT_RESULT, $TEST_RESULT, $REGRESSION_RESULT, $DUPLICATION_RESULT
 
 ## Blockers
 {List any issues that should block proceeding}

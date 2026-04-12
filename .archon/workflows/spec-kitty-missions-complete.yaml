@@ -47,7 +47,7 @@ model: coder-model
 # ═══════════════════════════════════════════════════════════════════
 
 # Review agents run in parallel after each feature phase
-# trigger_rule: one_success = proceed even if one agent has minor notes
+# trigger_rule: all_done = wait for all reviews to complete before synthesis
 # context: fresh = each agent gets clean context, no prior conversation noise
 
 # ═══════════════════════════════════════════════════════════════════
@@ -154,7 +154,7 @@ nodes:
   - id: f002-synthesize-review
     command: spec-kitty-synthesize-review
     depends_on: [f002-review-architecture, f002-review-security, f002-review-testing, f002-review-product-vision, f002-review-code-quality]
-    trigger_rule: one_success
+    trigger_rule: all_done
     context: fresh
 
   - id: f002-implement-fixes
@@ -165,6 +165,19 @@ nodes:
   - id: f002-final-validation
     command: spec-kitty-validate-full
     depends_on: [f002-implement-fixes]
+    context: fresh
+
+  # Failure handling: if final validation fails, attempt fixes
+  - id: f002-validation-fallback
+    command: spec-kitty-implement-review-fixes
+    depends_on: [f002-final-validation]
+    trigger_rule: on_failure
+    context: fresh
+
+  # Checkpoint: save progress before next phase
+  - id: f002-checkpoint
+    command: spec-kitty-checkpoint-save
+    depends_on: [f002-final-validation]
     context: fresh
 
   # ═══════════════════════════════════════════════════════════════
@@ -252,7 +265,7 @@ nodes:
   - id: f003-synthesize-review
     command: spec-kitty-synthesize-review
     depends_on: [f003-review-architecture, f003-review-security, f003-review-testing, f003-review-product-vision, f003-review-code-quality]
-    trigger_rule: one_success
+    trigger_rule: all_done
     context: fresh
 
   - id: f003-implement-fixes
@@ -263,6 +276,19 @@ nodes:
   - id: f003-final-validation
     command: spec-kitty-validate-full
     depends_on: [f003-implement-fixes]
+    context: fresh
+
+  # Failure handling: if final validation fails, attempt fixes
+  - id: f003-validation-fallback
+    command: spec-kitty-implement-review-fixes
+    depends_on: [f003-final-validation]
+    trigger_rule: on_failure
+    context: fresh
+
+  # Checkpoint: save progress before next phase
+  - id: f003-checkpoint
+    command: spec-kitty-checkpoint-save
+    depends_on: [f003-final-validation]
     context: fresh
 
   # ═══════════════════════════════════════════════════════════════
@@ -350,7 +376,7 @@ nodes:
   - id: f004-synthesize-review
     command: spec-kitty-synthesize-review
     depends_on: [f004-review-architecture, f004-review-security, f004-review-testing, f004-review-product-vision, f004-review-code-quality]
-    trigger_rule: one_success
+    trigger_rule: all_done
     context: fresh
 
   - id: f004-implement-fixes
@@ -361,6 +387,19 @@ nodes:
   - id: f004-final-validation
     command: spec-kitty-validate-full
     depends_on: [f004-implement-fixes]
+    context: fresh
+
+  # Failure handling: if final validation fails, attempt fixes
+  - id: f004-validation-fallback
+    command: spec-kitty-implement-review-fixes
+    depends_on: [f004-final-validation]
+    trigger_rule: on_failure
+    context: fresh
+
+  # Checkpoint: save progress before next phase
+  - id: f004-checkpoint
+    command: spec-kitty-checkpoint-save
+    depends_on: [f004-final-validation]
     context: fresh
 
   # ═══════════════════════════════════════════════════════════════
@@ -458,7 +497,7 @@ nodes:
   - id: f005-synthesize-review
     command: spec-kitty-synthesize-review
     depends_on: [f005-review-architecture, f005-review-security, f005-review-testing, f005-review-product-vision, f005-review-code-quality]
-    trigger_rule: one_success
+    trigger_rule: all_done
     context: fresh
 
   - id: f005-implement-fixes
@@ -469,6 +508,19 @@ nodes:
   - id: f005-final-validation
     command: spec-kitty-validate-full
     depends_on: [f005-implement-fixes]
+    context: fresh
+
+  # Failure handling: if final validation fails, attempt fixes
+  - id: f005-validation-fallback
+    command: spec-kitty-implement-review-fixes
+    depends_on: [f005-final-validation]
+    trigger_rule: on_failure
+    context: fresh
+
+  # Checkpoint: save progress before next phase
+  - id: f005-checkpoint
+    command: spec-kitty-checkpoint-save
+    depends_on: [f005-final-validation]
     context: fresh
 
   # ═══════════════════════════════════════════════════════════════
@@ -536,7 +588,7 @@ nodes:
   - id: f006-008-synthesize-review
     command: spec-kitty-synthesize-review
     depends_on: [f006-008-review-architecture, f006-008-review-security, f006-008-review-testing, f006-008-review-product-vision, f006-008-review-code-quality]
-    trigger_rule: one_success
+    trigger_rule: all_done
     context: fresh
 
   - id: f006-008-implement-fixes
@@ -547,6 +599,19 @@ nodes:
   - id: f006-008-final-validation
     command: spec-kitty-validate-full
     depends_on: [f006-008-implement-fixes]
+    context: fresh
+
+  # Failure handling: if final validation fails, attempt fixes
+  - id: f006-008-validation-fallback
+    command: spec-kitty-implement-review-fixes
+    depends_on: [f006-008-final-validation]
+    trigger_rule: on_failure
+    context: fresh
+
+  # Checkpoint: save progress before next phase
+  - id: f006-008-checkpoint
+    command: spec-kitty-checkpoint-save
+    depends_on: [f006-008-final-validation]
     context: fresh
 
   # ═══════════════════════════════════════════════════════════════
@@ -654,7 +719,7 @@ nodes:
   - id: f009-synthesize-review
     command: spec-kitty-synthesize-review
     depends_on: [f009-review-architecture, f009-review-security, f009-review-testing, f009-review-product-vision, f009-review-code-quality]
-    trigger_rule: one_success
+    trigger_rule: all_done
     context: fresh
 
   - id: f009-implement-fixes
@@ -665,6 +730,19 @@ nodes:
   - id: f009-final-validation
     command: spec-kitty-validate-full
     depends_on: [f009-implement-fixes]
+    context: fresh
+
+  # Failure handling: if final validation fails, attempt fixes
+  - id: f009-validation-fallback
+    command: spec-kitty-implement-review-fixes
+    depends_on: [f009-final-validation]
+    trigger_rule: on_failure
+    context: fresh
+
+  # Checkpoint: save progress before global validation
+  - id: f009-checkpoint
+    command: spec-kitty-checkpoint-save
+    depends_on: [f009-final-validation]
     context: fresh
 
   # ═══════════════════════════════════════════════════════════════

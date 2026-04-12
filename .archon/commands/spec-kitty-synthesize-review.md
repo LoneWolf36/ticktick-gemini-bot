@@ -17,33 +17,105 @@ Read all parallel review reports and synthesize them into a single actionable do
 
 ## Phase 1: GATHER REVIEWS
 
-Read all review files from `$ARTIFACTS_DIR/`:
+### 1.1 Check for Expected Review Files
+
+Expected reviews (check each one explicitly):
 ```bash
-ls $ARTIFACTS_DIR/review-*{mission-slug}*.md 2>/dev/null
+MISSION_SLUG="{mission-slug}"
+ARTIFACTS_DIR="$ARTIFACTS_DIR"
+
+# Define expected review files
+declare -A EXPECTED_REVIEWS
+EXPECTED_REVIEWS=(
+  ["architecture"]="$ARTIFACTS_DIR/review-architecture-${MISSION_SLUG}.md"
+  ["security"]="$ARTIFACTS_DIR/review-security-${MISSION_SLUG}.md"
+  ["testing"]="$ARTIFACTS_DIR/review-testing-${MISSION_SLUG}.md"
+  ["product-vision"]="$ARTIFACTS_DIR/review-product-vision-${MISSION_SLUG}.md"
+  ["code-quality"]="$ARTIFACTS_DIR/review-code-quality-${MISSION_SLUG}.md"
+)
+
+# Check which reviews exist
+REVIEWS_FOUND=0
+REVIEWS_MISSING=0
+FOUND_FILES=""
+MISSING_REVIEWS=""
+
+for review_type in "${!EXPECTED_REVIEWS[@]}"; do
+  file_path="${EXPECTED_REVIEWS[$review_type]}"
+  if [ -f "$file_path" ]; then
+    echo "✅ Found: review-${review_type}"
+    REVIEWS_FOUND=$((REVIEWS_FOUND + 1))
+    FOUND_FILES="$FOUND_FILES $file_path"
+  else
+    echo "❌ Missing: review-${review_type}"
+    REVIEWS_MISSING=$((REVIEWS_MISSING + 1))
+    MISSING_REVIEWS="$MISSING_REVIEWS $review_type"
+  fi
+done
+
+echo ""
+echo "Review Status: $REVIEWS_FOUND/5 completed, $REVIEWS_MISSING missing"
 ```
 
-Expected reviews:
-- `review-architecture-{mission-slug}.md`
-- `review-security-{mission-slug}.md`
-- `review-testing-{mission-slug}.md`
-- `review-product-vision-{mission-slug}.md`
-- `review-code-quality-{mission-slug}.md`
+### 1.2 Decide Whether to Proceed or Block
+
+```bash
+# Block if critical reviews are missing (security or architecture)
+if [ -f "$ARTIFACTS_DIR/review-security-${MISSION_SLUG}.md" ] && \
+   [ -f "$ARTIFACTS_DIR/review-architecture-${MISSION_SLUG}.md" ]; then
+  echo "✅ Critical reviews present — proceeding with synthesis"
+  
+  if [ $REVIEWS_MISSING -gt 0 ]; then
+    echo "⚠️  WARNING: Missing reviews:$MISSING_REVIEWS"
+    echo "   Synthesis will proceed but may be incomplete"
+  fi
+else
+  echo "❌ BLOCKER: Critical reviews missing (security and/or architecture)"
+  echo "   Missing:$MISSING_REVIEWS"
+  echo "   Cannot proceed without critical reviews"
+  exit 1
+fi
+```
 
 ---
 
 ## Phase 2: CATEGORIZE FINDINGS
 
-### 2.1 Extract Blockers
+### 2.1 Read Available Reviews
+
+Read each found review file and extract findings:
+```bash
+# Process each found review
+for file_path in $FOUND_FILES; do
+  echo "Processing: $(basename "$file_path")"
+  # Extract blockers, warnings, and informational items
+  # (Implementation depends on review format)
+done
+```
+
+### 2.2 Extract Blockers
 
 From each review, collect items marked as **blockers** or **critical**. These MUST be fixed.
 
-### 2.2 Extract Warnings
+### 2.3 Extract Warnings
 
 Collect items marked as **warnings** or **should fix**. These SHOULD be fixed.
 
-### 2.3 Extract Informational
+### 2.4 Extract Informational
 
 Collect items marked as **informational** or **nice to fix**. Optional improvements.
+
+### 2.5 Report Review Completeness
+
+```bash
+echo "=== Review Synthesis Status ==="
+echo "Reviews found: $REVIEWS_FOUND/5"
+echo "Reviews missing: $REVIEWS_MISSING/5"
+if [ $REVIEWS_MISSING -gt 0 ]; then
+  echo "Missing reviews:$MISSING_REVIEWS"
+  echo "⚠️  Synthesis may be incomplete"
+fi
+```
 
 ---
 
@@ -68,11 +140,16 @@ Write to `$ARTIFACTS_DIR/synthesis-review-{mission-slug}.md`:
 
 **Date**: {YYYY-MM-DD}
 
+## Review Completeness
+- Reviews completed: $REVIEWS_FOUND/5
+- Missing reviews:$MISSING_REVIEWS
+- ⚠️ Synthesis based on available reviews only
+
 ## Summary
 {Overall assessment in 2-3 sentences}
 
 ## Stats
-- Reviews completed: 5/5
+- Reviews processed: $REVIEWS_FOUND
 - Blockers found: {N}
 - Warnings found: {N}
 - Informational: {N}

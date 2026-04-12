@@ -1,0 +1,116 @@
+# ═══════════════════════════════════════════════════════════════════
+# Spec-Kitty Feature Template — Reusable Workflow Blueprint
+# ═══════════════════════════════════════════════════════════════════
+#
+# Usage:
+#   1. Copy this file to .archon/workflows/spec-kitty-{FEATURE}.yaml
+#   2. Replace all {PLACEHOLDER} values with feature-specific values
+#   3. Add WP implementation/validation nodes as needed
+#   4. The review gate and checkpoint structure is pre-configured
+#
+# Conventions:
+#   - Node IDs: f{FEATURE_NUM}-wp{NN}-{implement|validate}
+#   - Review nodes: f{FEATURE_NUM}-review-{agent-type}
+#   - All synthesize-review nodes use trigger_rule: all_done
+#   - Checkpoint nodes between phases for resume capability
+# ═══════════════════════════════════════════════════════════════════
+
+name: spec-kitty-{FEATURE_SLUG}
+description: |
+  Use when: Implementing feature {FEATURE_NUM} — {FEATURE_NAME}
+  Mission: {MISSION_DESCRIPTION}
+  WPs: {WP_LIST} ({WP_COUNT} WPs)
+
+  For EACH work package:
+  1. Implement with strict adherence to spec
+  2. Run validation (tests, lint, regression)
+  3. Multi-agent review (5 parallel agents)
+  4. Synthesize review findings
+  5. Auto-fix review issues
+  6. Re-validate
+  7. Commit with conventional commit message
+  8. Update WP status in status.events.jsonl
+
+  Quality bar: MAXIMUM
+
+provider: qwen
+model: coder-model
+
+# ═══════════════════════════════════════════════════════════════════
+# FEATURE {FEATURE_NUM} IMPLEMENTATION NODES
+# ═══════════════════════════════════════════════════════════════════
+
+nodes:
+  # ─── WP{NN}: {WP_TITLE} ────────────────────────────────────
+  - id: f{FEATURE_NUM}-wp{NN}-implement
+    command: spec-kitty-implement
+    context: fresh
+
+  - id: f{FEATURE_NUM}-wp{NN}-validate
+    command: spec-kitty-validate
+    depends_on: [f{FEATURE_NUM}-wp{NN}-implement]
+    context: fresh
+
+  # Failure handling node after validation
+  - id: f{FEATURE_NUM}-wp{NN}-validate-fallback
+    command: spec-kitty-implement-review-fixes
+    depends_on: [f{FEATURE_NUM}-wp{NN}-validate]
+    trigger_rule: on_failure
+    context: fresh
+
+  # ... Add more WP nodes following the same pattern ...
+
+  # ═══════════════════════════════════════════════════════════════
+  # FEATURE REVIEW GATE — Multi-Agent Parallel Review
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: f{FEATURE_NUM}-review-architecture
+    command: spec-kitty-review-architecture
+    depends_on: [f{FEATURE_NUM}-wp{LAST}-validate]
+    context: fresh
+
+  - id: f{FEATURE_NUM}-review-security
+    command: spec-kitty-review-security
+    depends_on: [f{FEATURE_NUM}-wp{LAST}-validate]
+    context: fresh
+
+  - id: f{FEATURE_NUM}-review-testing
+    command: spec-kitty-review-testing
+    depends_on: [f{FEATURE_NUM}-wp{LAST}-validate]
+    context: fresh
+
+  - id: f{FEATURE_NUM}-review-product-vision
+    command: spec-kitty-review-product-vision
+    depends_on: [f{FEATURE_NUM}-wp{LAST}-validate]
+    context: fresh
+
+  - id: f{FEATURE_NUM}-review-code-quality
+    command: spec-kitty-review-code-quality
+    depends_on: [f{FEATURE_NUM}-wp{LAST}-validate]
+    context: fresh
+
+  - id: f{FEATURE_NUM}-synthesize-review
+    command: spec-kitty-synthesize-review
+    depends_on:
+      [f{FEATURE_NUM}-review-architecture, f{FEATURE_NUM}-review-security, f{FEATURE_NUM}-review-testing, f{FEATURE_NUM}-review-product-vision, f{FEATURE_NUM}-review-code-quality]
+    trigger_rule: all_done
+    context: fresh
+
+  - id: f{FEATURE_NUM}-implement-fixes
+    command: spec-kitty-implement-review-fixes
+    depends_on: [f{FEATURE_NUM}-synthesize-review]
+    context: fresh
+
+  - id: f{FEATURE_NUM}-final-validation
+    command: spec-kitty-validate-full
+    depends_on: [f{FEATURE_NUM}-implement-fixes]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # CHECKPOINT — Save progress before next phase
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: f{FEATURE_NUM}-checkpoint
+    command: spec-kitty-checkpoint-save
+    depends_on: [f{FEATURE_NUM}-final-validation]
+    context: fresh

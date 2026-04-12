@@ -17,19 +17,33 @@ Generate a comprehensive completion summary for all executed Spec Kitty missions
 
 ## Phase 1: GATHER DATA
 
-### 1.1 Git Statistics
+### 1.1 Git Statistics with Dynamic Base Commit
 
+Calculate the base commit dynamically (first commit or mission start):
 ```bash
+# Calculate base commit dynamically
+FIRST_COMMIT=$(git rev-list --max-parents=0 HEAD)
+MISSION_START=$(git log --oneline --since="30 days ago" --grep="feat(kitty-specs)" | tail -1 | cut -d' ' -f1)
+
+# Use mission start if available, otherwise use first commit
+if [ -n "$MISSION_START" ]; then
+  BASE_COMMIT="$MISSION_START"
+  echo "Using mission start: $BASE_COMMIT"
+else
+  BASE_COMMIT="$FIRST_COMMIT"
+  echo "Using first commit: $BASE_COMMIT"
+fi
+
 echo "=== Commits ==="
-git log --oneline --no-merges | head -50
+git log --oneline --no-merges ${BASE_COMMIT}..HEAD | head -50
 
 echo ""
 echo "=== Files Changed ==="
-git diff --stat HEAD~50..HEAD 2>/dev/null | tail -30
+git diff --stat ${BASE_COMMIT}..HEAD 2>/dev/null | tail -30
 
 echo ""
 echo "=== Lines of Code ==="
-git diff --stat HEAD~50..HEAD 2>/dev/null | tail -1
+git diff --stat ${BASE_COMMIT}..HEAD 2>/dev/null | tail -1
 ```
 
 ### 1.2 Test Statistics

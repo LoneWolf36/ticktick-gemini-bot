@@ -28,13 +28,40 @@ git diff HEAD~10..HEAD -- '*.js' '*.mjs' '*.json' '*.yaml' '*.yml' '.env*' 2>/de
 - No credentials in commit messages
 - Environment variables used for all secrets
 
-### 1.2 Environment Variable Usage
+### 1.2 Specific Secret Patterns to Check
+
+Search for these common secret patterns in the codebase:
+```bash
+# Search for hardcoded secrets
+grep -rn "sk-[a-zA-Z0-9]" --include='*.js' --include='*.mjs' .  # API keys
+grep -rn "ghp_[a-zA-Z0-9]" --include='*.js' --include='*.mjs' .  # GitHub tokens
+grep -rn "xox[bpras]-" --include='*.js' --include='*.mjs' .       # Slack tokens
+grep -rn "AIza[a-zA-Z0-9]" --include='*.js' --include='*.mjs' .   # Google API keys
+grep -rn "EAACEdEose0cBA" --include='*.js' --include='*.mjs' .    # Facebook tokens
+grep -rn "TICKTICK_TOKEN\|TICKTICK_API" --include='*.js' --include='*.mjs' .
+grep -rn "TELEGRAM_BOT_TOKEN\|TG_BOT" --include='*.js' --include='*.mjs' .
+grep -rn "REDIS_PASSWORD\|REDIS_URL" --include='*.js' --include='*.mjs' .
+grep -rn "GEMINI_API_KEY\|GOOGLE_API_KEY" --include='*.js' --include='*.mjs' .
+```
+
+**If any patterns found:**
+- ❌ BLOCKER: Replace with `process.env.VARIABLE_NAME`
+- Document the finding in the report
+- Recommend rotating the exposed secret immediately
+
+### 1.3 Environment Variable Usage
 
 Check that secrets are accessed via `process.env`:
 - TickTick API credentials
 - Telegram bot token
 - Redis connection strings (if applicable)
 - Any third-party API keys
+
+**Verification:**
+```bash
+# Verify env var usage
+grep -rn "process\.env\." --include='*.js' --include='*.mjs' services/ bot/
+```
 
 ---
 
@@ -106,11 +133,14 @@ Write to `$ARTIFACTS_DIR/review-security-{mission-slug}.md`:
 |-------|----------|-------|
 
 ## Checks Performed
-- [ ] No secrets exposed in code or commits
-- [ ] User input properly sanitized
-- [ ] Authorization enforced on sensitive operations
-- [ ] Error messages don't leak internal info
-- [ ] API keys stored in environment variables only
+- [ ] No secrets exposed in code or commits (checked patterns: API keys, tokens, passwords)
+- [ ] User input properly sanitized (checked for injection risks)
+- [ ] Authorization enforced on sensitive operations (chat ID validation)
+- [ ] Error messages don't leak internal info (no stack traces, file paths)
+- [ ] API keys stored in environment variables only (process.env usage verified)
+- [ ] No .env files committed to git (.gitignore checked)
+- [ ] Webhook HMAC validation implemented (if applicable)
+- [ ] Rate limiting on user commands (prevent abuse)
 
 ## Blockers
 {List critical security issues that must be fixed before proceeding}
