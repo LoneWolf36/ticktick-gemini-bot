@@ -1,0 +1,682 @@
+name: spec-kitty-missions-complete
+description: |
+  Use when: Executing ALL Spec Kitty missions (001-009) for the TickTick-Gemini 
+  behavioral support system with strict quality gates and multi-agent review.
+
+  This workflow implements a dependency-first execution order:
+  - Phase 1: Feature 002 (NLP mutations) — foundation for all mutations
+  - Phase 2: Feature 003 (Pipeline hardening) — depends on 002 stability
+  - Phase 3: Feature 004 (Post-migration cleanup) — depends on 002+003
+  - Phase 4: Feature 005 (Checklist subtask support) — depends on 002 pipeline
+  - Phase 5: Features 006 + 008 (Quick wins) — briefing modernization + urgent mode
+  - Phase 6: Feature 009 (Behavioral signals) — core product value, depends on all above
+
+  For EACH work package:
+  1. Read the WP spec from kitty-specs/{mission}/tasks/WP{NN}-*.md
+  2. Implement with strict adherence to Product Vision Alignment Gate
+  3. Run validation (tests, lint, regression)
+  4. Multi-agent review (5 parallel agents):
+     - Architecture review (YAGNI, DRY, no overengineering)
+     - Security review (no secrets, input validation, auth patterns)
+     - Test coverage review (edge cases, behavioral contracts, regression)
+     - Product Vision alignment (behavioral support system, not task manager)
+     - Code quality (clean code, naming, structure, comments)
+  5. Synthesize review findings
+  6. Auto-fix review issues
+  7. Re-validate
+  8. Commit with conventional commit message
+  9. Update WP status in status.events.jsonl
+
+  Quality bar: MAXIMUM
+  - All tests pass (unit + regression)
+  - Lint clean with zero warnings
+  - Product Vision alignment statement for every WP
+  - No drift from accepted architecture
+  - Explicit acceptance criteria verification per WP
+  - Security audit passes
+  - No code duplication beyond baseline
+
+  Input: "complete all spec-kitty missions" or "implement features 001-009"
+  NOT for: Creating new specs, planning features (specs must already exist).
+
+provider: qwen
+model: coder-model
+
+# ═══════════════════════════════════════════════════════════════════
+# SHARED REVIEW CONFIGURATION
+# ═══════════════════════════════════════════════════════════════════
+
+# Review agents run in parallel after each feature phase
+# trigger_rule: one_success = proceed even if one agent has minor notes
+# context: fresh = each agent gets clean context, no prior conversation noise
+
+# ═══════════════════════════════════════════════════════════════════
+# PHASE 1: FEATURE 002 — Natural Language Task Mutations
+# Mission: Enable update/complete/delete via natural language
+# WPs: WP01(done), WP02-WP07 (6 WPs remaining)
+# ═══════════════════════════════════════════════════════════════════
+
+nodes:
+  # ─── WP02: AX Mutation Intent Extension ──────────────────────
+  - id: f002-wp02-implement
+    command: spec-kitty-implement
+    context: fresh
+
+  - id: f002-wp02-validate
+    command: spec-kitty-validate
+    depends_on: [f002-wp02-implement]
+    context: fresh
+
+  # ─── WP03: Mutation Normalizer ──────────────────────────────
+  - id: f002-wp03-implement
+    command: spec-kitty-implement
+    depends_on: [f002-wp02-validate]
+    context: fresh
+
+  - id: f002-wp03-validate
+    command: spec-kitty-validate
+    depends_on: [f002-wp03-implement]
+    context: fresh
+
+  # ─── WP04: Pipeline Integration ─────────────────────────────
+  - id: f002-wp04-implement
+    command: spec-kitty-implement
+    depends_on: [f002-wp03-validate]
+    context: fresh
+
+  - id: f002-wp04-validate
+    command: spec-kitty-validate
+    depends_on: [f002-wp04-implement]
+    context: fresh
+
+  # ─── WP05: Bot Message Handler ──────────────────────────────
+  - id: f002-wp05-implement
+    command: spec-kitty-implement
+    depends_on: [f002-wp04-validate]
+    context: fresh
+
+  - id: f002-wp05-validate
+    command: spec-kitty-validate
+    depends_on: [f002-wp05-implement]
+    context: fresh
+
+  # ─── WP06: Clarification UI Flow ────────────────────────────
+  - id: f002-wp06-implement
+    command: spec-kitty-implement
+    depends_on: [f002-wp05-validate]
+    context: fresh
+
+  - id: f002-wp06-validate
+    command: spec-kitty-validate
+    depends_on: [f002-wp06-implement]
+    context: fresh
+
+  # ─── WP07: Testing Hardening ────────────────────────────────
+  - id: f002-wp07-implement
+    command: spec-kitty-implement
+    depends_on: [f002-wp06-validate]
+    context: fresh
+
+  - id: f002-wp07-validate
+    command: spec-kitty-validate
+    depends_on: [f002-wp07-implement]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # FEATURE 002 REVIEW GATE — Multi-Agent Parallel Review
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: f002-review-architecture
+    command: spec-kitty-review-architecture
+    depends_on: [f002-wp07-validate]
+    context: fresh
+
+  - id: f002-review-security
+    command: spec-kitty-review-security
+    depends_on: [f002-wp07-validate]
+    context: fresh
+
+  - id: f002-review-testing
+    command: spec-kitty-review-testing
+    depends_on: [f002-wp07-validate]
+    context: fresh
+
+  - id: f002-review-product-vision
+    command: spec-kitty-review-product-vision
+    depends_on: [f002-wp07-validate]
+    context: fresh
+
+  - id: f002-review-code-quality
+    command: spec-kitty-review-code-quality
+    depends_on: [f002-wp07-validate]
+    context: fresh
+
+  - id: f002-synthesize-review
+    command: spec-kitty-synthesize-review
+    depends_on: [f002-review-architecture, f002-review-security, f002-review-testing, f002-review-product-vision, f002-review-code-quality]
+    trigger_rule: one_success
+    context: fresh
+
+  - id: f002-implement-fixes
+    command: spec-kitty-implement-review-fixes
+    depends_on: [f002-synthesize-review]
+    context: fresh
+
+  - id: f002-final-validation
+    command: spec-kitty-validate-full
+    depends_on: [f002-implement-fixes]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: FEATURE 003 — Pipeline Hardening and Regression
+  # Mission: Harden pipeline, add retry/rollback, failure handling
+  # WPs: WP01-WP04, WP06 (WP05 done, 5 WPs remaining)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: f003-wp01-implement
+    command: spec-kitty-implement
+    depends_on: [f002-final-validation]
+    context: fresh
+
+  - id: f003-wp01-validate
+    command: spec-kitty-validate
+    depends_on: [f003-wp01-implement]
+    context: fresh
+
+  - id: f003-wp02-implement
+    command: spec-kitty-implement
+    depends_on: [f003-wp01-validate]
+    context: fresh
+
+  - id: f003-wp02-validate
+    command: spec-kitty-validate
+    depends_on: [f003-wp02-implement]
+    context: fresh
+
+  - id: f003-wp03-implement
+    command: spec-kitty-implement
+    depends_on: [f003-wp02-validate]
+    context: fresh
+
+  - id: f003-wp03-validate
+    command: spec-kitty-validate
+    depends_on: [f003-wp03-implement]
+    context: fresh
+
+  - id: f003-wp04-implement
+    command: spec-kitty-implement
+    depends_on: [f003-wp03-validate]
+    context: fresh
+
+  - id: f003-wp04-validate
+    command: spec-kitty-validate
+    depends_on: [f003-wp04-implement]
+    context: fresh
+
+  - id: f003-wp06-implement
+    command: spec-kitty-implement
+    depends_on: [f003-wp04-validate]
+    context: fresh
+
+  - id: f003-wp06-validate
+    command: spec-kitty-validate
+    depends_on: [f003-wp06-implement]
+    context: fresh
+
+  # Feature 003 Review Gate
+  - id: f003-review-architecture
+    command: spec-kitty-review-architecture
+    depends_on: [f003-wp06-validate]
+    context: fresh
+
+  - id: f003-review-security
+    command: spec-kitty-review-security
+    depends_on: [f003-wp06-validate]
+    context: fresh
+
+  - id: f003-review-testing
+    command: spec-kitty-review-testing
+    depends_on: [f003-wp06-validate]
+    context: fresh
+
+  - id: f003-review-product-vision
+    command: spec-kitty-review-product-vision
+    depends_on: [f003-wp06-validate]
+    context: fresh
+
+  - id: f003-review-code-quality
+    command: spec-kitty-review-code-quality
+    depends_on: [f003-wp06-validate]
+    context: fresh
+
+  - id: f003-synthesize-review
+    command: spec-kitty-synthesize-review
+    depends_on: [f003-review-architecture, f003-review-security, f003-review-testing, f003-review-product-vision, f003-review-code-quality]
+    trigger_rule: one_success
+    context: fresh
+
+  - id: f003-implement-fixes
+    command: spec-kitty-implement-review-fixes
+    depends_on: [f003-synthesize-review]
+    context: fresh
+
+  - id: f003-final-validation
+    command: spec-kitty-validate-full
+    depends_on: [f003-implement-fixes]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: FEATURE 004 — Post-Migration Cleanup
+  # Mission: Remove dead code, update docs, clean env vars
+  # WPs: WP01-WP05 (5 WPs remaining)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: f004-wp01-implement
+    command: spec-kitty-implement
+    depends_on: [f003-final-validation]
+    context: fresh
+
+  - id: f004-wp01-validate
+    command: spec-kitty-validate
+    depends_on: [f004-wp01-implement]
+    context: fresh
+
+  - id: f004-wp02-implement
+    command: spec-kitty-implement
+    depends_on: [f004-wp01-validate]
+    context: fresh
+
+  - id: f004-wp02-validate
+    command: spec-kitty-validate
+    depends_on: [f004-wp02-implement]
+    context: fresh
+
+  - id: f004-wp03-implement
+    command: spec-kitty-implement
+    depends_on: [f004-wp02-validate]
+    context: fresh
+
+  - id: f004-wp03-validate
+    command: spec-kitty-validate
+    depends_on: [f004-wp03-implement]
+    context: fresh
+
+  - id: f004-wp04-implement
+    command: spec-kitty-implement
+    depends_on: [f004-wp03-validate]
+    context: fresh
+
+  - id: f004-wp04-validate
+    command: spec-kitty-validate
+    depends_on: [f004-wp04-implement]
+    context: fresh
+
+  - id: f004-wp05-implement
+    command: spec-kitty-implement
+    depends_on: [f004-wp04-validate]
+    context: fresh
+
+  - id: f004-wp05-validate
+    command: spec-kitty-validate
+    depends_on: [f004-wp05-implement]
+    context: fresh
+
+  # Feature 004 Review Gate
+  - id: f004-review-architecture
+    command: spec-kitty-review-architecture
+    depends_on: [f004-wp05-validate]
+    context: fresh
+
+  - id: f004-review-security
+    command: spec-kitty-review-security
+    depends_on: [f004-wp05-validate]
+    context: fresh
+
+  - id: f004-review-testing
+    command: spec-kitty-review-testing
+    depends_on: [f004-wp05-validate]
+    context: fresh
+
+  - id: f004-review-product-vision
+    command: spec-kitty-review-product-vision
+    depends_on: [f004-wp05-validate]
+    context: fresh
+
+  - id: f004-review-code-quality
+    command: spec-kitty-review-code-quality
+    depends_on: [f004-wp05-validate]
+    context: fresh
+
+  - id: f004-synthesize-review
+    command: spec-kitty-synthesize-review
+    depends_on: [f004-review-architecture, f004-review-security, f004-review-testing, f004-review-product-vision, f004-review-code-quality]
+    trigger_rule: one_success
+    context: fresh
+
+  - id: f004-implement-fixes
+    command: spec-kitty-implement-review-fixes
+    depends_on: [f004-synthesize-review]
+    context: fresh
+
+  - id: f004-final-validation
+    command: spec-kitty-validate-full
+    depends_on: [f004-implement-fixes]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: FEATURE 005 — Checklist Subtask Support
+  # Mission: Add checklist/subtask support for task breakdown
+  # WPs: WP01-WP06 (6 WPs remaining)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: f005-wp01-implement
+    command: spec-kitty-implement
+    depends_on: [f004-final-validation]
+    context: fresh
+
+  - id: f005-wp01-validate
+    command: spec-kitty-validate
+    depends_on: [f005-wp01-implement]
+    context: fresh
+
+  - id: f005-wp02-implement
+    command: spec-kitty-implement
+    depends_on: [f005-wp01-validate]
+    context: fresh
+
+  - id: f005-wp02-validate
+    command: spec-kitty-validate
+    depends_on: [f005-wp02-implement]
+    context: fresh
+
+  - id: f005-wp03-implement
+    command: spec-kitty-implement
+    depends_on: [f005-wp02-validate]
+    context: fresh
+
+  - id: f005-wp03-validate
+    command: spec-kitty-validate
+    depends_on: [f005-wp03-implement]
+    context: fresh
+
+  - id: f005-wp04-implement
+    command: spec-kitty-implement
+    depends_on: [f005-wp03-validate]
+    context: fresh
+
+  - id: f005-wp04-validate
+    command: spec-kitty-validate
+    depends_on: [f005-wp04-implement]
+    context: fresh
+
+  - id: f005-wp05-implement
+    command: spec-kitty-implement
+    depends_on: [f005-wp04-validate]
+    context: fresh
+
+  - id: f005-wp05-validate
+    command: spec-kitty-validate
+    depends_on: [f005-wp05-implement]
+    context: fresh
+
+  - id: f005-wp06-implement
+    command: spec-kitty-implement
+    depends_on: [f005-wp05-validate]
+    context: fresh
+
+  - id: f005-wp06-validate
+    command: spec-kitty-validate
+    depends_on: [f005-wp06-implement]
+    context: fresh
+
+  # Feature 005 Review Gate
+  - id: f005-review-architecture
+    command: spec-kitty-review-architecture
+    depends_on: [f005-wp06-validate]
+    context: fresh
+
+  - id: f005-review-security
+    command: spec-kitty-review-security
+    depends_on: [f005-wp06-validate]
+    context: fresh
+
+  - id: f005-review-testing
+    command: spec-kitty-review-testing
+    depends_on: [f005-wp06-validate]
+    context: fresh
+
+  - id: f005-review-product-vision
+    command: spec-kitty-review-product-vision
+    depends_on: [f005-wp06-validate]
+    context: fresh
+
+  - id: f005-review-code-quality
+    command: spec-kitty-review-code-quality
+    depends_on: [f005-wp06-validate]
+    context: fresh
+
+  - id: f005-synthesize-review
+    command: spec-kitty-synthesize-review
+    depends_on: [f005-review-architecture, f005-review-security, f005-review-testing, f005-review-product-vision, f005-review-code-quality]
+    trigger_rule: one_success
+    context: fresh
+
+  - id: f005-implement-fixes
+    command: spec-kitty-implement-review-fixes
+    depends_on: [f005-synthesize-review]
+    context: fresh
+
+  - id: f005-final-validation
+    command: spec-kitty-validate-full
+    depends_on: [f005-implement-fixes]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: QUICK WINS — Features 006 + 008
+  # Feature 006: Briefing Weekly Modernization (WP02, WP06 remaining)
+  # Feature 008: Work Style and Urgent Mode (WP03 remaining)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: f008-wp03-implement
+    command: spec-kitty-implement
+    depends_on: [f005-final-validation]
+    context: fresh
+
+  - id: f008-wp03-validate
+    command: spec-kitty-validate
+    depends_on: [f008-wp03-implement]
+    context: fresh
+
+  - id: f006-wp02-implement
+    command: spec-kitty-implement
+    depends_on: [f008-wp03-validate]
+    context: fresh
+
+  - id: f006-wp02-validate
+    command: spec-kitty-validate
+    depends_on: [f006-wp02-implement]
+    context: fresh
+
+  - id: f006-wp06-implement
+    command: spec-kitty-implement
+    depends_on: [f006-wp02-validate]
+    context: fresh
+
+  - id: f006-wp06-validate
+    command: spec-kitty-validate
+    depends_on: [f006-wp06-implement]
+    context: fresh
+
+  # Combined Review Gate for Quick Wins
+  - id: f006-008-review-architecture
+    command: spec-kitty-review-architecture
+    depends_on: [f006-wp06-validate]
+    context: fresh
+
+  - id: f006-008-review-security
+    command: spec-kitty-review-security
+    depends_on: [f006-wp06-validate]
+    context: fresh
+
+  - id: f006-008-review-testing
+    command: spec-kitty-review-testing
+    depends_on: [f006-wp06-validate]
+    context: fresh
+
+  - id: f006-008-review-product-vision
+    command: spec-kitty-review-product-vision
+    depends_on: [f006-wp06-validate]
+    context: fresh
+
+  - id: f006-008-review-code-quality
+    command: spec-kitty-review-code-quality
+    depends_on: [f006-wp06-validate]
+    context: fresh
+
+  - id: f006-008-synthesize-review
+    command: spec-kitty-synthesize-review
+    depends_on: [f006-008-review-architecture, f006-008-review-security, f006-008-review-testing, f006-008-review-product-vision, f006-008-review-code-quality]
+    trigger_rule: one_success
+    context: fresh
+
+  - id: f006-008-implement-fixes
+    command: spec-kitty-implement-review-fixes
+    depends_on: [f006-008-synthesize-review]
+    context: fresh
+
+  - id: f006-008-final-validation
+    command: spec-kitty-validate-full
+    depends_on: [f006-008-implement-fixes]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6: FEATURE 009 — Behavioral Signals and Memory
+  # Mission: Core product value — behavioral pattern detection, memory
+  # WPs: WP01-WP07 (7 WPs remaining) — LARGEST FEATURE
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: f009-wp01-implement
+    command: spec-kitty-implement
+    depends_on: [f006-008-final-validation]
+    context: fresh
+
+  - id: f009-wp01-validate
+    command: spec-kitty-validate
+    depends_on: [f009-wp01-implement]
+    context: fresh
+
+  - id: f009-wp02-implement
+    command: spec-kitty-implement
+    depends_on: [f009-wp01-validate]
+    context: fresh
+
+  - id: f009-wp02-validate
+    command: spec-kitty-validate
+    depends_on: [f009-wp02-implement]
+    context: fresh
+
+  - id: f009-wp03-implement
+    command: spec-kitty-implement
+    depends_on: [f009-wp02-validate]
+    context: fresh
+
+  - id: f009-wp03-validate
+    command: spec-kitty-validate
+    depends_on: [f009-wp03-implement]
+    context: fresh
+
+  - id: f009-wp04-implement
+    command: spec-kitty-implement
+    depends_on: [f009-wp03-validate]
+    context: fresh
+
+  - id: f009-wp04-validate
+    command: spec-kitty-validate
+    depends_on: [f009-wp04-implement]
+    context: fresh
+
+  - id: f009-wp05-implement
+    command: spec-kitty-implement
+    depends_on: [f009-wp04-validate]
+    context: fresh
+
+  - id: f009-wp05-validate
+    command: spec-kitty-validate
+    depends_on: [f009-wp05-implement]
+    context: fresh
+
+  - id: f009-wp06-implement
+    command: spec-kitty-implement
+    depends_on: [f009-wp05-validate]
+    context: fresh
+
+  - id: f009-wp06-validate
+    command: spec-kitty-validate
+    depends_on: [f009-wp06-implement]
+    context: fresh
+
+  - id: f009-wp07-implement
+    command: spec-kitty-implement
+    depends_on: [f009-wp06-validate]
+    context: fresh
+
+  - id: f009-wp07-validate
+    command: spec-kitty-validate
+    depends_on: [f009-wp07-implement]
+    context: fresh
+
+  # Feature 009 Review Gate (MOST CRITICAL — core product value)
+  - id: f009-review-architecture
+    command: spec-kitty-review-architecture
+    depends_on: [f009-wp07-validate]
+    context: fresh
+
+  - id: f009-review-security
+    command: spec-kitty-review-security
+    depends_on: [f009-wp07-validate]
+    context: fresh
+
+  - id: f009-review-testing
+    command: spec-kitty-review-testing
+    depends_on: [f009-wp07-validate]
+    context: fresh
+
+  - id: f009-review-product-vision
+    command: spec-kitty-review-product-vision
+    depends_on: [f009-wp07-validate]
+    context: fresh
+
+  - id: f009-review-code-quality
+    command: spec-kitty-review-code-quality
+    depends_on: [f009-wp07-validate]
+    context: fresh
+
+  - id: f009-synthesize-review
+    command: spec-kitty-synthesize-review
+    depends_on: [f009-review-architecture, f009-review-security, f009-review-testing, f009-review-product-vision, f009-review-code-quality]
+    trigger_rule: one_success
+    context: fresh
+
+  - id: f009-implement-fixes
+    command: spec-kitty-implement-review-fixes
+    depends_on: [f009-synthesize-review]
+    context: fresh
+
+  - id: f009-final-validation
+    command: spec-kitty-validate-full
+    depends_on: [f009-implement-fixes]
+    context: fresh
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 7: GLOBAL VALIDATION AND SUMMARY
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: global-regression
+    command: spec-kitty-validate-full
+    depends_on: [f009-final-validation]
+    context: fresh
+
+  - id: global-summary
+    command: spec-kitty-completion-summary
+    depends_on: [global-regression]
+    context: fresh

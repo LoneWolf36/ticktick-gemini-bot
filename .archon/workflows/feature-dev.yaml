@@ -16,7 +16,7 @@ description: |
   NOT for: Bug fixes (use fix-issue), executing existing plans, code reviews.
 
 provider: qwen
-model: qwen-coder
+model: coder-model
 
 nodes:
   # ═══════════════════════════════════════════════════════════════

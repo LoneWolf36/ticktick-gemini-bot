@@ -3,7 +3,7 @@ worktree:
 
 ai:
   provider: qwen
-  model: qwen-coder
+  model: coder-model
 
 docs:
   path: docs/
