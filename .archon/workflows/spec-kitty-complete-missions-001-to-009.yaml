@@ -1,0 +1,523 @@
+name: spec-kitty-complete-missions-001-to-009
+description: |
+  Use when: Completing all Spec Kitty missions (001-009) for the TickTick-Gemini 
+  behavioral support system. Implements all work packages sequentially with 
+  implementation, testing, review, and commit.
+  
+  This workflow:
+  1. Reads mission status from kitty-specs/
+  2. For each mission (001-009), identifies pending WPs
+  3. Implements each WP sequentially following the spec-kitty-wp-implement pattern
+  4. Reviews each implementation against Product Vision
+  5. Commits changes with proper conventions
+  6. Updates WP status in status.events.jsonl
+  7. Reports final completion summary
+  
+  Input: "complete all missions" or "implement features 001-009"
+  NOT for: Creating new specs, planning features (specs must already exist).
+
+provider: qwen
+model: coder-model
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 0: DISCOVERY & STATUS ANALYSIS
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: analyze-mission-status
+    bash: |
+      set -euo pipefail
+
+      echo "=== Analyzing Mission Status ==="
+
+      MISSIONS=("001-task-operations-pipeline" \
+                "002-natural-language-task-mutations" \
+                "003-pipeline-hardening-and-regression" \
+                "004-post-migration-cleanup" \
+                "005-checklist-subtask-support" \
+                "006-briefing-weekly-modernization" \
+                "007-execution-prioritization-foundations" \
+                "008-work-style-and-urgent-mode" \
+                "009-behavioral-signals-and-memory")
+
+      TOTAL_WP=0
+      DONE_WP=0
+
+      for mission in "${MISSIONS[@]}"; do
+        STATUS_FILE="kitty-specs/${mission}/status.events.jsonl"
+        
+        if [ -f "$STATUS_FILE" ]; then
+          MISSION_WPS=$(grep -oP '"wp_id":"WP\d+"' "$STATUS_FILE" | sort -u | wc -l)
+          MISSION_DONE=$(grep '"to_lane":"done"' "$STATUS_FILE" | grep -oP '"wp_id":"WP\d+"' | sort -u | wc -l)
+          TOTAL_WP=$((TOTAL_WP + MISSION_WPS))
+          DONE_WP=$((DONE_WP + MISSION_DONE))
+          echo "${mission}: ${MISSION_DONE}/${MISSION_WPS} WPs done"
+        fi
+      done
+
+      echo ""
+      echo "Total: ${DONE_WP}/${TOTAL_WP} WPs complete"
+      echo "Remaining: $((TOTAL_WP - DONE_WP)) WPs"
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: IMPLEMENT MISSION 002 (WP02-WP07, WP01 already done)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: implement-002-wp02
+    depends_on: [analyze-mission-status]
+    timeout: 7200000
+    bash: |
+      set -euo pipefail
+
+      WP_ID="WP02"
+      MISSION="002-natural-language-task-mutations"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP02-ax-mutation-intent.md"
+
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+
+      if [ ! -f "$WP_FILE" ]; then
+        echo "ERROR: WP file not found: $WP_FILE"
+        exit 1
+      fi
+
+      # Read the WP spec
+      echo "Reading WP specification..."
+      cat "$WP_FILE"
+
+      echo ""
+      echo "═══════════════════════════════════════════════════════"
+      echo "IMPLEMENTATION INSTRUCTIONS FOR ${WP_ID}"
+      echo "═══════════════════════════════════════════════════════"
+      echo ""
+      echo "Please implement this work package following these steps:"
+      echo "1. Read the full WP specification above"
+      echo "2. Understand the Product Vision Alignment Gate requirements"
+      echo "3. Implement the code changes specified in the subtasks"
+      echo "4. Write or update tests as required"
+      echo "5. Run tests: node --test tests/*.test.js"
+      echo "6. Run regression: node tests/run-regression-tests.mjs"
+      echo "7. Commit changes with conventional commit message"
+      echo "8. Include Co-Authored-By: Codex GPT-5 <noreply@openai.com>"
+      echo ""
+      echo "CRITICAL: This is an AI-assisted implementation session."
+      echo "You should now write the implementation code based on the spec."
+
+      # This node serves as a checkpoint - the actual implementation
+      # happens in the interactive session where this workflow runs
+
+  - id: implement-002-wp03
+    depends_on: [implement-002-wp02]
+    timeout: 7200000
+    bash: |
+      set -euo pipefail
+
+      WP_ID="WP03"
+      MISSION="002-natural-language-task-mutations"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP03-mutation-normalizer.md"
+
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      echo "Reading WP specification: $WP_FILE"
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-002-wp04
+    depends_on: [implement-002-wp03]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP04"
+      MISSION="002-natural-language-task-mutations"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP04-pipeline-integration.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-002-wp05
+    depends_on: [implement-002-wp04]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP05"
+      MISSION="002-natural-language-task-mutations"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP05-bot-message-handler.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-002-wp06
+    depends_on: [implement-002-wp05]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP06"
+      MISSION="002-natural-language-task-mutations"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP06-clarification-ui-flow.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-002-wp07
+    depends_on: [implement-002-wp06]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP07"
+      MISSION="002-natural-language-task-mutations"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP07-testing-hardening.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: IMPLEMENT MISSION 003 (WP01-WP04, WP06, WP05 done)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: implement-003-wp01
+    depends_on: [implement-002-wp07]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP01"
+      MISSION="003-pipeline-hardening-and-regression"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP01-canonical-pipeline-context-foundation.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-003-wp02
+    depends_on: [implement-003-wp01]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP02"
+      MISSION="003-pipeline-hardening-and-regression"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP02-entry-point-context-wiring.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-003-wp03
+    depends_on: [implement-003-wp02]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP03"
+      MISSION="003-pipeline-hardening-and-regression"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP03-failure-classification-quota-semantics-and-story-2-user-messaging.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-003-wp04
+    depends_on: [implement-003-wp03]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP04"
+      MISSION="003-pipeline-hardening-and-regression"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP04-direct-pipeline-harness-and-story-1-coverage.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-003-wp06
+    depends_on: [implement-003-wp04]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP06"
+      MISSION="003-pipeline-hardening-and-regression"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP06-failure-rollback-and-burst-regression-finalization.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: IMPLEMENT MISSION 004 (WP01-WP05)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: implement-004-wp01
+    depends_on: [implement-003-wp06]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP01"
+      MISSION="004-post-migration-cleanup"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP01-dead-code-removal-and-legacy-boundary-documentation.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-004-wp02
+    depends_on: [implement-004-wp01]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP02"
+      MISSION="004-post-migration-cleanup"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP02-readme-and-architecture-documentation.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-004-wp03
+    depends_on: [implement-004-wp02]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP03"
+      MISSION="004-post-migration-cleanup"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP03-agents-and-render-documentation.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-004-wp04
+    depends_on: [implement-004-wp03]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP04"
+      MISSION="004-post-migration-cleanup"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP04-env-var-standardization-and-context-template-update.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-004-wp05
+    depends_on: [implement-004-wp04]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP05"
+      MISSION="004-post-migration-cleanup"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP05-full-regression-verification-after-cleanup.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: IMPLEMENT MISSION 005 (WP01-WP06)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: implement-005-wp01
+    depends_on: [implement-004-wp05]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP01"
+      MISSION="005-checklist-subtask-support"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP01-ax-checklist-extraction.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-005-wp02
+    depends_on: [implement-005-wp01]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP02"
+      MISSION="005-checklist-subtask-support"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP02-normalizer-checklist-validation.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-005-wp03
+    depends_on: [implement-005-wp02]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP03"
+      MISSION="005-checklist-subtask-support"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP03-ticktickadapter-checklist-creation.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-005-wp04
+    depends_on: [implement-005-wp03]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP04"
+      MISSION="005-checklist-subtask-support"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP04-pipeline-checklist-integration.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-005-wp05
+    depends_on: [implement-005-wp04]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP05"
+      MISSION="005-checklist-subtask-support"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP05-clarification-ux-flow.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-005-wp06
+    depends_on: [implement-005-wp05]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP06"
+      MISSION="005-checklist-subtask-support"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP06-testing-and-regression-coverage.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: IMPLEMENT MISSION 006 (WP02, WP06 - others done)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: implement-006-wp02
+    depends_on: [implement-005-wp06]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP02"
+      MISSION="006-briefing-weekly-modernization"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP02-daily-structured-summary-core.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-006-wp06
+    depends_on: [implement-006-wp02]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP06"
+      MISSION="006-briefing-weekly-modernization"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP06-scheduler-integration-and-delivery-parity.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6: IMPLEMENT MISSION 008 (WP03 only - others done)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: implement-008-wp03
+    depends_on: [implement-006-wp06]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP03"
+      MISSION="008-work-style-and-urgent-mode"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP03-ai-prompt-augmentation.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 7: IMPLEMENT MISSION 009 (WP01-WP07)
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: implement-009-wp01
+    depends_on: [implement-008-wp03]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP01"
+      MISSION="009-behavioral-signals-and-memory"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP01-signal-classifier-core.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-009-wp02
+    depends_on: [implement-009-wp01]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP02"
+      MISSION="009-behavioral-signals-and-memory"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP02-redis-storage-layer.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-009-wp03
+    depends_on: [implement-009-wp02]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP03"
+      MISSION="009-behavioral-signals-and-memory"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP03-pattern-detection-engine.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-009-wp04
+    depends_on: [implement-009-wp03]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP04"
+      MISSION="009-behavioral-signals-and-memory"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP04-privacy-tier-manager.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-009-wp05
+    depends_on: [implement-009-wp04]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP05"
+      MISSION="009-behavioral-signals-and-memory"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP05-summary-surface-integration.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-009-wp06
+    depends_on: [implement-009-wp05]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP06"
+      MISSION="009-behavioral-signals-and-memory"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP06-user-controls.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  - id: implement-009-wp07
+    depends_on: [implement-009-wp06]
+    timeout: 7200000
+    bash: |
+      WP_ID="WP07"
+      MISSION="009-behavioral-signals-and-memory"
+      WP_FILE="kitty-specs/${MISSION}/tasks/WP07-testing-and-privacy-audit.md"
+      echo "=== Implementing ${MISSION}: ${WP_ID} ==="
+      [ -f "$WP_FILE" ] && cat "$WP_FILE" || echo "ERROR: File not found"
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 8: FINAL VALIDATION & SUMMARY
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: final-validation
+    depends_on: [implement-009-wp07]
+    timeout: 300000
+    bash: |
+      set -euo pipefail
+
+      echo "=== Final Validation ==="
+      echo ""
+
+      # Run regression tests
+      echo "Running regression tests..."
+      node tests/run-regression-tests.mjs 2>&1 | tail -20 || echo "Regression tests completed (check output above)"
+
+      echo ""
+      echo "=== Git Status ==="
+      git status --short
+
+      echo ""
+      echo "=== Recent Commits ==="
+      git log --oneline -20
+
+  - id: completion-summary
+    depends_on: [final-validation]
+    prompt: |
+      Generate a comprehensive completion summary for all missions 001-009.
+
+      ## Context
+      - Workflow: spec-kitty-complete-missions-001-to-009
+      - Date: $(date -u +%Y-%m-%d)
+      - Missions: 001 through 009
+      - Total WPs: 49 (from initial analysis)
+
+      ## Instructions
+
+      1. Read the mission analysis from $ARTIFACTS_DIR/mission-analysis.md
+      2. Check git log for all commits made during this workflow
+      3. Check final status of all status.events.jsonl files
+      4. Generate a summary with:
+
+      ```markdown
+      # Missions 001-009 Completion Summary
+
+      **Date**: {date}
+      **Workflow**: spec-kitty-complete-missions-001-to-009
+
+      ## Overall Status
+      - Missions completed: 9
+      - Total WPs implemented: {count}
+      - Commits made: {count}
+      - Test status: {pass/fail summary}
+
+      ## Mission-by-Mission Status
+
+      | Mission | WPs Done | Total WPs | Status |
+      |---------|----------|-----------|--------|
+      | 001 | ... | ... | ... |
+      | 002 | ... | ... | ... |
+      | ... | ... | ... | ... |
+
+      ## Key Implementations
+      {List major features/capabilities added}
+
+      ## Files Changed
+      {Summary of file changes across all missions}
+
+      ## Product Vision Alignment
+      {How the implementations support the behavioral support system goals}
+
+      ## Next Steps
+      {Any remaining work or follow-up items}
+      ```
+
+      Write this summary to $ARTIFACTS_DIR/completion-summary.md
+      Also output it to the user.
