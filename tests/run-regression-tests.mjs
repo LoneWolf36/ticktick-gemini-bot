@@ -3050,6 +3050,157 @@ ACCOUNTABILITY STYLE:
     console.error(err.message);
   }
 
+  // ─── WP03: Failure Classification, Quota Semantics, and User Messaging ───
+
+  try {
+    // T009: Non-task messages must NOT masquerade as failures
+    const harness = createPipelineHarness({
+      intents: [],
+    });
+
+    const result = await harness.processMessage('thanks for the help', {
+      requestId: 'req-non-task',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+    });
+
+    assert.equal(result.type, 'non-task');
+    assert.equal(result.failure, undefined);
+    assert.equal(result.confirmationText, 'Got it — no actionable tasks detected.');
+    console.log('PASS WP03 non-task messages do not masquerade as failures');
+  } catch (err) {
+    failures++;
+    console.error('FAIL WP03 non-task messages do not masquerade as failures');
+    console.error(err.message);
+  }
+
+  try {
+    // T009: Failure envelope must be stable and consistent across all failure classes
+    const baseAdapter = {
+      listProjects: async () => DEFAULT_PROJECTS,
+      listActiveTasks: async () => DEFAULT_ACTIVE_TASKS,
+      getTaskSnapshot: async () => null,
+      restoreTask: async () => ({}),
+    };
+
+    const failureClasses = ['quota', 'malformed_ax', 'validation', 'adapter', 'unexpected'];
+    const pipelines = {
+      quota: createPipeline({
+        axIntent: {
+          extractIntents: async () => { throw new QuotaExhaustedError('All keys exhausted'); },
+        },
+        normalizer: { normalizeActions: () => [] },
+        adapter: { ...baseAdapter },
+        observability: createPipelineObservability({ logger: null }),
+      }),
+      malformed_ax: createPipeline({
+        axIntent: { extractIntents: async () => 'not-an-array' },
+        normalizer: { normalizeActions: () => [] },
+        adapter: { ...baseAdapter },
+        observability: createPipelineObservability({ logger: null }),
+      }),
+      validation: createPipeline({
+        axIntent: { extractIntents: async () => [{ type: 'create', confidence: 0.9 }] },
+        normalizer: {
+          normalizeActions: () => [{ type: 'create', valid: false, validationErrors: ['title required'] }],
+        },
+        adapter: { ...baseAdapter },
+        observability: createPipelineObservability({ logger: null }),
+      }),
+      adapter: createPipeline({
+        axIntent: { extractIntents: async () => [{ type: 'create', title: 'Test', confidence: 0.9 }] },
+        normalizer: {
+          normalizeActions: (intents) => intents.map(i => ({ ...i, projectId: DEFAULT_PROJECTS[0].id, valid: true })),
+        },
+        adapter: {
+          ...baseAdapter,
+          createTask: async () => { throw new Error('Adapter failure'); },
+        },
+        observability: createPipelineObservability({ logger: null }),
+      }),
+      unexpected: createPipeline({
+        axIntent: { extractIntents: async () => { throw new Error('Boom'); } },
+        normalizer: { normalizeActions: () => [] },
+        adapter: { ...baseAdapter },
+        observability: createPipelineObservability({ logger: null }),
+      }),
+    };
+
+    for (const failureClass of failureClasses) {
+      const result = await pipelines[failureClass].processMessage('test', {
+        requestId: `req-failure-${failureClass}`,
+        entryPoint: 'telegram',
+        mode: 'interactive',
+        currentDate: '2026-03-10',
+      });
+
+      assert.equal(result.type, 'error', `${failureClass}: result type should be error`);
+      assert.equal(result.failure.class, failureClass, `${failureClass}: failure class mismatch`);
+      assert.ok(typeof result.confirmationText === 'string', `${failureClass}: confirmationText should be string`);
+      assert.ok(result.requestId, `${failureClass}: requestId should be preserved`);
+      assert.ok(Array.isArray(result.errors), `${failureClass}: errors should be array`);
+    }
+    console.log('PASS WP03 failure envelope is stable and consistent across all classes');
+  } catch (err) {
+    failures++;
+    console.error('FAIL WP03 failure envelope is stable and consistent across all classes');
+    console.error(err.message);
+  }
+
+  try {
+    // T011: Mode-aware failure rendering — dev mode gets diagnostics, user mode stays compact
+    const baseAdapter = {
+      listProjects: async () => DEFAULT_PROJECTS,
+      listActiveTasks: async () => DEFAULT_ACTIVE_TASKS,
+      getTaskSnapshot: async () => null,
+      restoreTask: async () => ({}),
+    };
+
+    const pipeline = createPipeline({
+      axIntent: { extractIntents: async () => 'malformed' },
+      normalizer: { normalizeActions: () => [] },
+      adapter: { ...baseAdapter },
+      observability: createPipelineObservability({ logger: null }),
+    });
+
+    // Test dev mode explicitly
+    const devResult = await pipeline.processMessage('test', {
+      requestId: 'req-dev-mode',
+      entryPoint: 'telegram',
+      mode: 'development',
+      currentDate: '2026-03-10',
+    });
+
+    // Dev mode should always have diagnostics regardless of NODE_ENV
+    assert.ok(Array.isArray(devResult.diagnostics), 'dev mode should have diagnostics array');
+    assert.ok(devResult.diagnostics.length > 0, 'dev mode diagnostics should be non-empty');
+    assert.ok(devResult.isDevMode === true, 'dev mode flag should be true for development mode');
+
+    // Test that user-facing confirmationText is always compact (never leaks internal class names)
+    // Even in dev mode, the confirmationText should be the user-friendly message
+    const userMessage = devResult.confirmationText;
+    assert.ok(!userMessage.includes('failure_class:'), 'confirmationText should not leak failure_class diagnostics');
+    assert.ok(typeof userMessage === 'string' && userMessage.length < 200, 'confirmationText should be compact');
+    console.log('PASS WP03 mode-aware failure rendering keeps diagnostics out of user-facing copy');
+  } catch (err) {
+    failures++;
+    console.error('FAIL WP03 mode-aware failure rendering keeps diagnostics out of user-facing copy');
+    console.error(err.message);
+  }
+
+  try {
+    // T011: formatPipelineFailure in commands.js respects compact flag
+    const source = readFileSync('bot/commands.js', 'utf8');
+    assert.ok(source.includes('compact = false'), 'formatPipelineFailure should accept compact flag');
+    assert.ok(source.includes('result.isDevMode'), 'formatPipelineFailure should check dev mode');
+    assert.ok(source.includes('result.diagnostics'), 'formatPipelineFailure should reference diagnostics');
+    console.log('PASS WP03 formatPipelineFailure supports compact and dev-mode flags');
+  } catch (err) {
+    failures++;
+    console.error('FAIL WP03 formatPipelineFailure supports compact and dev-mode flags');
+    console.error(err.message);
+  }
+
   if (failures > 0) {
     process.exitCode = 1;
   }
