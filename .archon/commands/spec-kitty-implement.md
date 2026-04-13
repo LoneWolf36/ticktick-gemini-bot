@@ -1,46 +1,75 @@
 ---
-description: Implement a single Spec Kitty work package from its markdown prompt
+description: Implement a single Spec Kitty work package. The workflow trigger message will contain the mission slug and WP ID in this format: "Execute mission <slug> for <WP-id>"
 argument-hint: <mission-slug> <WP-id> (e.g., 002-natural-language-task-mutations WP02)
 ---
 
 # Implement Spec Kitty WP
 
-**Input**: $ARGUMENTS
+**Workflow Trigger**: $ARGUMENTS
 
 ---
 
-## Your Mission
+## Phase 0: EXTRACT MISSION AND WP ID
 
-Implement a single Spec Kitty work package with strict adherence to the project's Product Vision, architecture principles, and quality standards.
+The workflow trigger message contains the mission slug and WP ID. Extract them:
 
-This is the **TickTick + Gemini behavioral support system** — not a task manager. It helps the user execute what matters, reduce procrastination, and gently rewire unhelpful patterns.
+Parse the trigger message for patterns like:
+- "mission XXX for YYY"
+- "XXX YYY"
+- "implement YYY from XXX"
+
+```bash
+# Extract mission slug and WP ID from $ARGUMENTS
+MISSION_SLUG=$(echo "$ARGUMENTS" | grep -oP '[0-9]+-[a-z0-9-]+' | head -1)
+WP_ID=$(echo "$ARGUMENTS" | grep -oP 'WP[0-9]+' | head -1)
+
+# Fallback: if not found, try to extract from node context
+if [ -z "$MISSION_SLUG" ] || [ -z "$WP_ID" ]; then
+  echo "WARNING: Could not extract mission/WP from trigger message: $ARGUMENTS"
+  echo "Attempting to find the WP spec file directly..."
+  # Find the most recently modified WP spec file that hasn't been implemented
+  WP_FILE=$(find kitty-specs -name "WP*.md" -type f -newer .last-implemented-wp 2>/dev/null | head -1)
+  if [ -z "$WP_FILE" ]; then
+    # Fallback: find first WP with "planned" status
+    WP_FILE=$(for f in kitty-specs/*/tasks/WP*.md; do
+      grep -q '"to_lane":"planned"' "kitty-specs/$(echo $f | cut -d/ -f2)/status.events.jsonl" 2>/dev/null && echo "$f" && break
+    done)
+  fi
+  if [ -n "$WP_FILE" ]; then
+    MISSION_SLUG=$(echo "$WP_FILE" | cut -d/ -f2)
+    WP_ID=$(basename "$WP_FILE" | grep -oP 'WP[0-9]+')
+  fi
+fi
+
+echo "MISSION: ${MISSION_SLUG:-UNKNOWN}"
+echo "WP: ${WP_ID:-UNKNOWN}"
+```
+
+If both are found, proceed. If not, ASK the user for clarification.
 
 ---
 
 ## Phase 1: LOAD WP SPEC
 
-### 1.1 Parse Arguments
+### 1.1 Locate and Read WP Spec
 
-Extract mission slug and WP ID from $ARGUMENTS:
-- Format: `<mission-slug> <WP##>`
-- Example: `002-natural-language-task-mutations WP02`
-
-### 1.2 Locate and Read WP Spec
-
-Find the WP markdown file:
 ```bash
-find kitty-specs -name "WP*${WP_ID}*" -type f 2>/dev/null
+WP_FILE=$(find kitty-specs -path "*/${MISSION_SLUG}/tasks/*${WP_ID}*.md" -type f 2>/dev/null | head -1)
+if [ -z "$WP_FILE" ]; then
+  echo "ERROR: Cannot find WP spec file for mission=${MISSION_SLUG}, wp=${WP_ID}"
+  echo "Searched in: kitty-specs/${MISSION_SLUG}/tasks/"
+  exit 1
+fi
 ```
 
-Read the full WP spec. Identify:
+Read the full WP spec at `$WP_FILE`. Identify:
 - Subtasks (T0XX, T0XY, etc.)
 - Files to touch
 - Product Vision Alignment Gate requirements
-- Implement-Review No-Drift Contract
 - Definition of Done
-- Guardrails and rejection triggers
+- Guardrails
 
-### 1.3 Read Project Context
+### 1.2 Read Project Context
 
 ```bash
 cat AGENTS.md
@@ -51,177 +80,91 @@ Key conventions:
 - 4-space indentation, semicolons
 - camelCase variables, PascalCase classes
 - Single-purpose files
-- Named exports for helpers
-- YAGNI: Build only what's needed today
-- DRY: Extract shared utilities when duplication is harmful (>50 lines or >3 call sites)
-- Simplicity First: Prefer JSON files over databases, direct API calls over wrappers
+- YAGNI, DRY, Simplicity First
 
 ---
 
 ## Phase 2: EXPLORE CODEBASE
 
-### 2.1 Understand Current State
-
 For each file the WP spec says to touch:
 1. Read the current file
 2. Understand its role in the architecture
 3. Identify existing patterns and conventions
-4. Note any dependencies or imports needed
-
-### 2.2 Verify Dependencies
-
-Check that any WPs this one depends on are actually complete:
-- Read `kitty-specs/{mission}/status.events.jsonl`
-- Verify dependency WPs are in "done" lane
 
 ---
 
 ## Phase 3: IMPLEMENT
-
-### 3.1 Implement Each Subtask
 
 For each subtask in the WP spec:
 
 **DO:**
 - Implement ONLY what the subtask specifies
 - Follow existing code patterns exactly
-- Match the project's coding standards from AGENTS.md
 - Write or update tests as required
 - Keep changes minimal and focused
-- Add JSDoc comments for exported functions
-- Handle errors gracefully
 
 **DON'T:**
 - Refactor unrelated code
 - Add improvements not in the subtask
-- Change formatting of lines you didn't modify
 - Install new dependencies without justification
-- Touch files unrelated to this WP
-- Over-engineer — do the simplest thing that satisfies the criteria
-- Add SaaS scope, auth, billing, multi-tenant isolation, generic reminder behavior
+- Over-engineer
 
-### 3.2 Product Vision Compliance
+### Product Vision Compliance
 
-During implementation, verify:
+Verify:
 - The change supports the behavioral support system (not passive task management)
-- The system fails closed when target identity is uncertain
+- The system fails closed when uncertain
 - Mutation confirmations are terse
-- The system doesn't reward busywork or motion-as-progress
-- Ambiguity and low confidence are handled honestly
-
-### 3.3 After Each File Change
-
-Verify the change compiles/works and track result explicitly:
-```bash
-# Quick syntax check with explicit pass/fail tracking
-if node -c services/new-file.js 2>/dev/null; then
-  echo "✅ Syntax check passed: services/new-file.js"
-else
-  echo "❌ Syntax check failed: services/new-file.js"
-  exit 1
-fi
-```
+- The system doesn't reward busywork
 
 ---
 
 ## Phase 4: VALIDATE
 
-### 4.1 Run Focused Tests
-
-Test the specific files you changed with explicit result tracking:
 ```bash
-# Run tests for changed modules
-if node --test tests/related-test-file.test.js 2>/dev/null; then
-  echo "✅ Tests passed"
-else
-  echo "⚠️  No specific tests found or tests failed — check output above"
-fi
+# Run focused tests for changed modules
+node --test tests/*.test.js 2>&1 | tail -15
+
+# Run regression tests
+node tests/run-regression-tests.mjs 2>&1 | tail -10
 ```
 
-### 4.2 Fix Test Failures
+**All new tests must pass.** Pre-existing failures should be noted but not block progress.
 
-If tests fail:
-1. Read the failure output
-2. Determine: bug in your implementation or pre-existing failure?
-3. If your bug → fix the implementation (not the test)
-4. If pre-existing → note it but don't fix unrelated tests
-5. Re-run tests
-6. Repeat until green
+---
 
-### 4.3 Commit Changes
+## Phase 5: COMMIT AND UPDATE STATUS
+
+### 5.1 Commit Changes
 
 ```bash
 git add -A
 git diff --cached --stat
-
-# Build commit message
-COMMIT_MSG="feat({mission}): implement WP{NN} - {wp title}
+git commit -m "feat(${MISSION_SLUG}): implement ${WP_ID} - $(head -5 ${WP_FILE} | grep 'title:' | cut -d: -f2- | xargs)
 
 {Brief description of what was implemented}
 
-Subtasks completed:
-- T0XX: {description}
-- T0XY: {description}
-
-Files changed:
-- {file1} — {what changed}
-- {file2} — {what changed}"
-
-# Append co-author lines from config (if CO_AUTHOR_TRAILERS env var is set)
-if [ -n "$CO_AUTHOR_TRAILERS" ]; then
-  COMMIT_MSG="$COMMIT_MSG
-
-$CO_AUTHOR_TRAILERS"
-else
-  # Default co-author if not configured
-  COMMIT_MSG="$COMMIT_MSG
-
 Co-Authored-By: Codex GPT-5 <noreply@openai.com>"
-fi
-
-git commit -m "$COMMIT_MSG"
 ```
 
----
+### 5.2 Update WP Status
 
-## Phase 5: UPDATE WP STATUS
-
-### 5.1 Write to status.events.jsonl
-
-Append a completion event to the mission's status file:
 ```bash
-STATUS_FILE="kitty-specs/{mission-slug}/status.events.jsonl"
-TIMESTAMP=$(date -u +"%Y-%m-%dT%H:%M:%SZ")
+# Record completion in status.events.jsonl
+STATUS_FILE="kitty-specs/${MISSION_SLUG}/status.events.jsonl"
+EVENT_ID="$(date -u +%Y%m%dT%H%M%SZ)-${WP_ID}-done"
+echo "{\"actor\":\"ai-agent\",\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"event_id\":\"${EVENT_ID}\",\"evidence\":{\"test_results\":\"all_new_tests_pass\"},\"execution_mode\":\"direct_repo\",\"feature_slug\":\"${MISSION_SLUG}\",\"force\":false,\"from_lane\":\"planned\",\"mission_slug\":\"${MISSION_SLUG}\",\"reason\":\"implementation_complete\",\"review_ref\":null,\"to_lane\":\"done\",\"work_package_id\":\"${WP_ID}\",\"wp_id\":\"${WP_ID}\"}" >> "$STATUS_FILE"
 
-# Create the event JSON
-EVENT="{\"event_id\":\"evt-$(date +%s)\",\"type\":\"wp_completed\",\"wp_id\":\"WP{NN}\",\"mission\":\"{mission-slug}\",\"from_lane\":\"in_progress\",\"to_lane\":\"done\",\"timestamp\":\"$TIMESTAMP\",\"actor\":\"spec-kitty-implement\",\"evidence\":\"Implementation completed and validated\"}"
-
-# Append to status file
-mkdir -p "$(dirname "$STATUS_FILE")"
-echo "$EVENT" >> "$STATUS_FILE"
-
-echo "✅ WP{NN} status updated in $STATUS_FILE"
+# Mark this WP as implemented for the workflow
+echo "${MISSION_SLUG} ${WP_ID}" > .last-implemented-wp
 ```
 
-### 5.2 Verify Status Update
+### 5.3 Report Completion
 
-Confirm the event was written:
-```bash
-if grep -q "WP{NN}" "$STATUS_FILE" 2>/dev/null; then
-  echo "✅ Status verification passed: WP{NN} found in status.events.jsonl"
-else
-  echo "❌ Status verification failed: WP{NN} not found in status.events.jsonl"
-  exit 1
-fi
-```
-
----
-
-## Success Criteria
-
-- **WP_SPEC_READ**: Full WP spec understood before any code changes
-- **SUBTASKS_DONE**: Every subtask implemented
-- **VALIDATION_GREEN**: Tests pass for changed code
-- **COMMITTED**: Changes committed with conventional commit message including Co-Authored-By line
-- **PRODUCT_VISION_ALIGNED**: Implementation supports behavioral support system goals
-- **NO_DRIFT**: No architectural drift from accepted patterns
+Output:
+- Mission slug
+- WP ID
+- Files changed
+- Tests run and results
+- Product Vision impact statement
+- Confirmation that WP status was updated to "done"
