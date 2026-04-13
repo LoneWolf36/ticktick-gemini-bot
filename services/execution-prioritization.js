@@ -1,4 +1,4 @@
-import { containsSensitiveContent } from '../bot/utils.js';
+import { containsSensitiveContent } from './shared-utils.js';
 
 const CAREER_KEYWORDS = [
     'backend', 'career', 'interview', 'system design', 'design', 'leetcode', 'resume',

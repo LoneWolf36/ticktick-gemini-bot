@@ -1,6 +1,7 @@
 // TickTick AI Accountability Partner - Main Entry Point
 import 'dotenv/config';
 import express from 'express';
+import crypto from 'node:crypto';
 import chalk from 'chalk';
 import { TickTickClient } from './services/ticktick.js';
 import { GeminiAnalyzer } from './services/gemini.js';
@@ -26,6 +27,7 @@ const {
     BOT_MODE = 'polling',
     WEBHOOK_URL = '',
     PORT = '8080',
+    TELEGRAM_WEBHOOK_SECRET = '',
     AUTO_APPLY_LIFE_ADMIN = 'true',
     AUTO_APPLY_DROPS = 'false',
     AUTO_APPLY_MODE = 'metadata-only',
@@ -143,6 +145,13 @@ if (BOT_MODE === 'webhook' && WEBHOOK_URL) {
     app.use(express.json());
     app.post('/webhook', async (req, res) => {
         try {
+            // Verify Telegram webhook signature
+            const secretToken = req.headers['x-telegram-bot-api-secret-token'];
+            if (TELEGRAM_WEBHOOK_SECRET && secretToken !== TELEGRAM_WEBHOOK_SECRET) {
+                console.warn('Webhook: invalid secret token — rejecting request');
+                res.sendStatus(403);
+                return;
+            }
             await bot.handleUpdate(req.body);
         } catch (err) {
             console.error('Webhook error:', err.message);

@@ -19,6 +19,9 @@ services/user_context.js
 .github/copilot/
 .archon/artifacts/
 .archon/logs/
+.archon/checkpoints/
+.archon/workspaces/
+.archon/*.key
 .kittify/.dashboard
 .kittify/missions/__pycache__/
 .kittify/runtime/
@@ -27,3 +30,9 @@ services/user_context.js
 kitty-specs/**/.kittify/dossiers/
 .kittify/derived/
 .kittify/.migration-backup/
+
+# Local environment overrides
+*.env.local
+.env.production
+.env.staging
+.env.development

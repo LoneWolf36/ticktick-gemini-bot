@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import path from 'path';
-import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from '../bot/utils.js';
+import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from './shared-utils.js';
 import { briefingSummarySchema, reorgSchema, weeklySummarySchema } from './schemas.js';
 import * as store from './store.js';
 import { composeBriefingSummary, composeWeeklySummary } from './summary-surfaces/index.js';

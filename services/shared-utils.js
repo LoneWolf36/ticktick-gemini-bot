@@ -1,0 +1,541 @@
+// Shared domain utilities — used by both services/ and bot/
+// Keeps dependency direction: services/ ← bot/ (never services/ → bot/)
+import { InlineKeyboard } from 'grammy';
+
+// ─── Priority Map (Gemini label → TickTick priority number) ─
+
+export const PRIORITY_MAP = {
+    'career-critical': 5,   // 🔴 High (red)
+    'important': 3,         // 🟡 Medium (yellow)
+    'life-admin': 1,        // 🔵 Low (blue)
+    'consider-dropping': 0, // None
+};
+
+// TickTick number → emoji (for task list formatting)
+export const PRIORITY_EMOJI = { 5: '🔴', 3: '🟡', 1: '🔵', 0: '⚪' };
+
+// TickTick number → display label (for user-facing messages)
+export const PRIORITY_LABEL = {
+    5: '🔴 career-critical',
+    3: '🟡 important',
+    1: '🔵 life-admin',
+    0: '⚪ consider-dropping',
+};
+
+// ─── Access Control (single source of truth) ────────────────
+
+export const AUTHORIZED_CHAT_ID = process.env.TELEGRAM_CHAT_ID
+    ? parseInt(process.env.TELEGRAM_CHAT_ID)
+    : null;
+
+export function isAuthorized(ctx) {
+    if (!AUTHORIZED_CHAT_ID) return true;
+    return ctx.chat?.id === AUTHORIZED_CHAT_ID;
+}
+
+export async function guardAccess(ctx) {
+    if (!isAuthorized(ctx)) {
+        await ctx.reply('🔒 Unauthorized. This bot is private.');
+        return false;
+    }
+    return true;
+}
+
+// ─── Undo Entry Builder ─────────────────────────────────────
+
+export function buildUndoEntry({ source, action, applied = {}, appliedTaskId = null }) {
+    return {
+        taskId: appliedTaskId || source.id || source.taskId,
+        originalTaskId: source.id || source.taskId,
+        action,
+        originalTitle: source.title ?? source.originalTitle,
+        originalContent: source.content ?? source.originalContent ?? '',
+        originalPriority: source.priority ?? source.originalPriority,
+        originalProjectId: source.projectId ?? source.originalProjectId,
+
+        appliedTitle: applied.title ?? null,
+        appliedPriority: applied.priority ?? null,
+        appliedProject: applied.project ?? null,
+        appliedProjectId: applied.projectId ?? null,
+        appliedSchedule: applied.schedule ?? null,
+    };
+}
+
+// ─── Timezone Helpers (single source of truth) ──────────────
+// ALL date formatting in the entire app must use these helpers.
+// Never call new Date().toLocaleDateString() without passing USER_TZ.
+
+export const USER_TZ = process.env.USER_TIMEZONE || 'Europe/Dublin';
+
+/** Get the user's "now" as date components in their timezone */
+export function userNow() {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone: USER_TZ,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', hour12: false,
+    }).formatToParts(new Date());
+
+    const get = (type) => parts.find(p => p.type === type)?.value;
+    return {
+        year: parseInt(get('year')),
+        month: parseInt(get('month')) - 1, // 0-indexed
+        day: parseInt(get('day')),
+        hour: parseInt(get('hour')),
+        dayOfWeek: new Date(
+            parseInt(get('year')),
+            parseInt(get('month')) - 1,
+            parseInt(get('day'))
+        ).getDay(),
+    };
+}
+
+/** Format today's date as "Monday, 21 February 2026" in the user's timezone */
+export function userTodayFormatted() {
+    return new Date().toLocaleDateString('en-IE', {
+        timeZone: USER_TZ,
+        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+    });
+}
+
+/** Format a Date for display in the user's timezone (e.g. stats) */
+export function userLocaleString(date) {
+    return new Date(date).toLocaleString('en-IE', { timeZone: USER_TZ });
+}
+
+/** Format time only in user's timezone (for logs) */
+export function userTimeString() {
+    return new Date().toLocaleTimeString('en-IE', { timeZone: USER_TZ });
+}
+
+/** Build an ISO datetime string for TickTick, with correct timezone offset */
+function atTimeISO(year, month, day, hour = 23, minute = 59) {
+    const targetDate = new Date(year, month, day, hour, minute, 0);
+    const formatter = new Intl.DateTimeFormat('en-CA', {
+        timeZone: USER_TZ,
+        timeZoneName: 'shortOffset',
+    });
+    const parts = formatter.formatToParts(targetDate);
+    const offsetStr = parts.find(p => p.type === 'timeZoneName')?.value || 'GMT';
+    const match = offsetStr.match(/GMT([+-]?\d+)?/);
+    const offsetHours = match?.[1] ? parseInt(match[1]) : 0;
+    const sign = offsetHours >= 0 ? '+' : '-';
+    const absHours = String(Math.abs(offsetHours)).padStart(2, '0');
+    const tzOffset = `${sign}${absHours}00`;
+
+    const mm = String(month + 1).padStart(2, '0');
+    const dd = String(day).padStart(2, '0');
+    const hh = String(hour).padStart(2, '0');
+    const min = String(minute).padStart(2, '0');
+    return `${year}-${mm}-${dd}T${hh}:${min}:00.000${tzOffset}`;
+}
+
+/** Build an ISO date string at end-of-day */
+function endOfDayISO(year, month, day) {
+    return atTimeISO(year, month, day, 23, 59);
+}
+
+/**
+ * Safely parse a YYYY-MM-DD string into a TickTick ISO string with the current user's timezone offset
+ * following Postel's Law to shield against messy LLM output.
+ */
+export function parseDateStringToTickTickISO(dateStr, options = {}) {
+    if (!dateStr || typeof dateStr !== 'string') return null;
+
+    const match = dateStr.match(/(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return null;
+
+    const year = parseInt(match[1]);
+    const month = parseInt(match[2]) - 1; // 0-indexed month for Date
+    const day = parseInt(match[3]);
+
+    const slotMode = options.slotMode || 'end-of-day';
+    if (slotMode === 'priority') {
+        const priorityLabel = options.priorityLabel || 'important';
+        const slot = priorityLabel === 'career-critical' ? { hour: 9, minute: 30 }
+            : priorityLabel === 'important' ? { hour: 13, minute: 0 }
+                : { hour: 17, minute: 30 };
+        return atTimeISO(year, month, day, slot.hour, slot.minute);
+    }
+
+    if (slotMode === 'custom' && typeof options.hour === 'number' && typeof options.minute === 'number') {
+        return atTimeISO(year, month, day, options.hour, options.minute);
+    }
+
+    return endOfDayISO(year, month, day);
+}
+
+/** Conservative sensitive-content detector to prevent destructive rewrites */
+export function containsSensitiveContent(text = '') {
+    if (!text || typeof text !== 'string') return false;
+    const probes = [
+        /password|passcode|otp|pin|secret|api\s*key|token|credential/i,
+        /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/,
+        /[A-Za-z0-9_!@#$%^&*()\-+=]{10,}/,
+    ];
+    return probes.some((re) => re.test(text));
+}
+
+/** Slot-based scheduling for better day planning (instead of default end-of-day) */
+export function scheduleToDateTime(bucket, { priorityLabel = 'important' } = {}) {
+    if (!bucket || bucket === 'someday' || bucket === 'null') return null;
+    const now = userNow();
+    const addDays = (n) => {
+        const d = new Date(now.year, now.month, now.day + n);
+        return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate() };
+    };
+
+    const slot = priorityLabel === 'career-critical' ? { hour: 9, minute: 30 }
+        : priorityLabel === 'important' ? { hour: 13, minute: 0 }
+            : { hour: 17, minute: 30 };
+
+    switch (bucket) {
+        case 'today':
+            return atTimeISO(now.year, now.month, now.day, slot.hour, slot.minute);
+        case 'tomorrow': {
+            const t = addDays(1);
+            return atTimeISO(t.year, t.month, t.day, slot.hour, slot.minute);
+        }
+        case 'this-week': {
+            const daysUntilFriday = (5 - now.dayOfWeek + 7) % 7 || 7;
+            const f = addDays(daysUntilFriday);
+            return atTimeISO(f.year, f.month, f.day, slot.hour, slot.minute);
+        }
+        case 'next-week': {
+            const daysUntilMonday = (8 - now.dayOfWeek) % 7 || 7;
+            const m = addDays(daysUntilMonday);
+            return atTimeISO(m.year, m.month, m.day, slot.hour, slot.minute);
+        }
+        default:
+            return null;
+    }
+}
+
+export function scheduleToDate(bucket, options = {}) {
+    return scheduleToDateTime(bucket, { priorityLabel: options.priorityLabel || 'important' });
+}
+
+function scheduleLabel(bucket) {
+    const labels = {
+        'today': 'Today',
+        'tomorrow': 'Tomorrow',
+        'this-week': 'This week',
+        'next-week': 'Next week',
+        'someday': 'Someday (no rush)',
+    };
+    return labels[bucket] || null;
+}
+
+// ─── TickTick update object builder ─────────────────────────
+// Used by BOTH callbacks.js (manual ✅ Approve) and autoApply().
+// Single source of truth for what gets written to TickTick.
+
+export function buildTickTickUpdate(data, options = {}) {
+    const { applyMode = 'full', priorityLabel = 'important' } = options;
+    const update = {
+        projectId: data.projectId,
+        originalProjectId: data.projectId // Required for ticktick.js to detect moves
+    };
+
+    if (applyMode !== 'metadata-only') {
+        if (data.improvedTitle) update.title = data.improvedTitle;
+        if (data.improvedContent) update.content = data.improvedContent;
+    }
+    if (data.suggestedPriority !== undefined) update.priority = data.suggestedPriority;
+
+    if (data.suggestedProjectId && data.suggestedProjectId !== data.projectId) {
+        update.projectId = data.suggestedProjectId;
+    }
+
+    if (data.suggestedSchedule && data.suggestedSchedule !== 'someday' && data.suggestedSchedule !== 'null') {
+        const dueDate = scheduleToDateTime(data.suggestedSchedule, { priorityLabel });
+        if (dueDate) update.dueDate = dueDate;
+    }
+
+    return update;
+}
+
+// ─── Task Card (for Telegram display) ───────────────────────
+
+export function buildTaskCard(task, analysis) {
+    const lines = [];
+    lines.push(`🔍 New Task Detected\n`);
+    lines.push(`📂 Project: ${task.projectName || 'Inbox'}`);
+    lines.push(`📝 Original: ${task.title}\n`);
+
+    if (analysis.improved_title && analysis.improved_title !== task.title) {
+        lines.push(`✨ Suggested: ${analysis.improved_title}\n`);
+    }
+
+    if (analysis.suggested_project && analysis.suggested_project !== (task.projectName || 'Inbox')) {
+        lines.push(`📁 Move to: ${analysis.suggested_project}`);
+    }
+
+    lines.push(`${analysis.priority_emoji || '🟡'} Priority: ${analysis.priority}`);
+
+    const schedLabel = scheduleLabel(analysis.suggested_schedule);
+    if (schedLabel) {
+        lines.push(`📅 Schedule: ${schedLabel}`);
+    }
+
+    if (analysis.needle_mover !== undefined) {
+        lines.push(`🎯 Needle-mover: ${analysis.needle_mover ? 'Yes ✅' : 'No — consider if worth your time'}`);
+    }
+
+    lines.push(`\n📊 Analysis: ${analysis.analysis}`);
+
+    if (analysis.description) {
+        lines.push(`\n📝 ${analysis.description}`);
+    }
+
+    if (analysis.sub_steps?.length > 0) {
+        lines.push(`\n📋 Action Steps:`);
+        analysis.sub_steps.forEach((step, i) => {
+            lines.push(`  ${i + 1}. ${step}`);
+        });
+    }
+
+    if (analysis.resources?.length > 0) {
+        lines.push(`\n🔗 Context & Resources:`);
+        analysis.resources.forEach((r) => {
+            lines.push(`  - ${r}`);
+        });
+    }
+
+    if (analysis.success_criteria) {
+        lines.push(`\n🎯 Done when: ${analysis.success_criteria}`);
+    }
+
+    if (analysis.callout) {
+        lines.push(`\n💬 Accountability: ${analysis.callout}`);
+    }
+
+    return truncateMessage(lines.join('\n'));
+}
+
+// ─── Improved Content (stored in TickTick description) ──────
+
+export function buildImprovedContent(analysis) {
+    let content = '';
+    if (analysis.analysis) content += `📊 ${analysis.analysis}\n\n`;
+    if (analysis.description) content += `📝 ${analysis.description}\n\n`;
+    if (analysis.sub_steps?.length > 0) {
+        content += `📋 Action Steps:\n`;
+        analysis.sub_steps.forEach((s, i) => { content += `${i + 1}. ${s}\n`; });
+        content += '\n';
+    }
+    if (analysis.resources?.length > 0) {
+        content += `🔗 Context & Resources:\n`;
+        analysis.resources.forEach((r) => { content += `- ${r}\n`; });
+        content += '\n';
+    }
+    if (analysis.success_criteria) content += `🎯 Done when: ${analysis.success_criteria}\n\n`;
+    if (analysis.callout) content += `💬 ${analysis.callout}\n`;
+    return content;
+}
+
+// ─── Pending Data (stored in store.json) ────────────────────
+// Single source for both commands.js/analyzeAndSend and scheduler.js
+
+export function buildPendingData(task, analysis, projects = []) {
+    let suggestedProjectId = null;
+    if (analysis.suggested_project) {
+        const match = projects.find(p =>
+            p.name.trim().toLowerCase() === analysis.suggested_project.trim().toLowerCase()
+        );
+        suggestedProjectId = match?.id || null;
+    }
+
+    return {
+        originalTitle: task.title,
+        originalContent: task.content || '',
+        originalPriority: task.priority,
+        improvedTitle: analysis.improved_title,
+        improvedContent: buildImprovedContent(analysis),
+        suggestedPriority: PRIORITY_MAP[analysis.priority] ?? task.priority,
+        projectId: task.projectId,
+        projectName: task.projectName,
+        suggestedProject: analysis.suggested_project || null,
+        suggestedProjectId,
+        suggestedSchedule: analysis.suggested_schedule || null,
+        analysis: analysis.analysis,
+        description: analysis.description,
+        priority: analysis.priority,
+        priorityEmoji: analysis.priority_emoji,
+        needleMover: analysis.needle_mover,
+        subSteps: analysis.sub_steps,
+        resources: analysis.resources,
+        successCriteria: analysis.success_criteria,
+        callout: analysis.callout,
+    };
+}
+
+// ─── Reconstruct analysis object from stored pending data ───
+
+export function pendingToAnalysis(data) {
+    return {
+        improved_title: data.improvedTitle,
+        analysis: data.analysis,
+        description: data.description,
+        priority: data.priority || 'important',
+        priority_emoji: data.priorityEmoji || '🟡',
+        needle_mover: data.needleMover,
+        sub_steps: data.subSteps || [],
+        resources: data.resources || [],
+        success_criteria: data.successCriteria,
+        callout: data.callout,
+        suggested_project: data.suggestedProject,
+        suggested_schedule: data.suggestedSchedule,
+    };
+}
+
+// ─── Auto-apply notification builder ────────────────────────
+
+export function buildAutoApplyNotification(results) {
+    if (results.length === 0) return null;
+    const lines = [`⚡ **Auto-applied ${results.length} task(s):**`];
+    for (const r of results) {
+        const parts = [];
+        if (r.schedule) parts.push(`due ${r.schedule}`);
+        if (r.movedTo) parts.push(`moved to ${r.movedTo}`);
+        const detail = parts.length > 0 ? ` → ${parts.join(', ')}` : '';
+        lines.push(`• **"${r.title}"**${detail}`);
+    }
+    lines.push(`\n*Run /undo to revert the last one.*`);
+    return lines.join('\n');
+}
+
+// ─── Helpers ────────────────────────────────────────────────
+
+export function sleep(ms) {
+    return new Promise(r => setTimeout(r, ms));
+}
+
+/** Truncate message to stay under Telegram's 4096 char limit */
+export function truncateMessage(text, limit = 3800) {
+    if (text.length <= limit) return text;
+    return text.slice(0, limit) + '\n\n... (truncated)';
+}
+
+// ─── Formatting Helpers ─────────────────────────────────────
+
+export function escapeHTML(str) {
+    if (!str) return '';
+    return str
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;');
+}
+
+export function parseTelegramMarkdownToHTML(text) {
+    if (!text) return '';
+    let normalized = text.replace(/\r\n/g, '\n');
+    normalized = normalized.replace(/^\s{0,3}#{1,6}\s+(.+)$/gm, '**$1**');
+    normalized = normalized.replace(/^\s*#{3,}\s*$/gm, '────────');
+
+    let escaped = escapeHTML(normalized);
+    escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
+    escaped = escaped.replace(/\*([^*]+)\*/g, '<i>$1</i>');
+    return escaped;
+}
+
+// ─── Semantic Telegram Output Wrappers ──────────────────────
+
+export async function replyWithMarkdown(ctx, text, extra = {}) {
+    return ctx.reply(parseTelegramMarkdownToHTML(text), { ...extra, parse_mode: 'HTML' });
+}
+
+export async function editWithMarkdown(ctx, text, extra = {}) {
+    return ctx.editMessageText(parseTelegramMarkdownToHTML(text), { ...extra, parse_mode: 'HTML' });
+}
+
+export async function sendWithMarkdown(api, chatId, text, extra = {}) {
+    return api.sendMessage(chatId, parseTelegramMarkdownToHTML(text), { ...extra, parse_mode: 'HTML' });
+}
+
+export function appendUrgentModeReminder(text, urgentMode) {
+    if (urgentMode !== true) return text;
+    return `${text}\n\n**Urgent mode is currently active.**`;
+}
+
+export function formatBriefingHeader({ kind }) {
+    if (kind === 'daily') {
+        return `**🌅 MORNING BRIEFING**\n${userTodayFormatted()}\n${'─'.repeat(24)}\n\n`;
+    }
+    if (kind === 'weekly') {
+        return `**📊 WEEKLY ACCOUNTABILITY REVIEW**\n${'─'.repeat(28)}\n\n`;
+    }
+    return '';
+}
+
+export function filterProcessedThisWeek(processedTasks, fallbackKeys = []) {
+    const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
+    const thisWeek = {};
+    for (const [id, data] of Object.entries(processedTasks)) {
+        const base = data.reviewedAt ?? fallbackKeys.map(k => data?.[k]).find(Boolean);
+        if (base && new Date(base) > oneWeekAgo) {
+            thisWeek[id] = data;
+        }
+    }
+    return thisWeek;
+}
+
+export function buildQuotaExhaustedMessage(gemini) {
+    const resumeTime = gemini.quotaResumeTime();
+    if (resumeTime) {
+        const resumeStr = resumeTime.toLocaleTimeString('en-US', {
+            timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit'
+        }) + ' PT';
+        return `⚠️ AI quota exhausted. Try again around ${resumeStr}.`;
+    }
+    return `⚠️ AI quota exhausted. Try again in ~2 hours or after midnight PT.`;
+}
+
+export function formatProcessedTask(task) {
+    const action = task.approved ? '✅ Approved' : task.skipped ? '⏭ Skipped' : task.dropped ? '⚪ Dropped' : '⏳ Pending';
+
+    let badge = '';
+    if (task.priorityEmoji && task.priority) {
+        badge = `${task.priorityEmoji} ${task.priority}`;
+    } else {
+        badge = PRIORITY_LABEL[task.suggestedPriority ?? 3] || '🟡 important';
+    }
+
+    return `- "${task.originalTitle}" -> ${action} [${badge}]`;
+}
+
+// ─── Mutation Candidate Keyboard ────────────────────────────
+
+const MAX_CANDIDATE_LABEL = 30;
+
+function truncateCandidateLabel(title) {
+    if (!title) return '(untitled)';
+    if (title.length <= MAX_CANDIDATE_LABEL) return title;
+    return title.slice(0, MAX_CANDIDATE_LABEL - 1) + '…';
+}
+
+export function buildMutationCandidateKeyboard(candidates, { intentSummary = null, includeCancel = true } = {}) {
+    const keyboard = new InlineKeyboard();
+    candidates.slice(0, 6).forEach((candidate, idx) => {
+        const label = truncateCandidateLabel(candidate.title);
+        const callbackData = `mut:pick:${candidate.id}`;
+        if (idx % 1 === 0) keyboard.text(label, callbackData).row();
+    });
+    if (includeCancel) {
+        keyboard.text('❌ Cancel', 'mut:cancel').row();
+    }
+    return keyboard;
+}
+
+export function buildMutationClarificationMessage(reason, candidates, intentSummary) {
+    const lines = [];
+    if (intentSummary) {
+        lines.push(`**Did you mean one of these?**`);
+    } else {
+        lines.push(`**Not sure which task you mean.**`);
+    }
+    if (reason) {
+        lines.push(reason);
+    }
+    lines.push(`\nTap a task below or rephrase your request.`);
+    return lines.join('\n');
+}

@@ -71,7 +71,7 @@ export function registerCallbacks(bot, ticktick, gemini, adapter, pipeline) {
             await editWithMarkdown(ctx, `✅ **Updated:** "${data.improvedTitle || data.originalTitle}"${movedNote}${dateNote}\n\n*Applied successfully.*`);
         } catch (err) {
             console.error('Approve error:', err.message);
-            await ctx.answerCallbackQuery({ text: `❌ ${err.message.slice(0, 50)}` });
+            await ctx.answerCallbackQuery({ text: '❌ Failed to update task. Please try again.' });
         }
     });
 
@@ -115,7 +115,7 @@ export function registerCallbacks(bot, ticktick, gemini, adapter, pipeline) {
             await editWithMarkdown(ctx, '⚪ **Deleted** — task was removed from TickTick.');
         } catch (err) {
             console.error('Drop error:', err.message);
-            await ctx.answerCallbackQuery({ text: `❌ Delete failed: ${err.message}` });
+            await ctx.answerCallbackQuery({ text: '❌ Delete failed. The task is marked dropped locally.' });
         }
     });
 
@@ -205,7 +205,7 @@ export function registerCallbacks(bot, ticktick, gemini, adapter, pipeline) {
             }
         } catch (err) {
             console.error('Mutation clarification resume error:', err.message);
-            await editWithMarkdown(ctx, `❌ Failed to process: ${err.message.slice(0, 80)}`);
+            await editWithMarkdown(ctx, '❌ Failed to process the selection. Please try again.');
         }
     });
 

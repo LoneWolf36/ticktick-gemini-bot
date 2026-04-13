@@ -354,6 +354,19 @@ function buildExecutionFailure(action, message, attempt) {
     };
 }
 
+/**
+ * Create a pipeline instance that orchestrates intent extraction, normalization,
+ * and TickTick adapter execution.
+ *
+ * @param {Object} options
+ * @param {Object} options.axIntent - Intent extractor with `extractIntents(message, opts)` method
+ * @param {Object} options.normalizer - Normalizer module with `normalize(action, tasks, projects, opts)` method
+ * @param {TickTickAdapter} options.adapter - TickTick adapter instance
+ * @param {Object} [options.observability] - Optional observability emitter (see createPipelineObservability)
+ * @returns {{ processMessage: Function, getTelemetry: Function }}
+ *   - `processMessage(userMessage, options?)` → `{ type: 'task'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`
+ *   - `getTelemetry()` → the observability instance for this pipeline
+ */
 export function createPipeline({ axIntent, normalizer, adapter, observability } = {}) {
     const contextBuilder = createPipelineContextBuilder({ adapter });
     const telemetry = observability || createPipelineObservability();

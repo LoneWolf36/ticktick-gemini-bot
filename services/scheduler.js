@@ -1,7 +1,7 @@
 // Scheduler - cron jobs for daily briefing, weekly digest, and task polling
 import cron from 'node-cron';
 import * as store from './store.js';
-import { buildAutoApplyNotification, userTimeString, filterProcessedThisWeek, sendWithMarkdown } from '../bot/utils.js';
+import { buildAutoApplyNotification, userTimeString, filterProcessedThisWeek, sendWithMarkdown } from './shared-utils.js';
 import { logSummarySurfaceEvent } from './summary-surfaces/index.js';
 
 export async function runDailyBriefingJob({ bot, ticktick, gemini }) {

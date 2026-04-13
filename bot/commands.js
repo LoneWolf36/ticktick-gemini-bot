@@ -14,6 +14,46 @@ import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
 import { detectUrgentModeIntent } from '../services/ax-intent.js';
 
+// ─── Simple per-user rate limiter ───────────────────────────
+// Heavy commands (/scan, /briefing, /weekly, /review, /reorg) are rate-limited
+// to prevent accidental spam that burns TickTick/Gemini API quotas.
+// Light commands (/start, /menu, /status, /urgent, /pending, /undo, /reset) are not limited.
+
+const RATE_LIMIT_WINDOW_MS = 30_000;  // 30-second window
+const RATE_LIMIT_MAX = 1;              // 1 heavy command per window
+const HEAVY_COMMANDS = new Set(['scan', 'briefing', 'weekly', 'review', 'reorg']);
+
+const rateLimitWindows = new Map(); // userId -> { count, resetAt }
+
+function isRateLimited(userId, command) {
+    if (!HEAVY_COMMANDS.has(command)) return false;
+    const now = Date.now();
+    const entry = rateLimitWindows.get(userId);
+    if (!entry || now >= entry.resetAt) {
+        rateLimitWindows.set(userId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+        return false;
+    }
+    entry.count += 1;
+    if (entry.count > RATE_LIMIT_MAX) return true;
+    return false;
+}
+
+function rateLimitRemaining(userId) {
+    const entry = rateLimitWindows.get(userId);
+    if (!entry || Date.now() >= entry.resetAt) return RATE_LIMIT_MAX;
+    return Math.max(0, RATE_LIMIT_MAX - entry.count);
+}
+
+/** Middleware-style guard — returns true if request should be rejected */
+export function guardRateLimit(ctx, command) {
+    const userId = ctx.from?.id ?? ctx.chat?.id;
+    if (!userId || !isRateLimited(userId, command)) return false;
+    const remaining = rateLimitRemaining(userId);
+    const waitSec = Math.ceil((rateLimitWindows.get(userId)?.resetAt - Date.now()) / 1000);
+    ctx.reply(`⏳ Slow down — ${command} can be run once every ${RATE_LIMIT_WINDOW_MS / 1000}s. Try again in ~${waitSec}s.`);
+    return true;
+}
+
 export function registerCommands(bot, ticktick, gemini, adapter, pipeline, config = {}) {
     const {
         autoApplyLifeAdmin = false,
@@ -113,6 +153,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
     bot.command('reorg', async (ctx) => {
         if (!await guardAccess(ctx)) return;
+        if (guardRateLimit(ctx, 'reorg')) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
             await ctx.reply(buildQuotaExhaustedMessage(gemini));
@@ -314,6 +355,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     // ─── /scan — manual poll, BATCHED (5 at a time) ───────────
     bot.command('scan', async (ctx) => {
         if (!await guardAccess(ctx)) return;
+        if (guardRateLimit(ctx, 'scan')) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected. Run the OAuth flow first.'); return; }
 
         const pendingCount = store.getPendingCount();
@@ -478,6 +520,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     // ─── /briefing ────────────────────────────────────────────
     bot.command('briefing', async (ctx) => {
         if (!await guardAccess(ctx)) return;
+        if (guardRateLimit(ctx, 'briefing')) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
             await ctx.reply(buildQuotaExhaustedMessage(gemini));
@@ -512,6 +555,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     // ─── /weekly ──────────────────────────────────────────────
     bot.command('weekly', async (ctx) => {
         if (!await guardAccess(ctx)) return;
+        if (guardRateLimit(ctx, 'weekly')) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
             await ctx.reply(buildQuotaExhaustedMessage(gemini));
@@ -560,6 +604,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     // ─── /review ──────────────────────────────────────────────
     bot.command('review', async (ctx) => {
         if (!await guardAccess(ctx)) return;
+        if (guardRateLimit(ctx, 'review')) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
 
         const pendingCount = store.getPendingCount();
