@@ -13,6 +13,7 @@ import { TickTickAdapter } from '../services/ticktick-adapter.js';
 import { TickTickClient } from '../services/ticktick.js';
 import * as store from '../services/store.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
+import { AUTHORIZED_CHAT_ID } from '../services/shared-utils.js';
 import { runDailyBriefingJob, runWeeklyDigestJob } from '../services/scheduler.js';
 import {
   BRIEFING_SUMMARY_SECTION_KEYS,
@@ -568,7 +569,7 @@ test('formatSummary keeps empty sections compact and Telegram-safe', () => {
 });
 
 test('default timezone remains Europe/Dublin when USER_TIMEZONE is unset', () => {
-  const source = readFileSync('bot/utils.js', 'utf8');
+  const source = readFileSync('services/shared-utils.js', 'utf8');
   assert.match(source, /USER_TIMEZONE\s*\|\|\s*'Europe\/Dublin'/);
 });
 
@@ -606,6 +607,7 @@ test('appendUrgentModeReminder only appends reminder text when urgent mode is ac
 });
 
 test('registerCommands wires /urgent to the urgent mode store contract', async () => {
+  const authChatId = await (async () => { const m = await import('../services/shared-utils.js'); return m.AUTHORIZED_CHAT_ID; })();
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
     command(name, handler) {
@@ -645,7 +647,7 @@ test('registerCommands wires /urgent to the urgent mode store contract', async (
   assert.equal(typeof urgentHandler, 'function');
 
   const replies = [];
-  const userId = Date.now();
+  const userId = authChatId || Date.now();
   const ctx = {
     chat: { id: userId },
     from: { id: userId },
@@ -706,7 +708,7 @@ test('registerCommands allows free-form urgent toggles before TickTick auth', as
   assert.equal(typeof messageHandler, 'function');
 
   const replies = [];
-  const userId = `node-test-freeform-urgent-${Date.now()}`;
+  const userId = AUTHORIZED_CHAT_ID || `node-test-freeform-urgent-${Date.now()}`;
   await store.setUrgentMode(userId, false);
 
   await messageHandler({
@@ -794,7 +796,7 @@ test('registerCommands uses shared briefing surface and preserves urgent reminde
   assert.equal(typeof briefingHandler, 'function');
 
   const replies = [];
-  const userId = Date.now();
+  const userId = AUTHORIZED_CHAT_ID || Date.now();
   await store.setUrgentMode(userId, true);
   await briefingHandler({
     chat: { id: userId },
@@ -884,7 +886,7 @@ test('registerCommands uses shared weekly surface and sends formatted output', a
   assert.equal(typeof weeklyHandler, 'function');
 
   const replies = [];
-  const userId = Date.now();
+  const userId = AUTHORIZED_CHAT_ID || Date.now();
   await store.setUrgentMode(userId, false);
   await weeklyHandler({
     chat: { id: userId },
@@ -944,7 +946,7 @@ test('registerCommands short-circuits briefing and weekly when quota is exhauste
   );
 
   const replies = [];
-  const userId = Date.now();
+  const userId = AUTHORIZED_CHAT_ID || Date.now();
   const ctx = {
     chat: { id: userId },
     from: { id: userId },
