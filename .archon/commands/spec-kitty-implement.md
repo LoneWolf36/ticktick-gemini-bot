@@ -1,170 +1,214 @@
 ---
-description: Implement a single Spec Kitty work package. The workflow trigger message will contain the mission slug and WP ID in this format: "Execute mission <slug> for <WP-id>"
-argument-hint: <mission-slug> <WP-id> (e.g., 002-natural-language-task-mutations WP02)
+description: Implement the next pending Spec Kitty work package. You MUST follow every step in order. Do NOT skip to step 5 until steps 1-4 produce real, verifiable output.
 ---
 
-# Implement Spec Kitty WP
+# Implement Next Pending WP — ENFORCED SEQUENCE
 
-**Workflow Trigger**: $ARGUMENTS
+**IMPORTANT**: You are NOT allowed to proceed to Step 6 (Record Status) until Steps 1-5 produce REAL, VERIFIABLE output. Each step has a verification gate. Fabricating test results, skipping implementation, or recording status without actual code changes is STRICTLY FORBIDDEN.
 
 ---
 
-## Phase 0: EXTRACT MISSION AND WP ID
+## Step 1: DISCOVER Next Pending WP
 
-The workflow trigger message contains the mission slug and WP ID. Extract them:
-
-Parse the trigger message for patterns like:
-- "mission XXX for YYY"
-- "XXX YYY"
-- "implement YYY from XXX"
+Run this exact command to find the next WP that needs implementation:
 
 ```bash
-# Extract mission slug and WP ID from $ARGUMENTS
-MISSION_SLUG=$(echo "$ARGUMENTS" | grep -oP '[0-9]+-[a-z0-9-]+' | head -1)
-WP_ID=$(echo "$ARGUMENTS" | grep -oP 'WP[0-9]+' | head -1)
-
-# Fallback: if not found, try to extract from node context
-if [ -z "$MISSION_SLUG" ] || [ -z "$WP_ID" ]; then
-  echo "WARNING: Could not extract mission/WP from trigger message: $ARGUMENTS"
-  echo "Attempting to find the WP spec file directly..."
-  # Find the most recently modified WP spec file that hasn't been implemented
-  WP_FILE=$(find kitty-specs -name "WP*.md" -type f -newer .last-implemented-wp 2>/dev/null | head -1)
-  if [ -z "$WP_FILE" ]; then
-    # Fallback: find first WP with "planned" status
-    WP_FILE=$(for f in kitty-specs/*/tasks/WP*.md; do
-      grep -q '"to_lane":"planned"' "kitty-specs/$(echo $f | cut -d/ -f2)/status.events.jsonl" 2>/dev/null && echo "$f" && break
-    done)
-  fi
-  if [ -n "$WP_FILE" ]; then
-    MISSION_SLUG=$(echo "$WP_FILE" | cut -d/ -f2)
-    WP_ID=$(basename "$WP_FILE" | grep -oP 'WP[0-9]+')
-  fi
-fi
-
-echo "MISSION: ${MISSION_SLUG:-UNKNOWN}"
-echo "WP: ${WP_ID:-UNKNOWN}"
+for f in kitty-specs/*/status.events.jsonl; do
+  mission=$(basename $(dirname $f))
+  # Find all WPs mentioned in this file
+  for wp in $(grep -oP '"wp_id"\s*:\s*"WP\d+"' "$f" | grep -oP 'WP\d+' | sort -u); do
+    # Get the LAST event for this WP
+    last_lane=$(grep "$wp" "$f" | grep -oP '"to_lane"\s*:\s*"\w+"' | tail -1 | grep -oP '\w+"$' | tr -d '"')
+    if [ "$last_lane" = "planned" ]; then
+      wp_file=$(find "kitty-specs/$mission/tasks" -name "*${wp}*.md" -type f 2>/dev/null | head -1)
+      if [ -n "$wp_file" ]; then
+        echo "PENDING: $mission $wp $wp_file"
+        exit 0
+      fi
+    fi
+  done
+done
+echo "NO_PENDING_WPS"
 ```
 
-If both are found, proceed. If not, ASK the user for clarification.
+**VERIFICATION GATE 1**: The output MUST be either:
+- `PENDING: <mission> <WP-id> <file-path>` — proceed to Step 2
+- `NO_PENDING_WPS` — stop, report "All WPs complete"
+
+If you get neither output, the command is broken — debug it before proceeding.
 
 ---
 
-## Phase 1: LOAD WP SPEC
+## Step 2: READ The WP Spec
 
-### 1.1 Locate and Read WP Spec
+Read the file at `<file-path>` from Step 1's output. Extract:
+- The WP title (from frontmatter `title:` field)
+- All subtask IDs (T0XX patterns)
+- The list of "Files to Touch"
+- The "Definition of Done" criteria
+
+**VERIFICATION GATE 2**: Write the extracted info to `/tmp/wp-spec-summary.txt`:
 
 ```bash
-WP_FILE=$(find kitty-specs -path "*/${MISSION_SLUG}/tasks/*${WP_ID}*.md" -type f 2>/dev/null | head -1)
-if [ -z "$WP_FILE" ]; then
-  echo "ERROR: Cannot find WP spec file for mission=${MISSION_SLUG}, wp=${WP_ID}"
-  echo "Searched in: kitty-specs/${MISSION_SLUG}/tasks/"
+MISSION="<mission from Step 1>"
+WP="<WP-id from Step 1>"
+WP_FILE="<file-path from Step 1>"
+
+TITLE=$(grep '^title:' "$WP_FILE" | head -1 | cut -d: -f2- | sed 's/^ *//;s/"$//')
+SUBTASKS=$(grep -oP 'T\d{3}' "$WP_FILE" | sort -u | tr '\n' ', ' | sed 's/,$//')
+FILES_SECTION=$(sed -n '/Files to Touch/,/^[A-Z]/p' "$WP_FILE" | grep -v 'Files to Touch' | grep -v '^[A-Z]' | grep -v '^$' | head -10)
+DONE_SECTION=$(sed -n '/Definition of Done/,/^[A-Z]/p' "$WP_FILE" | grep -v 'Definition of Done' | grep -v '^[A-Z]' | grep -v '^$' | head -5)
+
+cat > /tmp/wp-spec-summary.txt <<EOF
+MISSION: ${MISSION}
+WP: ${WP}
+TITLE: ${TITLE}
+SUBTASKS: ${SUBTASKS}
+FILES_TO_TOUCH: ${FILES_SECTION}
+DONE_CRITERIA: ${DONE_SECTION}
+EOF
+
+cat /tmp/wp-spec-summary.txt
+```
+
+You MUST see this output before proceeding to Step 3. If TITLE is empty or SUBTASKS is empty, the WP file is malformed — report the issue and ABORT.
+
+---
+
+## Step 2.5: CHECK Dependencies
+
+```bash
+# Check WP dependencies
+DEPS=$(grep -A5 '^dependencies:' "$WP_FILE" 2>/dev/null | grep -oP 'WP\d+' || true)
+if [ -n "$DEPS" ]; then
+  echo "=== CHECKING DEPENDENCIES ==="
+  for dep in $DEPS; do
+    dep_done=$(grep "\"wp_id\"\s*:\s*\"$dep\"" "kitty-specs/${MISSION}/status.events.jsonl" 2>/dev/null | grep -c '"to_lane"\s*:\s*"done"' || true)
+    if [ "$dep_done" -eq 0 ]; then
+      echo "WARNING: Dependency $dep may not be complete for $MISSION"
+      echo "Proceeding anyway — verify this is correct"
+    else
+      echo "✓ Dependency $dep is done"
+    fi
+  done
+fi
+```
+
+---
+
+## Step 3: IMPLEMENT The Subtasks
+
+For EACH subtask listed in `/tmp/wp-spec-summary.txt`:
+
+1. Read the current state of each file mentioned in "Files to Touch"
+2. Implement the changes described in the subtask
+3. Follow existing code patterns (ESM, 4-space indent, semicolons, camelCase)
+4. DO NOT refactor unrelated code
+5. DO NOT add features not specified in the subtask
+6. Write tests for new behavior
+
+After implementing ALL subtasks, verify:
+
+```bash
+echo "=== FILES MODIFIED ==="
+git diff --stat HEAD
+echo "=== NEW FILES ==="
+git ls-files --others --exclude-standard | grep -v node_modules | grep -v report
+```
+
+**VERIFICATION GATE 3**: At least ONE file must be modified or created. If `git diff --stat HEAD` shows zero changes AND no new files exist, you did NOT implement anything. GO BACK to Step 3 and actually write the code.
+
+---
+
+## Step 4: VALIDATE With REAL Tests
+
+Run the actual tests and capture the REAL output:
+
+```bash
+echo "=== UNIT TESTS ==="
+set -o pipefail
+node --test tests/*.test.js 2>&1 | tee /tmp/test-output-full.txt
+UNIT_EXIT=${PIPESTATUS[0]}
+set +o pipefail
+
+echo "=== REGRESSION TESTS ==="
+set -o pipefail
+node tests/run-regression-tests.mjs 2>&1 | tee -a /tmp/test-output-full.txt
+REG_EXIT=${PIPESTATUS[0]}
+set +o pipefail
+
+echo "TEST_EXIT_CODES: unit=$UNIT_EXIT regression=$REG_EXIT"
+
+# Extract summary lines
+grep -E "pass|fail|tests|suites|PASS|FAIL" /tmp/test-output-full.txt | tail -5 > /tmp/test-results.txt
+
+# VERIFY: /tmp/test-results.txt must contain at least one number
+if ! grep -qP '\d+' /tmp/test-results.txt; then
+  echo "ABORT: Test results contain no numbers — tests may not have run"
   exit 1
 fi
+
+if [ $UNIT_EXIT -ne 0 ]; then
+  echo "WARNING: Unit tests exited with code $UNIT_EXIT"
+fi
 ```
 
-Read the full WP spec at `$WP_FILE`. Identify:
-- Subtasks (T0XX, T0XY, etc.)
-- Files to touch
-- Product Vision Alignment Gate requirements
-- Definition of Done
-- Guardrails
+---
 
-### 1.2 Read Project Context
+## Step 5: COMMIT The Implementation
+
+ONLY after ALL verification gates pass (Steps 1-4):
 
 ```bash
-cat AGENTS.md
-```
+MISSION=$(head -1 /tmp/wp-spec-summary.txt | cut -d: -f2- | xargs)
+WP=$(head -2 /tmp/wp-spec-summary.txt | tail -1 | cut -d: -f2- | xargs)
+TITLE=$(grep -m1 '^title:' "$WP_FILE" 2>/dev/null | head -1 | sed 's/^title:\s*//' | sed 's/^ *//;s/\s*$//' | sed 's/"//g' | sed "s/\`/'/g" | head -c 80)
+TEST_RESULTS=$(cat /tmp/test-results.txt)
 
-Key conventions:
-- ESM only (import/export)
-- 4-space indentation, semicolons
-- camelCase variables, PascalCase classes
-- Single-purpose files
-- YAGNI, DRY, Simplicity First
+git add bot/ services/ tests/ kitty-specs/ server.js package.json package-lock.json 2>/dev/null
+git add .archon/commands/ .archon/workflows/ 2>/dev/null
+git commit -m "feat(${MISSION}): implement ${WP} - ${TITLE}
 
----
-
-## Phase 2: EXPLORE CODEBASE
-
-For each file the WP spec says to touch:
-1. Read the current file
-2. Understand its role in the architecture
-3. Identify existing patterns and conventions
-
----
-
-## Phase 3: IMPLEMENT
-
-For each subtask in the WP spec:
-
-**DO:**
-- Implement ONLY what the subtask specifies
-- Follow existing code patterns exactly
-- Write or update tests as required
-- Keep changes minimal and focused
-
-**DON'T:**
-- Refactor unrelated code
-- Add improvements not in the subtask
-- Install new dependencies without justification
-- Over-engineer
-
-### Product Vision Compliance
-
-Verify:
-- The change supports the behavioral support system (not passive task management)
-- The system fails closed when uncertain
-- Mutation confirmations are terse
-- The system doesn't reward busywork
-
----
-
-## Phase 4: VALIDATE
-
-```bash
-# Run focused tests for changed modules
-node --test tests/*.test.js 2>&1 | tail -15
-
-# Run regression tests
-node tests/run-regression-tests.mjs 2>&1 | tail -10
-```
-
-**All new tests must pass.** Pre-existing failures should be noted but not block progress.
-
----
-
-## Phase 5: COMMIT AND UPDATE STATUS
-
-### 5.1 Commit Changes
-
-```bash
-git add -A
-git diff --cached --stat
-git commit -m "feat(${MISSION_SLUG}): implement ${WP_ID} - $(head -5 ${WP_FILE} | grep 'title:' | cut -d: -f2- | xargs)
-
-{Brief description of what was implemented}
+${TEST_RESULTS}
 
 Co-Authored-By: Codex GPT-5 <noreply@openai.com>"
+
+echo "COMMIT_HASH=$(git rev-parse HEAD)"
 ```
 
-### 5.2 Update WP Status
+If the commit fails (no changes staged, hook rejection, etc.), ABORT and report the failure reason.
+
+---
+
+## Step 6: RECORD Status Event
+
+ONLY after the commit succeeds:
 
 ```bash
-# Record completion in status.events.jsonl
-STATUS_FILE="kitty-specs/${MISSION_SLUG}/status.events.jsonl"
-EVENT_ID="$(date -u +%Y%m%dT%H%M%SZ)-${WP_ID}-done"
-echo "{\"actor\":\"ai-agent\",\"at\":\"$(date -u +%Y-%m-%dT%H:%M:%SZ)\",\"event_id\":\"${EVENT_ID}\",\"evidence\":{\"test_results\":\"all_new_tests_pass\"},\"execution_mode\":\"direct_repo\",\"feature_slug\":\"${MISSION_SLUG}\",\"force\":false,\"from_lane\":\"planned\",\"mission_slug\":\"${MISSION_SLUG}\",\"reason\":\"implementation_complete\",\"review_ref\":null,\"to_lane\":\"done\",\"work_package_id\":\"${WP_ID}\",\"wp_id\":\"${WP_ID}\"}" >> "$STATUS_FILE"
+MISSION=$(head -1 /tmp/wp-spec-summary.txt | cut -d: -f2- | xargs)
+WP=$(head -2 /tmp/wp-spec-summary.txt | tail -1 | cut -d: -f2- | xargs)
+COMMIT_HASH=$(git rev-parse HEAD)
 
-# Mark this WP as implemented for the workflow
-echo "${MISSION_SLUG} ${WP_ID}" > .last-implemented-wp
+# Escape test output for safe JSON embedding
+TEST_OUTPUT_JSON=$(cat /tmp/test-results.txt | python3 -c "import sys,json; print(json.dumps(sys.stdin.read()))")
+
+cat >> "kitty-specs/${MISSION}/status.events.jsonl" <<EOJSON
+{"actor":"spec-kitty-implement","at":"$(date -u +%Y-%m-%dT%H:%M:%SZ)","event_id":"$(date -u +%Y%m%dT%H%M%S)-${WP}-done-$RANDOM","evidence":{"tests":${TEST_OUTPUT_JSON},"commit":"${COMMIT_HASH}"},"execution_mode":"direct_repo","feature_slug":"${MISSION}","force":false,"from_lane":"planned","mission_slug":"${MISSION}","reason":"${WP} implemented and verified","review_ref":null,"to_lane":"done","work_package_id":"${WP}","wp_id":"${WP}"}
+EOJSON
+
+echo "STATUS RECORDED: ${MISSION} ${WP} → done (commit: ${COMMIT_HASH})"
 ```
 
-### 5.3 Report Completion
+---
 
-Output:
-- Mission slug
-- WP ID
-- Files changed
-- Tests run and results
-- Product Vision impact statement
-- Confirmation that WP status was updated to "done"
+## ABORT CONDITIONS
+
+If at ANY point:
+
+- **Step 1** finds no pending WPs → STOP, report "All WPs complete"
+- **Step 2** finds empty TITLE or SUBTASKS → ABORT, report "WP spec file is malformed"
+- **Step 3** produces zero code changes after implementation attempt → ABORT, report "Implementation failed — no code written"
+- **Step 4** tests crash (exit code non-zero for BOTH test suites) → ABORT, report "Test infrastructure broken"
+- **Step 5** commit fails → ABORT, report "Commit failed: <reason>"
+
+Do NOT proceed to Step 6 if any earlier step failed or was aborted.
