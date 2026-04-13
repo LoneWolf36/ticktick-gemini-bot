@@ -210,7 +210,7 @@ while true; do
         QWEN_RSS=$(ps aux 2>/dev/null | grep "qwen.*coder" | grep -v grep | head -1 | awk '{print int($6/1024)"MB"}')
         echo "  Qwen: CPU=${QWEN_CPU}% RSS=${QWEN_RSS:-unknown}"
         echo "  Node: $NEW_NODE (${MINUTES_ON_CURRENT_NODE}m)"
-        echo "  Nodes completed: $NODES_DONE / 126"
+        echo "  Nodes completed: $NODES_DONE / 205"
         
         # Check what Qwen is actually doing
         RECENT_LOG=$(tail -20 "$LOG_FILE" 2>/dev/null | grep -v "heartbeat\|loop_node" | tail -5)
@@ -249,7 +249,7 @@ while true; do
             VERB="WAITING"
             COLOR=$YELLOW
         fi
-        echo -e "${COLOR}CHECK #${CHECK_COUNT} — ${VERB}${NC} | ${MINUTES_SINCE_BASELINE}m elapsed | node=$NEW_NODE | commits_since_start=$(git rev-list --count $BASELINE_COMMIT..HEAD 2>/dev/null || echo 0) | nodes_done=$NODES_DONE/126"
+        echo -e "${COLOR}CHECK #${CHECK_COUNT} — ${VERB}${NC} | ${MINUTES_SINCE_BASELINE}m elapsed | node=$NEW_NODE | commits_since_start=$(git rev-list --count $BASELINE_COMMIT..HEAD 2>/dev/null || echo 0) | nodes_done=$NODES_DONE/205"
 
         # Detect phase completion (node count milestones)
         TOTAL_COMMITS=$(git rev-list --count $BASELINE_COMMIT..HEAD 2>/dev/null || echo 0)
@@ -263,7 +263,7 @@ while true; do
         fi
 
         # Detect total completion
-        if [ "$NODES_DONE" -ge 126 ]; then
+        if [ "$NODES_DONE" -ge 205 ]; then
             DURATION_HOURS=$((MINUTES_SINCE_BASELINE / 60))
             DURATION_MINS=$((MINUTES_SINCE_BASELINE % 60))
             TOTAL_FINAL_COMMITS=$(git rev-list --count $BASELINE_COMMIT..HEAD 2>/dev/null || echo 0)
