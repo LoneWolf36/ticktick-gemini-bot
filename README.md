@@ -155,7 +155,7 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 | `TELEGRAM_BOT_TOKEN` | Yes | Your bot token |
 | `TELEGRAM_CHAT_ID` | Yes | Your Telegram chat ID |
 | `GEMINI_API_KEYS` | Yes | Comma-separated Gemini API keys (preferred for rotation) |
-| `GEMINI_API_KEY` | Fallback | Single key (used only if `GEMINI_API_KEYS` is not set) |
+| `GEMINI_API_KEY` | No | Single key (fallback used only if `GEMINI_API_KEYS` is not set) |
 | `REDIS_URL` | Yes on Render | Redis connection URL (required due to ephemeral filesystem) |
 | `USER_CONTEXT` | Optional | Your personal context (the content of `user_context.js`) |
 | `WEBHOOK_URL` | Yes (webhook) | Your Render URL (e.g., `https://your-app.onrender.com`) |

@@ -17,7 +17,8 @@ services:
         sync: false
       - key: TICKTICK_REDIRECT_URI
         sync: false
-      # Required — TickTick access token (obtain by running OAuth locally first)
+      # Required — TickTick access token (obtain by running OAuth locally first,
+      # then copy the token printed to console)
       - key: TICKTICK_ACCESS_TOKEN
         sync: false
       # Required — Telegram credentials
@@ -25,10 +26,13 @@ services:
         sync: false
       - key: TELEGRAM_CHAT_ID
         sync: false
-      # Required — Gemini API key (singular, legacy fallback)
-      # For key rotation, use GEMINI_API_KEYS (comma-separated) instead
+      # Required — Gemini API keys (comma-separated for key rotation)
+      - key: GEMINI_API_KEYS
+        sync: false
+      # Optional — Gemini API key (singular, legacy fallback used only if GEMINI_API_KEYS is not set)
       - key: GEMINI_API_KEY
         sync: false
+        required: false
       # Optional — Redis for persistent storage (required on Render due to ephemeral filesystem)
       - key: REDIS_URL
         sync: false
@@ -38,9 +42,9 @@ services:
       # Bot mode: 'webhook' for Render deployment
       - key: BOT_MODE
         value: webhook
-      # Required for webhook mode — your Render service URL
+      # Required for webhook mode — your Render service URL (set to https://<your-service>.onrender.com)
       - key: WEBHOOK_URL
-        sync: false      # Set to your Render URL: https://ticktick-gemini-bot.onrender.com
+        sync: false
       # Optional — timezone for scheduling (default: Europe/Dublin)
       - key: USER_TIMEZONE
         value: Europe/Dublin

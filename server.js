@@ -31,6 +31,8 @@ const {
     AUTO_APPLY_LIFE_ADMIN = 'true',
     AUTO_APPLY_DROPS = 'false',
     AUTO_APPLY_MODE = 'metadata-only',
+    // TICKTICK_ACCESS_TOKEN is loaded by dotenv and used by TickTickClient internally
+    // (validated at first API call, not at startup — the OAuth flow sets it)
 } = process.env;
 
 const REQUIRED_VARS = {
@@ -40,6 +42,8 @@ const REQUIRED_VARS = {
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
 };
+
+// Note: GEMINI_API_KEYS is validated separately below (supports legacy GEMINI_API_KEY fallback)
 
 const missingVars = Object.entries(REQUIRED_VARS)
     .filter(([_, val]) => !val || val.trim() === '')
