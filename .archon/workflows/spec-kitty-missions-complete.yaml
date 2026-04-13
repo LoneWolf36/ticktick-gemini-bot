@@ -265,9 +265,15 @@ nodes:
     context: fresh
     args: "002-nlp-mutations review-fixes-done"
 
+  - id: f002-review-fixes
+    command: spec-kitty-review-fixes
+    depends_on: [f002-fixes-checkpoint]
+    context: fresh
+    args: "002-natural-language-task-mutations"
+
   - id: f002-final-validation
     command: spec-kitty-validate-full
-    depends_on: [f002-fixes-checkpoint]
+    depends_on: [f002-review-fixes]
     context: fresh
 
   # Conditional gate: check if validation passed before running expensive fallback
@@ -434,9 +440,15 @@ nodes:
     context: fresh
     args: "003-pipeline-hardening review-fixes-done"
 
+  - id: f003-review-fixes
+    command: spec-kitty-review-fixes
+    depends_on: [f003-fixes-checkpoint]
+    context: fresh
+    args: "003-pipeline-hardening-and-regression"
+
   - id: f003-final-validation
     command: spec-kitty-validate-full
-    depends_on: [f003-fixes-checkpoint]
+    depends_on: [f003-review-fixes]
     context: fresh
 
   # Conditional gate: check if validation passed before running expensive fallback
@@ -603,9 +615,15 @@ nodes:
     context: fresh
     args: "004-post-migration-cleanup review-fixes-done"
 
+  - id: f004-review-fixes
+    command: spec-kitty-review-fixes
+    depends_on: [f004-fixes-checkpoint]
+    context: fresh
+    args: "004-post-migration-cleanup"
+
   - id: f004-final-validation
     command: spec-kitty-validate-full
-    depends_on: [f004-fixes-checkpoint]
+    depends_on: [f004-review-fixes]
     context: fresh
 
   # Conditional gate: check if validation passed before running expensive fallback
@@ -788,9 +806,15 @@ nodes:
     context: fresh
     args: "005-checklist-subtask review-fixes-done"
 
+  - id: f005-review-fixes
+    command: spec-kitty-review-fixes
+    depends_on: [f005-fixes-checkpoint]
+    context: fresh
+    args: "005-checklist-subtask-support"
+
   - id: f005-final-validation
     command: spec-kitty-validate-full
-    depends_on: [f005-fixes-checkpoint]
+    depends_on: [f005-review-fixes]
     context: fresh
 
   # Conditional gate: check if validation passed before running expensive fallback
@@ -925,9 +949,15 @@ nodes:
     context: fresh
     args: "006-008-quick-wins review-fixes-done"
 
+  - id: f006-008-review-fixes
+    command: spec-kitty-review-fixes
+    depends_on: [f006-008-fixes-checkpoint]
+    context: fresh
+    args: "006-008-quick-wins"
+
   - id: f006-008-final-validation
     command: spec-kitty-validate-full
-    depends_on: [f006-008-fixes-checkpoint]
+    depends_on: [f006-008-review-fixes]
     context: fresh
 
   # Conditional gate: check if validation passed before running expensive fallback
@@ -1126,9 +1156,15 @@ nodes:
     context: fresh
     args: "009-behavioral-signals review-fixes-done"
 
+  - id: f009-review-fixes
+    command: spec-kitty-review-fixes
+    depends_on: [f009-fixes-checkpoint]
+    context: fresh
+    args: "009-behavioral-signals-and-memory"
+
   - id: f009-final-validation
     command: spec-kitty-validate-full
-    depends_on: [f009-fixes-checkpoint]
+    depends_on: [f009-review-fixes]
     context: fresh
 
   # Conditional gate: check if validation passed before running expensive fallback
