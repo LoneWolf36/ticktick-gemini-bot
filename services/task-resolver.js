@@ -1,99 +1,51 @@
 /**
  * services/task-resolver.js
  *
- * WP01 - Task Resolver Core
+ * Deterministic task resolver that maps a mutation targetQuery plus active tasks
+ * to one of three outcomes: resolved, clarification, or not_found.
  *
- * A deterministic resolver that takes a mutation targetQuery plus active tasks
- * and returns one of three states:
- *   - resolved:     exactly one task identified with confidence
- *   - clarification: multiple plausible candidates, need user input
- *   - not_found:    no candidate reaches minimum threshold
- *
- * Design constraints:
- *   - NO direct TickTick API calls
- *   - NO store access
- *   - Pure function: same input always yields same output
- *   - Fails closed: when uncertain, returns clarification or not_found
- *
- * Output shape (documented for downstream WP reuse):
- *   {
- *     status: 'resolved' | 'clarification' | 'not_found',
- *     selected: { taskId, projectId, title, score, matchType } | null,
- *     candidates: Array<{ taskId, projectId, title, score, matchType }>,
- *     reason: string | null
- *   }
+ * Output shape (consumed by services/pipeline.js):
+ * {
+ *   status: 'resolved' | 'clarification' | 'not_found',
+ *   selected: { taskId, projectId, title, score, matchType } | null,
+ *   candidates: Array<{ taskId, projectId, title, score, matchType }>,
+ *   reason: string | null
+ * }
  */
 
-// ─── Named Constants: Thresholds ─────────────────────────────────────────────
-
-const EXACT_SCORE = 1.0;
-const PREFIX_SCORE = 0.85;
-const CONTAINS_SCORE = 0.75;
-const FUZZY_SCORE = 0.65;
-
-const RESOLVE_THRESHOLD = 0.5;
-const CLEAR_WINNER_GAP = 0.15;
-const MIN_QUERY_LENGTH = 2;
-
-// ─── Title Normalization ─────────────────────────────────────────────────────
-
-const DATE_PATTERNS = /\b(today|tomorrow|tonight|yesterday|this\s+\w+|next\s+\w+)\b/gi;
-const PRIORITY_PATTERNS = /^(urgent|important|critical|asap|high\s+priority)[:\s-]*/i;
-const BRACKET_PREFIX = /^\[.*?\]\s*/;
-const TRAILING_PUNCTUATION = /[!?.]+$/g;
-const EXTRA_WHITESPACE = /\s+/g;
+// Matching thresholds — named constants, not magic numbers
+const EXACT_SCORE = 100;
+const PREFIX_SCORE = 80;
+const CONTAINS_SCORE = 60;
+const FUZZY_SCORE_MIN = 30;
+const FUZZY_SCORE_MAX = 55;
+const CLARIFICATION_GAP = 15; // minimum score gap to avoid clarification
 
 /**
- * Normalizes a title string for comparison.
- * Trims, lowercases, strips prefixes/markers/punctuation, collapses whitespace.
+ * Normalize a title for matching: lowercase, trim, collapse whitespace, strip punctuation.
+ * @param {string} title
+ * @returns {string}
  */
-function normalizeTitle(raw) {
-    if (raw == null) return '';
-
-    let title = String(raw).trim().toLowerCase();
-
-    // Strip bracket prefixes like [Work], [Personal]
-    title = title.replace(BRACKET_PREFIX, '');
-
-    // Strip priority markers
-    title = title.replace(PRIORITY_PATTERNS, '');
-
-    // Strip date references
-    title = title.replace(DATE_PATTERNS, '');
-
-    // Strip trailing punctuation
-    title = title.replace(TRAILING_PUNCTUATION, '');
-
-    // Collapse extra whitespace
-    title = title.replace(EXTRA_WHITESPACE, ' ').trim();
-
-    return title;
+function normalizeTitle(title) {
+    if (!title) return '';
+    return title
+        .toLowerCase()
+        .trim()
+        .replace(/\s+/g, ' ')
+        .replace(/[^\w\s]/g, '')
+        .trim();
 }
 
-// ─── Candidate Shaping ───────────────────────────────────────────────────────
-
 /**
- * Builds a candidate object from a task, score, and match type.
+ * Compute Levenshtein distance between two strings.
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
  */
-function buildCandidate(task, score, matchType) {
-    return {
-        taskId: task.id,
-        projectId: task.projectId ?? null,
-        title: task.title,
-        score,
-        matchType,
-    };
-}
-
-// ─── Fuzzy Matching (Conservative Levenshtein) ──────────────────────────────
-
-/**
- * Computes the Levenshtein edit distance between two strings.
- */
-function levenshtein(a, b) {
+function levenshteinDistance(a, b) {
     const m = a.length;
     const n = b.length;
-    const dp = Array.from({ length: m + 1 }, () => new Array(n + 1).fill(0));
+    const dp = Array.from({ length: m + 1 }, () => Array(n + 1).fill(0));
 
     for (let i = 0; i <= m; i++) dp[i][0] = i;
     for (let j = 0; j <= n; j++) dp[0][j] = j;
@@ -108,213 +60,216 @@ function levenshtein(a, b) {
             );
         }
     }
-
     return dp[m][n];
 }
 
 /**
- * Computes a fuzzy similarity score (0-1) based on normalized Levenshtein distance.
- * Returns 0 when the distance exceeds the fuzzy threshold.
+ * Compute a fuzzy similarity score between 0 and 1 based on Levenshtein distance.
+ * @param {string} a
+ * @param {string} b
+ * @returns {number}
  */
-function fuzzyScore(query, target) {
-    const maxLen = Math.max(query.length, target.length);
+function fuzzyScore(a, b) {
+    if (a === b) return 1.0;
+    const maxLen = Math.max(a.length, b.length);
     if (maxLen === 0) return 1.0;
-
-    const dist = levenshtein(query, target);
-    const similarity = 1 - dist / maxLen;
-
-    // Only return a score if similarity is meaningfully high
-    return similarity >= 0.5 ? similarity * FUZZY_SCORE : 0;
+    const dist = levenshteinDistance(a, b);
+    return 1.0 - dist / maxLen;
 }
 
-// ─── Matching Stages ─────────────────────────────────────────────────────────
-
 /**
- * Stage 1: Exact title comparison after normalization.
+ * Score one task against the target query.
+ * Returns a candidate object or null if no meaningful match.
+ * @param {object} task - { id, projectId, title, ... }
+ * @param {string} normalizedQuery
+ * @param {string} originalQuery
+ * @returns {object|null}
  */
-function matchExact(normalizedQuery, tasks) {
-    const candidates = [];
-    for (const task of tasks) {
-        const normalizedTaskTitle = normalizeTitle(task.title);
-        if (normalizedTaskTitle === normalizedQuery) {
-            candidates.push(buildCandidate(task, EXACT_SCORE, 'exact'));
-        }
+function scoreTask(task, normalizedQuery, originalQuery) {
+    const normalizedTitle = normalizeTitle(task.title);
+    if (!normalizedTitle || !normalizedQuery) return null;
+
+    // Exact match
+    if (normalizedTitle === normalizedQuery) {
+        return {
+            taskId: task.id,
+            projectId: task.projectId ?? null,
+            title: task.title,
+            score: EXACT_SCORE,
+            matchType: 'exact',
+        };
     }
-    return candidates;
+
+    // Prefix match: query is a prefix of the title or vice versa
+    if (normalizedTitle.startsWith(normalizedQuery) || normalizedQuery.startsWith(normalizedTitle)) {
+        return {
+            taskId: task.id,
+            projectId: task.projectId ?? null,
+            title: task.title,
+            score: PREFIX_SCORE,
+            matchType: 'prefix',
+        };
+    }
+
+    // Contains match: query is contained in title or title in query
+    if (normalizedTitle.includes(normalizedQuery) || normalizedQuery.includes(normalizedTitle)) {
+        return {
+            taskId: task.id,
+            projectId: task.projectId ?? null,
+            title: task.title,
+            score: CONTAINS_SCORE,
+            matchType: 'contains',
+        };
+    }
+
+    // Conservative fuzzy match: only for close typos
+    const fuzzy = fuzzyScore(normalizedTitle, normalizedQuery);
+    // Require at least 70% similarity AND the strings must share significant overlap
+    if (fuzzy >= 0.70) {
+        // Scale score between FUZZY_SCORE_MIN and FUZZY_SCORE_MAX
+        const scaledScore = Math.round(FUZZY_SCORE_MIN + (fuzzy - 0.70) / 0.30 * (FUZZY_SCORE_MAX - FUZZY_SCORE_MIN));
+        return {
+            taskId: task.id,
+            projectId: task.projectId ?? null,
+            title: task.title,
+            score: Math.min(scaledScore, FUZZY_SCORE_MAX),
+            matchType: 'fuzzy',
+        };
+    }
+
+    return null;
 }
 
 /**
- * Stage 2: Prefix matching — query is a prefix of the task title.
- */
-function matchPrefix(normalizedQuery, tasks) {
-    const candidates = [];
-    for (const task of tasks) {
-        const normalizedTaskTitle = normalizeTitle(task.title);
-        if (
-            normalizedTaskTitle.startsWith(normalizedQuery) &&
-            normalizedTaskTitle !== normalizedQuery
-        ) {
-            candidates.push(buildCandidate(task, PREFIX_SCORE, 'prefix'));
-        }
-    }
-    return candidates;
-}
-
-/**
- * Stage 3: Contains matching — query appears within the task title.
- */
-function matchContains(normalizedQuery, tasks) {
-    const candidates = [];
-    for (const task of tasks) {
-        const normalizedTaskTitle = normalizeTitle(task.title);
-        if (
-            normalizedTaskTitle.includes(normalizedQuery) &&
-            !normalizedTaskTitle.startsWith(normalizedQuery)
-        ) {
-            candidates.push(buildCandidate(task, CONTAINS_SCORE, 'contains'));
-        }
-    }
-    return candidates;
-}
-
-/**
- * Stage 4: Conservative fuzzy matching for close typos.
- */
-function matchFuzzy(normalizedQuery, tasks) {
-    const candidates = [];
-    for (const task of tasks) {
-        const normalizedTaskTitle = normalizeTitle(task.title);
-        const score = fuzzyScore(normalizedQuery, normalizedTaskTitle);
-        if (score > 0) {
-            candidates.push(buildCandidate(task, score, 'fuzzy'));
-        }
-    }
-    return candidates;
-}
-
-// ─── Decision Rules ──────────────────────────────────────────────────────────
-
-/**
- * Resolves a targetQuery against a list of active tasks.
+ * Resolve a target query against a set of active tasks.
  *
- * Returns a result object with status, selected, candidates, and reason.
- * Deterministic: same input always produces same output.
- * Tasks are processed in list order; ties broken by list position.
+ * @param {object} params
+ * @param {string} params.targetQuery - The user's reference to the target task
+ * @param {Array<object>} params.activeTasks - Current tasks from TickTick, each with { id, projectId, title, ... }
+ * @returns {object} Resolver result: { status, selected, candidates, reason }
  */
-function resolveTask(targetQuery, tasks) {
+export function resolveTarget({ targetQuery, activeTasks }) {
+    if (!targetQuery || typeof targetQuery !== 'string' || !targetQuery.trim()) {
+        return {
+            status: 'not_found',
+            selected: null,
+            candidates: [],
+            reason: 'empty_query',
+        };
+    }
+
+    if (!Array.isArray(activeTasks) || activeTasks.length === 0) {
+        return {
+            status: 'not_found',
+            selected: null,
+            candidates: [],
+            reason: 'no_active_tasks',
+        };
+    }
+
     const normalizedQuery = normalizeTitle(targetQuery);
 
-    // Guard: query too short
-    if (normalizedQuery.length < MIN_QUERY_LENGTH) {
-        return {
-            status: 'not_found',
-            selected: null,
-            candidates: [],
-            reason: 'query_too_short',
-        };
+    // Score all tasks
+    const candidates = [];
+    for (const task of activeTasks) {
+        const candidate = scoreTask(task, normalizedQuery, targetQuery);
+        if (candidate) {
+            candidates.push(candidate);
+        }
     }
 
-    // Guard: no tasks to search
-    if (!Array.isArray(tasks) || tasks.length === 0) {
-        return {
-            status: 'not_found',
-            selected: null,
-            candidates: [],
-            reason: 'no_match',
-        };
-    }
+    // Sort by score descending, then by title ascending for deterministic ordering
+    candidates.sort((a, b) => {
+        if (b.score !== a.score) return b.score - a.score;
+        return a.title.localeCompare(b.title);
+    });
 
-    // Run matching stages in priority order
-    let candidates = matchExact(normalizedQuery, tasks);
-    if (candidates.length === 0) {
-        candidates = matchPrefix(normalizedQuery, tasks);
-    }
-    if (candidates.length === 0) {
-        candidates = matchContains(normalizedQuery, tasks);
-    }
-    if (candidates.length === 0) {
-        candidates = matchFuzzy(normalizedQuery, tasks);
-    }
-
-    // Deterministic ordering: sort by score descending, then by list order (stable)
-    // Since we iterate tasks in order and push in order, stable sort by score is sufficient
-    candidates.sort((a, b) => b.score - a.score);
-
-    // No candidates above zero
+    // Decision rules
     if (candidates.length === 0) {
         return {
             status: 'not_found',
             selected: null,
             candidates: [],
-            reason: 'no_match',
+            reason: 'no_matching_tasks',
         };
     }
 
-    // Filter to candidates at or above the resolve threshold
-    const viableCandidates = candidates.filter(c => c.score >= RESOLVE_THRESHOLD);
+    const top = candidates[0];
 
-    if (viableCandidates.length === 0) {
+    // Exact match wins immediately
+    if (top.matchType === 'exact') {
+        // Check if there's another exact match (near-duplicate titles)
+        const otherExact = candidates.filter(c => c.matchType === 'exact' && c.taskId !== top.taskId);
+        if (otherExact.length > 0) {
+            return {
+                status: 'clarification',
+                selected: null,
+                candidates: [top, ...otherExact],
+                reason: 'multiple_exact_matches',
+            };
+        }
+        return {
+            status: 'resolved',
+            selected: top,
+            candidates: [top],
+            reason: null,
+        };
+    }
+
+    // Non-exact: need to check for close rivals
+    if (candidates.length === 1) {
+        // Single candidate — but only resolve if score is plausible
+        if (top.score >= FUZZY_SCORE_MIN) {
+            return {
+                status: 'resolved',
+                selected: top,
+                candidates: [top],
+                reason: null,
+            };
+        }
         return {
             status: 'not_found',
             selected: null,
-            candidates: viableCandidates,
-            reason: 'no_match',
+            candidates: [],
+            reason: 'score_below_threshold',
         };
     }
 
-    // Deduplicate: when multiple candidates share the same normalized title,
-    // they are duplicate tasks — pick the first (list-order deterministic).
-    // This prevents false ambiguity from tasks with identical titles.
-    const normalizedQuery_forDedup = normalizeTitle(viableCandidates[0].title);
-    const dedupedCandidates = viableCandidates.filter(c =>
-        normalizeTitle(c.title) === normalizedQuery_forDedup,
-    );
-    const hasDuplicateTitles = viableCandidates.length > 1 &&
-        viableCandidates.every(c => normalizeTitle(c.title) === normalizedQuery_forDedup);
+    // Multiple candidates: check the gap between top two
+    const second = candidates[1];
+    const scoreGap = top.score - second.score;
 
-    if (hasDuplicateTitles) {
-        // All top candidates are the same title — resolve to first occurrence
+    // If the gap is large enough, the top candidate wins clearly
+    if (scoreGap >= CLARIFICATION_GAP) {
         return {
             status: 'resolved',
-            selected: dedupedCandidates[0],
-            candidates: dedupedCandidates,
+            selected: top,
+            candidates: [top],
             reason: null,
         };
     }
 
-    // Single viable candidate — resolved
-    if (viableCandidates.length === 1) {
-        return {
-            status: 'resolved',
-            selected: viableCandidates[0],
-            candidates: viableCandidates,
-            reason: null,
-        };
-    }
-
-    // Multiple viable candidates — check for clear winner
-    const topScore = viableCandidates[0].score;
-    const secondScore = viableCandidates[1].score;
-    const hasClearWinner = topScore - secondScore >= CLEAR_WINNER_GAP;
-
-    if (hasClearWinner) {
-        return {
-            status: 'resolved',
-            selected: viableCandidates[0],
-            candidates: viableCandidates,
-            reason: null,
-        };
-    }
-
-    // Ambiguous: multiple plausible candidates
+    // Close rivals: return clarification with top candidates
+    const clarificationCandidates = candidates.filter(c => c.score >= FUZZY_SCORE_MIN).slice(0, 5);
     return {
         status: 'clarification',
         selected: null,
-        candidates: viableCandidates,
-        reason: 'multiple_candidates',
+        candidates: clarificationCandidates,
+        reason: 'ambiguous_target',
     };
 }
 
-// ─── Public API ──────────────────────────────────────────────────────────────
+/**
+ * Build a terse clarification prompt from a clarification result.
+ * Returns a string suitable for user-facing clarification.
+ * @param {object} result - A resolver result with status 'clarification'
+ * @returns {string}
+ */
+export function buildClarificationPrompt(result) {
+    if (result.status !== 'clarification' || !result.candidates.length) {
+        return 'Which task did you mean?';
+    }
 
-export { resolveTask, normalizeTitle, buildCandidate };
+    const options = result.candidates.map((c, i) => `${i + 1}. ${c.title}`).join('\n');
+    return `Which task did you mean?\n${options}`;
+}

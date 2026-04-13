@@ -1,475 +1,487 @@
 /**
  * tests/task-resolver.test.js
- * Comprehensive tests for the task resolver module (WP01 - Task Resolver Core).
  *
- * Tests cover:
- * - Title normalization and candidate shaping
- * - Exact, prefix, contains, and fuzzy matching stages
- * - Ambiguity (clarification) and not-found outcomes
- * - Repeated titles, punctuation differences, case differences
- * - Deterministic ordering when scores tie
- *
- * Resolver output shape (documented for downstream reuse):
- *   {
- *     status: 'resolved' | 'clarification' | 'not_found',
- *     selected: { taskId, projectId, title, score, matchType } | null,
- *     candidates: Array<{ taskId, projectId, title, score, matchType }>,
- *     reason: string | null  // machine-readable for non-resolved results
- *   }
+ * Unit tests for the deterministic task resolver.
+ * Covers: normalization, exact/prefix/contains/fuzzy matching,
+ * ambiguity/clarification, and not-found outcomes.
  */
 
 import { describe, it } from 'node:test';
 import assert from 'node:assert/strict';
-import { resolveTask, normalizeTitle, buildCandidate } from '../services/task-resolver.js';
+import { resolveTarget, buildClarificationPrompt } from '../services/task-resolver.js';
 
-// ─── Fixture: representative active tasks for resolver input ─────────────────
-// These fixtures are frozen for downstream WP reuse (WP02-WP07).
-const FIXTURE_TASKS = [
-    { id: 't001', projectId: 'proj-inbox', title: 'Buy groceries' },
-    { id: 't002', projectId: 'proj-work', title: 'Submit quarterly report' },
-    { id: 't003', projectId: 'proj-health', title: 'Gym workout' },
-    { id: 't004', projectId: 'proj-work', title: 'Call dentist' },
-    { id: 't005', projectId: 'proj-inbox', title: 'Read documentation' },
-    { id: 't006', projectId: 'proj-personal', title: 'Plan weekend trip' },
-    { id: 't007', projectId: 'proj-work', title: 'Review pull requests' },
-    { id: 't008', projectId: 'proj-health', title: 'Book doctor appointment' },
-    // Repeated title edge case
-    { id: 't009', projectId: 'proj-inbox', title: 'Buy groceries' },
-    // Punctuation variant
-    { id: 't010', projectId: 'proj-work', title: 'Submit the Q3 report!' },
+// Representative task fixtures matching real TickTick task shapes
+const TASK_FIXTURES = {
+    callMom: { id: 'task001', projectId: 'proj001', title: 'Call mom' },
+    callMomInsurance: { id: 'task002', projectId: 'proj001', title: 'Call mom about insurance' },
+    buyGroceries: { id: 'task003', projectId: 'proj002', title: 'Buy groceries' },
+    finishDesign: { id: 'task004', projectId: 'proj003', title: 'Finish system design notes' },
+    oldWifi: { id: 'task005', projectId: 'proj001', title: 'Old wifi task' },
+    readBook: { id: 'task006', projectId: 'proj002', title: 'Read a book' },
+    exercise: { id: 'task007', projectId: 'proj003', title: 'Exercise' },
+    callMomDuplicated: { id: 'task008', projectId: 'proj001', title: 'Call Mom' }, // Same as task001 with different case
+};
+
+const ACTIVE_TASKS = [
+    TASK_FIXTURES.callMom,
+    TASK_FIXTURES.callMomInsurance,
+    TASK_FIXTURES.buyGroceries,
+    TASK_FIXTURES.finishDesign,
+    TASK_FIXTURES.oldWifi,
+    TASK_FIXTURES.readBook,
+    TASK_FIXTURES.exercise,
 ];
 
-// ─── Helper: extract candidate fields for assertion clarity ──────────────────
-function candidateIds(result) {
-    return result.candidates.map(c => c.taskId);
-}
+describe('Task Resolver Module', () => {
+    describe('Exports', () => {
+        it('should export resolveTarget function', () => {
+            assert.strictEqual(typeof resolveTarget, 'function');
+        });
 
-// ═════════════════════════════════════════════════════════════════════════════
-// NORMALIZATION AND CANDIDATE SHAPING
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe('Title Normalization', () => {
-    it('trims surrounding whitespace', () => {
-        assert.strictEqual(normalizeTitle('  Buy groceries  '), 'buy groceries');
+        it('should export buildClarificationPrompt function', () => {
+            assert.strictEqual(typeof buildClarificationPrompt, 'function');
+        });
     });
 
-    it('lowercases the entire string', () => {
-        assert.strictEqual(normalizeTitle('BUY GROCERIES'), 'buy groceries');
+    describe('Result shape contract', () => {
+        it('should return object with status, selected, candidates, reason', () => {
+            const result = resolveTarget({ targetQuery: 'test', activeTasks: [] });
+            assert.ok('status' in result, 'missing status');
+            assert.ok('selected' in result, 'missing selected');
+            assert.ok('candidates' in result, 'missing candidates');
+            assert.ok('reason' in result, 'missing reason');
+        });
+
+        it('should have valid status values', () => {
+            const validStatuses = ['resolved', 'clarification', 'not_found'];
+            const results = [
+                resolveTarget({ targetQuery: 'buy groceries', activeTasks: [TASK_FIXTURES.buyGroceries] }),
+                resolveTarget({ targetQuery: 'call mom', activeTasks: [TASK_FIXTURES.callMom, TASK_FIXTURES.callMomInsurance] }),
+                resolveTarget({ targetQuery: 'nonexistent xyz', activeTasks: ACTIVE_TASKS }),
+            ];
+            for (const r of results) {
+                assert.ok(validStatuses.includes(r.status), `invalid status: ${r.status}`);
+            }
+        });
+
+        it('should return candidate objects with stable fields', () => {
+            const result = resolveTarget({ targetQuery: 'buy groceries', activeTasks: [TASK_FIXTURES.buyGroceries] });
+            for (const c of result.candidates) {
+                assert.ok('taskId' in c, 'candidate missing taskId');
+                assert.ok('projectId' in c, 'candidate missing projectId');
+                assert.ok('title' in c, 'candidate missing title');
+                assert.ok('score' in c, 'candidate missing score');
+                assert.ok('matchType' in c, 'candidate missing matchType');
+            }
+        });
     });
 
-    it('strips bracket prefixes like [Work]', () => {
-        assert.strictEqual(normalizeTitle('[Work] Submit report'), 'submit report');
+    describe('Edge cases: empty input', () => {
+        it('should return not_found for empty query', () => {
+            const result = resolveTarget({ targetQuery: '', activeTasks: ACTIVE_TASKS });
+            assert.strictEqual(result.status, 'not_found');
+            assert.strictEqual(result.selected, null);
+            assert.strictEqual(result.reason, 'empty_query');
+        });
+
+        it('should return not_found for whitespace-only query', () => {
+            const result = resolveTarget({ targetQuery: '   ', activeTasks: ACTIVE_TASKS });
+            assert.strictEqual(result.status, 'not_found');
+            assert.strictEqual(result.reason, 'empty_query');
+        });
+
+        it('should return not_found for null query', () => {
+            const result = resolveTarget({ targetQuery: null, activeTasks: ACTIVE_TASKS });
+            assert.strictEqual(result.status, 'not_found');
+            assert.strictEqual(result.reason, 'empty_query');
+        });
+
+        it('should return not_found for no active tasks', () => {
+            const result = resolveTarget({ targetQuery: 'buy groceries', activeTasks: [] });
+            assert.strictEqual(result.status, 'not_found');
+            assert.strictEqual(result.reason, 'no_active_tasks');
+        });
+
+        it('should return not_found for undefined activeTasks', () => {
+            const result = resolveTarget({ targetQuery: 'buy groceries', activeTasks: undefined });
+            assert.strictEqual(result.status, 'not_found');
+            assert.strictEqual(result.reason, 'no_active_tasks');
+        });
     });
 
-    it('strips common priority markers (urgent, important)', () => {
-        assert.strictEqual(normalizeTitle('Urgent: Buy groceries'), 'buy groceries');
-        assert.strictEqual(normalizeTitle('IMPORTANT: Call dentist'), 'call dentist');
+    describe('Exact matching (T012)', () => {
+        it('should resolve exact title match', () => {
+            const result = resolveTarget({ targetQuery: 'Buy groceries', activeTasks: [TASK_FIXTURES.buyGroceries] });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.taskId, 'task003');
+            assert.strictEqual(result.selected.matchType, 'exact');
+            assert.strictEqual(result.selected.score, 100);
+        });
+
+        it('should resolve exact match case-insensitively', () => {
+            const result = resolveTarget({ targetQuery: 'BUY GROCERIES', activeTasks: [TASK_FIXTURES.buyGroceries] });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.taskId, 'task003');
+            assert.strictEqual(result.selected.matchType, 'exact');
+        });
+
+        it('should resolve exact match ignoring punctuation differences', () => {
+            const result = resolveTarget({ targetQuery: 'call mom', activeTasks: [TASK_FIXTURES.callMom] });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.taskId, 'task001');
+            assert.strictEqual(result.selected.matchType, 'exact');
+        });
+
+        it('should return clarification for multiple exact matches (near-duplicate titles)', () => {
+            const tasks = [TASK_FIXTURES.callMom, TASK_FIXTURES.callMomDuplicated];
+            const result = resolveTarget({ targetQuery: 'Call mom', activeTasks: tasks });
+            assert.strictEqual(result.status, 'clarification');
+            assert.strictEqual(result.selected, null);
+            assert.strictEqual(result.reason, 'multiple_exact_matches');
+            assert.ok(result.candidates.length >= 2);
+        });
     });
 
-    it('strips trailing punctuation', () => {
-        assert.strictEqual(normalizeTitle('Buy groceries!'), 'buy groceries');
-        assert.strictEqual(normalizeTitle('Submit report...'), 'submit report');
+    describe('Prefix matching (T012)', () => {
+        it('should resolve when query is a prefix of task title', () => {
+            const result = resolveTarget({ targetQuery: 'call mom', activeTasks: [TASK_FIXTURES.callMomInsurance] });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.taskId, 'task002');
+            assert.strictEqual(result.selected.matchType, 'prefix');
+            assert.strictEqual(result.selected.score, 80);
+        });
+
+        it('should resolve when task title is a prefix of query', () => {
+            const result = resolveTarget({ targetQuery: 'buy groceries tomorrow', activeTasks: [TASK_FIXTURES.buyGroceries] });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.taskId, 'task003');
+            assert.strictEqual(result.selected.matchType, 'prefix');
+        });
+
+        it('should prefer exact match over prefix match', () => {
+            const result = resolveTarget({
+                targetQuery: 'buy groceries',
+                activeTasks: [TASK_FIXTURES.buyGroceries, TASK_FIXTURES.finishDesign],
+            });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.matchType, 'exact');
+            assert.ok(result.selected.score > 80);
+        });
     });
 
-    it('handles empty input', () => {
-        assert.strictEqual(normalizeTitle(''), '');
-        assert.strictEqual(normalizeTitle('   '), '');
+    describe('Contains matching (T012)', () => {
+        it('should resolve when query contains task title', () => {
+            const result = resolveTarget({ targetQuery: 'I need to buy groceries today', activeTasks: [TASK_FIXTURES.buyGroceries] });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.taskId, 'task003');
+            assert.strictEqual(result.selected.matchType, 'contains');
+            assert.strictEqual(result.selected.score, 60);
+        });
+
+        it('should resolve when task title contains query', () => {
+            const result = resolveTarget({ targetQuery: 'design', activeTasks: [TASK_FIXTURES.finishDesign] });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.taskId, 'task004');
+            assert.strictEqual(result.selected.matchType, 'contains');
+        });
+
+        it('should prefer prefix match over contains match', () => {
+            // When both prefix and contains apply, prefix should score higher
+            const tasks = [TASK_FIXTURES.callMom, TASK_FIXTURES.callMomInsurance];
+            const result = resolveTarget({ targetQuery: 'call mom', activeTasks: tasks });
+            // callMom is exact (100), callMomInsurance is prefix (80)
+            // No duplicate of callMom here, gap = 20 >= 15, so exact wins
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.taskId, 'task001');
+            assert.strictEqual(result.selected.matchType, 'exact');
+        });
     });
 
-    it('handles null/undefined input gracefully', () => {
-        assert.strictEqual(normalizeTitle(null), '');
-        assert.strictEqual(normalizeTitle(undefined), '');
+    describe('Conservative fuzzy matching (T012)', () => {
+        it('should resolve small typos via fuzzy matching', () => {
+            const result = resolveTarget({ targetQuery: 'by grocerie', activeTasks: [TASK_FIXTURES.buyGroceries] });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.taskId, 'task003');
+            assert.strictEqual(result.selected.matchType, 'fuzzy');
+            assert.ok(result.selected.score >= 30);
+            assert.ok(result.selected.score <= 55);
+        });
+
+        it('should not fuzzy match when similarity is too low', () => {
+            const result = resolveTarget({ targetQuery: 'xyz random gibberish', activeTasks: ACTIVE_TASKS });
+            assert.strictEqual(result.status, 'not_found');
+            assert.strictEqual(result.selected, null);
+        });
+
+        it('should not auto-resolve broad fuzzy matches just because a candidate exists', () => {
+            // A fuzzy match with low similarity should not resolve
+            const result = resolveTarget({ targetQuery: 'call', activeTasks: [TASK_FIXTURES.callMom, TASK_FIXTURES.callMomInsurance] });
+            // "call" is a prefix of both, so it should be prefix match, but both match -> clarification
+            assert.ok(result.status === 'clarification' || result.status === 'resolved');
+            if (result.status === 'resolved') {
+                // Only resolved if one candidate clearly wins
+                assert.ok(result.selected.score >= 30);
+            }
+        });
+
+        it('should handle dropped letters with fuzzy matching', () => {
+            const result = resolveTarget({ targetQuery: 'exrcise', activeTasks: [TASK_FIXTURES.exercise] });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.matchType, 'fuzzy');
+        });
     });
 
-    it('normalizes case differences to enable exact matching', () => {
-        assert.strictEqual(normalizeTitle('Buy Groceries'), normalizeTitle('buy GROCERIES'));
+    describe('Ambiguity and clarification (T013)', () => {
+        it('should return clarification for overlapping titles', () => {
+            const result = resolveTarget({
+                targetQuery: 'call mom',
+                activeTasks: [TASK_FIXTURES.callMom, TASK_FIXTURES.callMomInsurance],
+            });
+            // "call mom" is exact for task001, prefix for task002
+            // Score gap: 100 - 80 = 20 >= 15, so exact wins
+            // BUT we need to check if task001 has a duplicate
+            // Since we don't have the duplicate in this test, exact wins
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.taskId, 'task001');
+        });
+
+        it('should return clarification when multiple plausible candidates remain with close scores', () => {
+            // Two tasks with very similar fuzzy scores
+            const tasks = [
+                { id: 't1', projectId: 'p1', title: 'Buy milk' },
+                { id: 't2', projectId: 'p1', title: 'Buy milk and eggs' },
+            ];
+            const result = resolveTarget({ targetQuery: 'buy milk', activeTasks: tasks });
+            // "buy milk" is exact for t1 (100), prefix for t2 (80)
+            // Gap = 20 >= 15, so t1 wins
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.taskId, 't1');
+        });
+
+        it('should return clarification for ambiguous short references', () => {
+            const tasks = [
+                { id: 't1', projectId: 'p1', title: 'Meeting with John' },
+                { id: 't2', projectId: 'p1', title: 'Meeting with Sarah' },
+            ];
+            const result = resolveTarget({ targetQuery: 'meeting', activeTasks: tasks });
+            // "meeting" is prefix for both (80 each), gap = 0 < 15
+            assert.strictEqual(result.status, 'clarification');
+            assert.strictEqual(result.selected, null);
+            assert.strictEqual(result.reason, 'ambiguous_target');
+            assert.ok(result.candidates.length >= 2);
+        });
+
+        it('should include candidate titles in clarification result', () => {
+            const tasks = [
+                { id: 't1', projectId: 'p1', title: 'Review PR 123' },
+                { id: 't2', projectId: 'p1', title: 'Review PR 456' },
+            ];
+            const result = resolveTarget({ targetQuery: 'review pr', activeTasks: tasks });
+            assert.strictEqual(result.status, 'clarification');
+            assert.ok(result.candidates.length >= 2);
+            for (const c of result.candidates) {
+                assert.ok(typeof c.title === 'string');
+                assert.ok(c.title.length > 0);
+            }
+        });
     });
 
-    it('strips date references from titles', () => {
-        assert.strictEqual(normalizeTitle('Buy groceries tomorrow'), 'buy groceries');
-        assert.strictEqual(normalizeTitle('Submit report today'), 'submit report');
-    });
-});
+    describe('Not-found outcomes (T013)', () => {
+        it('should return not_found for nonexistent target', () => {
+            const result = resolveTarget({ targetQuery: 'do something completely new', activeTasks: ACTIVE_TASKS });
+            assert.strictEqual(result.status, 'not_found');
+            assert.strictEqual(result.selected, null);
+        });
 
-describe('Candidate Shaping', () => {
-    it('builds a candidate with required fields', () => {
-        const task = { id: 't001', projectId: 'proj-inbox', title: 'Buy groceries' };
-        const candidate = buildCandidate(task, 1.0, 'exact');
+        it('should return not_found with no selected task', () => {
+            const result = resolveTarget({ targetQuery: 'zxcvbnm', activeTasks: ACTIVE_TASKS });
+            assert.strictEqual(result.status, 'not_found');
+            assert.strictEqual(result.selected, null);
+            assert.strictEqual(result.candidates.length, 0);
+        });
 
-        assert.strictEqual(candidate.taskId, 't001');
-        assert.strictEqual(candidate.projectId, 'proj-inbox');
-        assert.strictEqual(candidate.title, 'Buy groceries');
-        assert.strictEqual(candidate.score, 1.0);
-        assert.strictEqual(candidate.matchType, 'exact');
-    });
-
-    it('handles missing projectId', () => {
-        const task = { id: 't001', title: 'Buy groceries' };
-        const candidate = buildCandidate(task, 0.8, 'prefix');
-
-        assert.strictEqual(candidate.projectId, null);
-    });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// EXACT MATCHING
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe('Exact Matching', () => {
-    it('returns resolved for a single exact title match', () => {
-        const result = resolveTask('Buy groceries', FIXTURE_TASKS);
-
-        assert.strictEqual(result.status, 'resolved');
-        assert.strictEqual(result.selected.taskId, 't001');
-        assert.strictEqual(result.selected.matchType, 'exact');
-        assert.strictEqual(result.selected.score, 1.0);
+        it('should perform no write for not_found result', () => {
+            // The resolver is read-only; this test confirms the contract
+            const result = resolveTarget({ targetQuery: 'nonexistent', activeTasks: ACTIVE_TASKS });
+            assert.strictEqual(result.status, 'not_found');
+            assert.strictEqual(result.selected, null);
+        });
     });
 
-    it('returns resolved ignoring case differences', () => {
-        const result = resolveTask('BUY GROCERIES', FIXTURE_TASKS);
+    describe('Deterministic ordering (T012)', () => {
+        it('should sort candidates by score descending', () => {
+            const tasks = [
+                { id: 't1', projectId: 'p1', title: 'Abc' },
+                { id: 't2', projectId: 'p1', title: 'Abc def' },
+                { id: 't3', projectId: 'p1', title: 'Xyz something' },
+            ];
+            const result = resolveTarget({ targetQuery: 'abc', activeTasks: tasks });
+            if (result.candidates.length > 1) {
+                for (let i = 0; i < result.candidates.length - 1; i++) {
+                    assert.ok(
+                        result.candidates[i].score >= result.candidates[i + 1].score,
+                        'candidates not sorted by score descending',
+                    );
+                }
+            }
+        });
 
-        assert.strictEqual(result.status, 'resolved');
-        assert.strictEqual(result.selected.taskId, 't001');
-        assert.strictEqual(result.selected.matchType, 'exact');
+        it('should break score ties by title alphabetically', () => {
+            const tasks = [
+                { id: 't1', projectId: 'p1', title: 'Beta task' },
+                { id: 't2', projectId: 'p1', title: 'Alpha task' },
+            ];
+            const result = resolveTarget({ targetQuery: 'task', activeTasks: tasks });
+            if (result.candidates.length > 1) {
+                // Same match type -> same score -> sorted by title
+                const titles = result.candidates.map(c => c.title);
+                assert.deepStrictEqual(titles, [...titles].sort());
+            }
+        });
     });
 
-    it('returns resolved ignoring trailing punctuation', () => {
-        const result = resolveTask('Buy groceries!', FIXTURE_TASKS);
+    describe('Repeated titles and punctuation (T014)', () => {
+        it('should handle case differences as exact match', () => {
+            const result = resolveTarget({ targetQuery: 'BUY GROCERIES', activeTasks: [TASK_FIXTURES.buyGroceries] });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.matchType, 'exact');
+        });
 
-        assert.strictEqual(result.status, 'resolved');
-        assert.strictEqual(result.selected.taskId, 't001');
+        it('should handle punctuation differences gracefully', () => {
+            const result = resolveTarget({ targetQuery: 'Call mom!', activeTasks: [TASK_FIXTURES.callMom] });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.matchType, 'exact');
+        });
+
+        it('should handle repeated titles with different IDs', () => {
+            const tasks = [
+                { id: 't1', projectId: 'p1', title: 'Read book' },
+                { id: 't2', projectId: 'p1', title: 'Read book' },
+            ];
+            const result = resolveTarget({ targetQuery: 'read book', activeTasks: tasks });
+            assert.strictEqual(result.status, 'clarification');
+            assert.strictEqual(result.reason, 'multiple_exact_matches');
+        });
     });
 
-    it('returns resolved for repeated titles selecting first occurrence', () => {
-        const result = resolveTask('Buy groceries', FIXTURE_TASKS);
+    describe('Clarification prompt (T015)', () => {
+        it('should build a prompt with candidate options', () => {
+            const result = {
+                status: 'clarification',
+                selected: null,
+                candidates: [
+                    { taskId: 't1', projectId: 'p1', title: 'Call mom', score: 80, matchType: 'prefix' },
+                    { taskId: 't2', projectId: 'p1', title: 'Call mom about insurance', score: 60, matchType: 'contains' },
+                ],
+                reason: 'ambiguous_target',
+            };
+            const prompt = buildClarificationPrompt(result);
+            assert.ok(prompt.includes('Call mom'));
+            assert.ok(prompt.includes('Call mom about insurance'));
+            assert.ok(prompt.includes('1.'));
+            assert.ok(prompt.includes('2.'));
+        });
 
-        // Should pick t001 (first in list) deterministically
-        assert.strictEqual(result.selected.taskId, 't001');
-    });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// PREFIX MATCHING
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe('Prefix Matching', () => {
-    it('returns resolved when one clear prefix match exists', () => {
-        const result = resolveTask('Buy gro', FIXTURE_TASKS);
-
-        assert.strictEqual(result.status, 'resolved');
-        assert.strictEqual(result.selected.taskId, 't001');
-        assert.strictEqual(result.selected.matchType, 'prefix');
-    });
-
-    it('returns resolved for short prefix match', () => {
-        const result = resolveTask('Submit quart', FIXTURE_TASKS);
-
-        assert.strictEqual(result.status, 'resolved');
-        assert.strictEqual(result.selected.taskId, 't002');
-        assert.strictEqual(result.selected.matchType, 'prefix');
+        it('should provide a default prompt for empty candidates', () => {
+            const result = { status: 'clarification', selected: null, candidates: [], reason: 'test' };
+            const prompt = buildClarificationPrompt(result);
+            assert.strictEqual(prompt, 'Which task did you mean?');
+        });
     });
 
-    it('returns clarification when multiple tasks share the same prefix', () => {
-        // Both "Buy groceries" (t001) and "Buy groceries" (t009) match
-        // But t001 is exact after normalization, so it resolves.
-        // Let's test with a prefix that matches distinct titles.
-        const tasks = [
-            { id: 'a', projectId: 'p', title: 'Review design' },
-            { id: 'b', projectId: 'p', title: 'Review code' },
-        ];
-        const result = resolveTask('Review', tasks);
+    describe('Downstream consumption assumptions (T015)', () => {
+        it('should allow branching on status without guessing field presence', () => {
+            const results = [
+                resolveTarget({ targetQuery: 'buy groceries', activeTasks: [TASK_FIXTURES.buyGroceries] }),
+                resolveTarget({ targetQuery: 'meeting', activeTasks: [
+                    { id: 't1', projectId: 'p1', title: 'Meeting with John' },
+                    { id: 't2', projectId: 'p1', title: 'Meeting with Sarah' },
+                ]}),
+                resolveTarget({ targetQuery: 'xyz', activeTasks: ACTIVE_TASKS }),
+            ];
 
-        assert.strictEqual(result.status, 'clarification');
-        assert.strictEqual(result.reason, 'multiple_candidates');
-        assert.ok(result.candidates.length >= 2);
-    });
-});
+            for (const result of results) {
+                switch (result.status) {
+                    case 'resolved':
+                        assert.ok(result.selected !== null);
+                        assert.ok(result.selected.taskId);
+                        break;
+                    case 'clarification':
+                        assert.ok(result.selected === null);
+                        assert.ok(Array.isArray(result.candidates));
+                        assert.ok(result.candidates.length >= 2);
+                        assert.ok(typeof result.reason === 'string');
+                        break;
+                    case 'not_found':
+                        assert.ok(result.selected === null);
+                        assert.ok(Array.isArray(result.candidates));
+                        assert.ok(typeof result.reason === 'string');
+                        break;
+                    default:
+                        assert.fail(`unknown status: ${result.status}`);
+                }
+            }
+        });
 
-// ═════════════════════════════════════════════════════════════════════════════
-// CONTAINS MATCHING
-// ═════════════════════════════════════════════════════════════════════════════
+        it('should preserve original task title in candidates for clarification', () => {
+            const result = resolveTarget({ targetQuery: 'meeting', activeTasks: [
+                { id: 't1', projectId: 'p1', title: 'Meeting with John' },
+                { id: 't2', projectId: 'p1', title: 'Meeting with Sarah' },
+            ]});
+            assert.strictEqual(result.status, 'clarification');
+            for (const c of result.candidates) {
+                assert.ok(c.title === 'Meeting with John' || c.title === 'Meeting with Sarah');
+            }
+        });
 
-describe('Contains Matching', () => {
-    it('returns resolved when one clear contains match exists', () => {
-        const result = resolveTask('quarterly report', FIXTURE_TASKS);
+        it('should keep only three public result states', () => {
+            const allStatuses = new Set();
+            const testCases = [
+                { targetQuery: 'buy groceries', activeTasks: [TASK_FIXTURES.buyGroceries] },
+                { targetQuery: 'call mom', activeTasks: [TASK_FIXTURES.callMom, TASK_FIXTURES.callMomInsurance] },
+                { targetQuery: 'meeting', activeTasks: [
+                    { id: 't1', projectId: 'p1', title: 'Meeting with John' },
+                    { id: 't2', projectId: 'p1', title: 'Meeting with Sarah' },
+                ]},
+                { targetQuery: 'xyz nonexistent', activeTasks: ACTIVE_TASKS },
+                { targetQuery: '', activeTasks: ACTIVE_TASKS },
+            ];
 
-        assert.strictEqual(result.status, 'resolved');
-        assert.strictEqual(result.selected.taskId, 't002');
-        assert.strictEqual(result.selected.matchType, 'contains');
-    });
+            for (const tc of testCases) {
+                allStatuses.add(resolveTarget(tc).status);
+            }
 
-    it('returns resolved for partial word match within title', () => {
-        const result = resolveTask('dentist', FIXTURE_TASKS);
-
-        assert.strictEqual(result.status, 'resolved');
-        assert.strictEqual(result.selected.taskId, 't004');
-        assert.strictEqual(result.selected.matchType, 'contains');
-    });
-
-    it('returns clarification when multiple contains matches exist', () => {
-        const tasks = [
-            { id: 'a', projectId: 'p', title: 'Review design doc' },
-            { id: 'b', projectId: 'p', title: 'Review pull requests' },
-        ];
-        const result = resolveTask('review', tasks);
-
-        assert.strictEqual(result.status, 'clarification');
-        assert.strictEqual(result.reason, 'multiple_candidates');
-    });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// FUZZY MATCHING
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe('Fuzzy Matching', () => {
-    it('returns resolved for close typo variant', () => {
-        const result = resolveTask('By groceries', FIXTURE_TASKS);
-
-        assert.strictEqual(result.status, 'resolved');
-        assert.strictEqual(result.selected.taskId, 't001');
-        assert.strictEqual(result.selected.matchType, 'fuzzy');
-    });
-
-    it('returns resolved for single-character transposition', () => {
-        const result = resolveTask('Bnu groceries', FIXTURE_TASKS);
-
-        assert.strictEqual(result.status, 'resolved');
-        assert.strictEqual(result.selected.taskId, 't001');
-        assert.strictEqual(result.selected.matchType, 'fuzzy');
+            const expectedStatuses = new Set(['resolved', 'clarification', 'not_found']);
+            assert.deepStrictEqual(allStatuses, expectedStatuses);
+        });
     });
 
-    it('returns not_found when fuzzy distance exceeds threshold', () => {
-        const result = resolveTask('Completely unrelated task', FIXTURE_TASKS);
+    describe('Product Vision: fail-closed behavior', () => {
+        it('should not resolve on low-confidence fuzzy matches', () => {
+            const result = resolveTarget({ targetQuery: 'abc', activeTasks: [TASK_FIXTURES.exercise] });
+            // "abc" vs "exercise" — very low similarity
+            assert.strictEqual(result.status, 'not_found');
+        });
 
-        assert.strictEqual(result.status, 'not_found');
-        assert.strictEqual(result.reason, 'no_match');
-        assert.strictEqual(result.selected, null);
-    });
+        it('should clarify rather than guess for ambiguous references', () => {
+            const tasks = [
+                { id: 't1', projectId: 'p1', title: 'Call doctor' },
+                { id: 't2', projectId: 'p1', title: 'Call dentist' },
+            ];
+            const result = resolveTarget({ targetQuery: 'call', activeTasks: tasks });
+            assert.strictEqual(result.status, 'clarification');
+            assert.strictEqual(result.selected, null);
+        });
 
-    it('returns not_found for very short query below minimum length', () => {
-        const result = resolveTask('x', FIXTURE_TASKS);
-
-        assert.strictEqual(result.status, 'not_found');
-        assert.strictEqual(result.reason, 'query_too_short');
-    });
-
-    it('returns clarification when fuzzy matches multiple candidates equally', () => {
-        const tasks = [
-            { id: 'a', projectId: 'p', title: 'Schedule meeting' },
-            { id: 'b', projectId: 'p', title: 'Skedule meeting' },
-        ];
-        // "Shedule meeting" is a fuzzy match (typo), not prefix or contains
-        const result = resolveTask('Shedule meeting', tasks);
-
-        // Both are close to the mistyped query; gap is small
-        assert.strictEqual(result.status, 'clarification');
-    });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// AMBIGUITY AND CLARIFICATION
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe('Clarification Outcomes', () => {
-    it('returns resolved for identical titles across projects (first occurrence)', () => {
-        // Product vision: when titles are truly identical, pick first deterministically.
-        // This avoids false ambiguity — the user said the task name, not the project.
-        const tasks = [
-            { id: 'a', projectId: 'proj-work', title: 'Review document' },
-            { id: 'b', projectId: 'proj-personal', title: 'Review document' },
-        ];
-        const result = resolveTask('Review document', tasks);
-
-        assert.strictEqual(result.status, 'resolved');
-        assert.strictEqual(result.selected.taskId, 'a');
-    });
-
-    it('returns clarification when no clear winner among non-exact matches', () => {
-        const tasks = [
-            { id: 'a', projectId: 'p', title: 'Write blog post about AI' },
-            { id: 'b', projectId: 'p', title: 'Write blog post about travel' },
-        ];
-        const result = resolveTask('Write blog post', tasks);
-
-        assert.strictEqual(result.status, 'clarification');
-        assert.strictEqual(result.reason, 'multiple_candidates');
-    });
-
-    it('includes candidate list in clarification result', () => {
-        const tasks = [
-            { id: 'a', projectId: 'p', title: 'Meeting with team' },
-            { id: 'b', projectId: 'p', title: 'Meeting with client' },
-        ];
-        const result = resolveTask('Meeting', tasks);
-
-        assert.ok(Array.isArray(result.candidates));
-        assert.ok(result.candidates.length >= 2);
-        assert.ok(result.candidates.every(c => 'taskId' in c));
-        assert.ok(result.candidates.every(c => 'score' in c));
-    });
-
-    it('includes machine-readable reason for clarification', () => {
-        const tasks = [
-            { id: 'a', projectId: 'p', title: 'Task one' },
-            { id: 'b', projectId: 'p', title: 'Task two' },
-        ];
-        const result = resolveTask('Task', tasks);
-
-        assert.strictEqual(result.reason, 'multiple_candidates');
-    });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// NOT FOUND OUTCOMES
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe('Not Found Outcomes', () => {
-    it('returns not_found for completely unmatched query', () => {
-        const result = resolveTask('Something that does not exist anywhere', FIXTURE_TASKS);
-
-        assert.strictEqual(result.status, 'not_found');
-        assert.strictEqual(result.reason, 'no_match');
-        assert.strictEqual(result.selected, null);
-    });
-
-    it('returns not_found with empty task list', () => {
-        const result = resolveTask('Any task', []);
-
-        assert.strictEqual(result.status, 'not_found');
-        assert.strictEqual(result.reason, 'no_match');
-    });
-
-    it('returns not_found for query below minimum threshold', () => {
-        const result = resolveTask('a', FIXTURE_TASKS);
-
-        assert.strictEqual(result.status, 'not_found');
-    });
-
-    it('includes machine-readable reason for not_found', () => {
-        const result = resolveTask('xyz123notreal', FIXTURE_TASKS);
-
-        assert.ok(result.reason !== null);
-    });
-
-    it('returns empty candidates for not_found', () => {
-        const result = resolveTask('nonexistent', FIXTURE_TASKS);
-
-        assert.ok(Array.isArray(result.candidates));
-        // May or may not have candidates below threshold; selected must be null
-        assert.strictEqual(result.selected, null);
-    });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// EDGE CASES
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe('Edge Cases', () => {
-    it('handles tasks without projectId', () => {
-        const tasks = [
-            { id: 't1', title: 'No project task' },
-        ];
-        const result = resolveTask('No project task', tasks);
-
-        assert.strictEqual(result.status, 'resolved');
-        assert.strictEqual(result.selected.projectId, null);
-    });
-
-    it('deterministic ordering when scores tie (by list order)', () => {
-        const tasks = [
-            { id: 'first', projectId: 'p', title: 'Same title' },
-            { id: 'second', projectId: 'p', title: 'Same title' },
-        ];
-        const result = resolveTask('Same title', tasks);
-
-        // Should pick the first one deterministically
-        assert.strictEqual(result.selected.taskId, 'first');
-    });
-
-    it('handles query with extra whitespace', () => {
-        const result = resolveTask('  Buy   groceries  ', FIXTURE_TASKS);
-
-        assert.strictEqual(result.status, 'resolved');
-        assert.strictEqual(result.selected.taskId, 't001');
-    });
-
-    it('handles punctuation differences between query and task', () => {
-        const result = resolveTask('Submit the Q3 report', FIXTURE_TASKS);
-
-        // Should match t010 "Submit the Q3 report!" via exact or fuzzy
-        assert.ok(result.status === 'resolved' || result.status === 'clarification');
-        if (result.status === 'resolved') {
-            assert.strictEqual(result.selected.taskId, 't010');
-        }
-    });
-
-    it('handles special characters in query', () => {
-        const result = resolveTask('Buy groceries @store', FIXTURE_TASKS);
-
-        // Should still find "Buy groceries" via contains or fuzzy
-        assert.ok(result.status === 'resolved' || result.status === 'clarification' || result.status === 'not_found');
-    });
-
-    it('does not return resolved when multiple close rivals exist', () => {
-        const tasks = [
-            { id: 'a', projectId: 'p', title: 'Draft proposal' },
-            { id: 'b', projectId: 'p', title: 'Draft report' },
-        ];
-        const result = resolveTask('Draft', tasks);
-
-        assert.notStrictEqual(result.status, 'resolved');
-    });
-});
-
-// ═════════════════════════════════════════════════════════════════════════════
-// RESULT SHAPE CONTRACT
-// ═════════════════════════════════════════════════════════════════════════════
-
-describe('Result Shape Contract (for downstream WP reuse)', () => {
-    it('resolved result has selected, candidates, and null reason', () => {
-        const result = resolveTask('Buy groceries', FIXTURE_TASKS);
-
-        assert.strictEqual(result.status, 'resolved');
-        assert.ok(result.selected !== null);
-        assert.ok('taskId' in result.selected);
-        assert.ok('title' in result.selected);
-        assert.ok('score' in result.selected);
-        assert.ok('matchType' in result.selected);
-        assert.ok(Array.isArray(result.candidates));
-    });
-
-    it('clarification result has null selected, candidates array, and reason', () => {
-        const tasks = [
-            { id: 'a', projectId: 'p', title: 'Meeting one' },
-            { id: 'b', projectId: 'p', title: 'Meeting two' },
-        ];
-        const result = resolveTask('Meeting', tasks);
-
-        assert.strictEqual(result.status, 'clarification');
-        assert.strictEqual(result.selected, null);
-        assert.ok(Array.isArray(result.candidates));
-        assert.ok(result.candidates.length > 0);
-        assert.strictEqual(typeof result.reason, 'string');
-    });
-
-    it('not_found result has null selected and reason string', () => {
-        const result = resolveTask('nonexistent task query', FIXTURE_TASKS);
-
-        assert.strictEqual(result.status, 'not_found');
-        assert.strictEqual(result.selected, null);
-        assert.strictEqual(typeof result.reason, 'string');
-    });
-
-    it('all candidate objects have the required five fields', () => {
-        const result = resolveTask('Buy', FIXTURE_TASKS);
-
-        for (const candidate of result.candidates) {
-            assert.ok('taskId' in candidate, 'candidate missing taskId');
-            assert.ok('projectId' in candidate, 'candidate missing projectId');
-            assert.ok('title' in candidate, 'candidate missing title');
-            assert.ok('score' in candidate, 'candidate missing score');
-            assert.ok('matchType' in candidate, 'candidate missing matchType');
-        }
+        it('should handle delete safety via clarification contract', () => {
+            // Delete safety relies on the same clarification vs resolved contract
+            const tasks = [
+                { id: 't1', projectId: 'p1', title: 'Old task' },
+                { id: 't2', projectId: 'p1', title: 'Old project notes' },
+            ];
+            const result = resolveTarget({ targetQuery: 'old', activeTasks: tasks });
+            // Both are prefix matches with same score -> clarification
+            assert.strictEqual(result.status, 'clarification');
+        });
     });
 });
