@@ -46,11 +46,39 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 **TickTick Checklist API**: Expected to be supported. Task creation endpoint (`POST /task`) accepts `items` array with `{title, status}` objects based on API structure analysis. No documented item limit. `desc` field provides checklist-level context. No separate checklist endpoint exists — checklists are inline in the task object. **Note**: Not yet used in production code; verify with a live API call before building checklist features (spec 005).
 
 ## Project Structure & Module Organization
-- `server.js` boots Express, the Telegram bot, the scheduler, and TickTick/Gemini clients.
-- `bot/` contains Telegram-facing behavior: `commands.js`, `callbacks.js`, and formatting helpers in `utils.js`.
-- `services/` contains core logic and integrations. Keep task execution in `ticktick-adapter.js`, normalization in `normalizer.js`, and orchestration in `pipeline.js`.
-- `tests/` holds regression scripts. `kitty-specs/` stores specs, plans, and work-package notes.
-- Deployment files live at the root: `Dockerfile` and `render.yaml`. Local context starts from `services/user_context.example.js`.
+
+### Service modules (source of truth for business logic)
+- `services/pipeline.js` — Orchestrates the structured write path: message → AX intent extraction → deterministic normalization → TickTick adapter execution. This is the **only** path for new task-writing flows.
+- `services/ax-intent.js` — Extracts structured `Intent Action` objects from natural language using Gemini via the AX framework (@ax-llm/ax).
+- `services/normalizer.js` — Deterministic cleaner that maps intent actions to TickTick-compatible fields (title truncation, filler stripping, repeatHint → RRULE, projectHint → project ID).
+- `services/ticktick-adapter.js` — Executes normalized actions against the TickTick REST API (create/update/complete/delete). Handles retries, OAuth refresh, and project-move rollback.
+- `services/ticktick.js` — Low-level TickTick API client with OAuth2 token management and CRUD operations.
+- `services/gemini.js` — Gemini AI client for briefing, weekly digest, reorg proposals, free-form chat, and intent extraction. Manages API key rotation.
+- `services/scheduler.js` — Cron-driven read-only jobs: proactive TickTick polling, daily morning briefings, weekly accountability digests, and store pruning.
+- `services/store.js` — State persistence layer. Redis-backed when `REDIS_URL` is set; falls back to local JSON file for development.
+- `services/pipeline-context.js` — Carries structured context through the pipeline execution stages.
+- `services/pipeline-observability.js` — Pipeline execution metrics and logging.
+- `services/schemas.js` — Structured data schemas for intent actions and normalized actions.
+- `services/shared-utils.js` — Shared utility functions used across service modules.
+- `services/task-resolver.js` — Resolves task references from natural language into TickTick task IDs.
+- `services/user-settings.js` — User-level configuration (timezone, preferences).
+- `services/user_context.js` — **Gitignored.** Personal behavioral context — goals, patterns, challenges. Create from `user_context.example.js`.
+- `services/summary-surfaces/` — (If present) Summary generation for various output surfaces.
+
+### Bot module (Telegram-facing behavior only)
+- `bot/index.js` — Bot factory. Creates and configures the Telegraf bot instance.
+- `bot/commands.js` — Slash command handlers. **Must not** call the TickTick client directly for write operations — always route through the pipeline.
+- `bot/callbacks.js` — Inline keyboard callback handlers (approve/skip/drop/reorg flows).
+- `bot/utils.js` — Card builders, message formatters, priority maps, and schedule display logic.
+
+### Integration rule
+**Bot handlers must never bypass the pipeline for new task-writing flows.** All mutations to TickTick state must flow through `pipeline.js` → `normalizer.js` → `ticktick-adapter.js`. Bot handlers may read from TickTick directly only for display purposes (e.g., `/pending`, `/status`).
+
+### Other directories
+- `tests/` — Regression and unit tests.
+- `kitty-specs/` — Spec Kitty multi-mission artifact directory (specs, plans, work packages, and event-sourced status tracking).
+- Root deployment files: `Dockerfile`, `render.yaml`.
+- Local context template: `services/user_context.example.js`.
 
 ## Build, Test, and Development Commands
 - `npm install` installs dependencies from `package-lock.json`.
@@ -81,6 +109,17 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - Never commit `.env`, `services/user_context.js`, OAuth tokens, Telegram chat IDs, or Redis credentials.
 - Start local setup from `.env.example` and `services/user_context.example.js`.
 - When adding a required environment variable, update both `README.md` and `render.yaml`.
+
+## Spec Kitty — Multi-Mission Artifacts
+
+The `kitty-specs/` directory is a **multi-mission artifact directory**. Each subdirectory (`kitty-specs/001-.../`, `kitty-specs/002-.../`, etc.) contains an independent mission with its own spec, plan, work packages, and event-sourced status history (`status.events.jsonl`).
+
+**Key principles**:
+- Multiple missions coexist. Not all are active simultaneously — check `status.events.jsonl` per mission for WP lane states.
+- WP state is tracked exclusively via `status.events.jsonl` files in each feature directory.
+- Planning commands (`spec-kitty specify`, `spec-kitty plan`) work in the main repository (no worktrees).
+- Implementation commands (`spec-kitty implement WP## --mission <slug>`) create isolated worktrees for execution.
+- Command naming is current: `spec-kitty charter` (not `constitution`), `--mission` flag (not `--feature`).
 
 ## Spec Kitty v3.1.1 Notes (Latest - Upgraded 2026-04-09)
 - **CLI Version**: Upgraded from v3.0.1 to v3.1.1 (2026-04-09)

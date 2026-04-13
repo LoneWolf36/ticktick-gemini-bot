@@ -146,18 +146,25 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 3. The included `render.yaml` blueprint configures the web service
 4. Set these env vars in Render's dashboard:
 
-| Variable | Value |
-|----------|-------|
-| `TELEGRAM_BOT_TOKEN` | Your bot token |
-| `TELEGRAM_CHAT_ID` | Your Telegram chat ID |
-| `GEMINI_API_KEY` | Your Gemini API key |
-| `TICKTICK_CLIENT_ID` | Your TickTick app client ID |
-| `TICKTICK_CLIENT_SECRET` | Your TickTick app secret |
-| `TICKTICK_ACCESS_TOKEN` | OAuth token (run locally first, copy from console) |
-| `USER_CONTEXT` | Your personal context (the content of `user_context.js`) |
-| `REDIS_URL` | Redis connection URL (for persistent storage) |
-| `WEBHOOK_URL` | Your Render URL (e.g., `https://your-app.onrender.com`) |
-| `TICKTICK_REDIRECT_URI` | Same as WEBHOOK_URL + `/` |
+| Variable | Required | Value |
+|----------|----------|-------|
+| `TICKTICK_CLIENT_ID` | Yes | Your TickTick app client ID |
+| `TICKTICK_CLIENT_SECRET` | Yes | Your TickTick app secret |
+| `TICKTICK_REDIRECT_URI` | Yes | Same as WEBHOOK_URL + `/` |
+| `TICKTICK_ACCESS_TOKEN` | Yes | OAuth token (run locally first, copy from console) |
+| `TELEGRAM_BOT_TOKEN` | Yes | Your bot token |
+| `TELEGRAM_CHAT_ID` | Yes | Your Telegram chat ID |
+| `GEMINI_API_KEYS` | Yes | Comma-separated Gemini API keys (preferred for rotation) |
+| `GEMINI_API_KEY` | Fallback | Single key (used only if `GEMINI_API_KEYS` is not set) |
+| `REDIS_URL` | Yes on Render | Redis connection URL (required due to ephemeral filesystem) |
+| `USER_CONTEXT` | Optional | Your personal context (the content of `user_context.js`) |
+| `WEBHOOK_URL` | Yes (webhook) | Your Render URL (e.g., `https://your-app.onrender.com`) |
+| `BOT_MODE` | No | `webhook` for Render (default in render.yaml) |
+| `PORT` | No | `10000` for Render (default in render.yaml) |
+| `USER_TIMEZONE` | No | Your timezone (default: `Europe/Dublin`) |
+| `AUTO_APPLY_LIFE_ADMIN` | No | Auto-apply life-admin tasks (default: `true`) |
+| `AUTO_APPLY_DROPS` | No | Auto-apply drop candidates (default: `false`) |
+| `AUTO_APPLY_MODE` | No | `metadata-only` or `full` (default: `metadata-only`) |
 
 5. Update the redirect URI at [developer.ticktick.com](https://developer.ticktick.com) to match
 6. Set up [UptimeRobot](https://uptimerobot.com) to ping `/health` every 5 min (keeps free tier awake)

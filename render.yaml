@@ -10,35 +10,47 @@ services:
     # Build stage includes: npm install && npm run check:duplicates
     healthCheckPath: /health
     envVars:
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: TELEGRAM_CHAT_ID
-        sync: false
-      - key: GEMINI_API_KEY
-        sync: false
+      # Required — TickTick OAuth credentials
       - key: TICKTICK_CLIENT_ID
         sync: false
       - key: TICKTICK_CLIENT_SECRET
         sync: false
       - key: TICKTICK_REDIRECT_URI
         sync: false
+      # Required — TickTick access token (obtain by running OAuth locally first)
       - key: TICKTICK_ACCESS_TOKEN
         sync: false
+      # Required — Telegram credentials
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      # Required — Gemini API key (singular, legacy fallback)
+      # For key rotation, use GEMINI_API_KEYS (comma-separated) instead
+      - key: GEMINI_API_KEY
+        sync: false
+      # Optional — Redis for persistent storage (required on Render due to ephemeral filesystem)
       - key: REDIS_URL
         sync: false
+      # Optional — Personal behavioral context (can also be set via user_context.js locally)
       - key: USER_CONTEXT
         sync: false
+      # Bot mode: 'webhook' for Render deployment
       - key: BOT_MODE
         value: webhook
+      # Required for webhook mode — your Render service URL
       - key: WEBHOOK_URL
         sync: false      # Set to your Render URL: https://ticktick-gemini-bot.onrender.com
+      # Optional — timezone for scheduling (default: Europe/Dublin)
       - key: USER_TIMEZONE
         value: Europe/Dublin
+      # Optional — auto-apply behavior (defaults shown)
       - key: AUTO_APPLY_LIFE_ADMIN
         value: "true"
       - key: AUTO_APPLY_DROPS
         value: "false"
       - key: AUTO_APPLY_MODE
         value: metadata-only
+      # Optional — Render uses port 10000 by default
       - key: PORT
-        value: "10000"   # Render uses port 10000 by default
+        value: "10000"
