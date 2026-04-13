@@ -377,17 +377,13 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
 
             console.log(`[Pipeline:${context.requestId}] Processing message: "${context.userMessage.substring(0, 50)}..."`);
 
-            const availableProjectNames = context.availableProjects
-                .map(p => p?.name)
-                .filter(name => typeof name === 'string' && name.trim());
-
             const axStartedAt = Date.now();
             let intents;
 
             try {
                 intents = await axIntent.extractIntents(context.userMessage, {
                     currentDate: context.currentDate,
-                    availableProjects: availableProjectNames,
+                    availableProjects: context.availableProjectNames,
                     requestId: context.requestId,
                 });
             } catch (error) {
