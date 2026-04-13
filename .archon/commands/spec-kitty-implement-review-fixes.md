@@ -1,11 +1,29 @@
 ---
-description: Implement fixes from review findings
+description: Implement fixes from review findings (supports conditional skip)
 argument-hint: <mission-slug>
 ---
 
 # Implement Review Fixes
 
 **Input**: $ARGUMENTS
+
+---
+
+## Conditional Gate Check
+
+**CRITICAL**: This command may be invoked after `spec-kitty-check-validation-result`. Before doing any work, check the upstream validation status:
+
+1. Read the output of the previous node (`spec-kitty-check-validation-result`)
+2. If the output contains `"action": "skip_fallback"` or `"status": "passed"`:
+   - **Exit immediately** — no fixes are needed
+   - Output: `{"status": "skipped", "reason": "validation passed, no fixes needed"}`
+   - Do NOT read synthesis files, do NOT modify code, do NOT commit
+3. If the output contains `"status": "failed"` or `"action": "run_fixes"`:
+   - Proceed to Phase 1 below
+4. If no upstream output is available (direct invocation):
+   - Proceed to Phase 1 below (legacy behavior)
+
+**This early-exit check MUST complete in < 5 seconds.** It is the difference between a 9-minute no-op and instant skip.
 
 ---
 
