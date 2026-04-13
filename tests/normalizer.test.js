@@ -6,7 +6,7 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeAction, normalizeActions } from '../services/normalizer.js';
+import { normalizeAction, normalizeActions, normalizeActionBatch, validateMutationBatch } from '../services/normalizer.js';
 
 describe('Normalizer Module', () => {
     describe('normalizeAction', () => {
@@ -694,13 +694,401 @@ describe('Validation Tests', () => {
     });
 
     it('should respect confidence threshold', () => {
-        const result = normalizeAction({ 
-            type: 'create', 
+        const result = normalizeAction({
+            type: 'create',
             title: 'Task',
             confidence: 0.3
         });
-        
+
         assert.strictEqual(result.valid, false);
         assert.ok(result.validationErrors.some(e => e.includes('Confidence')));
+    });
+});
+
+// ============================================================
+// WP03: Mutation Normalizer Tests (T034)
+// ============================================================
+
+describe('WP03: Mutation Action Normalization', () => {
+    describe('Resolved update action', () => {
+        it('should normalize a resolved update action with taskId', () => {
+            const result = normalizeAction({
+                type: 'update',
+                targetQuery: 'buy groceries',
+                title: null,
+                content: null,
+                priority: null,
+                dueDate: 'tomorrow',
+                confidence: 0.9
+            }, {
+                resolvedTask: { id: 'abc123', projectId: 'proj456', title: 'Buy groceries' },
+                existingTaskContent: 'Get milk, eggs, and bread'
+            });
+
+            assert.strictEqual(result.type, 'update');
+            assert.strictEqual(result.taskId, 'abc123');
+            assert.strictEqual(result.originalProjectId, 'proj456');
+            assert.strictEqual(result.targetQuery, 'buy groceries');
+            assert.ok(result.valid);
+            assert.strictEqual(result.validationErrors.length, 0);
+        });
+
+        it('should preserve existing content when update has no new content', () => {
+            const result = normalizeAction({
+                type: 'update',
+                targetQuery: 'buy groceries',
+                title: null,
+                content: null,
+                confidence: 0.9
+            }, {
+                resolvedTask: { id: 'abc123', projectId: null, title: 'Buy groceries' },
+                existingTaskContent: 'Detailed shopping list with quantities'
+            });
+
+            assert.strictEqual(result.content, 'Detailed shopping list with quantities');
+        });
+
+        it('should preserve existing content when update content is just filler', () => {
+            const result = normalizeAction({
+                type: 'update',
+                targetQuery: 'buy groceries',
+                content: "You've got this! Stay focused!",
+                confidence: 0.9
+            }, {
+                resolvedTask: { id: 'abc123', projectId: null, title: 'Buy groceries' },
+                existingTaskContent: 'Original detailed instructions'
+            });
+
+            assert.strictEqual(result.content, 'Original detailed instructions');
+        });
+
+        it('should append new content when it adds value', () => {
+            const result = normalizeAction({
+                type: 'update',
+                targetQuery: 'buy groceries',
+                content: 'Note: Also check for organic produce section',
+                confidence: 0.9
+            }, {
+                resolvedTask: { id: 'abc123', projectId: null, title: 'Buy groceries' },
+                existingTaskContent: 'Get milk, eggs, bread'
+            });
+
+            assert.ok(result.content.includes('Get milk, eggs, bread'));
+            assert.ok(result.content.includes('---'));
+            assert.ok(result.content.includes('organic produce'));
+        });
+
+        it('should use resolved task title when no new title is provided', () => {
+            const result = normalizeAction({
+                type: 'update',
+                targetQuery: 'buy groceries',
+                title: null,
+                confidence: 0.9
+            }, {
+                resolvedTask: { id: 'abc123', projectId: null, title: 'Buy groceries' }
+            });
+
+            assert.strictEqual(result.title, 'Buy groceries');
+        });
+
+        it('should apply new title when explicitly provided in rename', () => {
+            const result = normalizeAction({
+                type: 'update',
+                targetQuery: 'netflix task',
+                title: 'Finish system design notes',
+                confidence: 0.9
+            }, {
+                resolvedTask: { id: 'abc123', projectId: null, title: 'Watch Netflix tutorial' }
+            });
+
+            assert.strictEqual(result.title, 'Finish system design notes');
+        });
+    });
+
+    describe('Resolved complete action', () => {
+        it('should normalize a resolved complete action with taskId', () => {
+            const result = normalizeAction({
+                type: 'complete',
+                targetQuery: 'buy groceries',
+                confidence: 0.95
+            }, {
+                resolvedTask: { id: 'abc123', projectId: 'proj456', title: 'Buy groceries' }
+            });
+
+            assert.strictEqual(result.type, 'complete');
+            assert.strictEqual(result.taskId, 'abc123');
+            assert.strictEqual(result.targetQuery, 'buy groceries');
+            assert.ok(result.valid);
+        });
+    });
+
+    describe('Resolved delete action', () => {
+        it('should normalize a resolved delete action with taskId', () => {
+            const result = normalizeAction({
+                type: 'delete',
+                targetQuery: 'old wifi task',
+                confidence: 0.9
+            }, {
+                resolvedTask: { id: 'abc123', projectId: null, title: 'Old wifi task' }
+            });
+
+            assert.strictEqual(result.type, 'delete');
+            assert.strictEqual(result.taskId, 'abc123');
+            assert.strictEqual(result.targetQuery, 'old wifi task');
+            assert.ok(result.valid);
+        });
+    });
+});
+
+describe('WP03: Mutation Missing Task Context (T032 — Fail Closed)', () => {
+    it('should reject update without resolved taskId', () => {
+        const result = normalizeAction({
+            type: 'update',
+            targetQuery: 'some task',
+            title: 'New title',
+            confidence: 0.9
+        });
+
+        assert.strictEqual(result.valid, false);
+        assert.ok(result.validationErrors.some(e => e.includes('Missing taskId')));
+        assert.ok(result.validationErrors.some(e => e.includes('resolved task context')));
+    });
+
+    it('should reject complete without resolved taskId', () => {
+        const result = normalizeAction({
+            type: 'complete',
+            targetQuery: 'done task',
+            confidence: 0.9
+        });
+
+        assert.strictEqual(result.valid, false);
+        assert.ok(result.validationErrors.some(e => e.includes('Missing taskId')));
+    });
+
+    it('should reject delete without resolved taskId', () => {
+        const result = normalizeAction({
+            type: 'delete',
+            targetQuery: 'delete task',
+            confidence: 0.9
+        });
+
+        assert.strictEqual(result.valid, false);
+        assert.ok(result.validationErrors.some(e => e.includes('Missing taskId')));
+    });
+
+    it('should pass validation when taskId is resolved via options.existingTask', () => {
+        const result = normalizeAction({
+            type: 'update',
+            targetQuery: 'buy groceries',
+            dueDate: 'tomorrow',
+            confidence: 0.9
+        }, {
+            existingTask: { id: 'task789', projectId: 'proj123' }
+        });
+
+        assert.strictEqual(result.taskId, 'task789');
+        assert.ok(result.valid);
+    });
+});
+
+describe('WP03: Batch Validation — Unsupported Mutation Shapes (T033)', () => {
+    describe('validateMutationBatch', () => {
+        it('should reject empty batches', () => {
+            const result = validateMutationBatch([]);
+            assert.strictEqual(result.valid, false);
+            assert.strictEqual(result.reason, 'empty_batch');
+        });
+
+        it('should reject null/undefined batches', () => {
+            const result1 = validateMutationBatch(null);
+            assert.strictEqual(result1.valid, false);
+
+            const result2 = validateMutationBatch(undefined);
+            assert.strictEqual(result2.valid, false);
+        });
+
+        it('should accept single create action', () => {
+            const result = validateMutationBatch([
+                { type: 'create', title: 'New task' }
+            ]);
+            assert.strictEqual(result.valid, true);
+            assert.strictEqual(result.reason, null);
+        });
+
+        it('should accept single update action', () => {
+            const result = validateMutationBatch([
+                { type: 'update', taskId: 'abc123' }
+            ]);
+            assert.strictEqual(result.valid, true);
+        });
+
+        it('should reject mixed create + mutation', () => {
+            const result = validateMutationBatch([
+                { type: 'create', title: 'New task' },
+                { type: 'update', taskId: 'abc123' }
+            ]);
+            assert.strictEqual(result.valid, false);
+            assert.strictEqual(result.reason, 'mixed_create_and_mutation');
+        });
+
+        it('should reject multiple mutations', () => {
+            const result = validateMutationBatch([
+                { type: 'update', taskId: 'abc123' },
+                { type: 'complete', taskId: 'def456' }
+            ]);
+            assert.strictEqual(result.valid, false);
+            assert.strictEqual(result.reason, 'multiple_mutations');
+        });
+
+        it('should reject multiple deletes', () => {
+            const result = validateMutationBatch([
+                { type: 'delete', taskId: 'abc123' },
+                { type: 'delete', taskId: 'def456' }
+            ]);
+            assert.strictEqual(result.valid, false);
+            assert.strictEqual(result.reason, 'multiple_mutations');
+        });
+
+        it('should accept multiple creates (multi-task create is in scope)', () => {
+            const result = validateMutationBatch([
+                { type: 'create', title: 'Task one' },
+                { type: 'create', title: 'Task two' }
+            ]);
+            assert.strictEqual(result.valid, true);
+        });
+    });
+
+    describe('normalizeActionBatch', () => {
+        it('should return batchError for mixed create+mutation', () => {
+            const { actions, batchError } = normalizeActionBatch([
+                { type: 'create', title: 'New task' },
+                { type: 'update', taskId: 'abc123', targetQuery: 'old task' }
+            ]);
+
+            assert.strictEqual(batchError, 'mixed_create_and_mutation');
+            // All actions should be marked invalid
+            assert.ok(actions.every(a => !a.valid));
+            assert.ok(actions.every(a =>
+                a.validationErrors.some(e => e.includes('Batch validation failed'))
+            ));
+        });
+
+        it('should return batchError for multiple mutations', () => {
+            const { actions, batchError } = normalizeActionBatch([
+                { type: 'update', taskId: 'abc123', targetQuery: 'task one' },
+                { type: 'complete', taskId: 'def456', targetQuery: 'task two' }
+            ]);
+
+            assert.strictEqual(batchError, 'multiple_mutations');
+            assert.ok(actions.every(a => !a.valid));
+        });
+
+        it('should return null batchError for valid single mutation', () => {
+            const { actions, batchError } = normalizeActionBatch([
+                { type: 'update', taskId: 'abc123', targetQuery: 'buy groceries', dueDate: 'tomorrow', confidence: 0.9 }
+            ], {
+                resolvedTask: { id: 'abc123', title: 'Buy groceries' }
+            });
+
+            assert.strictEqual(batchError, null);
+            assert.ok(actions[0].valid);
+        });
+
+        it('should return null batchError for multiple creates', () => {
+            const { actions, batchError } = normalizeActionBatch([
+                { type: 'create', title: 'Task one' },
+                { type: 'create', title: 'Task two' }
+            ]);
+
+            assert.strictEqual(batchError, null);
+            assert.strictEqual(actions.length, 2);
+        });
+    });
+});
+
+describe('WP03: Mutation Content Preservation (T033)', () => {
+    it('should preserve existing content on rename-only update', () => {
+        const result = normalizeAction({
+            type: 'update',
+            targetQuery: 'buy groceries',
+            title: 'Buy groceries and snacks',
+            content: null,
+            confidence: 0.9
+        }, {
+            resolvedTask: { id: 'abc123', title: 'Buy groceries' },
+            existingTaskContent: 'Milk, eggs, bread, cheese, and yogurt'
+        });
+
+        assert.strictEqual(result.content, 'Milk, eggs, bread, cheese, and yogurt');
+    });
+
+    it('should preserve existing content on priority-only update', () => {
+        const result = normalizeAction({
+            type: 'update',
+            targetQuery: 'buy groceries',
+            priority: 1,
+            content: null,
+            confidence: 0.9
+        }, {
+            resolvedTask: { id: 'abc123', title: 'Buy groceries' },
+            existingTaskContent: 'Detailed shopping list'
+        });
+
+        assert.strictEqual(result.content, 'Detailed shopping list');
+    });
+
+    it('should preserve existing content on due-date-only update', () => {
+        const result = normalizeAction({
+            type: 'update',
+            targetQuery: 'buy groceries',
+            dueDate: 'tomorrow',
+            content: null,
+            confidence: 0.9
+        }, {
+            resolvedTask: { id: 'abc123', title: 'Buy groceries' },
+            existingTaskContent: 'Original instructions'
+        });
+
+        assert.strictEqual(result.content, 'Original instructions');
+    });
+
+    it('should not let update content wipe existing when new content is noise', () => {
+        const result = normalizeAction({
+            type: 'update',
+            targetQuery: 'buy groceries',
+            content: "This is important! Stay focused on your goals.",
+            confidence: 0.9
+        }, {
+            resolvedTask: { id: 'abc123', title: 'Buy groceries' },
+            existingTaskContent: 'Get milk and eggs from the corner store'
+        });
+
+        assert.strictEqual(result.content, 'Get milk and eggs from the corner store');
+    });
+});
+
+describe('WP03: Mutation targetQuery Passthrough', () => {
+    it('should include targetQuery on mutation actions', () => {
+        const result = normalizeAction({
+            type: 'update',
+            targetQuery: 'the meeting about project',
+            dueDate: 'friday',
+            confidence: 0.85
+        }, {
+            resolvedTask: { id: 'mtg001', title: 'Project sync meeting' }
+        });
+
+        assert.strictEqual(result.targetQuery, 'the meeting about project');
+    });
+
+    it('should set targetQuery to null on create actions', () => {
+        const result = normalizeAction({
+            type: 'create',
+            title: 'Schedule meeting',
+            targetQuery: 'should not appear',
+            confidence: 0.9
+        });
+
+        assert.strictEqual(result.targetQuery, null);
     });
 });
