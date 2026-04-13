@@ -24,14 +24,15 @@ const RATE_LIMIT_WINDOW_MS = 30_000;  // 30-second window
 const RATE_LIMIT_MAX = 1;              // 1 heavy command per window
 const HEAVY_COMMANDS = new Set(['scan', 'briefing', 'weekly', 'review', 'reorg']);
 
-const rateLimitWindows = new Map(); // userId -> { count, resetAt }
+const rateLimitWindows = new Map(); // `${userId}:${command}` -> { count, resetAt }
 
 function isRateLimited(userId, command) {
     if (!HEAVY_COMMANDS.has(command)) return false;
+    const key = `${userId}:${command}`;
     const now = Date.now();
-    const entry = rateLimitWindows.get(userId);
+    const entry = rateLimitWindows.get(key);
     if (!entry || now >= entry.resetAt) {
-        rateLimitWindows.set(userId, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+        rateLimitWindows.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
         return false;
     }
     entry.count += 1;
@@ -39,18 +40,24 @@ function isRateLimited(userId, command) {
     return false;
 }
 
-function rateLimitRemaining(userId) {
-    const entry = rateLimitWindows.get(userId);
+function rateLimitRemaining(userId, command) {
+    const key = `${userId}:${command}`;
+    const entry = rateLimitWindows.get(key);
     if (!entry || Date.now() >= entry.resetAt) return RATE_LIMIT_MAX;
     return Math.max(0, RATE_LIMIT_MAX - entry.count);
+}
+
+/** Reset rate limit state — useful for test isolation */
+export function resetRateLimits() {
+    rateLimitWindows.clear();
 }
 
 /** Middleware-style guard — returns true if request should be rejected */
 export function guardRateLimit(ctx, command) {
     const userId = ctx.from?.id ?? ctx.chat?.id;
     if (!userId || !isRateLimited(userId, command)) return false;
-    const remaining = rateLimitRemaining(userId);
-    const waitSec = Math.ceil((rateLimitWindows.get(userId)?.resetAt - Date.now()) / 1000);
+    const remaining = rateLimitRemaining(userId, command);
+    const waitSec = Math.ceil((rateLimitWindows.get(`${userId}:${command}`)?.resetAt - Date.now()) / 1000);
     ctx.reply(`⏳ Slow down — ${command} can be run once every ${RATE_LIMIT_WINDOW_MS / 1000}s. Try again in ~${waitSec}s.`);
     return true;
 }

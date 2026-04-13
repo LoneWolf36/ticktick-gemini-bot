@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { AxGen } from '@ax-llm/ax';
 
 import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../services/shared-utils.js';
-import { executeActions, registerCommands } from '../bot/commands.js';
+import { executeActions, registerCommands, resetRateLimits } from '../bot/commands.js';
 import { GeminiAnalyzer, buildUrgentModePromptNote } from '../services/gemini.js';
 import { createAxIntent, detectUrgentModeIntent, QuotaExhaustedError } from '../services/ax-intent.js';
 import { createPipeline } from '../services/pipeline.js';
@@ -726,6 +726,7 @@ test('registerCommands allows free-form urgent toggles before TickTick auth', as
 });
 
 test('registerCommands uses shared briefing surface and preserves urgent reminder', async () => {
+  resetRateLimits();
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
     command(name, handler) {
@@ -813,6 +814,7 @@ test('registerCommands uses shared briefing surface and preserves urgent reminde
 });
 
 test('registerCommands uses shared weekly surface and sends formatted output', async () => {
+  resetRateLimits();
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
     command(name, handler) {
@@ -903,6 +905,7 @@ test('registerCommands uses shared weekly surface and sends formatted output', a
 });
 
 test('registerCommands short-circuits briefing and weekly when quota is exhausted', async () => {
+  resetRateLimits();
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
     command(name, handler) {
