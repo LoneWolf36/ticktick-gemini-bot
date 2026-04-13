@@ -3205,6 +3205,277 @@ ACCOUNTABILITY STYLE:
     console.error(err.message);
   }
 
+  // ─── WP06: T017 — Observability event structure assertions ───
+
+  try {
+    const telemetryEvents = [];
+    const obs = createPipelineObservability({
+      eventSink: async (event) => { telemetryEvents.push(event); },
+      logger: null,
+    });
+
+    const harness = createPipelineHarness({
+      intents: [{ type: 'create', title: 'Obs contract test', confidence: 0.9 }],
+      observability: obs,
+    });
+
+    await harness.processMessage('create obs test', {
+      requestId: 'req-obs-contract',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+    });
+
+    const requiredFields = [
+      'eventType', 'timestamp', 'requestId', 'entryPoint', 'step', 'status',
+      'durationMs', 'failureClass', 'actionType', 'attempt', 'rolledBack', 'metadata',
+    ];
+
+    for (const event of telemetryEvents) {
+      for (const field of requiredFields) {
+        assert.ok(Object.hasOwn(event, field), `event ${event.eventType} missing field: ${field}`);
+      }
+    }
+
+    const receivedEvents = telemetryEvents.filter(e => e.eventType === 'pipeline.request.received');
+    assert.equal(receivedEvents.length, 1);
+    assert.equal(receivedEvents[0].step, 'request');
+    assert.equal(receivedEvents[0].status, 'start');
+    assert.equal(receivedEvents[0].entryPoint, 'telegram_message');
+    console.log('PASS WP06 T017: observability events expose stable contract fields');
+  } catch (err) {
+    failures++;
+    console.error('FAIL WP06 T017: observability events expose stable contract fields');
+    console.error(err.message);
+  }
+
+  try {
+    const telemetryEvents = [];
+    const obs = createPipelineObservability({
+      eventSink: async (event) => { telemetryEvents.push(event); },
+      logger: null,
+    });
+
+    const harness = createPipelineHarness({
+      intents: [{ type: 'create', title: 'Will fail', confidence: 0.9 }],
+      adapterOverrides: {
+        createTask: async () => { throw new Error('Adapter unavailable'); },
+      },
+      observability: obs,
+    });
+
+    await harness.processMessage('create will fail', {
+      requestId: 'req-obs-failure-class',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+    });
+
+    const failureEvents = telemetryEvents.filter(e => e.failureClass !== null);
+    assert.ok(failureEvents.length > 0, 'expected failureClass events');
+    const adapterFailure = failureEvents.find(e => e.failureClass === 'adapter');
+    assert.ok(adapterFailure, 'expected adapter failureClass');
+    assert.equal(adapterFailure.rolledBack, false);
+    assert.equal(adapterFailure.status, 'failure');
+    console.log('PASS WP06 T017: observability failure events include failureClass and rolledBack');
+  } catch (err) {
+    failures++;
+    console.error('FAIL WP06 T017: observability failure events include failureClass and rolledBack');
+    console.error(err.message);
+  }
+
+  // ─── WP06: T020 — Fail-closed behavior with failure class + user message assertions ───
+
+  try {
+    const pipeline = createPipeline({
+      axIntent: {
+        extractIntents: async () => 'garbage: <html>error</html>',
+      },
+      normalizer: { normalizeActions: () => [] },
+      adapter: {
+        listProjects: async () => DEFAULT_PROJECTS,
+        listActiveTasks: async () => DEFAULT_ACTIVE_TASKS,
+      },
+      observability: createPipelineObservability({ logger: null }),
+    });
+
+    const result = await pipeline.processMessage('test malformed', {
+      requestId: 'req-fc-malformed',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+      currentDate: '2026-03-10',
+    });
+
+    assert.equal(result.type, 'error');
+    assert.equal(result.failure.class, 'malformed_ax');
+    assert.match(result.confirmationText, /could not understand/i);
+    assert.equal(result.confirmationText.includes('<html>'), false);
+    assert.ok(result.diagnostics.length > 0, 'dev diagnostics available');
+    console.log('PASS WP06 T020: fail-closed malformed AX does not leak diagnostics');
+  } catch (err) {
+    failures++;
+    console.error('FAIL WP06 T020: fail-closed malformed AX does not leak diagnostics');
+    console.error(err.message);
+  }
+
+  try {
+    const pipeline = createPipeline({
+      axIntent: {
+        extractIntents: async () => [{ type: 'create', title: '' }],
+      },
+      normalizer: {
+        normalizeActions: (intents) => intents.map(i => ({
+          ...i, projectId: DEFAULT_PROJECTS[0].id, valid: false,
+          validationErrors: ['title is required'],
+        })),
+      },
+      adapter: {
+        listProjects: async () => DEFAULT_PROJECTS,
+        listActiveTasks: async () => DEFAULT_ACTIVE_TASKS,
+      },
+      observability: createPipelineObservability({ logger: null }),
+    });
+
+    const result = await pipeline.processMessage('test validation', {
+      requestId: 'req-fc-validation',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+      currentDate: '2026-03-10',
+    });
+
+    assert.equal(result.type, 'error');
+    assert.equal(result.failure.class, 'validation');
+    assert.match(result.confirmationText, /could not validate/i);
+    assert.equal(result.confirmationText.includes('validationErrors'), false);
+    console.log('PASS WP06 T020: fail-closed validation returns user-safe message');
+  } catch (err) {
+    failures++;
+    console.error('FAIL WP06 T020: fail-closed validation returns user-safe message');
+    console.error(err.message);
+  }
+
+  try {
+    const pipeline = createPipeline({
+      axIntent: {
+        extractIntents: async () => [{ type: 'create', title: 'Test', confidence: 0.9 }],
+      },
+      normalizer: {
+        normalizeActions: (intents) => intents.map(i => ({
+          ...i, projectId: DEFAULT_PROJECTS[0].id, valid: true, validationErrors: [],
+        })),
+      },
+      adapter: {
+        listProjects: async () => DEFAULT_PROJECTS,
+        listActiveTasks: async () => DEFAULT_ACTIVE_TASKS,
+        createTask: async () => { throw new Error('TickTick 503'); },
+      },
+      observability: createPipelineObservability({ logger: null }),
+    });
+
+    const result = await pipeline.processMessage('test adapter', {
+      requestId: 'req-fc-adapter',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+      currentDate: '2026-03-10',
+    });
+
+    assert.equal(result.type, 'error');
+    assert.equal(result.failure.class, 'adapter');
+    assert.match(result.confirmationText, /failed.*retry|retry.*shortly/i);
+    assert.equal(result.confirmationText.includes('503'), false);
+    console.log('PASS WP06 T020: fail-closed adapter returns generic retry message');
+  } catch (err) {
+    failures++;
+    console.error('FAIL WP06 T020: fail-closed adapter returns generic retry message');
+    console.error(err.message);
+  }
+
+  try {
+    const pipeline = createPipeline({
+      axIntent: {
+        extractIntents: async () => { throw new QuotaExhaustedError('All keys exhausted'); },
+      },
+      normalizer: { normalizeActions: () => [] },
+      adapter: {
+        listProjects: async () => DEFAULT_PROJECTS,
+        listActiveTasks: async () => DEFAULT_ACTIVE_TASKS,
+      },
+      observability: createPipelineObservability({ logger: null }),
+    });
+
+    const result = await pipeline.processMessage('test quota', {
+      requestId: 'req-fc-quota',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+      currentDate: '2026-03-10',
+    });
+
+    assert.equal(result.type, 'error');
+    assert.equal(result.failure.class, 'quota');
+    assert.match(result.confirmationText, /quota.*exhausted|try.*again/i);
+    console.log('PASS WP06 T020: fail-closed quota returns user-safe message');
+  } catch (err) {
+    failures++;
+    console.error('FAIL WP06 T020: fail-closed quota returns user-safe message');
+    console.error(err.message);
+  }
+
+  // ─── WP06: T012 — Additional failure-path regressions ───
+
+  try {
+    const pipeline = createPipeline({
+      axIntent: { extractIntents: async () => ({ not: 'an array' }) },
+      normalizer: { normalizeActions: () => [] },
+      adapter: {
+        listProjects: async () => DEFAULT_PROJECTS,
+        listActiveTasks: async () => DEFAULT_ACTIVE_TASKS,
+      },
+      observability: createPipelineObservability({ logger: null }),
+    });
+
+    const result = await pipeline.processMessage('test non-array', {
+      requestId: 'req-non-array',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+      currentDate: '2026-03-10',
+    });
+
+    assert.equal(result.type, 'error');
+    assert.equal(result.failure.class, 'malformed_ax');
+    console.log('PASS WP06 T012: non-array AX output classified as malformed_ax');
+  } catch (err) {
+    failures++;
+    console.error('FAIL WP06 T012: non-array AX output classified as malformed_ax');
+    console.error(err.message);
+  }
+
+  try {
+    const pipeline = createPipeline({
+      axIntent: { extractIntents: async () => null },
+      normalizer: { normalizeActions: () => [] },
+      adapter: {
+        listProjects: async () => DEFAULT_PROJECTS,
+        listActiveTasks: async () => DEFAULT_ACTIVE_TASKS,
+      },
+      observability: createPipelineObservability({ logger: null }),
+    });
+
+    const result = await pipeline.processMessage('test null', {
+      requestId: 'req-null',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+      currentDate: '2026-03-10',
+    });
+
+    // Null from AX is treated as empty/non-task, not malformed
+    assert.equal(result.type, 'error');
+    assert.ok(['malformed_ax', 'unexpected', 'validation'].includes(result.failure.class),
+      `null intents should fail with a known class, got: ${result.failure.class}`);
+    console.log('PASS WP06 T012: null AX output classified as known failure');
+  } catch (err) {
+    failures++;
+    console.error('FAIL WP06 T012: null AX output classified as malformed_ax');
+    console.error(err.message);
+  }
+
   if (failures > 0) {
     process.exitCode = 1;
   }
