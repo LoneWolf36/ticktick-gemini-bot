@@ -11,9 +11,13 @@ LOG_FILE="/tmp/archon-workflow-run4.log"
 INTERVAL="${1:-180}"
 MAX_STUCK_MINUTES=10
 
-# ── Load Telegram credentials from .env ──
+# ── Load Telegram credentials from .env (safe parsing) ──
 if [ -f "$PROJECT_DIR/.env" ]; then
-    export $(grep -E 'TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID' "$PROJECT_DIR/.env" | xargs 2>/dev/null)
+    while IFS='=' read -r key value; do
+        case "$key" in
+            TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID) export "$key=$value" ;;
+        esac
+    done < <(grep -E '^(TELEGRAM_BOT_TOKEN|TELEGRAM_CHAT_ID)=' "$PROJECT_DIR/.env" 2>/dev/null)
 fi
 
 # ── Rate limiting for Telegram notifications ──
@@ -55,10 +59,10 @@ send_notification() {
                 WARNING)  emoji="⚠️ " ;;
                 INFO)     emoji="ℹ️ " ;;
             esac
-            curl -s -X POST "https://api.telegram.org/bot${token}/sendMessage" \
+            curl -s --max-time 10 --connect-timeout 5 -X POST "https://api.telegram.org/bot${token}/sendMessage" \
                 -d "chat_id=${chat_id}" \
                 -d "text=${emoji}${message}" \
-                -d "parse_mode=Markdown" 2>/dev/null || {
+                -d "parse_mode=HTML" 2>/dev/null || {
                     echo "  [Telegram fallback also failed — logging to file]"
                     echo "[$(date '+%Y-%m-%d %H:%M:%S')] [${severity}] ${message}" >> /tmp/archon-notifications.log
                 }
@@ -93,6 +97,22 @@ LAST_COMMIT_CHANGE_TIME=$BASELINE_TIME
 LAST_NODE=""
 LAST_NODE_START=$(date +%s)
 LAST_NODES_NOTIFIED=0
+
+# ── Graceful shutdown handler ──
+cleanup() {
+    echo -e "\n${YELLOW}Monitor interrupted. Saving final state...${NC}"
+    kill $WAIT_PID 2>/dev/null
+    send_notification "INFO" "Monitor stopped — check #${CHECK_COUNT}, ${MINUTES_SINCE_BASELINE:-0}m elapsed" 2>/dev/null || true
+    # Save emergency state
+    emergency_dir="/tmp/archon-monitor-exit-$(date +%s)"
+    mkdir -p "$emergency_dir"
+    cp "$LOG_FILE" "$emergency_dir/" 2>/dev/null
+    git -C "$PROJECT_DIR" log --oneline -10 > "$emergency_dir/commits.txt" 2>/dev/null
+    git -C "$PROJECT_DIR" status --short > "$emergency_dir/status.txt" 2>/dev/null
+    echo "Monitor state saved to: $emergency_dir"
+    exit 0
+}
+trap cleanup INT TERM
 
 # Send workflow start notification
 WORKFLOW_NAME=$(grep -oP '"workflow_name"[[:space:]]*:[[:space:]]*"[^"]+"' "$LOG_FILE" 2>/dev/null | tail -1 | cut -d'"' -f4 || echo "Archon DAG")
@@ -159,7 +179,7 @@ while true; do
     fi
 
     # Check for workflow process death (crash detection)
-    ARCHON_PID=$(pgrep -f "archon.*run\|archon.*execute" 2>/dev/null | head -1 || echo "")
+    ARCHON_PID=$(pgrep -f -E "archon.*(run|execute)" 2>/dev/null | head -1 || echo "")
     if [ -n "$ARCHON_PID" ]; then
         # Process exists — check if it's actually alive or zombie
         if ! kill -0 "$ARCHON_PID" 2>/dev/null; then
@@ -175,9 +195,9 @@ while true; do
         fi
     fi
     
-    # Stuck detection
+    # Stuck detection — compare against BASELINE_COMMIT (the last commit we knew about)
     STUCK=false
-    if [ "$NEW_COMMIT" = "$(git rev-parse HEAD)" ] && [ "$FILES_CHANGED" -le 0 ] && [ "$MINUTES_ON_CURRENT_NODE" -ge "$MAX_STUCK_MINUTES" ]; then
+    if [ "$NEW_COMMIT" = "$BASELINE_COMMIT" ] && [ "$FILES_CHANGED" -le 0 ] && [ "$MINUTES_ON_CURRENT_NODE" -ge "$MAX_STUCK_MINUTES" ]; then
         STUCK=true
         echo -e "${RED}⚠️  STUCK:${NC} Node $NEW_NODE running for ${MINUTES_ON_CURRENT_NODE}m with no commits or file changes"
 

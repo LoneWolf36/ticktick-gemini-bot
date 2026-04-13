@@ -78,15 +78,22 @@ CHAT_ID="${TELEGRAM_CHAT_ID:-}"
 TELEGRAM_SUCCESS=false
 
 if [ -n "$TOKEN" ] && [ -n "$CHAT_ID" ]; then
-    HTTP_CODE=$(curl -s -o /tmp/telegram-response.json -w "%{http_code}" \
+    # Use jq for safe JSON construction — prevents command injection via message text
+    PAYLOAD=$(jq -n \
+        --arg chat_id "$CHAT_ID" \
+        --arg text "$(echo -e "$FORMATTED")" \
+        '{chat_id: $chat_id, text: $text, parse_mode: "HTML", disable_web_page_preview: true}' 2>/dev/null)
+
+    if [ -z "$PAYLOAD" ]; then
+        echo "[jq not available — using fallback JSON construction]"
+        PAYLOAD="{\"chat_id\":\"${CHAT_ID}\",\"text\":\"$(echo -e "$FORMATTED" | sed 's/"/\\"/g')\",\"parse_mode\":\"HTML\",\"disable_web_page_preview\":true}"
+    fi
+
+    HTTP_CODE=$(curl -s --max-time 10 --connect-timeout 5 \
+        -o /tmp/telegram-response.json -w "%{http_code}" \
         -X POST "https://api.telegram.org/bot${TOKEN}/sendMessage" \
         -H "Content-Type: application/json" \
-        -d "{
-            \"chat_id\": \"${CHAT_ID}\",
-            \"text\": \"$(echo -e "$FORMATTED")\",
-            \"parse_mode\": \"Markdown\",
-            \"disable_web_page_preview\": true
-        }" 2>/dev/null || echo "000")
+        -d "$PAYLOAD" 2>/dev/null || echo "000")
 
     if [ "$HTTP_CODE" = "200" ]; then
         TELEGRAM_SUCCESS=true

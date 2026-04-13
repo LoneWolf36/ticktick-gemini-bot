@@ -1165,3 +1165,10 @@ nodes:
     command: spec-kitty-completion-summary
     depends_on: [global-regression]
     context: fresh
+
+  # Final checkpoint — captures complete mission state for recovery
+  - id: global-checkpoint
+    command: spec-kitty-checkpoint-save
+    depends_on: [global-summary]
+    context: fresh
+    args: "all-missions-complete"
