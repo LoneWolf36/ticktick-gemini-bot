@@ -405,7 +405,7 @@ export function getPendingMutationClarification() {
 export async function setPendingMutationClarification(data) {
     state.pendingMutationClarification = {
         ...data,
-        createdAt: new Date().toISOString(),
+        createdAt: data.createdAt || new Date().toISOString(),
     };
     await save();
 }

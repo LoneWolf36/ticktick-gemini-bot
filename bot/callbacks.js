@@ -1,8 +1,11 @@
-// Inline keyboard callback handlers — approve, skip, drop
-// These move tasks from pendingTasks → processedTasks
+// Inline keyboard callback handlers — approve, skip, drop, mutation clarification
+// These move tasks from pendingTasks → processedTasks and resume mutation clarifications
 import { InlineKeyboard } from 'grammy';
 import * as store from '../services/store.js';
-import { buildTickTickUpdate, isAuthorized, buildUndoEntry, PRIORITY_LABEL, editWithMarkdown } from './utils.js';
+import { buildTickTickUpdate, isAuthorized, buildUndoEntry, PRIORITY_LABEL, editWithMarkdown, truncateMessage } from './utils.js';
+
+// Pending mutation clarification expiry: 10 minutes
+const MUTATION_CLARIFICATION_TTL_MS = 10 * 60 * 1000;
 
 // ─── Build Keyboard for Task Review ─────────────────────────
 
@@ -18,7 +21,7 @@ export function taskReviewKeyboard(taskId) {
 
 // ─── Register Callback Handlers ─────────────────────────────
 
-export function registerCallbacks(bot, ticktick, gemini, adapter) {
+export function registerCallbacks(bot, ticktick, gemini, adapter, pipeline) {
 
     // ─── Approve: move pending → processed, update TickTick ───
     bot.callbackQuery(/^a:(.+)$/, async (ctx) => {
@@ -117,30 +120,93 @@ export function registerCallbacks(bot, ticktick, gemini, adapter) {
     });
 
     // ─── Mutation Candidate Selection ────────────────────────
-    // Handles user picking a task from the clarification keyboard
+    // Handles user picking a task from the clarification keyboard.
+    // Resumes through the pipeline (AX intent -> normalizer -> adapter), not direct adapter writes.
     bot.callbackQuery(/^mut:pick:(.+)$/, async (ctx) => {
         if (!isAuthorized(ctx)) {
             await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
             return;
         }
-        const taskId = ctx.match[1];
+        const selectedTaskId = ctx.match[1];
+        const chatId = ctx.chat?.id;
+        const userId = ctx.from?.id;
+
         const pending = store.getPendingMutationClarification();
 
+        // Fail-closed: no pending state
         if (!pending) {
             await ctx.answerCallbackQuery({ text: '⚠️ No pending clarification found.' });
+            await editWithMarkdown(ctx, '⚠️ **No pending clarification.** Rephrase your request.');
             return;
         }
 
-        const candidate = pending.candidates.find(c => c.id === taskId);
+        // Cross-chat/user rejection
+        if (pending.chatId && chatId && pending.chatId !== chatId) {
+            await ctx.answerCallbackQuery({ text: '⚠️ Wrong chat.' });
+            return;
+        }
+        if (pending.userId && userId && pending.userId !== userId) {
+            await ctx.answerCallbackQuery({ text: '⚠️ Wrong user.' });
+            return;
+        }
+
+        // Expired state check
+        const createdAt = pending.createdAt ? new Date(pending.createdAt).getTime() : 0;
+        if (createdAt && (Date.now() - createdAt > MUTATION_CLARIFICATION_TTL_MS)) {
+            await store.clearPendingMutationClarification();
+            await ctx.answerCallbackQuery({ text: '⏰ Expired.' });
+            await editWithMarkdown(ctx, '⏰ **Clarification expired.** Rephrase your request.');
+            return;
+        }
+
+        // Validate candidate exists in stored list
+        const candidate = pending.candidates.find(c => c.id === selectedTaskId);
         if (!candidate) {
             await ctx.answerCallbackQuery({ text: '⚠️ Candidate not found.' });
             return;
         }
 
-        await ctx.answerCallbackQuery({ text: `Selected: "${candidate.title}"` });
-        // Clear pending state — downstream pipeline or handler resumes
+        // Duplicate tap guard: mark as consumed immediately to prevent replay
         await store.clearPendingMutationClarification();
-        await editWithMarkdown(ctx, `✅ **"${candidate.title}"** selected. Proceed with your request.`);
+        await ctx.answerCallbackQuery({ text: `Selected: "${candidate.title}"` });
+
+        // Resume through the pipeline with resolved task context.
+        // Reconstruct the original message and inject the resolved task.
+        try {
+            const allTasks = await ticktick.getAllTasksCached(30000);
+            const availableProjects = ticktick.getLastFetchedProjects();
+
+            // Find the full task object from TickTick cache
+            const resolvedTask = allTasks.find(t => t.id === selectedTaskId);
+            if (!resolvedTask) {
+                await editWithMarkdown(ctx, `⚠️ **"${candidate.title}"** not found in TickTick. Try again.`);
+                return;
+            }
+
+            // Re-enter the pipeline with the original message + resolved task context.
+            // This ensures the same AX intent -> normalizer -> adapter safety path.
+            const result = await pipeline.processMessage(pending.originalMessage, {
+                existingTask: resolvedTask,
+                entryPoint: pending.entryPoint || 'telegram:clarification-resume',
+                mode: pending.mode || 'interactive',
+                availableProjects,
+                skipClarification: true, // Don't re-ask for the same ambiguity
+            });
+
+            if (result.type === 'task') {
+                await editWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+            } else if (result.type === 'error') {
+                const diag = result.isDevMode && result.diagnostics?.length > 0
+                    ? `\n\n${result.diagnostics.slice(0, 3).join('\n')}`
+                    : '';
+                await editWithMarkdown(ctx, `❌ ${result.confirmationText}${diag}`);
+            } else {
+                await editWithMarkdown(ctx, `✅ **"${candidate.title}"** selected. ${result.confirmationText || 'Proceeding.'}`);
+            }
+        } catch (err) {
+            console.error('Mutation clarification resume error:', err.message);
+            await editWithMarkdown(ctx, `❌ Failed to process: ${err.message.slice(0, 80)}`);
+        }
     });
 
     // ─── Mutation Clarification Cancel ───────────────────────
@@ -149,6 +215,22 @@ export function registerCallbacks(bot, ticktick, gemini, adapter) {
             await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
             return;
         }
+        const pending = store.getPendingMutationClarification();
+
+        // Cross-chat/user rejection for cancel too
+        const chatId = ctx.chat?.id;
+        const userId = ctx.from?.id;
+        if (pending) {
+            if (pending.chatId && chatId && pending.chatId !== chatId) {
+                await ctx.answerCallbackQuery({ text: '⚠️ Wrong chat.' });
+                return;
+            }
+            if (pending.userId && userId && pending.userId !== userId) {
+                await ctx.answerCallbackQuery({ text: '⚠️ Wrong user.' });
+                return;
+            }
+        }
+
         await store.clearPendingMutationClarification();
         await ctx.answerCallbackQuery({ text: 'Canceled' });
         await editWithMarkdown(ctx, '❌ **Clarification canceled.** Rephrase or try again.');

@@ -539,7 +539,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     };
                     // Try to get content from active tasks
                     resolvedTaskContent = activeTasks.find(t => t.id === resolvedTask.id)?.content ?? null;
-                } else if (targetQuery) {
+                } else if (targetQuery && !options.skipClarification) {
                     const resolveStartedAt = Date.now();
                     const resolverResult = resolveTarget({ targetQuery, activeTasks });
 
@@ -577,6 +577,16 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     if (resolvedTask.projectId) {
                         mutationIntent.originalProjectId = resolvedTask.projectId;
                     }
+                } else if (targetQuery && options.skipClarification && context.existingTask?.id) {
+                    // Clarification resume: user selected a candidate, skip re-resolution
+                    resolvedTask = context.existingTask;
+                    resolvedTaskContent = activeTasks.find(t => t.id === resolvedTask.id)?.content ?? null;
+                    mutationIntent.taskId = resolvedTask.id;
+                    mutationIntent.resolvedTaskId = resolvedTask.id;
+                    if (resolvedTask.projectId) {
+                        mutationIntent.originalProjectId = resolvedTask.projectId;
+                    }
+                    console.log(`[Pipeline:${context.requestId}] Clarification resume: using pre-resolved task "${resolvedTask.title}"`);
                 } else {
                     // No targetQuery and no taskId — try to use existingTask from context
                     if (context.existingTask?.id) {

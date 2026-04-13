@@ -13,7 +13,7 @@ export function createBot(token, ticktick, gemini, adapter, pipeline, config = {
 
     // Register all handlers
     registerCommands(bot, ticktick, gemini, adapter, pipeline, config);
-    registerCallbacks(bot, ticktick, gemini, adapter);
+    registerCallbacks(bot, ticktick, gemini, adapter, pipeline);
 
     return bot;
 }

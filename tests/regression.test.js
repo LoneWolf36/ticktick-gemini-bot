@@ -2425,3 +2425,328 @@ test('pipeline happy path covers create, update, complete, delete, and non-task 
   assert.equal(nonTaskResult.type, 'non-task');
   assert.equal(nonTaskResult.results.length, 0);
 });
+
+// ─── Mutation Clarification Callback Resume (WP06) ────────────
+
+test('registerCallbacks wires mut:pick and mut:cancel callback families', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  registerCallbacks(
+    bot,
+    { isAuthenticated: () => true, getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false },
+    {},
+    { processMessage: async () => ({ type: 'non-task', confirmationText: 'Got it' }) },
+  );
+
+  const patterns = handlers.callbacks.map(h => h.pattern.toString());
+  assert.ok(patterns.some(p => p.includes('mut:pick')));
+  assert.ok(patterns.some(p => p.includes('mut:cancel')));
+});
+
+test('mut:pick resumes through pipeline with resolved task context', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const store = await import('../services/store.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+
+  // Set up pending clarification state
+  const userId = 12345;
+  const chatId = AUTHORIZED_CHAT_ID || 67890;
+  await store.setPendingMutationClarification({
+    originalMessage: 'move weekly to Career',
+    candidates: [
+      { id: 'task-weekly-1', title: 'Write weekly report' },
+      { id: 'task-weekly-2', title: 'Review weekly metrics' },
+    ],
+    intentSummary: 'Update task',
+    chatId,
+    userId,
+    entryPoint: 'telegram:freeform',
+    mode: 'interactive',
+  });
+
+  const pipelineCalls = [];
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  const ticktick = {
+    isAuthenticated: () => true,
+    getAllTasksCached: async () => [
+      { id: 'task-weekly-1', title: 'Write weekly report', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
+      { id: 'task-weekly-2', title: 'Review weekly metrics', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
+    ],
+    getLastFetchedProjects: () => [{ id: 'inbox', name: 'Inbox' }],
+  };
+
+  const pipeline = {
+    processMessage: async (msg, opts) => {
+      pipelineCalls.push({ message: msg, options: opts });
+      return { type: 'task', confirmationText: '✅ Updated "Write weekly report"', actions: [], results: [{ status: 'succeeded' }] };
+    },
+  };
+
+  registerCallbacks(bot, ticktick, { isQuotaExhausted: () => false }, {}, pipeline);
+
+  // Find the mut:pick handler
+  const pickHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:pick'))?.handler;
+  assert.equal(typeof pickHandler, 'function');
+
+  const answers = [];
+  const edits = [];
+  const ctx = {
+    match: ['mut:pick:task-weekly-1', 'task-weekly-1'],
+    chat: { id: chatId },
+    from: { id: userId },
+    answerCallbackQuery: async (obj) => { answers.push(obj); },
+    editMessageText: async (text, opts) => { edits.push(text); },
+  };
+
+  await pickHandler(ctx);
+
+  // Verify pipeline was called with the correct options
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].message, 'move weekly to Career');
+  assert.equal(pipelineCalls[0].options.existingTask.id, 'task-weekly-1');
+  assert.equal(pipelineCalls[0].options.skipClarification, true);
+  assert.equal(pipelineCalls[0].options.entryPoint, 'telegram:freeform');
+
+  // Verify state was cleared
+  assert.equal(store.getPendingMutationClarification(), null);
+
+  // Verify user saw success message
+  assert.ok(answers[0].text.includes('Selected'));
+  assert.ok(edits[0].includes('Updated'));
+});
+
+test('mut:pick rejects cross-user selections', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const store = await import('../services/store.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+
+  const userId = 111;
+  const chatId = AUTHORIZED_CHAT_ID || 222;
+  await store.setPendingMutationClarification({
+    originalMessage: 'update weekly',
+    candidates: [{ id: 'task-1', title: 'Weekly report' }],
+    intentSummary: 'Update task',
+    chatId,
+    userId,
+    entryPoint: 'telegram:freeform',
+    mode: 'interactive',
+  });
+
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  registerCallbacks(
+    bot,
+    { isAuthenticated: () => true, getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false },
+    {},
+    { processMessage: async () => { throw new Error('should not be called'); } },
+  );
+
+  const pickHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:pick'))?.handler;
+
+  const answers = [];
+  const ctx = {
+    match: ['mut:pick:task-1', 'task-1'],
+    chat: { id: chatId }, // Same chat (authorized)
+    from: { id: 999 }, // Different user
+    answerCallbackQuery: async (obj) => { answers.push(obj); },
+    editMessageText: async () => {},
+  };
+
+  await pickHandler(ctx);
+
+  assert.ok(answers[0].text.includes('Wrong user'));
+  // State should NOT have been cleared
+  assert.ok(store.getPendingMutationClarification() !== null);
+});
+
+test('mut:pick rejects expired clarifications', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const store = await import('../services/store.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+
+  // Set expired state (1 hour ago, well past the 10-minute TTL)
+  const expiredTime = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const chatId = AUTHORIZED_CHAT_ID || 100;
+  await store.setPendingMutationClarification({
+    originalMessage: 'update weekly',
+    candidates: [{ id: 'task-1', title: 'Weekly report' }],
+    intentSummary: 'Update task',
+    chatId,
+    userId: chatId,
+    entryPoint: 'telegram:freeform',
+    mode: 'interactive',
+    createdAt: expiredTime,
+  });
+
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  registerCallbacks(
+    bot,
+    { isAuthenticated: () => true, getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false },
+    {},
+    { processMessage: async () => { throw new Error('should not be called'); } },
+  );
+
+  const pickHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:pick'))?.handler;
+
+  const answers = [];
+  const edits = [];
+  const ctx = {
+    match: ['mut:pick:task-1', 'task-1'],
+    chat: { id: chatId },
+    from: { id: chatId },
+    answerCallbackQuery: async (obj) => { answers.push(obj); },
+    editMessageText: async (text) => { edits.push(text); },
+  };
+
+  await pickHandler(ctx);
+
+  assert.ok(answers[0].text.includes('Expired'));
+  assert.ok(edits[0].includes('expired'));
+  // State should be cleared
+  assert.equal(store.getPendingMutationClarification(), null);
+});
+
+test('mut:cancel clears pending state safely', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const store = await import('../services/store.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+
+  const chatId = AUTHORIZED_CHAT_ID || 300;
+  await store.setPendingMutationClarification({
+    originalMessage: 'update weekly',
+    candidates: [{ id: 'task-1', title: 'Weekly report' }],
+    intentSummary: 'Update task',
+    chatId,
+    userId: chatId,
+    entryPoint: 'telegram:freeform',
+    mode: 'interactive',
+  });
+
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  registerCallbacks(
+    bot,
+    { isAuthenticated: () => true, getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false },
+    {},
+    {},
+  );
+
+  const cancelHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:cancel'))?.handler;
+
+  const answers = [];
+  const edits = [];
+  const ctx = {
+    match: ['mut:cancel'],
+    chat: { id: chatId },
+    from: { id: chatId },
+    answerCallbackQuery: async (obj) => { answers.push(obj); },
+    editMessageText: async (text) => { edits.push(text); },
+  };
+
+  await cancelHandler(ctx);
+
+  assert.equal(store.getPendingMutationClarification(), null);
+  assert.ok(answers[0].text.includes('Canceled'));
+  assert.ok(edits[0].includes('canceled'));
+});
+
+test('mut:pick fails safely when no pending state exists', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const store = await import('../services/store.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+
+  // Ensure no pending state
+  await store.clearPendingMutationClarification();
+
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  registerCallbacks(
+    bot,
+    { isAuthenticated: () => true, getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false },
+    {},
+    { processMessage: async () => { throw new Error('should not be called'); } },
+  );
+
+  const pickHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:pick'))?.handler;
+
+  const answers = [];
+  const edits = [];
+  const chatId = AUTHORIZED_CHAT_ID || 400;
+  const ctx = {
+    match: ['mut:pick:task-1', 'task-1'],
+    chat: { id: chatId },
+    from: { id: chatId },
+    answerCallbackQuery: async (obj) => { answers.push(obj); },
+    editMessageText: async (text) => { edits.push(text); },
+  };
+
+  await pickHandler(ctx);
+
+  assert.ok(answers[0].text.includes('No pending'));
+  assert.ok(edits[0].includes('No pending'));
+});
+
+test('pipeline skipClarification uses existingTask for mutation resume', async () => {
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'update', title: 'Move to Career', confidence: 0.9, targetQuery: 'weekly' },
+    ],
+    activeTasks: [
+      { id: 'task-resolved', title: 'Weekly report draft', projectId: 'inbox', projectName: 'Inbox', priority: 5, status: 0 },
+    ],
+  });
+
+  // With skipClarification and existingTask, should not return clarification
+  const result = await harness.processMessage('update weekly', {
+    existingTask: { id: 'task-resolved', projectId: 'inbox', title: 'Weekly report draft' },
+    skipClarification: true,
+  });
+
+  assert.equal(result.type, 'task');
+  assert.equal(harness.adapterCalls.update.length, 1);
+  assert.equal(harness.adapterCalls.update[0].taskId, 'task-resolved');
+});

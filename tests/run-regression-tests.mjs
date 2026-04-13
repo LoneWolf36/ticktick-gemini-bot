@@ -2995,6 +2995,61 @@ ACCOUNTABILITY STYLE:
     console.error(err.message);
   }
 
+  try {
+    // Test: skipClarification option bypasses resolver and uses existingTask
+    const resumeHarness = createPipelineHarness({
+      intents: [{ type: 'update', title: 'Move to Career', confidence: 0.9, targetQuery: 'weekly' }],
+      activeTasks: [
+        { id: 't1', title: 'Write weekly report', projectId: 'p1', projectName: 'Career', priority: 5, status: 0 },
+        { id: 't2', title: 'Review weekly metrics', projectId: 'p1', projectName: 'Career', priority: 3, status: 0 },
+      ],
+    });
+    const resumeResult = await resumeHarness.processMessage('update weekly', {
+      existingTask: { id: 't2', projectId: 'p1', title: 'Review weekly metrics' },
+      skipClarification: true,
+    });
+    assert.equal(resumeResult.type, 'task');
+    assert.equal(resumeHarness.adapterCalls.update.length, 1);
+    assert.equal(resumeHarness.adapterCalls.update[0].taskId, 't2');
+    console.log('PASS pipeline skipClarification resumes mutation with existingTask');
+  } catch (err) {
+    failures++;
+    console.error('FAIL pipeline skipClarification resumes mutation with existingTask');
+    console.error(err.message);
+  }
+
+  try {
+    // Test: store mutation clarification lifecycle
+    const store = await import('../services/store.js');
+    const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+    const testUserId = AUTHORIZED_CHAT_ID || `reg-test-mut-clar-${Date.now()}`;
+    const testChatId = AUTHORIZED_CHAT_ID || 99999;
+
+    await store.setPendingMutationClarification({
+      originalMessage: 'update weekly',
+      candidates: [{ id: 't1', title: 'Weekly report' }],
+      intentSummary: 'Update task',
+      chatId: testChatId,
+      userId: testUserId,
+      entryPoint: 'telegram:freeform',
+      mode: 'interactive',
+    });
+
+    const pending = store.getPendingMutationClarification();
+    assert.ok(pending);
+    assert.equal(pending.chatId, testChatId);
+    assert.equal(pending.userId, testUserId);
+    assert.equal(pending.entryPoint, 'telegram:freeform');
+
+    await store.clearPendingMutationClarification();
+    assert.equal(store.getPendingMutationClarification(), null);
+    console.log('PASS store mutation clarification lifecycle with chatId/userId');
+  } catch (err) {
+    failures++;
+    console.error('FAIL store mutation clarification lifecycle with chatId/userId');
+    console.error(err.message);
+  }
+
   if (failures > 0) {
     process.exitCode = 1;
   }

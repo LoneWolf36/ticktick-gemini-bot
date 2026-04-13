@@ -719,6 +719,10 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         originalMessage: userMessage,
                         candidates: candidates.map(c => ({ id: c.id, title: c.title })),
                         intentSummary: result.confirmationText,
+                        chatId: ctx.chat?.id ?? null,
+                        userId: ctx.from?.id ?? null,
+                        entryPoint: 'telegram:freeform',
+                        mode: 'interactive',
                     });
                     const msg = buildMutationClarificationMessage(reason, candidates, result.confirmationText);
                     const keyboard = buildMutationCandidateKeyboard(candidates);
