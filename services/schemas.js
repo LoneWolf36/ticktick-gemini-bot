@@ -1,3 +1,15 @@
+// ─── Gemini Response Schemas ──────────────────────────────────
+//
+// RETAINED SCOPE: This module exports structured JSON schemas used
+// by Gemini's responseSchema config for the briefing, weekly, and
+// reorg summary models. These schemas enforce strict JSON output
+// from Gemini's structured generation API.
+//
+// Primary schemas: briefingSummarySchema, weeklySummarySchema, reorgSchema.
+// Supporting constants: notice codes, severities, evidence sources.
+//
+// These are NOT task-writing schemas. They govern summary/reorg output
+// from the briefing, weekly, and reorg commands only.
 import { SchemaType } from '@google/generative-ai';
 
 

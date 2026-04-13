@@ -783,6 +783,20 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 }
 
 // ─── Execute Gemini-suggested actions against TickTick ────────
+//
+// RETAINED SCOPE: This function is the canonical bridge between
+// Gemini's reorg proposals (structured JSON actions) and TickTick
+// writes via the adapter. It is ALSO used by the /reorg inline
+// apply flow (bot.callbackQuery /^reorg:(apply|refine|cancel)$/).
+//
+// Primary task creation/mutation for bot-driven flows uses the
+// structured pipeline path: AX intent -> normalizer -> ticktick-adapter.
+// This helper is NOT a general-purpose task writer — it exists solely
+// to apply Gemini-generated reorg actions (update/drop/create/complete)
+// that come from the /reorg command or policy-sweep automation.
+//
+// Do NOT call this from new bot handlers unless the action source is
+// a Gemini reorg proposal or a programmatic policy sweep.
 
 export async function executeActions(actions, adapter, currentTasks, options = {}) {
     const outcomes = [];
