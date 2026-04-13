@@ -49,11 +49,12 @@ export class QuotaExhaustedError extends Error {
 
 /**
  * Validates an intent action object at runtime (defense in depth).
+ * Exported for testing purposes.
  * @param {object} action - The action object to validate
  * @param {number} index - The index of the action in the array
  * @returns {{valid: boolean, errors: string[]}} Validation result with error messages
  */
-function validateIntentAction(action, index) {
+export function validateIntentAction(action, index) {
     const errors = [];
 
     if (!action || typeof action !== 'object') {
@@ -61,20 +62,38 @@ function validateIntentAction(action, index) {
         return { valid: false, errors };
     }
 
-    // Required fields validation
+    // Validate action type
     if (!['create', 'update', 'complete', 'delete'].includes(action.type)) {
         errors.push(`Action ${index}: Invalid type "${action.type}"`);
     }
 
-    if (!action.title || typeof action.title !== 'string' || action.title.trim().length === 0) {
-        errors.push(`Action ${index}: Missing or invalid title`);
-    }
-
+    // Validate confidence (common across all action types)
     if (typeof action.confidence !== 'number' || action.confidence < 0 || action.confidence > 1) {
         errors.push(`Action ${index}: Confidence must be 0-1, got ${action.confidence}`);
     }
 
-    // Optional field validation
+    // Split validation: create requires title, mutations require targetQuery
+    const isMutation = ['update', 'complete', 'delete'].includes(action.type);
+
+    if (action.type === 'create') {
+        // Create actions MUST have a title
+        if (!action.title || typeof action.title !== 'string' || action.title.trim().length === 0) {
+            errors.push(`Action ${index}: Create action requires a non-empty title`);
+        }
+    } else if (isMutation) {
+        // Mutation actions MUST have targetQuery
+        if (!action.targetQuery || typeof action.targetQuery !== 'string' || action.targetQuery.trim().length === 0) {
+            errors.push(`Action ${index}: Mutation action requires a non-empty targetQuery`);
+        }
+        // Title is optional for mutations (only present when renaming)
+        if (action.title !== undefined && action.title !== null) {
+            if (typeof action.title !== 'string' || action.title.trim().length === 0) {
+                errors.push(`Action ${index}: If title is provided, it must be a non-empty string`);
+            }
+        }
+    }
+
+    // Optional field validation (common across all types)
     if (action.priority !== undefined && action.priority !== null) {
         if (![0, 1, 3, 5].includes(action.priority)) {
             errors.push(`Action ${index}: Invalid priority ${action.priority}`);
@@ -171,10 +190,23 @@ Instructions:
 - Set confidence low when intent is ambiguous.
 - The output must be a JSON array of action objects.
 
+ACTION TYPES AND REQUIRED FIELDS:
+
+For type "create":
+- "title" is REQUIRED (non-empty string describing the new task)
+- All other fields are optional (null when not applicable)
+
+For type "update", "complete", or "delete" (mutation actions):
+- "targetQuery" is REQUIRED (the user's reference to find the existing task, e.g. "buy groceries", "that meeting task")
+- "title" is OPTIONAL for mutations — only include it when the user is renaming the task
+- For "update": include change fields (title, dueDate, priority, content) as needed
+- For "complete"/"delete": targetQuery is sufficient; omit title unless explicitly renaming
+
 Each action object MUST have this exact structure:
 {
   "type": "create" | "update" | "complete" | "delete",
-  "title": "string (clean, verb-led task title)",
+  "targetQuery": "string or null (required for mutations, null for create)",
+  "title": "string or null (required for create, optional for mutations)",
   "content": "string or null (additional details)",
   "priority": 0 | 1 | 3 | 5 | null,
   "projectHint": "string or null (project name hint)",
@@ -184,23 +216,21 @@ Each action object MUST have this exact structure:
   "confidence": number (0.0 to 1.0)
 }
 
-Required fields for every action:
-- type: Must be one of "create", "update", "complete", "delete"
-- title: Non-empty string describing the task
-- confidence: Number between 0.0 and 1.0
+Required fields by action type:
+- create: requires "title"; targetQuery should be null
+- update/complete/delete: requires "targetQuery"; title is optional (only when renaming)
+- confidence: always required (0.0 to 1.0)
 
-Optional fields (use null when not applicable):
-- content: Additional task details
-- priority: 0 (none), 1 (low), 3 (medium), 5 (high)
-- projectHint: Project name for resolution
-- dueDate: Natural language date (e.g., "tomorrow", "next Friday")
-- repeatHint: Recurrence pattern (e.g., "daily", "every weekday")
-- splitStrategy: How to split multiple intents
+Mutation field semantics:
+- For "update": title = new title (not the lookup key), targetQuery = lookup key
+- dueDate, priority, content = the new values the user wants
+- For "complete"/"delete": usually only targetQuery is needed
 
-Example output:
+Example output for create:
 [
   {
     "type": "create",
+    "targetQuery": null,
     "title": "Buy groceries",
     "content": "Milk, eggs, bread",
     "priority": 1,
@@ -210,7 +240,76 @@ Example output:
     "splitStrategy": "single",
     "confidence": 0.95
   }
-]`);
+]
+
+Example output for mutation (update due date):
+[
+  {
+    "type": "update",
+    "targetQuery": "buy groceries",
+    "title": null,
+    "content": null,
+    "priority": null,
+    "projectHint": null,
+    "dueDate": "tomorrow",
+    "repeatHint": null,
+    "splitStrategy": null,
+    "confidence": 0.9
+  }
+]
+
+Example output for mutation (rename):
+[
+  {
+    "type": "update",
+    "targetQuery": "netflix task",
+    "title": "Finish system design notes",
+    "content": null,
+    "priority": null,
+    "projectHint": null,
+    "dueDate": null,
+    "repeatHint": null,
+    "splitStrategy": null,
+    "confidence": 0.85
+  }
+]
+
+Example output for mutation (complete):
+[
+  {
+    "type": "complete",
+    "targetQuery": "buy groceries",
+    "title": null,
+    "content": null,
+    "priority": null,
+    "projectHint": null,
+    "dueDate": null,
+    "repeatHint": null,
+    "splitStrategy": null,
+    "confidence": 0.92
+  }
+]
+
+Example output for mutation (delete):
+[
+  {
+    "type": "delete",
+    "targetQuery": "old wifi task",
+    "title": null,
+    "content": null,
+    "priority": null,
+    "projectHint": null,
+    "dueDate": null,
+    "repeatHint": null,
+    "splitStrategy": null,
+    "confidence": 0.88
+  }
+]
+
+OUT-OF-SCOPE EXAMPLES (should return low confidence or unsupported):
+- Mixed create+mutation: "add buy milk and move groceries to tomorrow" — do not split into create + mutation
+- Underspecified pronouns: "move that one to Friday" — should have low confidence (<0.5)
+- Reschedule as a separate type: do NOT emit type "reschedule"; use "update" with dueDate instead`);
 
     /**
      * Extracts structured intent actions from a user message.

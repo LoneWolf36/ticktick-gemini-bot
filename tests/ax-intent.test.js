@@ -1,6 +1,6 @@
 import { describe, it, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAxIntent, detectUrgentModeIntent, QuotaExhaustedError } from '../services/ax-intent.js';
+import { createAxIntent, detectUrgentModeIntent, QuotaExhaustedError, validateIntentAction } from '../services/ax-intent.js';
 
 describe('AX Intent Extraction', () => {
     let mockKeyManager;
@@ -230,32 +230,205 @@ describe('AX Intent Extraction', () => {
         });
     });
 
-    describe('validateIntentAction (internal function via extractIntents)', () => {
-        it('accepts valid action with required fields', async () => {
-            const axIntent = createAxIntent(mockKeyManager);
-            // We can't easily test the internal validation without mocking AX
-            // This is tested indirectly through integration tests
-            assert.ok(true, 'Validation is tested via integration tests');
+    describe('validateIntentAction - mutation validation rules', () => {
+        it('accepts valid create action with title', () => {
+            const result = validateIntentAction({
+                type: 'create',
+                title: 'Buy groceries',
+                confidence: 0.9,
+            }, 0);
+            assert.equal(result.valid, true);
+            assert.equal(result.errors.length, 0);
         });
 
-        it('rejects actions with invalid type via AX schema', async () => {
-            // AX schema validation happens at the AX layer
-            assert.ok(true, 'Schema validation is enforced by AX');
+        it('rejects create action without title', () => {
+            const result = validateIntentAction({
+                type: 'create',
+                title: null,
+                confidence: 0.9,
+            }, 0);
+            assert.equal(result.valid, false);
+            assert.ok(result.errors.some((e) => e.includes('Create action requires a non-empty title')));
         });
 
-        it('rejects actions with invalid priority via AX schema', async () => {
-            // AX schema only allows 0, 1, 3, 5
-            assert.ok(true, 'Priority enum is enforced by AX schema');
+        it('rejects create action with empty title', () => {
+            const result = validateIntentAction({
+                type: 'create',
+                title: '',
+                confidence: 0.9,
+            }, 0);
+            assert.equal(result.valid, false);
+            assert.ok(result.errors.some((e) => e.includes('Create action requires a non-empty title')));
         });
 
-        it('rejects actions with invalid splitStrategy via AX schema', async () => {
-            // AX schema only allows single, multi-task, multi-day
-            assert.ok(true, 'splitStrategy enum is enforced by AX schema');
+        it('accepts update action with targetQuery and no title', () => {
+            const result = validateIntentAction({
+                type: 'update',
+                targetQuery: 'buy groceries',
+                title: null,
+                dueDate: 'tomorrow',
+                confidence: 0.85,
+            }, 0);
+            assert.equal(result.valid, true);
+            assert.equal(result.errors.length, 0);
         });
 
-        it('rejects actions with confidence outside 0-1 range via AX schema', async () => {
-            // AX schema enforces 0.0-1.0 range
-            assert.ok(true, 'Confidence range is enforced by AX schema');
+        it('accepts update action with targetQuery and new title (rename)', () => {
+            const result = validateIntentAction({
+                type: 'update',
+                targetQuery: 'netflix task',
+                title: 'Finish system design notes',
+                confidence: 0.9,
+            }, 0);
+            assert.equal(result.valid, true);
+            assert.equal(result.errors.length, 0);
+        });
+
+        it('rejects update action without targetQuery', () => {
+            const result = validateIntentAction({
+                type: 'update',
+                targetQuery: null,
+                title: 'New title',
+                confidence: 0.9,
+            }, 0);
+            assert.equal(result.valid, false);
+            assert.ok(result.errors.some((e) => e.includes('Mutation action requires a non-empty targetQuery')));
+        });
+
+        it('rejects update action with empty targetQuery', () => {
+            const result = validateIntentAction({
+                type: 'update',
+                targetQuery: '',
+                confidence: 0.9,
+            }, 0);
+            assert.equal(result.valid, false);
+            assert.ok(result.errors.some((e) => e.includes('Mutation action requires a non-empty targetQuery')));
+        });
+
+        it('accepts complete action with targetQuery only', () => {
+            const result = validateIntentAction({
+                type: 'complete',
+                targetQuery: 'buy groceries',
+                title: null,
+                confidence: 0.92,
+            }, 0);
+            assert.equal(result.valid, true);
+            assert.equal(result.errors.length, 0);
+        });
+
+        it('rejects complete action without targetQuery', () => {
+            const result = validateIntentAction({
+                type: 'complete',
+                targetQuery: null,
+                confidence: 0.9,
+            }, 0);
+            assert.equal(result.valid, false);
+            assert.ok(result.errors.some((e) => e.includes('Mutation action requires a non-empty targetQuery')));
+        });
+
+        it('accepts delete action with targetQuery only', () => {
+            const result = validateIntentAction({
+                type: 'delete',
+                targetQuery: 'old wifi task',
+                title: null,
+                confidence: 0.88,
+            }, 0);
+            assert.equal(result.valid, true);
+            assert.equal(result.errors.length, 0);
+        });
+
+        it('rejects delete action without targetQuery', () => {
+            const result = validateIntentAction({
+                type: 'delete',
+                targetQuery: null,
+                confidence: 0.9,
+            }, 0);
+            assert.equal(result.valid, false);
+            assert.ok(result.errors.some((e) => e.includes('Mutation action requires a non-empty targetQuery')));
+        });
+
+        it('rejects mutation action with empty title string when provided', () => {
+            const result = validateIntentAction({
+                type: 'update',
+                targetQuery: 'some task',
+                title: '',
+                confidence: 0.9,
+            }, 0);
+            assert.equal(result.valid, false);
+            assert.ok(result.errors.some((e) => e.includes('If title is provided, it must be a non-empty string')));
+        });
+
+        it('rejects action with invalid type', () => {
+            const result = validateIntentAction({
+                type: 'reschedule',
+                targetQuery: 'some task',
+                confidence: 0.9,
+            }, 0);
+            assert.equal(result.valid, false);
+            assert.ok(result.errors.some((e) => e.includes('Invalid type')));
+        });
+
+        it('rejects action with confidence outside 0-1 range', () => {
+            const result = validateIntentAction({
+                type: 'create',
+                title: 'Test task',
+                confidence: 1.5,
+            }, 0);
+            assert.equal(result.valid, false);
+            assert.ok(result.errors.some((e) => e.includes('Confidence must be 0-1')));
+        });
+
+        it('rejects action with invalid priority', () => {
+            const result = validateIntentAction({
+                type: 'create',
+                title: 'Test task',
+                priority: 2,
+                confidence: 0.9,
+            }, 0);
+            assert.equal(result.valid, false);
+            assert.ok(result.errors.some((e) => e.includes('Invalid priority')));
+        });
+
+        it('rejects action with invalid splitStrategy', () => {
+            const result = validateIntentAction({
+                type: 'create',
+                title: 'Test task',
+                splitStrategy: 'invalid',
+                confidence: 0.9,
+            }, 0);
+            assert.equal(result.valid, false);
+            assert.ok(result.errors.some((e) => e.includes('Invalid splitStrategy')));
+        });
+
+        it('accepts valid action with all optional fields', () => {
+            const result = validateIntentAction({
+                type: 'create',
+                title: 'Test task',
+                content: 'Some details',
+                priority: 3,
+                projectHint: 'Work',
+                dueDate: 'tomorrow',
+                repeatHint: 'daily',
+                splitStrategy: 'single',
+                confidence: 0.95,
+            }, 0);
+            assert.equal(result.valid, true);
+            assert.equal(result.errors.length, 0);
+        });
+
+        it('handles multiple actions with different indices', () => {
+            const result1 = validateIntentAction({
+                type: 'create',
+                title: 'Task 1',
+                confidence: 0.9,
+            }, 0);
+            const result2 = validateIntentAction({
+                type: 'update',
+                targetQuery: 'Task 2',
+                confidence: 0.8,
+            }, 1);
+            assert.equal(result1.valid, true);
+            assert.equal(result2.valid, true);
         });
     });
 
