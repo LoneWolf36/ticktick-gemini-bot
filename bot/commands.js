@@ -9,6 +9,7 @@ import {
     parseDateStringToTickTickISO, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent, pendingToAnalysis,
     buildMutationCandidateKeyboard,
     buildMutationClarificationMessage,
+    formatPipelineFailure,
 } from './utils.js';
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
@@ -101,15 +102,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const quotaResume = gemini.quotaResumeTime?.();
         if (quotaResume) return buildQuotaExhaustedMessage(gemini);
         return '⚠️ AI is temporarily unavailable (keys expired/invalid/quota-limited). Update GEMINI_API_KEYS or retry shortly.';
-    };
-
-    const formatPipelineFailure = (result, { compact = false } = {}) => {
-        if (!result) return '⚠️ Pipeline failed.';
-        const diagnostics = result.isDevMode && Array.isArray(result.diagnostics) && result.diagnostics.length > 0
-            ? `\n\n${result.diagnostics.join('\n')}`
-            : '';
-        const message = `${result.confirmationText || '⚠️ Pipeline failed.'}${diagnostics}`;
-        return compact ? message.replace(/\n+/g, ' | ') : message;
     };
 
     const buildSummaryContext = ({ kind, userId, urgentMode }) => ({

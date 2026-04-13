@@ -3189,11 +3189,15 @@ ACCOUNTABILITY STYLE:
   }
 
   try {
-    // T011: formatPipelineFailure in commands.js respects compact flag
-    const source = readFileSync('bot/commands.js', 'utf8');
+    // T011: formatPipelineFailure in utils.js respects compact flag (extracted from commands.js closure)
+    const source = readFileSync('bot/utils.js', 'utf8');
     assert.ok(source.includes('compact = false'), 'formatPipelineFailure should accept compact flag');
     assert.ok(source.includes('result.isDevMode'), 'formatPipelineFailure should check dev mode');
     assert.ok(source.includes('result.diagnostics'), 'formatPipelineFailure should reference diagnostics');
+    // Verify commands.js imports it (not defines it inline)
+    const cmdSource = readFileSync('bot/commands.js', 'utf8');
+    assert.ok(cmdSource.includes('formatPipelineFailure'), 'commands.js should reference formatPipelineFailure');
+    assert.ok(!cmdSource.includes('const formatPipelineFailure'), 'commands.js should NOT define formatPipelineFailure as closure');
     console.log('PASS WP03 formatPipelineFailure supports compact and dev-mode flags');
   } catch (err) {
     failures++;

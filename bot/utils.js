@@ -38,3 +38,20 @@ export {
     buildMutationCandidateKeyboard,
     buildMutationClarificationMessage,
 } from '../services/shared-utils.js';
+
+/**
+ * Format a pipeline error result for user-facing display.
+ *
+ * @param {Object} result - Pipeline error result with `confirmationText`, `isDevMode`, `diagnostics`
+ * @param {Object} [options]
+ * @param {boolean} [options.compact=false] - When true, collapse newlines to single-line separators
+ * @returns {string} User-safe error message (never leaks internal diagnostics unless isDevMode)
+ */
+export function formatPipelineFailure(result, { compact = false } = {}) {
+    if (!result) return '⚠️ Pipeline failed.';
+    const diagnostics = result.isDevMode && Array.isArray(result.diagnostics) && result.diagnostics.length > 0
+        ? `\n\n${result.diagnostics.join('\n')}`
+        : '';
+    const message = `${result.confirmationText || '⚠️ Pipeline failed.'}${diagnostics}`;
+    return compact ? message.replace(/\n+/g, ' | ') : message;
+}
