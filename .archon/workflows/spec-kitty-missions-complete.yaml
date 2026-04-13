@@ -271,9 +271,21 @@ nodes:
     context: fresh
     args: "002-natural-language-task-mutations"
 
+  # HARD GATE: Block on YAGNI or Product Vision violations
+  - id: f002-quality-gate
+    command: spec-kitty-quality-gate-check
+    depends_on: [f002-review-fixes]
+    context: fresh
+    args: "002-natural-language-task-mutations"
+
+  - id: f002-halt-on-yagni
+    cancel: "YAGNI or Product Vision violations detected in feature 002 — workflow stopped intentionally"
+    depends_on: [f002-quality-gate]
+    when: "$f002-quality-gate.output contains 'GATE_FAILED'"
+
   - id: f002-final-validation
     command: spec-kitty-validate-full
-    depends_on: [f002-review-fixes]
+    depends_on: [f002-quality-gate]
     context: fresh
 
   # Conditional gate: check if validation passed before running expensive fallback
@@ -446,9 +458,21 @@ nodes:
     context: fresh
     args: "003-pipeline-hardening-and-regression"
 
+  # HARD GATE: Block on YAGNI or Product Vision violations
+  - id: f003-quality-gate
+    command: spec-kitty-quality-gate-check
+    depends_on: [f003-review-fixes]
+    context: fresh
+    args: "003-pipeline-hardening-and-regression"
+
+  - id: f003-halt-on-yagni
+    cancel: "YAGNI or Product Vision violations detected in feature 003 — workflow stopped intentionally"
+    depends_on: [f003-quality-gate]
+    when: "$f003-quality-gate.output contains 'GATE_FAILED'"
+
   - id: f003-final-validation
     command: spec-kitty-validate-full
-    depends_on: [f003-review-fixes]
+    depends_on: [f003-quality-gate]
     context: fresh
 
   # Conditional gate: check if validation passed before running expensive fallback
@@ -621,9 +645,21 @@ nodes:
     context: fresh
     args: "004-post-migration-cleanup"
 
+  # HARD GATE: Block on YAGNI or Product Vision violations
+  - id: f004-quality-gate
+    command: spec-kitty-quality-gate-check
+    depends_on: [f004-review-fixes]
+    context: fresh
+    args: "004-post-migration-cleanup"
+
+  - id: f004-halt-on-yagni
+    cancel: "YAGNI or Product Vision violations detected in feature 004 — workflow stopped intentionally"
+    depends_on: [f004-quality-gate]
+    when: "$f004-quality-gate.output contains 'GATE_FAILED'"
+
   - id: f004-final-validation
     command: spec-kitty-validate-full
-    depends_on: [f004-review-fixes]
+    depends_on: [f004-quality-gate]
     context: fresh
 
   # Conditional gate: check if validation passed before running expensive fallback
@@ -812,9 +848,21 @@ nodes:
     context: fresh
     args: "005-checklist-subtask-support"
 
+  # HARD GATE: Block on YAGNI or Product Vision violations
+  - id: f005-quality-gate
+    command: spec-kitty-quality-gate-check
+    depends_on: [f005-review-fixes]
+    context: fresh
+    args: "005-checklist-subtask-support"
+
+  - id: f005-halt-on-yagni
+    cancel: "YAGNI or Product Vision violations detected in feature 005 — workflow stopped intentionally"
+    depends_on: [f005-quality-gate]
+    when: "$f005-quality-gate.output contains 'GATE_FAILED'"
+
   - id: f005-final-validation
     command: spec-kitty-validate-full
-    depends_on: [f005-review-fixes]
+    depends_on: [f005-quality-gate]
     context: fresh
 
   # Conditional gate: check if validation passed before running expensive fallback
@@ -955,9 +1003,21 @@ nodes:
     context: fresh
     args: "006-008-quick-wins"
 
+  # HARD GATE: Block on YAGNI or Product Vision violations
+  - id: f006-008-quality-gate
+    command: spec-kitty-quality-gate-check
+    depends_on: [f006-008-review-fixes]
+    context: fresh
+    args: "006-008-quick-wins"
+
+  - id: f006-008-halt-on-yagni
+    cancel: "YAGNI or Product Vision violations detected in feature 006-008 — workflow stopped intentionally"
+    depends_on: [f006-008-quality-gate]
+    when: "$f006-008-quality-gate.output contains 'GATE_FAILED'"
+
   - id: f006-008-final-validation
     command: spec-kitty-validate-full
-    depends_on: [f006-008-review-fixes]
+    depends_on: [f006-008-quality-gate]
     context: fresh
 
   # Conditional gate: check if validation passed before running expensive fallback
@@ -1162,9 +1222,21 @@ nodes:
     context: fresh
     args: "009-behavioral-signals-and-memory"
 
+  # HARD GATE: Block on YAGNI or Product Vision violations
+  - id: f009-quality-gate
+    command: spec-kitty-quality-gate-check
+    depends_on: [f009-review-fixes]
+    context: fresh
+    args: "009-behavioral-signals-and-memory"
+
+  - id: f009-halt-on-yagni
+    cancel: "YAGNI or Product Vision violations detected in feature 009 — workflow stopped intentionally"
+    depends_on: [f009-quality-gate]
+    when: "$f009-quality-gate.output contains 'GATE_FAILED'"
+
   - id: f009-final-validation
     command: spec-kitty-validate-full
-    depends_on: [f009-review-fixes]
+    depends_on: [f009-quality-gate]
     context: fresh
 
   # Conditional gate: check if validation passed before running expensive fallback
