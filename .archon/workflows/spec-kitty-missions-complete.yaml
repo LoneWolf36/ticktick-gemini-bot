@@ -59,65 +59,77 @@ model: coder-model
 nodes:
   # ─── WP02: AX Mutation Intent Extension ──────────────────────
   - id: f002-wp02-implement
+    args: "002-natural-language-task-mutations WP02"
     command: spec-kitty-implement
     context: fresh
 
   - id: f002-wp02-validate
+    args: "002-natural-language-task-mutations WP02"
     command: spec-kitty-validate
     depends_on: [f002-wp02-implement]
     context: fresh
 
   # ─── WP03: Mutation Normalizer ──────────────────────────────
   - id: f002-wp03-implement
+    args: "002-natural-language-task-mutations WP03"
     command: spec-kitty-implement
     depends_on: [f002-wp02-validate]
     context: fresh
 
   - id: f002-wp03-validate
+    args: "002-natural-language-task-mutations WP03"
     command: spec-kitty-validate
     depends_on: [f002-wp03-implement]
     context: fresh
 
   # ─── WP04: Pipeline Integration ─────────────────────────────
   - id: f002-wp04-implement
+    args: "002-natural-language-task-mutations WP04"
     command: spec-kitty-implement
     depends_on: [f002-wp03-validate]
     context: fresh
 
   - id: f002-wp04-validate
+    args: "002-natural-language-task-mutations WP04"
     command: spec-kitty-validate
     depends_on: [f002-wp04-implement]
     context: fresh
 
   # ─── WP05: Bot Message Handler ──────────────────────────────
   - id: f002-wp05-implement
+    args: "002-natural-language-task-mutations WP05"
     command: spec-kitty-implement
     depends_on: [f002-wp04-validate]
     context: fresh
 
   - id: f002-wp05-validate
+    args: "002-natural-language-task-mutations WP05"
     command: spec-kitty-validate
     depends_on: [f002-wp05-implement]
     context: fresh
 
   # ─── WP06: Clarification UI Flow ────────────────────────────
   - id: f002-wp06-implement
+    args: "002-natural-language-task-mutations WP06"
     command: spec-kitty-implement
     depends_on: [f002-wp05-validate]
     context: fresh
 
   - id: f002-wp06-validate
+    args: "002-natural-language-task-mutations WP06"
     command: spec-kitty-validate
     depends_on: [f002-wp06-implement]
     context: fresh
 
   # ─── WP07: Testing Hardening ────────────────────────────────
   - id: f002-wp07-implement
+    args: "002-natural-language-task-mutations WP07"
     command: spec-kitty-implement
     depends_on: [f002-wp06-validate]
     context: fresh
 
   - id: f002-wp07-validate
+    args: "002-natural-language-task-mutations WP07"
     command: spec-kitty-validate
     depends_on: [f002-wp07-implement]
     context: fresh
@@ -187,51 +199,61 @@ nodes:
   # ═══════════════════════════════════════════════════════════════
 
   - id: f003-wp01-implement
+    args: "003-pipeline-hardening-and-regression WP01"
     command: spec-kitty-implement
     depends_on: [f002-final-validation]
     context: fresh
 
   - id: f003-wp01-validate
+    args: "003-pipeline-hardening-and-regression WP01"
     command: spec-kitty-validate
     depends_on: [f003-wp01-implement]
     context: fresh
 
   - id: f003-wp02-implement
+    args: "003-pipeline-hardening-and-regression WP02"
     command: spec-kitty-implement
     depends_on: [f003-wp01-validate]
     context: fresh
 
   - id: f003-wp02-validate
+    args: "003-pipeline-hardening-and-regression WP02"
     command: spec-kitty-validate
     depends_on: [f003-wp02-implement]
     context: fresh
 
   - id: f003-wp03-implement
+    args: "003-pipeline-hardening-and-regression WP03"
     command: spec-kitty-implement
     depends_on: [f003-wp02-validate]
     context: fresh
 
   - id: f003-wp03-validate
+    args: "003-pipeline-hardening-and-regression WP03"
     command: spec-kitty-validate
     depends_on: [f003-wp03-implement]
     context: fresh
 
   - id: f003-wp04-implement
+    args: "003-pipeline-hardening-and-regression WP04"
     command: spec-kitty-implement
     depends_on: [f003-wp03-validate]
     context: fresh
 
   - id: f003-wp04-validate
+    args: "003-pipeline-hardening-and-regression WP04"
     command: spec-kitty-validate
     depends_on: [f003-wp04-implement]
     context: fresh
 
   - id: f003-wp06-implement
+    args: "003-pipeline-hardening-and-regression WP06"
     command: spec-kitty-implement
     depends_on: [f003-wp04-validate]
     context: fresh
 
   - id: f003-wp06-validate
+    args: "003-pipeline-hardening-and-regression WP06"
     command: spec-kitty-validate
     depends_on: [f003-wp06-implement]
     context: fresh
@@ -298,51 +320,61 @@ nodes:
   # ═══════════════════════════════════════════════════════════════
 
   - id: f004-wp01-implement
+    args: "004-post-migration-cleanup WP01"
     command: spec-kitty-implement
     depends_on: [f003-final-validation]
     context: fresh
 
   - id: f004-wp01-validate
+    args: "004-post-migration-cleanup WP01"
     command: spec-kitty-validate
     depends_on: [f004-wp01-implement]
     context: fresh
 
   - id: f004-wp02-implement
+    args: "004-post-migration-cleanup WP02"
     command: spec-kitty-implement
     depends_on: [f004-wp01-validate]
     context: fresh
 
   - id: f004-wp02-validate
+    args: "004-post-migration-cleanup WP02"
     command: spec-kitty-validate
     depends_on: [f004-wp02-implement]
     context: fresh
 
   - id: f004-wp03-implement
+    args: "004-post-migration-cleanup WP03"
     command: spec-kitty-implement
     depends_on: [f004-wp02-validate]
     context: fresh
 
   - id: f004-wp03-validate
+    args: "004-post-migration-cleanup WP03"
     command: spec-kitty-validate
     depends_on: [f004-wp03-implement]
     context: fresh
 
   - id: f004-wp04-implement
+    args: "004-post-migration-cleanup WP04"
     command: spec-kitty-implement
     depends_on: [f004-wp03-validate]
     context: fresh
 
   - id: f004-wp04-validate
+    args: "004-post-migration-cleanup WP04"
     command: spec-kitty-validate
     depends_on: [f004-wp04-implement]
     context: fresh
 
   - id: f004-wp05-implement
+    args: "004-post-migration-cleanup WP05"
     command: spec-kitty-implement
     depends_on: [f004-wp04-validate]
     context: fresh
 
   - id: f004-wp05-validate
+    args: "004-post-migration-cleanup WP05"
     command: spec-kitty-validate
     depends_on: [f004-wp05-implement]
     context: fresh
@@ -409,61 +441,73 @@ nodes:
   # ═══════════════════════════════════════════════════════════════
 
   - id: f005-wp01-implement
+    args: "005-checklist-subtask-support WP01"
     command: spec-kitty-implement
     depends_on: [f004-final-validation]
     context: fresh
 
   - id: f005-wp01-validate
+    args: "005-checklist-subtask-support WP01"
     command: spec-kitty-validate
     depends_on: [f005-wp01-implement]
     context: fresh
 
   - id: f005-wp02-implement
+    args: "005-checklist-subtask-support WP02"
     command: spec-kitty-implement
     depends_on: [f005-wp01-validate]
     context: fresh
 
   - id: f005-wp02-validate
+    args: "005-checklist-subtask-support WP02"
     command: spec-kitty-validate
     depends_on: [f005-wp02-implement]
     context: fresh
 
   - id: f005-wp03-implement
+    args: "005-checklist-subtask-support WP03"
     command: spec-kitty-implement
     depends_on: [f005-wp02-validate]
     context: fresh
 
   - id: f005-wp03-validate
+    args: "005-checklist-subtask-support WP03"
     command: spec-kitty-validate
     depends_on: [f005-wp03-implement]
     context: fresh
 
   - id: f005-wp04-implement
+    args: "005-checklist-subtask-support WP04"
     command: spec-kitty-implement
     depends_on: [f005-wp03-validate]
     context: fresh
 
   - id: f005-wp04-validate
+    args: "005-checklist-subtask-support WP04"
     command: spec-kitty-validate
     depends_on: [f005-wp04-implement]
     context: fresh
 
   - id: f005-wp05-implement
+    args: "005-checklist-subtask-support WP05"
     command: spec-kitty-implement
     depends_on: [f005-wp04-validate]
     context: fresh
 
   - id: f005-wp05-validate
+    args: "005-checklist-subtask-support WP05"
     command: spec-kitty-validate
     depends_on: [f005-wp05-implement]
     context: fresh
 
   - id: f005-wp06-implement
+    args: "005-checklist-subtask-support WP06"
     command: spec-kitty-implement
     depends_on: [f005-wp05-validate]
     context: fresh
 
   - id: f005-wp06-validate
+    args: "005-checklist-subtask-support WP06"
     command: spec-kitty-validate
     depends_on: [f005-wp06-implement]
     context: fresh
@@ -530,31 +574,37 @@ nodes:
   # ═══════════════════════════════════════════════════════════════
 
   - id: f008-wp03-implement
+    args: "008-work-style-and-urgent-mode WP03"
     command: spec-kitty-implement
     depends_on: [f005-final-validation]
     context: fresh
 
   - id: f008-wp03-validate
+    args: "008-work-style-and-urgent-mode WP03"
     command: spec-kitty-validate
     depends_on: [f008-wp03-implement]
     context: fresh
 
   - id: f006-wp02-implement
+    args: "006-briefing-weekly-modernization WP02"
     command: spec-kitty-implement
     depends_on: [f008-wp03-validate]
     context: fresh
 
   - id: f006-wp02-validate
+    args: "006-briefing-weekly-modernization WP02"
     command: spec-kitty-validate
     depends_on: [f006-wp02-implement]
     context: fresh
 
   - id: f006-wp06-implement
+    args: "006-briefing-weekly-modernization WP06"
     command: spec-kitty-implement
     depends_on: [f006-wp02-validate]
     context: fresh
 
   - id: f006-wp06-validate
+    args: "006-briefing-weekly-modernization WP06"
     command: spec-kitty-validate
     depends_on: [f006-wp06-implement]
     context: fresh
@@ -621,71 +671,85 @@ nodes:
   # ═══════════════════════════════════════════════════════════════
 
   - id: f009-wp01-implement
+    args: "009-behavioral-signals-and-memory WP01"
     command: spec-kitty-implement
     depends_on: [f006-008-final-validation]
     context: fresh
 
   - id: f009-wp01-validate
+    args: "009-behavioral-signals-and-memory WP01"
     command: spec-kitty-validate
     depends_on: [f009-wp01-implement]
     context: fresh
 
   - id: f009-wp02-implement
+    args: "009-behavioral-signals-and-memory WP02"
     command: spec-kitty-implement
     depends_on: [f009-wp01-validate]
     context: fresh
 
   - id: f009-wp02-validate
+    args: "009-behavioral-signals-and-memory WP02"
     command: spec-kitty-validate
     depends_on: [f009-wp02-implement]
     context: fresh
 
   - id: f009-wp03-implement
+    args: "009-behavioral-signals-and-memory WP03"
     command: spec-kitty-implement
     depends_on: [f009-wp02-validate]
     context: fresh
 
   - id: f009-wp03-validate
+    args: "009-behavioral-signals-and-memory WP03"
     command: spec-kitty-validate
     depends_on: [f009-wp03-implement]
     context: fresh
 
   - id: f009-wp04-implement
+    args: "009-behavioral-signals-and-memory WP04"
     command: spec-kitty-implement
     depends_on: [f009-wp03-validate]
     context: fresh
 
   - id: f009-wp04-validate
+    args: "009-behavioral-signals-and-memory WP04"
     command: spec-kitty-validate
     depends_on: [f009-wp04-implement]
     context: fresh
 
   - id: f009-wp05-implement
+    args: "009-behavioral-signals-and-memory WP05"
     command: spec-kitty-implement
     depends_on: [f009-wp04-validate]
     context: fresh
 
   - id: f009-wp05-validate
+    args: "009-behavioral-signals-and-memory WP05"
     command: spec-kitty-validate
     depends_on: [f009-wp05-implement]
     context: fresh
 
   - id: f009-wp06-implement
+    args: "009-behavioral-signals-and-memory WP06"
     command: spec-kitty-implement
     depends_on: [f009-wp05-validate]
     context: fresh
 
   - id: f009-wp06-validate
+    args: "009-behavioral-signals-and-memory WP06"
     command: spec-kitty-validate
     depends_on: [f009-wp06-implement]
     context: fresh
 
   - id: f009-wp07-implement
+    args: "009-behavioral-signals-and-memory WP07"
     command: spec-kitty-implement
     depends_on: [f009-wp06-validate]
     context: fresh
 
   - id: f009-wp07-validate
+    args: "009-behavioral-signals-and-memory WP07"
     command: spec-kitty-validate
     depends_on: [f009-wp07-implement]
     context: fresh
