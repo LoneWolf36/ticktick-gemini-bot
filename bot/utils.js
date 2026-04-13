@@ -1,5 +1,6 @@
 // Shared utilities — card builders, formatters, update builders
 // Single source of truth used by commands.js, callbacks.js, scheduler.js, and gemini.js
+import { InlineKeyboard } from 'grammy';
 
 // ─── Priority Map (Gemini label → TickTick priority number) ─
 
@@ -518,4 +519,43 @@ export function formatProcessedTask(task) {
     }
 
     return `- "${task.originalTitle}" -> ${action} [${badge}]`;
+}
+
+// ─── Mutation Candidate Keyboard ────────────────────────────
+// Renders a short list of candidate tasks as inline buttons for ambiguous mutation requests.
+// Used by the free-form handler when target confidence is low.
+
+const MAX_CANDIDATE_LABEL = 30;
+
+function truncateCandidateLabel(title) {
+    if (!title) return '(untitled)';
+    if (title.length <= MAX_CANDIDATE_LABEL) return title;
+    return title.slice(0, MAX_CANDIDATE_LABEL - 1) + '…';
+}
+
+export function buildMutationCandidateKeyboard(candidates, { intentSummary = null, includeCancel = true } = {}) {
+    const keyboard = new InlineKeyboard();
+    candidates.slice(0, 6).forEach((candidate, idx) => {
+        const label = truncateCandidateLabel(candidate.title);
+        const callbackData = `mut:pick:${candidate.id}`;
+        if (idx % 1 === 0) keyboard.text(label, callbackData).row();
+    });
+    if (includeCancel) {
+        keyboard.text('❌ Cancel', 'mut:cancel').row();
+    }
+    return keyboard;
+}
+
+export function buildMutationClarificationMessage(reason, candidates, intentSummary) {
+    const lines = [];
+    if (intentSummary) {
+        lines.push(`**Did you mean one of these?**`);
+    } else {
+        lines.push(`**Not sure which task you mean.**`);
+    }
+    if (reason) {
+        lines.push(reason);
+    }
+    lines.push(`\nTap a task below or rephrase your request.`);
+    return lines.join('\n');
 }

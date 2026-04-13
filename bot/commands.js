@@ -6,7 +6,9 @@ import {
     buildTaskCard,
     sleep, userLocaleString, isAuthorized, guardAccess, buildUndoEntry,
     filterProcessedThisWeek, buildQuotaExhaustedMessage,
-    parseDateStringToTickTickISO, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent, pendingToAnalysis
+    parseDateStringToTickTickISO, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent, pendingToAnalysis,
+    buildMutationCandidateKeyboard,
+    buildMutationClarificationMessage,
 } from './utils.js';
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
@@ -705,6 +707,26 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 }
                 const tasks = await ticktick.getAllTasksCached(60000);
                 await ctx.reply(result.confirmationText || 'Got it — no actionable tasks detected.');
+            } else if (result.type === 'clarification') {
+                // Ambiguous mutation request — present candidates for user to pick
+                const candidates = result.clarification?.candidates || [];
+                const reason = result.clarification?.reason || null;
+                if (candidates.length === 0) {
+                    await ctx.reply('Not sure what you mean — could you rephrase?');
+                } else {
+                    // Persist pending clarification so callbacks can resume
+                    await store.setPendingMutationClarification({
+                        originalMessage: userMessage,
+                        candidates: candidates.map(c => ({ id: c.id, title: c.title })),
+                        intentSummary: result.confirmationText,
+                    });
+                    const msg = buildMutationClarificationMessage(reason, candidates, result.confirmationText);
+                    const keyboard = buildMutationCandidateKeyboard(candidates);
+                    await replyWithMarkdown(ctx, msg, { reply_markup: keyboard });
+                }
+            } else if (result.type === 'not-found') {
+                const reason = result.notFound?.reason || '';
+                await ctx.reply(`Couldn't find a matching task. ${reason ? reason : 'Try a different name or create a new task.'}`);
             } else if (result.type === 'error') {
                 await ctx.reply(formatPipelineFailure(result));
             }

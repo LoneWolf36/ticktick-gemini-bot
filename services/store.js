@@ -22,6 +22,7 @@ const DEFAULT_STATE = {
     urgentModes: {},
     pendingTasks: {},    // Analyzed + sent to Telegram, awaiting user review
     pendingReorg: null,  // Proposed global reorg plan awaiting apply/refine/cancel
+    pendingMutationClarification: null, // Pending mutation clarification state for free-form handler
     processedTasks: {},  // User has clicked approve/skip/drop
     failedTasks: {},     // AI analysis failed (rate limit) — parked to prevent re-polling
     undoLog: [],
@@ -79,6 +80,7 @@ async function loadFromRedis() {
                 urgentModes: parsed.urgentModes || {},
                 pendingTasks: parsed.pendingTasks || {},
                 pendingReorg: parsed.pendingReorg || null,
+                pendingMutationClarification: parsed.pendingMutationClarification || null,
                 processedTasks: parsed.processedTasks || {},
                 undoLog: parsed.undoLog || [],
             };
@@ -146,6 +148,7 @@ function loadFromFile() {
             urgentModes: parsed.urgentModes || {},
             pendingTasks: parsed.pendingTasks || {},
             pendingReorg: parsed.pendingReorg || null,
+            pendingMutationClarification: parsed.pendingMutationClarification || null,
             processedTasks: parsed.processedTasks || {},
             undoLog: parsed.undoLog || [],
         };
@@ -389,6 +392,26 @@ export async function setPendingReorg(data) {
 
 export async function clearPendingReorg() {
     state.pendingReorg = null;
+    await save();
+}
+
+// ─── Pending Mutation Clarification ──────────────────────────
+// Narrow state for resuming ambiguous mutation requests after user selects a candidate.
+
+export function getPendingMutationClarification() {
+    return state.pendingMutationClarification;
+}
+
+export async function setPendingMutationClarification(data) {
+    state.pendingMutationClarification = {
+        ...data,
+        createdAt: new Date().toISOString(),
+    };
+    await save();
+}
+
+export async function clearPendingMutationClarification() {
+    state.pendingMutationClarification = null;
     await save();
 }
 

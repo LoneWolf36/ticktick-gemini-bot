@@ -1273,24 +1273,24 @@ async function run() {
     let updatePayload = null;
     const client = Object.create(TickTickClient.prototype);
     client.getTask = async () => ({
-      id: 'task-1',
-      projectId: 'project-1',
+      id: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+      projectId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
       content: '',
       priority: 0,
       status: 0,
     });
     client.updateTask = async (_taskId, payload) => {
       updatePayload = payload;
-      return { id: 'task-1', ...payload };
+      return { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', ...payload };
     };
 
     const adapter = new TickTickAdapter(client);
-    await adapter.updateTask('task-1', {
-      originalProjectId: 'project-1',
+    await adapter.updateTask('aaaaaaaaaaaaaaaaaaaaaaaa', {
+      originalProjectId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
       dueDate: '2026-03-11T09:30:00.000+0000',
     });
 
-    assert.equal(updatePayload.projectId, 'project-1');
+    assert.equal(updatePayload.projectId, 'bbbbbbbbbbbbbbbbbbbbbbbb');
     assert.equal(updatePayload.dueDate, '2026-03-11T09:30:00.000+0000');
     assert.equal(Object.hasOwn(updatePayload, 'originalProjectId'), false);
     console.log('PASS TickTickAdapter includes projectId for due-date-only updates');
@@ -1305,6 +1305,7 @@ async function run() {
     const telemetryEvents = [];
     const adapter = {
       listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+      listActiveTasks: async () => [],
       getTaskSnapshot: async (taskId, projectId) => ({
         id: taskId,
         projectId,
@@ -1393,6 +1394,7 @@ async function run() {
     const telemetryEvents = [];
     const adapter = {
       listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+      listActiveTasks: async () => [],
       getTaskSnapshot: async (taskId, projectId) => ({
         id: taskId,
         projectId,
@@ -2881,6 +2883,115 @@ ACCOUNTABILITY STYLE:
   } catch (err) {
     failures++;
     console.error('FAIL successful mutation write calls adapter through _executeActions');
+    console.error(err.message);
+  }
+
+  // ─── WP05: Free-form handler mutation outcomes ──────────────────
+
+  try {
+    // Test clarification: ambiguous query matches multiple tasks
+    const { resolveTarget } = await import('../services/task-resolver.js');
+    const tasks = [
+      { id: 't1', title: 'Write weekly report', projectId: 'p1', projectName: 'Career', priority: 5, status: 0 },
+      { id: 't2', title: 'Review weekly metrics', projectId: 'p1', projectName: 'Career', priority: 3, status: 0 },
+    ];
+    const result = resolveTarget({ targetQuery: 'weekly', activeTasks: tasks });
+    assert.equal(result.status, 'clarification');
+    assert.equal(result.candidates.length, 2);
+    console.log('PASS task-resolver returns clarification for ambiguous query');
+  } catch (err) {
+    failures++;
+    console.error('FAIL task-resolver returns clarification for ambiguous query');
+    console.error(err.message);
+  }
+
+  try {
+    // Test not-found: query matches no task
+    const { resolveTarget } = await import('../services/task-resolver.js');
+    const tasks = [
+      { id: 't1', title: 'Write weekly report', projectId: 'p1', projectName: 'Career', priority: 5, status: 0 },
+    ];
+    const result = resolveTarget({ targetQuery: 'nonexistent xyz', activeTasks: tasks });
+    assert.equal(result.status, 'not_found');
+    assert.equal(result.candidates.length, 0);
+    console.log('PASS task-resolver returns not-found for unmatched query');
+  } catch (err) {
+    failures++;
+    console.error('FAIL task-resolver returns not-found for unmatched query');
+    console.error(err.message);
+  }
+
+  try {
+    // Test store: pending mutation clarification state
+    const store = await import('../services/store.js');
+    const testKey = `test-mut-clar-${Date.now()}`;
+    const testData = {
+      originalMessage: 'update the weekly report',
+      candidates: [{ id: 't1', title: 'Write weekly report' }],
+      intentSummary: 'Update task: weekly report',
+    };
+    assert.equal(store.getPendingMutationClarification(), null);
+    await store.setPendingMutationClarification(testData);
+    const retrieved = store.getPendingMutationClarification();
+    assert.equal(retrieved.originalMessage, testData.originalMessage);
+    assert.equal(retrieved.candidates.length, 1);
+    assert.equal(retrieved.candidates[0].id, 't1');
+    assert.ok(retrieved.createdAt);
+    await store.clearPendingMutationClarification();
+    assert.equal(store.getPendingMutationClarification(), null);
+    console.log('PASS store persists and clears pending mutation clarification');
+  } catch (err) {
+    failures++;
+    console.error('FAIL store persists and clears pending mutation clarification');
+    console.error(err.message);
+  }
+
+  try {
+    // Test utils: buildMutationCandidateKeyboard
+    const { buildMutationCandidateKeyboard, buildMutationClarificationMessage } = await import('../bot/utils.js');
+    const candidates = [
+      { id: 't1', title: 'Write weekly report' },
+      { id: 't2', title: 'Review weekly metrics dashboard for Q4' },
+    ];
+    const keyboard = buildMutationCandidateKeyboard(candidates);
+    assert.ok(keyboard);
+    // Verify truncation: long title should be truncated
+    const msg = buildMutationClarificationMessage('Multiple tasks match "weekly".', candidates, 'Update task');
+    assert.ok(msg.includes('Multiple tasks match'));
+    assert.ok(msg.includes('Tap a task below'));
+    console.log('PASS mutation candidate keyboard and message helpers');
+  } catch (err) {
+    failures++;
+    console.error('FAIL mutation candidate keyboard and message helpers');
+    console.error(err.message);
+  }
+
+  try {
+    // Test: clarification and not-found results via pipeline harness
+    const harness = createPipelineHarness({
+      intents: [{ type: 'update', title: 'Title change', confidence: 0.9, targetQuery: 'nonexistent task' }],
+      activeTasks: [],
+    });
+    const result = await harness.processMessage('update nonexistent task');
+    assert.equal(result.type, 'not-found');
+    assert.ok(result.notFound);
+    assert.ok(result.confirmationText);
+
+    const clarHarness = createPipelineHarness({
+      intents: [{ type: 'update', title: 'Title', confidence: 0.9, targetQuery: 'weekly' }],
+      activeTasks: [
+        { id: 't1', title: 'Write weekly report', projectId: 'p1', projectName: 'Career', priority: 5, status: 0 },
+        { id: 't2', title: 'Review weekly metrics', projectId: 'p1', projectName: 'Career', priority: 3, status: 0 },
+      ],
+    });
+    const clarResult = await clarHarness.processMessage('update weekly');
+    assert.equal(clarResult.type, 'clarification');
+    assert.ok(clarResult.clarification);
+    assert.equal(clarResult.clarification.candidates.length, 2);
+    console.log('PASS pipeline produces clarification and not-found result types via harness');
+  } catch (err) {
+    failures++;
+    console.error('FAIL pipeline produces clarification and not-found result types via harness');
     console.error(err.message);
   }
 

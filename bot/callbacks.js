@@ -115,4 +115,42 @@ export function registerCallbacks(bot, ticktick, gemini, adapter) {
             await ctx.answerCallbackQuery({ text: `❌ Delete failed: ${err.message}` });
         }
     });
+
+    // ─── Mutation Candidate Selection ────────────────────────
+    // Handles user picking a task from the clarification keyboard
+    bot.callbackQuery(/^mut:pick:(.+)$/, async (ctx) => {
+        if (!isAuthorized(ctx)) {
+            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            return;
+        }
+        const taskId = ctx.match[1];
+        const pending = store.getPendingMutationClarification();
+
+        if (!pending) {
+            await ctx.answerCallbackQuery({ text: '⚠️ No pending clarification found.' });
+            return;
+        }
+
+        const candidate = pending.candidates.find(c => c.id === taskId);
+        if (!candidate) {
+            await ctx.answerCallbackQuery({ text: '⚠️ Candidate not found.' });
+            return;
+        }
+
+        await ctx.answerCallbackQuery({ text: `Selected: "${candidate.title}"` });
+        // Clear pending state — downstream pipeline or handler resumes
+        await store.clearPendingMutationClarification();
+        await editWithMarkdown(ctx, `✅ **"${candidate.title}"** selected. Proceed with your request.`);
+    });
+
+    // ─── Mutation Clarification Cancel ───────────────────────
+    bot.callbackQuery(/^mut:cancel$/, async (ctx) => {
+        if (!isAuthorized(ctx)) {
+            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            return;
+        }
+        await store.clearPendingMutationClarification();
+        await ctx.answerCallbackQuery({ text: 'Canceled' });
+        await editWithMarkdown(ctx, '❌ **Clarification canceled.** Rephrase or try again.');
+    });
 }
