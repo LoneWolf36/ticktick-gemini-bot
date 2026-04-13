@@ -1124,8 +1124,10 @@ test('TickTickAdapter includes the existing projectId when updating only a due d
 test('pipeline retries once and rolls back earlier successful writes', async () => {
   const adapterCalls = [];
   const telemetryEvents = [];
+  let createCount = 0;
   const adapter = {
     listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+    listActiveTasks: async () => [],
     getTaskSnapshot: async (taskId, projectId) => ({
       id: taskId,
       projectId,
@@ -1138,11 +1140,15 @@ test('pipeline retries once and rolls back earlier successful writes', async () 
     }),
     createTask: async (action) => {
       adapterCalls.push(['createTask', action.title]);
-      return { id: 'created-1', projectId: action.projectId };
+      createCount++;
+      // First create succeeds, second create fails
+      if (createCount === 1) {
+        return { id: 'created-1', projectId: action.projectId };
+      }
+      throw new Error('TickTick unavailable');
     },
     updateTask: async () => {
-      adapterCalls.push(['updateTask']);
-      throw new Error('TickTick unavailable');
+      throw new Error('updateTask should not be called in this scenario');
     },
     deleteTask: async (taskId, projectId) => {
       adapterCalls.push(['deleteTask', taskId, projectId]);
@@ -1158,12 +1164,12 @@ test('pipeline retries once and rolls back earlier successful writes', async () 
 
   const pipeline = createPipeline({
     axIntent: {
-      extractIntents: async () => [{ type: 'create' }, { type: 'update' }],
+      extractIntents: async () => [{ type: 'create' }, { type: 'create' }],
     },
     normalizer: {
       normalizeActions: () => ([
         { type: 'create', title: 'Draft proposal', projectId: 'inbox', valid: true, validationErrors: [] },
-        { type: 'update', taskId: 'task-2', originalProjectId: 'inbox', projectId: 'inbox', title: 'Existing task', valid: true, validationErrors: [] },
+        { type: 'create', title: 'Follow-up task', projectId: 'inbox', valid: true, validationErrors: [] },
       ]),
     },
     adapter,
@@ -1175,7 +1181,7 @@ test('pipeline retries once and rolls back earlier successful writes', async () 
     }),
   });
 
-  const result = await pipeline.processMessage('Draft proposal and update the follow-up', {
+  const result = await pipeline.processMessage('Draft proposal and follow-up', {
     requestId: 'req-rollback-success',
     entryPoint: 'telegram',
     mode: 'interactive',
@@ -1194,8 +1200,8 @@ test('pipeline retries once and rolls back earlier successful writes', async () 
     adapterCalls,
     [
       ['createTask', 'Draft proposal'],
-      ['updateTask'],
-      ['updateTask'],
+      ['createTask', 'Follow-up task'],
+      ['createTask', 'Follow-up task'],
       ['deleteTask', 'created-1', 'inbox'],
     ],
   );
@@ -1215,8 +1221,10 @@ test('pipeline retries once and rolls back earlier successful writes', async () 
 
 test('pipeline classifies rollback failures when compensation is unsupported', async () => {
   const telemetryEvents = [];
+  let completeCount = 0;
   const adapter = {
     listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+    listActiveTasks: async () => [],
     getTaskSnapshot: async (taskId, projectId) => ({
       id: taskId,
       projectId,
@@ -1227,9 +1235,16 @@ test('pipeline classifies rollback failures when compensation is unsupported', a
       repeatFlag: null,
       status: 0,
     }),
-    completeTask: async (taskId, projectId) => ({ completed: true, taskId, projectId }),
+    completeTask: async (taskId, projectId) => {
+      completeCount++;
+      // First complete succeeds, second fails
+      if (completeCount === 1) {
+        return { completed: true, taskId, projectId };
+      }
+      throw new Error('Complete failed — triggering rollback');
+    },
     createTask: async () => {
-      throw new Error('Create failed');
+      throw new Error('createTask should not be called in this scenario');
     },
     updateTask: async () => {
       throw new Error('updateTask should not be called in this scenario');
@@ -1238,18 +1253,18 @@ test('pipeline classifies rollback failures when compensation is unsupported', a
       throw new Error('deleteTask should not be called in this scenario');
     },
     restoreTask: async () => {
-      throw new Error('restoreTask should not be called in this scenario');
+      throw new Error('Rollback unsupported: TickTick does not expose a reliable reopen path.');
     },
   };
 
   const pipeline = createPipeline({
     axIntent: {
-      extractIntents: async () => [{ type: 'complete' }, { type: 'create' }],
+      extractIntents: async () => [{ type: 'complete' }],
     },
     normalizer: {
       normalizeActions: () => ([
         { type: 'complete', taskId: 'task-1', projectId: 'inbox', valid: true, validationErrors: [] },
-        { type: 'create', title: 'Replacement task', projectId: 'inbox', valid: true, validationErrors: [] },
+        { type: 'complete', taskId: 'task-2', projectId: 'inbox', valid: true, validationErrors: [] },
       ]),
     },
     adapter,
@@ -1261,12 +1276,13 @@ test('pipeline classifies rollback failures when compensation is unsupported', a
     }),
   });
 
-  const result = await pipeline.processMessage('Complete this and create a replacement', {
+  const result = await pipeline.processMessage('complete both tasks', {
     requestId: 'req-rollback-failure',
     entryPoint: 'telegram',
     mode: 'interactive',
   });
 
+  // First complete succeeds, second complete fails after retry, rollback of first (uncomplete) throws
   assert.equal(result.type, 'error');
   assert.equal(result.failure.class, 'rollback');
   assert.equal(result.failure.rolledBack, false);
@@ -1276,6 +1292,7 @@ test('pipeline classifies rollback failures when compensation is unsupported', a
   assert.equal(result.results[1].status, 'failed');
   assert.equal(result.results[1].attempts, 2);
   assert.equal(result.failure.retryable, false);
+  assert.equal(completeCount, 3); // 1 success + 2 attempts on second
   assert.ok(
     telemetryEvents.some((event) =>
       event.eventType === 'pipeline.rollback.failed'
@@ -2205,6 +2222,7 @@ test('pipeline classifies quota failures from AX extraction', async () => {
   };
   const adapter = {
     listProjects: async () => DEFAULT_PROJECTS,
+    listActiveTasks: async () => [],
   };
   const pipeline = createPipeline({
     axIntent,
@@ -2229,6 +2247,7 @@ test('pipeline classifies quota failures from AX extraction', async () => {
 test('pipeline classifies unexpected normalization errors', async () => {
   const adapter = {
     listProjects: async () => DEFAULT_PROJECTS,
+    listActiveTasks: async () => [],
   };
   const pipeline = createPipeline({
     axIntent: {
@@ -2305,6 +2324,17 @@ test('burst pipeline requests remain isolated and deterministic', async () => {
   const telemetryEvents = [];
   const adapter = {
     listProjects: async () => DEFAULT_PROJECTS,
+    listActiveTasks: async () => [],
+    getTaskSnapshot: async (taskId, projectId) => ({
+      id: taskId,
+      projectId,
+      title: 'Task',
+      content: null,
+      priority: 0,
+      dueDate: null,
+      repeatFlag: null,
+      status: 0,
+    }),
     createTask: async (action) => {
       await new Promise((resolve) => setTimeout(resolve, 1));
       if ((action.title || '').includes('FAIL')) {
