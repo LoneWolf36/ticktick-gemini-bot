@@ -1338,15 +1338,30 @@ async function run() {
 
     const pipeline = createPipeline({
       axIntent: {
-        extractIntents: async () => [{ type: 'create' }, { type: 'update' }],
+        extractIntents: async () => [{ type: 'create' }, { type: 'create' }],
       },
       normalizer: {
         normalizeActions: () => ([
           { type: 'create', title: 'Draft proposal', projectId: 'inbox', valid: true, validationErrors: [] },
-          { type: 'update', taskId: 'task-2', originalProjectId: 'inbox', projectId: 'inbox', title: 'Existing task', valid: true, validationErrors: [] },
+          { type: 'create', title: 'Follow-up task', projectId: 'inbox', valid: true, validationErrors: [] },
         ]),
       },
-      adapter,
+      adapter: {
+        listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+        listActiveTasks: async () => [],
+        createTask: async (action) => {
+          adapterCalls.push(['createTask', action.title]);
+          // First create succeeds, second create fails
+          if (adapterCalls.filter(c => c[0] === 'createTask').length === 1) {
+            return { id: 'created-1', projectId: action.projectId };
+          }
+          throw new Error('TickTick unavailable');
+        },
+        deleteTask: async (taskId, projectId) => {
+          adapterCalls.push(['deleteTask', taskId, projectId]);
+          return { deleted: true, taskId, projectId };
+        },
+      },
       observability: createPipelineObservability({
         eventSink: async (event) => {
           telemetryEvents.push(event);
@@ -1355,7 +1370,7 @@ async function run() {
       }),
     });
 
-    const result = await pipeline.processMessage('Draft proposal and update the follow-up', {
+    const result = await pipeline.processMessage('Draft proposal and follow-up', {
       requestId: 'regression-rollback-success',
       entryPoint: 'telegram',
       mode: 'interactive',
@@ -1372,8 +1387,8 @@ async function run() {
       adapterCalls,
       [
         ['createTask', 'Draft proposal'],
-        ['updateTask'],
-        ['updateTask'],
+        ['createTask', 'Follow-up task'],
+        ['createTask', 'Follow-up task'],
         ['deleteTask', 'created-1', 'inbox'],
       ],
     );
@@ -2538,6 +2553,7 @@ ACCOUNTABILITY STYLE:
       normalizer: { normalizeActions: () => [] },
       adapter: {
         listProjects: async () => DEFAULT_PROJECTS,
+        listActiveTasks: async () => [],
       },
       observability: createPipelineObservability({ logger: null }),
     });
@@ -2572,6 +2588,7 @@ ACCOUNTABILITY STYLE:
       },
       adapter: {
         listProjects: async () => DEFAULT_PROJECTS,
+        listActiveTasks: async () => [],
       },
       observability: createPipelineObservability({ logger: null }),
     });
@@ -2663,6 +2680,7 @@ ACCOUNTABILITY STYLE:
       },
       adapter: {
         listProjects: async () => DEFAULT_PROJECTS,
+        listActiveTasks: async () => [],
         createTask: async (action) => {
           await new Promise((resolve) => setTimeout(resolve, 1));
           if ((action.title || '').includes('FAIL')) {

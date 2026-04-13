@@ -6,6 +6,7 @@ import { createPipelineContextBuilder, validatePipelineContext } from '../servic
 function createMockAdapter(projects = []) {
     return {
         listProjects: async () => projects,
+        listActiveTasks: async () => [],
     };
 }
 
@@ -94,6 +95,7 @@ test('T001: context builder accepts caller-provided projects without fetching ad
     let listProjectsCalled = false;
     const adapter = {
         listProjects: async () => { listProjectsCalled = true; return []; },
+        listActiveTasks: async () => [],
     };
     const builder = createPipelineContextBuilder({ adapter, timezone: 'UTC' });
     await builder.buildRequestContext('Test', {
