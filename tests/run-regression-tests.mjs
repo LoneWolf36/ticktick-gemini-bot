@@ -21,7 +21,7 @@ import {
   formatSummary,
   normalizeWeeklyWatchouts,
 } from '../services/summary-surfaces/index.js';
-import { createPipelineHarness, DEFAULT_PROJECTS } from './pipeline-harness.js';
+import { createPipelineHarness, DEFAULT_PROJECTS, DEFAULT_ACTIVE_TASKS } from './pipeline-harness.js';
 import {
   buildRankingContext,
   buildRecommendationResult,
@@ -2773,6 +2773,114 @@ ACCOUNTABILITY STYLE:
   } catch (err) {
     failures++;
     console.error('FAIL pipeline happy path covers task operations and non-task routing');
+    console.error(err.message);
+  }
+
+  // ─── WP04: Mutation routing regression tests ───
+
+  try {
+    const harness = createPipelineHarness({
+      intents: [
+        { type: 'update', title: 'Weekly report', confidence: 0.9, targetQuery: 'weekly report' },
+      ],
+      activeTasks: [
+        { id: 'task000000000000000000010', title: 'Write weekly report', projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa', projectName: 'Inbox', priority: 5, dueDate: null, content: null, status: 0 },
+      ],
+    });
+    const result = await harness.processMessage('update the weekly report');
+    assert.equal(result.type, 'task');
+    assert.equal(result.actions[0].type, 'update');
+    assert.equal(result.actions[0].taskId, 'task000000000000000000010');
+    assert.equal(harness.adapterCalls.update.length, 1);
+    console.log('PASS mutation routing resolves exact-match update target');
+  } catch (err) {
+    failures++;
+    console.error('FAIL mutation routing resolves exact-match update target');
+    console.error(err.message);
+  }
+
+  try {
+    const harness = createPipelineHarness({
+      intents: [
+        { type: 'update', title: 'report', confidence: 0.9, targetQuery: 'report' },
+      ],
+      activeTasks: [
+        { id: 'task001', title: 'Write weekly report', projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa', projectName: 'Inbox', priority: 5, dueDate: null, content: null, status: 0 },
+        { id: 'task002', title: 'Monthly report', projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa', projectName: 'Inbox', priority: 3, dueDate: null, content: null, status: 0 },
+      ],
+    });
+    const result = await harness.processMessage('update the report');
+    assert.equal(result.type, 'clarification');
+    assert.ok(result.confirmationText.includes('Which task did you mean?'));
+    assert.equal(result.clarification.candidates.length, 2);
+    assert.equal(harness.adapterCalls.update.length, 0);
+    console.log('PASS mutation routing returns clarification for ambiguous target');
+  } catch (err) {
+    failures++;
+    console.error('FAIL mutation routing returns clarification for ambiguous target');
+    console.error(err.message);
+  }
+
+  try {
+    const harness = createPipelineHarness({
+      intents: [
+        { type: 'complete', title: 'nonexistent task', confidence: 0.9, targetQuery: 'nonexistent task' },
+      ],
+      activeTasks: [
+        { id: 'task001', title: 'Write weekly report', projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa', projectName: 'Inbox', priority: 5, dueDate: null, content: null, status: 0 },
+      ],
+    });
+    const result = await harness.processMessage('complete nonexistent task');
+    assert.equal(result.type, 'not-found');
+    assert.match(result.confirmationText, /Couldn't find/);
+    assert.equal(harness.adapterCalls.complete.length, 0);
+    console.log('PASS mutation routing returns not-found for missing target');
+  } catch (err) {
+    failures++;
+    console.error('FAIL mutation routing returns not-found for missing target');
+    console.error(err.message);
+  }
+
+  try {
+    const harness = createPipelineHarness({
+      intents: [
+        { type: 'create', title: 'New task', confidence: 0.9 },
+        { type: 'update', title: 'Weekly report', confidence: 0.9, targetQuery: 'weekly report' },
+      ],
+      activeTasks: [
+        { id: 'task001', title: 'Write weekly report', projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa', projectName: 'Inbox', priority: 5, dueDate: null, content: null, status: 0 },
+      ],
+    });
+    const result = await harness.processMessage('create a task and update the weekly report');
+    assert.equal(result.type, 'error');
+    assert.equal(result.failure.class, 'validation');
+    assert.equal(harness.adapterCalls.create.length, 0);
+    assert.equal(harness.adapterCalls.update.length, 0);
+    console.log('PASS mutation routing rejects mixed create+mutation request');
+  } catch (err) {
+    failures++;
+    console.error('FAIL mutation routing rejects mixed create+mutation request');
+    console.error(err.message);
+  }
+
+  try {
+    const harness = createPipelineHarness({
+      intents: [
+        { type: 'update', title: 'Title change', confidence: 0.9, targetQuery: 'weekly report' },
+      ],
+      activeTasks: [
+        { id: 'task001', title: 'Write weekly report', projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa', projectName: 'Inbox', priority: 5, dueDate: null, content: null, status: 0 },
+      ],
+    });
+    const result = await harness.processMessage('update weekly report title');
+    assert.equal(result.type, 'task');
+    assert.equal(harness.adapterCalls.update.length, 1);
+    const updateCall = harness.adapterCalls.update[0];
+    assert.equal(updateCall.taskId, 'task001');
+    console.log('PASS successful mutation write calls adapter through _executeActions');
+  } catch (err) {
+    failures++;
+    console.error('FAIL successful mutation write calls adapter through _executeActions');
     console.error(err.message);
   }
 

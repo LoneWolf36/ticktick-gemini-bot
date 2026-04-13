@@ -23,7 +23,7 @@ import {
   formatSummary,
   normalizeWeeklyWatchouts,
 } from '../services/summary-surfaces/index.js';
-import { createPipelineHarness, DEFAULT_PROJECTS } from './pipeline-harness.js';
+import { createPipelineHarness, DEFAULT_PROJECTS, DEFAULT_ACTIVE_TASKS } from './pipeline-harness.js';
 import {
   buildRankingContext,
   buildRecommendationResult,

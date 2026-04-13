@@ -541,13 +541,51 @@ export class TickTickAdapter {
     }
 
     /**
+     * Lists all active (incomplete) tasks across all projects.
+     * Reuses the client's cached task-list behavior where practical.
+     * Returns task objects with id, title, projectId, projectName, priority, dueDate, content, status.
+     * @param {boolean} forceRefresh - Force refresh the client's task cache
+     * @returns {Promise<Array<{id: string, title: string, projectId: string, projectName: string, priority: number|null, dueDate: string|null, content: string|null, status: number}>>}
+     * @throws {Error} Classified error with code if API call fails
+     */
+    async listActiveTasks(forceRefresh = false) {
+        const start = Date.now();
+        this._log('listActiveTasks', { forceRefresh });
+        try {
+            const tasks = forceRefresh
+                ? await this._client.getAllTasks()
+                : await this._client.getAllTasksCached();
+
+            const result = tasks.map(t => ({
+                id: t.id,
+                title: t.title || '',
+                projectId: t.projectId ?? null,
+                projectName: t.projectName ?? null,
+                priority: t.priority ?? null,
+                dueDate: t.dueDate ?? null,
+                content: t.content ?? null,
+                status: t.status ?? 0,
+            }));
+
+            const elapsed = Date.now() - start;
+            this._log('listActiveTasks', `SUCCESS { count: ${result.length}, ${elapsed}ms }`);
+            return result;
+        } catch (error) {
+            const elapsed = Date.now() - start;
+            const classified = this._classifyError(error, 'listActiveTasks');
+            this._log('listActiveTasks', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            throw classified;
+        }
+    }
+
+    /**
      * Marks a task as complete in TickTick.
      * Note: Requires both taskId and projectId per TickTick API requirements.
      * @param {string} taskId - 24-char hex task ID
      * @param {string} projectId - 24-char hex project ID (required by TickTick API)
      * @returns {Promise<{completed: boolean, taskId: string}>} Confirmation object
      * @throws {Error} Classified error with code if API call fails or validation fails
-     * 
+     *
      * @example
      * await adapter.completeTask('task123...', 'proj456...');
      */

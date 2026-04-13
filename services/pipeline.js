@@ -6,6 +6,7 @@
 import { createPipelineContextBuilder } from './pipeline-context.js';
 import { createPipelineObservability } from './pipeline-observability.js';
 import { QuotaExhaustedError } from './ax-intent.js';
+import { resolveTarget, buildClarificationPrompt } from './task-resolver.js';
 
 const FAILURE_CLASSES = {
     QUOTA: 'quota',
@@ -134,6 +135,38 @@ function buildNonTaskResult(context, reason, details = null) {
         confirmationText: 'Got it — no actionable tasks detected.',
         nonTaskReason: reason,
         nonTaskDetails: details,
+        requestId: context?.requestId || null,
+        entryPoint: context?.entryPoint || null,
+        mode: context?.mode || null,
+    };
+}
+
+function buildClarificationResult(context, resolverResult) {
+    const clarificationPrompt = buildClarificationPrompt(resolverResult);
+    return {
+        type: 'clarification',
+        results: [],
+        errors: [],
+        confirmationText: clarificationPrompt,
+        clarification: {
+            candidates: resolverResult.candidates,
+            reason: resolverResult.reason,
+        },
+        requestId: context?.requestId || null,
+        entryPoint: context?.entryPoint || null,
+        mode: context?.mode || null,
+    };
+}
+
+function buildNotFoundResult(context, reason) {
+    return {
+        type: 'not-found',
+        results: [],
+        errors: [],
+        confirmationText: `Couldn't find a matching task for that request.`,
+        notFound: {
+            reason,
+        },
         requestId: context?.requestId || null,
         entryPoint: context?.entryPoint || null,
         mode: context?.mode || null,
@@ -430,14 +463,137 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 return buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS);
             }
 
+            // Mutation routing (WP04): detect mutation intents and resolve targets
+            const mutationTypes = ['update', 'complete', 'delete'];
+            const hasMutation = intents.some(i => mutationTypes.includes(i.type));
+            const hasCreate = intents.some(i => i.type === 'create');
+
+            if (hasMutation && hasCreate) {
+                // Mixed create+mutation: out of scope for v1
+                console.warn(`[Pipeline:${context.requestId}] Mixed create+mutation request rejected.`);
+                const failureResult = buildFailureResult(context, {
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    stage: 'mutation-routing',
+                    summary: 'Mixed create+mutation request is out of scope.',
+                    details: {
+                        intentTypes: intents.map(i => i.type),
+                    },
+                    retryable: true,
+                });
+                await telemetry.emit(context, {
+                    eventType: 'pipeline.request.failed',
+                    step: 'result',
+                    status: 'failure',
+                    durationMs: Date.now() - requestStartedAt,
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    rolledBack: false,
+                    metadata: {
+                        reason: 'mixed_create_and_mutation',
+                    },
+                });
+                return failureResult;
+            }
+
+            if (hasMutation && intents.length > 1) {
+                // Multi-mutation: out of scope for v1 (single-target only)
+                console.warn(`[Pipeline:${context.requestId}] Multi-mutation request rejected.`);
+                const failureResult = buildFailureResult(context, {
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    stage: 'mutation-routing',
+                    summary: 'Multiple mutation targets are not supported yet.',
+                    details: {
+                        intentTypes: intents.map(i => i.type),
+                    },
+                    retryable: true,
+                });
+                await telemetry.emit(context, {
+                    eventType: 'pipeline.request.failed',
+                    step: 'result',
+                    status: 'failure',
+                    durationMs: Date.now() - requestStartedAt,
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    rolledBack: false,
+                    metadata: {
+                        reason: 'multiple_mutations',
+                    },
+                });
+                return failureResult;
+            }
+
+            let resolvedTask = null;
+            let resolvedTaskContent = null;
+
+            if (hasMutation) {
+                const mutationIntent = intents.find(i => mutationTypes.includes(i.type));
+                const targetQuery = mutationIntent?.targetQuery || null;
+
+                // Use active tasks from context (populated by pipeline-context builder)
+                const activeTasks = context.activeTasks || [];
+
+                // If the intent already has a resolved taskId (from test harnesses or direct calls), use it
+                if (mutationIntent?.taskId) {
+                    resolvedTask = {
+                        id: mutationIntent.taskId,
+                        projectId: mutationIntent.originalProjectId || mutationIntent.projectId || null,
+                        title: mutationIntent.title || null,
+                    };
+                    // Try to get content from active tasks
+                    resolvedTaskContent = activeTasks.find(t => t.id === resolvedTask.id)?.content ?? null;
+                } else if (targetQuery) {
+                    const resolveStartedAt = Date.now();
+                    const resolverResult = resolveTarget({ targetQuery, activeTasks });
+
+                    await telemetry.emit(context, {
+                        eventType: 'pipeline.resolve.completed',
+                        step: 'resolve',
+                        status: resolverResult.status === 'resolved' ? 'success' : 'failure',
+                        durationMs: Date.now() - resolveStartedAt,
+                        metadata: {
+                            targetQuery,
+                            resultStatus: resolverResult.status,
+                            candidateCount: resolverResult.candidates.length,
+                        },
+                    });
+
+                    if (resolverResult.status === 'clarification') {
+                        return buildClarificationResult(context, resolverResult);
+                    }
+
+                    if (resolverResult.status === 'not_found') {
+                        return buildNotFoundResult(context, resolverResult.reason);
+                    }
+
+                    // resolved
+                    resolvedTask = {
+                        id: resolverResult.selected.taskId,
+                        projectId: resolverResult.selected.projectId,
+                        title: resolverResult.selected.title,
+                    };
+                    resolvedTaskContent = activeTasks.find(t => t.id === resolvedTask.id)?.content ?? null;
+
+                    // Enrich the mutation intent with resolved context
+                    mutationIntent.taskId = resolvedTask.id;
+                    mutationIntent.resolvedTaskId = resolvedTask.id;
+                    if (resolvedTask.projectId) {
+                        mutationIntent.originalProjectId = resolvedTask.projectId;
+                    }
+                } else {
+                    // No targetQuery and no taskId — try to use existingTask from context
+                    if (context.existingTask?.id) {
+                        resolvedTask = context.existingTask;
+                        resolvedTaskContent = context.existingTask?.content ?? null;
+                    }
+                }
+            }
+
             const defaultProjectId = context.availableProjects
                 .find(p => p?.name?.toLowerCase() === 'inbox')?.id || null;
 
             const normOptions = {
                 projects: context.availableProjects,
                 defaultProjectId,
-                existingTask: context.existingTask,
-                existingTaskContent: context.existingTask?.content || null,
+                existingTask: resolvedTask || context.existingTask,
+                existingTaskContent: resolvedTaskContent || context.existingTask?.content || null,
                 timezone: context.timezone,
                 currentDate: context.currentDate,
             };
