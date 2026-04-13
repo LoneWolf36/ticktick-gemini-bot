@@ -43,7 +43,10 @@ const REQUIRED_VARS = {
     TELEGRAM_CHAT_ID,
 };
 
-// Note: GEMINI_API_KEYS is validated separately below (supports legacy GEMINI_API_KEY fallback)
+// Startup validation: REQUIRED_VARS are checked first (hard failure if missing).
+// GEMINI_API_KEYS is validated next (hard failure if no keys available).
+// TICKTICK_ACCESS_TOKEN is NOT checked here — it's validated on first API call
+// because the OAuth flow populates it dynamically after authorization.
 
 const missingVars = Object.entries(REQUIRED_VARS)
     .filter(([_, val]) => !val || val.trim() === '')

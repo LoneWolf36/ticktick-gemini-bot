@@ -151,11 +151,12 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 | `TICKTICK_CLIENT_ID` | Yes | Your TickTick app client ID |
 | `TICKTICK_CLIENT_SECRET` | Yes | Your TickTick app secret |
 | `TICKTICK_REDIRECT_URI` | Yes | Same as WEBHOOK_URL + `/` |
-| `TICKTICK_ACCESS_TOKEN` | Yes | OAuth token (run locally first, copy from console) |
+| `TICKTICK_ACCESS_TOKEN` | No | OAuth token (obtained via OAuth flow at `http://localhost:8080` — run locally first, then copy from console for deployment) |
 | `TELEGRAM_BOT_TOKEN` | Yes | Your bot token |
 | `TELEGRAM_CHAT_ID` | Yes | Your Telegram chat ID |
 | `GEMINI_API_KEYS` | Yes | Comma-separated Gemini API keys (preferred for rotation) |
 | `GEMINI_API_KEY` | No | Single key (fallback used only if `GEMINI_API_KEYS` is not set) |
+| `TELEGRAM_WEBHOOK_SECRET` | No | Random secret token for webhook signature verification (recommended for webhook mode) |
 | `REDIS_URL` | Yes on Render | Redis connection URL (required due to ephemeral filesystem) |
 | `USER_CONTEXT` | Optional | Your personal context (the content of `user_context.js`) |
 | `WEBHOOK_URL` | Yes (webhook) | Your Render URL (e.g., `https://your-app.onrender.com`) |

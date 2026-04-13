@@ -33,6 +33,10 @@ services:
       - key: GEMINI_API_KEY
         sync: false
         required: false
+      # Required for webhook mode — secret token for webhook signature verification
+      - key: TELEGRAM_WEBHOOK_SECRET
+        sync: false
+        required: false
       # Optional — Redis for persistent storage (required on Render due to ephemeral filesystem)
       - key: REDIS_URL
         sync: false
@@ -58,3 +62,10 @@ services:
       # Optional — Render uses port 10000 by default
       - key: PORT
         value: "10000"
+      # Optional — scheduler config (defaults shown)
+      - key: DAILY_BRIEFING_HOUR
+        value: "8"
+      - key: WEEKLY_DIGEST_DAY
+        value: "0"
+      - key: POLL_INTERVAL_MINUTES
+        value: "5"
