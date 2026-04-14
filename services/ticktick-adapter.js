@@ -140,6 +140,67 @@ export class TickTickAdapter {
     }
 
     /**
+     * Validates and sanitizes a checklist item.
+     * @param {Object} item - Checklist item to validate
+     * @param {string} item.title - Item title (required, non-empty string)
+     * @param {number} [item.status] - Item status (default: 0 for incomplete)
+     * @param {number} [item.sortOrder] - Item sort order (default: auto-assigned)
+     * @returns {Object|null} Validated checklist item with {title, status, sortOrder} or null if invalid
+     * @private
+     */
+    _validateChecklistItem(item) {
+        if (!item || typeof item !== 'object') {
+            return null;
+        }
+
+        // Check title without throwing
+        if (!item.title || typeof item.title !== 'string' || item.title.trim().length === 0) {
+            return null;
+        }
+
+        const status = typeof item.status === 'number' ? item.status : 0;
+        const sortOrder = typeof item.sortOrder === 'number' ? item.sortOrder : 0;
+
+        return { title: item.title.trim(), status, sortOrder };
+    }
+
+    /**
+     * Validates and maps checklist items to TickTick payload format.
+     * @param {Array<Object>|null|undefined} items - Raw checklist items
+     * @returns {Array<Object>|null} Mapped items or null if empty/invalid
+     * @private
+     */
+    _mapChecklistItems(items) {
+        if (!items || !Array.isArray(items) || items.length === 0) {
+            return null;
+        }
+
+        const validItems = [];
+        let droppedCount = 0;
+        let sortOrder = 0;
+
+        for (const item of items) {
+            const validated = this._validateChecklistItem(item);
+            if (validated) {
+                validated.sortOrder = sortOrder++;
+                validItems.push(validated);
+            } else {
+                droppedCount++;
+            }
+        }
+
+        if (validItems.length === 0) {
+            return null;
+        }
+
+        if (droppedCount > 0) {
+            this._log('mapChecklistItems', `DROPPED { dropped: ${droppedCount}, kept: ${validItems.length}, reason: "malformed items" }`, true);
+        }
+
+        return validItems;
+    }
+
+    /**
      * Validates due date string format.
      * @param {string|null|undefined} dueDate - Due date to validate
      * @returns {string|null} Validated ISO date string or null if input was null/undefined
@@ -268,9 +329,10 @@ export class TickTickAdapter {
      * @param {number} [normalizedAction.priority] - Priority level: 0=none, 1=low, 3=medium, 5=high
      * @param {string} [normalizedAction.projectId] - 24-char hex project ID (falls back to default if null)
      * @param {string} [normalizedAction.repeatFlag] - Recurrence rule (e.g., 'FREQ=DAILY', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR')
+     * @param {Array<Object>} [normalizedAction.checklistItems] - Checklist subtask items with {title, status?, sortOrder?}
      * @returns {Promise<Object>} Created task object from TickTick API
      * @throws {Error} Classified error with code 'VALIDATION_ERROR' for invalid fields, or API error codes
-     * 
+     *
      * @example
      * const task = await adapter.createTask({
      *   title: 'Review PR #123',
@@ -278,10 +340,21 @@ export class TickTickAdapter {
      *   priority: 3,
      *   dueDate: '2025-04-01T17:00:00.000Z'
      * });
+     *
+     * @example
+     * const taskWithChecklist = await adapter.createTask({
+     *   title: 'Onboard new client',
+     *   projectId: 'abc123...',
+     *   checklistItems: [
+     *     { title: 'Send welcome email' },
+     *     { title: 'Create project folder' },
+     *     { title: 'Schedule kickoff meeting' }
+     *   ]
+     * });
      */
     async createTask(normalizedAction) {
         const start = Date.now();
-        this._log('createTask', { title: normalizedAction?.title, projectId: normalizedAction?.projectId });
+        this._log('createTask', { title: normalizedAction?.title, projectId: normalizedAction?.projectId, hasChecklist: Array.isArray(normalizedAction?.checklistItems) ? normalizedAction.checklistItems.length : 0 });
         try {
             // Validate fields before sending to API
             const validatedTitle = this._validateTitle(normalizedAction.title);
@@ -296,6 +369,13 @@ export class TickTickAdapter {
             if (validatedPriority !== null) taskData.priority = validatedPriority;
             if (validatedProjectId !== null) taskData.projectId = validatedProjectId;
             if (normalizedAction.repeatFlag !== undefined && normalizedAction.repeatFlag !== null) taskData.repeatFlag = normalizedAction.repeatFlag;
+
+            // Map checklist items to TickTick items payload (T032, T033, T034)
+            const mappedItems = this._mapChecklistItems(normalizedAction.checklistItems);
+            if (mappedItems) {
+                taskData.items = mappedItems;
+                this._log('createTask', `CHECKLIST { items: ${mappedItems.length} }`);
+            }
 
             const createdTask = await this._client.createTask(taskData);
             const elapsed = Date.now() - start;

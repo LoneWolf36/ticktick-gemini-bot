@@ -1126,6 +1126,122 @@ test('TickTickAdapter includes the existing projectId when updating only a due d
   assert.equal(Object.hasOwn(updatePayload, 'originalProjectId'), false);
 });
 
+test('TickTickAdapter createTask includes items when checklistItems provided', async () => {
+  let createPayload = null;
+  const client = Object.create(TickTickClient.prototype);
+  client.createTask = async (payload) => {
+    createPayload = payload;
+    return { id: 'checklist-task-1', ...payload };
+  };
+
+  const adapter = new TickTickAdapter(client);
+  await adapter.createTask({
+    title: 'Onboard new client',
+    projectId: '507f191e810c19729de860ea',
+    checklistItems: [
+      { title: 'Send welcome email' },
+      { title: 'Create project folder' },
+      { title: 'Schedule kickoff meeting' },
+    ],
+  });
+
+  assert.ok(createPayload.items, 'items should be present in payload');
+  assert.equal(createPayload.items.length, 3, 'should have 3 checklist items');
+  assert.equal(createPayload.items[0].title, 'Send welcome email');
+  assert.equal(createPayload.items[0].status, 0, 'status should default to 0');
+  assert.equal(createPayload.items[0].sortOrder, 0, 'sortOrder should be 0');
+  assert.equal(createPayload.items[1].title, 'Create project folder');
+  assert.equal(createPayload.items[1].sortOrder, 1, 'sortOrder should be 1');
+  assert.equal(createPayload.items[2].sortOrder, 2, 'sortOrder should be 2');
+});
+
+test('TickTickAdapter createTask omits items when checklistItems is empty', async () => {
+  let createPayload = null;
+  const client = Object.create(TickTickClient.prototype);
+  client.createTask = async (payload) => {
+    createPayload = payload;
+    return { id: 'no-checklist-task', ...payload };
+  };
+
+  const adapter = new TickTickAdapter(client);
+  await adapter.createTask({
+    title: 'Simple task',
+    projectId: '507f191e810c19729de860ea',
+    checklistItems: [],
+  });
+
+  assert.equal(Object.hasOwn(createPayload, 'items'), false, 'items should NOT be present for empty checklist');
+});
+
+test('TickTickAdapter createTask omits items when checklistItems is null or undefined', async () => {
+  let createPayload = null;
+  const client = Object.create(TickTickClient.prototype);
+  client.createTask = async (payload) => {
+    createPayload = payload;
+    return { id: 'no-checklist-task', ...payload };
+  };
+
+  const adapter = new TickTickAdapter(client);
+  await adapter.createTask({
+    title: 'Simple task',
+    projectId: '507f191e810c19729de860ea',
+  });
+
+  assert.equal(Object.hasOwn(createPayload, 'items'), false, 'items should NOT be present when checklistItems is undefined');
+  assert.equal(createPayload.title, 'Simple task');
+});
+
+test('TickTickAdapter createTask drops malformed checklist items', async () => {
+  let createPayload = null;
+  const client = Object.create(TickTickClient.prototype);
+  client.createTask = async (payload) => {
+    createPayload = payload;
+    return { id: 'partial-checklist-task', ...payload };
+  };
+
+  const adapter = new TickTickAdapter(client);
+  await adapter.createTask({
+    title: 'Task with partial checklist',
+    projectId: '507f191e810c19729de860ea',
+    checklistItems: [
+      { title: 'Valid item' },
+      { title: '' }, // invalid: empty title
+      { title: '   ' }, // invalid: whitespace-only
+      null, // invalid: null
+      { title: 'Another valid item' },
+    ],
+  });
+
+  assert.ok(createPayload.items, 'items should be present');
+  assert.equal(createPayload.items.length, 2, 'only valid items should be included');
+  assert.equal(createPayload.items[0].title, 'Valid item');
+  assert.equal(createPayload.items[1].title, 'Another valid item');
+});
+
+test('TickTickAdapter createTask preserves ordinary create without checklistItems', async () => {
+  let createPayload = null;
+  const client = Object.create(TickTickClient.prototype);
+  client.createTask = async (payload) => {
+    createPayload = payload;
+    return { id: 'ordinary-task', ...payload };
+  };
+
+  const adapter = new TickTickAdapter(client);
+  await adapter.createTask({
+    title: 'Review PR #123',
+    projectId: '507f191e810c19729de860ea',
+    priority: 3,
+    dueDate: '2025-04-01T17:00:00.000Z',
+    content: 'Some notes',
+  });
+
+  assert.equal(createPayload.title, 'Review PR #123');
+  assert.equal(createPayload.priority, 3);
+  assert.equal(createPayload.dueDate, '2025-04-01T17:00:00.000Z');
+  assert.equal(createPayload.content, 'Some notes');
+  assert.equal(Object.hasOwn(createPayload, 'items'), false, 'items should NOT be present for ordinary create');
+});
+
 test('pipeline retries once and rolls back earlier successful writes', async () => {
   const adapterCalls = [];
   const telemetryEvents = [];

@@ -7,29 +7,48 @@ argument-hint: <mission-slug>
 
 **Input**: $ARGUMENTS
 
-## Purpose
+## CRITICAL BOUNDARIES — READ FIRST
 
-Systematically catalog ALL failing tests — distinguishing pre-existing failures from new ones introduced by recent changes. This creates a persistent technical debt ledger that prevents failures from being silently accepted as "normal."
+**Your job is OBSERVE and REPORT only.** You are a catalog, not a fixer.
 
-## Phase 1: Run Full Test Suite
+**MUST NOT**:
+- Modify any test files
+- Modify any source code
+- Attempt to fix failures
+- Skip or comment out tests
+- Re-run tests after the initial catalog run
+- Ask the user for input — use the mission slug from the workflow context, or "technical-debt-baseline" if unknown
+
+**MUST**:
+- Run tests ONCE
+- Parse the output
+- Classify each failure
+- Write the report
+- Update the ledger
+- Print the summary
+- EXIT
+
+## Phase 1: Run Test Suite (ONCE)
 
 ```bash
 cd /home/lonewolf09/Documents/Projects/ticktick-gemini
 
-# Unit tests
-npm test 2>&1 | tee /tmp/test-output-unit.txt
+# Run unit tests — capture raw output
+node --test tests/*.test.js > /tmp/test-output-unit.txt 2>&1 || true
 
-# Regression tests  
-node tests/run-regression-tests.mjs 2>&1 | tee /tmp/test-output-regression.txt
+# Run regression tests — capture raw output  
+node tests/run-regression-tests.mjs > /tmp/test-output-regression.txt 2>&1 || true
 ```
+
+Do NOT re-run tests. Do NOT attempt to fix failures. Do NOT skip tests.
 
 ## Phase 2: Extract Failing Tests
 
-From the test output, extract:
-- Test file path
-- Test name/description
+From the captured test output files, extract:
+- Test name/description (the string passed to `test('...')`)
+- File path
 - Error message (first 200 chars)
-- Error type (assertion failure, timeout, syntax error, etc.)
+- Error type (assertion failure, timeout, reference error, etc.)
 
 ## Phase 3: Classify as Pre-existing vs New
 
@@ -37,23 +56,24 @@ Read `.archon/technical-debt/failures.jsonl` (if it exists). For each failing te
 - If the test name exists in the ledger → **pre-existing**
 - If the test name does NOT exist in the ledger → **NEW failure** (regression!)
 
-For NEW failures:
-- Output: `{"status": "REGRESSION_DETECTED", "new_failures": [...], "action": "block_and_fix_immediately"}`
-- A new test failure is a blocker — the workflow should NOT proceed until it's fixed
+For NEW failures, output this JSON and STOP — do NOT attempt to fix:
+```json
+{"status": "REGRESSION_DETECTED", "new_failures": [...]}
+```
 
 ## Phase 4: Estimate Complexity
 
 For each pre-existing failure, estimate fix complexity:
-- **low**: Single-line fix, obvious cause (e.g., wrong assertion, missing mock)
+- **low**: Single-line fix, obvious cause (wrong assertion, missing mock)
 - **medium**: Requires understanding multiple files, refactoring a small section
 - **high**: Requires architectural change, new feature, or deep investigation
 
 ## Phase 5: Write Report
 
-Create `.archon/artifacts/failure-catalog-{mission-slug}.md`:
+Create `.archon/artifacts/failure-catalog-{slug}.md`:
 
 ```markdown
-# Failure Catalog — {mission-slug}
+# Failure Catalog — {slug}
 
 **Date**: {ISO timestamp}
 **Total failures**: {count}
@@ -77,18 +97,20 @@ Create `.archon/artifacts/failure-catalog-{mission-slug}.md`:
 - {Z} high-complexity
 ```
 
+Use the mission slug from the `$ARGUMENTS` parameter. If empty, use "technical-debt-baseline".
+
 ## Phase 6: Update Ledger
 
-Append to `.archon/technical-debt/failures.jsonl`:
+Append NEW entries only to `.archon/technical-debt/failures.jsonl`:
 ```json
-{"test_name": "...", "file": "...", "error_summary": "...", "first_seen": "2026-04-13T...", "complexity": "low|medium|high", "status": "tracked", "fixed_in_wp": null}
+{"test_name": "...", "file": "...", "error_summary": "...", "first_seen": "2026-04-13T...", "last_seen": "2026-04-13T...", "complexity": "low|medium|high", "status": "tracked", "fixed_in_wp": null, "cataloged_by_mission": "phase-0-technical-debt"}
 ```
 
-For tests already in the ledger: update nothing (preserve original `first_seen`).
+Do NOT modify existing entries. Do NOT update timestamps on existing entries.
 
-## Output
+## Phase 7: Print Summary and EXIT
 
-Print summary:
+Print exactly:
 ```
 === Failure Catalog Summary ===
 Total failures: X
@@ -98,3 +120,5 @@ Catalog saved to: .archon/artifacts/failure-catalog-{slug}.md
 Ledger updated: .archon/technical-debt/failures.jsonl
 ================================
 ```
+
+Then STOP. Do NOT run validation. Do NOT fix anything. Do NOT ask questions.

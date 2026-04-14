@@ -1182,6 +1182,89 @@ async function run() {
     console.error(err.message);
   }
 
+  // T035: Checklist adapter unit tests
+  try {
+    let createPayload = null;
+    const client = Object.create(TickTickClient.prototype);
+    client.createTask = async (payload) => {
+      createPayload = payload;
+      return { id: 'checklist-task-1', ...payload };
+    };
+
+    const adapter = new TickTickAdapter(client);
+    await adapter.createTask({
+      title: 'Onboard new client',
+      projectId: '507f191e810c19729de860ea',
+      checklistItems: [
+        { title: 'Send welcome email' },
+        { title: 'Create project folder' },
+        { title: 'Schedule kickoff meeting' },
+      ],
+    });
+
+    assert.ok(createPayload.items, 'items should be present in payload');
+    assert.equal(createPayload.items.length, 3, 'should have 3 checklist items');
+    assert.equal(createPayload.items[0].title, 'Send welcome email');
+    assert.equal(createPayload.items[0].status, 0, 'status should default to 0');
+    assert.equal(createPayload.items[0].sortOrder, 0, 'sortOrder should be 0');
+    assert.equal(createPayload.items[1].sortOrder, 1, 'sortOrder should be 1');
+    console.log('PASS TickTickAdapter createTask includes items when checklistItems provided');
+  } catch (err) {
+    failures++;
+    console.error('FAIL TickTickAdapter createTask includes items when checklistItems provided');
+    console.error(err.message);
+  }
+
+  try {
+    let createPayload = null;
+    const client = Object.create(TickTickClient.prototype);
+    client.createTask = async (payload) => {
+      createPayload = payload;
+      return { id: 'no-checklist-task', ...payload };
+    };
+
+    const adapter = new TickTickAdapter(client);
+    await adapter.createTask({
+      title: 'Simple task',
+      projectId: '507f191e810c19729de860ea',
+      checklistItems: [],
+    });
+
+    assert.equal(Object.hasOwn(createPayload, 'items'), false, 'items should NOT be present for empty checklist');
+    console.log('PASS TickTickAdapter createTask omits items when checklistItems is empty');
+  } catch (err) {
+    failures++;
+    console.error('FAIL TickTickAdapter createTask omits items when checklistItems is empty');
+    console.error(err.message);
+  }
+
+  try {
+    let createPayload = null;
+    const client = Object.create(TickTickClient.prototype);
+    client.createTask = async (payload) => {
+      createPayload = payload;
+      return { id: 'ordinary-task', ...payload };
+    };
+
+    const adapter = new TickTickAdapter(client);
+    await adapter.createTask({
+      title: 'Review PR #123',
+      projectId: '507f191e810c19729de860ea',
+      priority: 3,
+      dueDate: '2025-04-01T17:00:00.000Z',
+      content: 'Some notes',
+    });
+
+    assert.equal(createPayload.title, 'Review PR #123');
+    assert.equal(createPayload.priority, 3);
+    assert.equal(Object.hasOwn(createPayload, 'items'), false, 'items should NOT be present for ordinary create');
+    console.log('PASS TickTickAdapter createTask preserves ordinary create without checklistItems');
+  } catch (err) {
+    failures++;
+    console.error('FAIL TickTickAdapter createTask preserves ordinary create without checklistItems');
+    console.error(err.message);
+  }
+
   try {
     const adapterCalls = [];
     const telemetryEvents = [];
