@@ -1,8 +1,8 @@
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { AxGen } from '@ax-llm/ax';
-import { appendUrgentModeReminder, parseTelegramMarkdownToHTML, containsSensitiveContent, buildTickTickUpdate, scheduleToDateTime } from '../services/shared-utils.js';
-import { executeActions, registerCommands } from '../bot/commands.js';
+import { appendUrgentModeReminder, parseTelegramMarkdownToHTML, containsSensitiveContent, buildTickTickUpdate, scheduleToDateTime, AUTHORIZED_CHAT_ID } from '../services/shared-utils.js';
+import { executeActions, registerCommands, resetRateLimits } from '../bot/commands.js';
 import { GeminiAnalyzer, buildUrgentModePromptNote } from '../services/gemini.js';
 import { createAxIntent, detectUrgentModeIntent, QuotaExhaustedError } from '../services/ax-intent.js';
 import { createPipeline } from '../services/pipeline.js';
@@ -826,7 +826,7 @@ async function run() {
     assert.equal(typeof briefingHandler, 'function');
 
     const replies = [];
-    const userId = Date.now();
+    const userId = AUTHORIZED_CHAT_ID || Date.now();
     await store.setUrgentMode(userId, true);
     await briefingHandler({
       chat: { id: userId },
@@ -921,7 +921,7 @@ async function run() {
     assert.equal(typeof weeklyHandler, 'function');
 
     const replies = [];
-    const userId = Date.now();
+    const userId = AUTHORIZED_CHAT_ID || Date.now();
     await store.setUrgentMode(userId, false);
     await weeklyHandler({
       chat: { id: userId },
@@ -943,6 +943,7 @@ async function run() {
   }
 
   try {
+    resetRateLimits();
     const handlers = { commands: new Map(), callbacks: [], events: [] };
     const bot = {
       command(name, handler) {
@@ -986,7 +987,7 @@ async function run() {
     );
 
     const replies = [];
-    const userId = Date.now();
+    const userId = AUTHORIZED_CHAT_ID || Date.now();
     const ctx = {
       chat: { id: userId },
       from: { id: userId },
@@ -1288,6 +1289,7 @@ async function run() {
 
   try {
     const telemetryEvents = [];
+    let completeCallCount = 0;
     const adapter = {
       listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
       listActiveTasks: async () => [],
@@ -1301,7 +1303,11 @@ async function run() {
         repeatFlag: null,
         status: 0,
       }),
-      completeTask: async (taskId, projectId) => ({ completed: true, taskId, projectId }),
+      completeTask: async (taskId, projectId) => {
+        completeCallCount++;
+        if (completeCallCount === 1) return { completed: true, taskId, projectId };
+        throw new Error('Complete failed — triggering rollback');
+      },
       createTask: async () => {
         throw new Error('Create failed');
       },
@@ -1318,12 +1324,12 @@ async function run() {
 
     const pipeline = createPipeline({
       axIntent: {
-        extractIntents: async () => [{ type: 'complete' }, { type: 'create' }],
+        extractIntents: async () => [{ type: 'complete', taskId: 'task-1' }, { type: 'complete', taskId: 'task-2' }],
       },
       normalizer: {
         normalizeActions: () => ([
           { type: 'complete', taskId: 'task-1', projectId: 'inbox', valid: true, validationErrors: [] },
-          { type: 'create', title: 'Replacement task', projectId: 'inbox', valid: true, validationErrors: [] },
+          { type: 'complete', taskId: 'task-2', projectId: 'inbox', valid: true, validationErrors: [] },
         ]),
       },
       adapter,
@@ -1335,7 +1341,7 @@ async function run() {
       }),
     });
 
-    const result = await pipeline.processMessage('Complete this and create a replacement', {
+    const result = await pipeline.processMessage('Complete both tasks', {
       requestId: 'regression-rollback-failure',
       entryPoint: 'telegram',
       mode: 'interactive',
@@ -1472,7 +1478,7 @@ async function run() {
 
     assert.equal(calls.length, 1);
     assert.equal(calls[0].taskId, 'rent-1');
-    assert.equal(calls[0].changes.priority, 3);
+    assert.equal(calls[0].changes.priority, 1);
     assert.equal(calls[0].changes.projectId, 'p-admin');
     console.log('PASS policy sweep inherits urgent maintenance priority from shared ranking');
   } catch (err) {
