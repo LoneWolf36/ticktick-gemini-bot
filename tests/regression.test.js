@@ -4232,3 +4232,234 @@ async function registerCallbacksForTest(bot, ticktickMock, pipeline) {
   const { registerCallbacks } = await import('../bot/callbacks.js');
   registerCallbacks(bot, ticktickMock, {}, ticktickMock, pipeline);
 }
+
+// ─── Behavioral Signal Classifier Tests (WP01, T007) ───────
+import {
+  classifyTaskEvent,
+  detectPostpone,
+  detectScopeChange,
+  detectDecomposition,
+  SignalType,
+  getSignalRegistry,
+} from '../services/behavioral-signals.js';
+
+test('classifyTaskEvent returns CREATION signal for create event', () => {
+  const event = {
+    eventType: 'create',
+    taskId: 'test123',
+    category: 'work',
+    projectId: 'abc123def456ghi789jkl012',
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signals = classifyTaskEvent(event);
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0].type, SignalType.CREATION);
+  assert.equal(signals[0].category, 'work');
+  assert.equal(signals[0].projectId, 'abc123def456ghi789jkl012');
+  assert.equal(signals[0].confidence, 1.0);
+});
+
+test('classifyTaskEvent returns COMPLETION signal for complete event', () => {
+  const event = { eventType: 'complete', taskId: 't1', projectId: 'p1', timestamp: '2026-04-14T10:00:00Z' };
+  const signals = classifyTaskEvent(event);
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0].type, SignalType.COMPLETION);
+});
+
+test('classifyTaskEvent returns DELETION signal for delete event', () => {
+  const event = { eventType: 'delete', taskId: 't1', projectId: 'p1', timestamp: '2026-04-14T10:00:00Z' };
+  const signals = classifyTaskEvent(event);
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0].type, SignalType.DELETION);
+});
+
+test('classifyTaskEvent returns empty for null/invalid input', () => {
+  assert.deepEqual(classifyTaskEvent(null), []);
+  assert.deepEqual(classifyTaskEvent(undefined), []);
+  assert.deepEqual(classifyTaskEvent({}), []);
+  assert.deepEqual(classifyTaskEvent({ eventType: 'unknown' }), []);
+});
+
+test('detectPostpone fires when due date moved forward', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    dueDateBefore: '2026-04-15T10:00:00Z',
+    dueDateAfter: '2026-04-20T10:00:00Z',
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectPostpone(event);
+  assert.ok(signal);
+  assert.equal(signal.type, SignalType.POSTPONE);
+  assert.equal(signal.confidence, 0.9);
+  assert.equal(signal.metadata.dueDateMovedForward, true);
+  assert.equal(signal.metadata.daysMoved, 5);
+});
+
+test('detectPostpone does NOT fire when due date moved backward', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    dueDateBefore: '2026-04-20T10:00:00Z',
+    dueDateAfter: '2026-04-15T10:00:00Z',
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectPostpone(event);
+  assert.equal(signal, null);
+});
+
+test('detectPostpone does NOT fire when due date unchanged', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    dueDateBefore: '2026-04-15T10:00:00Z',
+    dueDateAfter: '2026-04-15T10:00:00Z',
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectPostpone(event);
+  assert.equal(signal, null);
+});
+
+test('detectPostpone does NOT fire when due date fields missing', () => {
+  const event = { eventType: 'update', taskId: 't1', timestamp: '2026-04-14T10:00:00Z' };
+  const signal = detectPostpone(event);
+  assert.equal(signal, null);
+});
+
+test('detectScopeChange fires on material description change (>=50 chars)', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    descriptionLengthBefore: 100,
+    descriptionLengthAfter: 200,
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectScopeChange(event);
+  assert.ok(signal);
+  assert.equal(signal.type, SignalType.SCOPE_CHANGE);
+  assert.equal(signal.confidence, 0.8);
+  assert.equal(signal.metadata.descriptionDelta, 100);
+});
+
+test('detectScopeChange does NOT fire on small wording changes (<50 chars)', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    descriptionLengthBefore: 100,
+    descriptionLengthAfter: 120,
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectScopeChange(event);
+  assert.equal(signal, null);
+});
+
+test('detectScopeChange fires on checklist count change', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    checklistCountBefore: 2,
+    checklistCountAfter: 5,
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectScopeChange(event);
+  assert.ok(signal);
+  assert.equal(signal.type, SignalType.SCOPE_CHANGE);
+  assert.equal(signal.metadata.checklistDelta, 3);
+});
+
+test('detectScopeChange does NOT fire when no relevant fields present', () => {
+  const event = { eventType: 'update', taskId: 't1', timestamp: '2026-04-14T10:00:00Z' };
+  const signal = detectScopeChange(event);
+  assert.equal(signal, null);
+});
+
+test('detectDecomposition fires when subtasks added', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    subtaskCountBefore: 0,
+    subtaskCountAfter: 3,
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectDecomposition(event);
+  assert.ok(signal);
+  assert.equal(signal.type, SignalType.DECOMPOSITION);
+  assert.equal(signal.confidence, 0.85);
+  assert.equal(signal.metadata.subtasksAdded, 3);
+  assert.equal(signal.metadata.newSubtaskCount, 3);
+});
+
+test('detectDecomposition does NOT fire when subtasks removed', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    subtaskCountBefore: 3,
+    subtaskCountAfter: 1,
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectDecomposition(event);
+  assert.equal(signal, null);
+});
+
+test('detectDecomposition does NOT fire when subtask fields missing', () => {
+  const event = { eventType: 'update', taskId: 't1', timestamp: '2026-04-14T10:00:00Z' };
+  const signal = detectDecomposition(event);
+  assert.equal(signal, null);
+});
+
+test('classifyTaskEvent update emits multiple signals when applicable', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    dueDateBefore: '2026-04-15T10:00:00Z',
+    dueDateAfter: '2026-04-20T10:00:00Z',
+    subtaskCountBefore: 0,
+    subtaskCountAfter: 2,
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signals = classifyTaskEvent(event);
+  // Should have both postpone and decomposition
+  assert.ok(signals.length >= 2);
+  const types = signals.map(s => s.type);
+  assert.ok(types.includes(SignalType.POSTPONE));
+  assert.ok(types.includes(SignalType.DECOMPOSITION));
+});
+
+test('behavioral signals NEVER contain raw titles or message text', () => {
+  const events = [
+    { eventType: 'create', taskId: 't1', category: 'work', projectId: 'p1', timestamp: '2026-04-14T10:00:00Z' },
+    { eventType: 'update', taskId: 't1', dueDateBefore: '2026-04-15', dueDateAfter: '2026-04-20', timestamp: '2026-04-14T10:00:00Z' },
+    { eventType: 'complete', taskId: 't1', projectId: 'p1', timestamp: '2026-04-14T10:00:00Z' },
+    { eventType: 'delete', taskId: 't1', projectId: 'p1', timestamp: '2026-04-14T10:00:00Z' },
+  ];
+
+  for (const event of events) {
+    const signals = classifyTaskEvent(event);
+    for (const signal of signals) {
+      // Privacy boundary: no raw content in any signal
+      assert.equal(signal.metadata.title, undefined, `Signal ${signal.type} must not contain title`);
+      assert.equal(signal.metadata.description, undefined, `Signal ${signal.type} must not contain description`);
+      assert.equal(signal.metadata.message, undefined, `Signal ${signal.type} must not contain message`);
+      // Only derived numeric/boolean fields allowed
+      for (const [key, value] of Object.entries(signal.metadata)) {
+        assert.ok(
+          typeof value === 'number' || typeof value === 'boolean' || value === null,
+          `Signal ${signal.type} metadata.${key} must be number/boolean/null, got ${typeof value}`
+        );
+      }
+    }
+  }
+});
+
+test('getSignalRegistry returns all 7 signal types', () => {
+  const registry = getSignalRegistry();
+  assert.equal(registry.length, 7);
+  const types = registry.map(r => r.type);
+  assert.ok(types.includes(SignalType.POSTPONE));
+  assert.ok(types.includes(SignalType.SCOPE_CHANGE));
+  assert.ok(types.includes(SignalType.DECOMPOSITION));
+  assert.ok(types.includes(SignalType.PLANNING_HEAVY));
+  assert.ok(types.includes(SignalType.COMPLETION));
+  assert.ok(types.includes(SignalType.CREATION));
+  assert.ok(types.includes(SignalType.DELETION));
+});

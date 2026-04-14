@@ -1,5 +1,6 @@
 import { TickTickClient } from './ticktick.js';
 import { validateChecklistItem } from './shared-utils.js';
+import { classifyTaskEvent } from './behavioral-signals.js';
 
 const PROJECT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const VALID_PRIORITIES = [0, 1, 3, 5]; // TickTick valid priority values
@@ -37,6 +38,31 @@ export class TickTickAdapter {
             console.error(`${timestamp} ${msg}`);
         } else {
             console.log(`${timestamp} ${msg}`);
+        }
+    }
+
+    /**
+     * Observes a task mutation event and emits behavioral signals.
+     * NON-BLOCKING: failures are caught and logged, never thrown.
+     *
+     * @param {string} eventType - 'create' | 'update' | 'complete' | 'delete'
+     * @param {object} eventMetadata - Derived metadata only (no raw titles/text)
+     * @private
+     */
+    _observeSignals(eventType, eventMetadata) {
+        try {
+            const event = {
+                eventType,
+                timestamp: new Date().toISOString(),
+                ...eventMetadata,
+            };
+            const signals = classifyTaskEvent(event);
+            if (signals.length > 0) {
+                this._log('behavioralSignals', { signals: signals.length, types: signals.map(s => s.type) });
+            }
+        } catch (error) {
+            // NEVER block the mutation — log and continue
+            this._log('behavioralSignals', `FAILED (non-blocking): ${error.message}`, true);
         }
     }
 
@@ -369,6 +395,15 @@ export class TickTickAdapter {
 
             const createdTask = await this._client.createTask(taskData);
             const elapsed = Date.now() - start;
+
+            // T006: Non-blocking behavioral signal observation
+            this._observeSignals('create', {
+                category: normalizedAction.category || null,
+                projectId: validatedProjectId,
+                checklistCountAfter: mappedItems ? mappedItems.length : 0,
+                descriptionLengthAfter: normalizedAction.content ? normalizedAction.content.length : 0,
+            });
+
             this._log('createTask', `SUCCESS { id: "${createdTask.id}", ${elapsed}ms }`);
             return createdTask;
         } catch (error) {
@@ -554,6 +589,21 @@ export class TickTickAdapter {
 
             const updatedTask = await this._client.updateTask(taskId, updatePayload);
             const elapsed = Date.now() - start;
+
+            // T006: Non-blocking behavioral signal observation
+            this._observeSignals('update', {
+                category: normalizedAction.category || null,
+                projectId: targetProjectId,
+                dueDateBefore: normalizedAction._dueDateBefore || null,
+                dueDateAfter: normalizedAction.dueDate || null,
+                checklistCountBefore: normalizedAction._checklistCountBefore,
+                checklistCountAfter: normalizedAction._checklistCountAfter,
+                descriptionLengthBefore: normalizedAction._descriptionLengthBefore,
+                descriptionLengthAfter: normalizedAction.content ? normalizedAction.content.length : normalizedAction._descriptionLengthBefore,
+                subtaskCountBefore: normalizedAction._subtaskCountBefore,
+                subtaskCountAfter: normalizedAction._subtaskCountAfter,
+            });
+
             this._log('updateTask', `SUCCESS { id: "${updatedTask.id}", changedProject: ${!!updatePayload.originalProjectId}, ${elapsed}ms }`);
             return updatedTask;
         } catch (error) {
@@ -668,6 +718,13 @@ export class TickTickAdapter {
 
             await this._client.completeTask(projectId, taskId);
             const elapsed = Date.now() - start;
+
+            // T006: Non-blocking behavioral signal observation
+            this._observeSignals('complete', {
+                taskId,
+                projectId,
+            });
+
             this._log('completeTask', `SUCCESS { id: "${taskId}", ${elapsed}ms }`);
             return { completed: true, taskId };
         } catch (error) {
@@ -698,6 +755,13 @@ export class TickTickAdapter {
 
             await this._client.deleteTask(projectId, taskId);
             const elapsed = Date.now() - start;
+
+            // T006: Non-blocking behavioral signal observation
+            this._observeSignals('delete', {
+                taskId,
+                projectId,
+            });
+
             this._log('deleteTask', `SUCCESS { id: "${taskId}", ${elapsed}ms }`);
             return { deleted: true, taskId };
         } catch (error) {
