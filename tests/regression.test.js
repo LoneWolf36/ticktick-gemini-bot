@@ -570,7 +570,7 @@ test('formatSummary keeps empty sections compact and Telegram-safe', () => {
 
 test('default timezone remains Europe/Dublin when USER_TIMEZONE is unset', () => {
   const source = readFileSync('services/shared-utils.js', 'utf8');
-  assert.match(source, /USER_TIMEZONE\s*\|\|\s*'Europe\/Dublin'/);
+  assert.match(source, /USER_TZ\s*=\s*process\.env\.USER_TIMEZONE\s*\|\|\s*'Europe\/Dublin'/);
 });
 
 test('store documents the urgent mode Redis key schema', () => {

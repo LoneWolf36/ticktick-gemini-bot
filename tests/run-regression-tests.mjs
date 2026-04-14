@@ -230,8 +230,8 @@ async function run() {
   let failures = 0;
 
   try {
-    const source = readFileSync('bot/utils.js', 'utf8');
-    assert.match(source, /USER_TIMEZONE\s*\|\|\s*'Europe\/Dublin'/);
+    const source = readFileSync('services/shared-utils.js', 'utf8');
+    assert.match(source, /USER_TZ\s*=\s*process\.env\.USER_TIMEZONE\s*\|\|\s*'Europe\/Dublin'/);
     console.log('PASS timezone default is Europe/Dublin');
   } catch (err) {
     failures++;
