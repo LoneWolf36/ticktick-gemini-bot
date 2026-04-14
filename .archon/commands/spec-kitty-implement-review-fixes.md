@@ -13,14 +13,17 @@ argument-hint: <mission-slug>
 
 **CRITICAL**: This command may be invoked after `spec-kitty-check-validation-result`. Before doing any work, check the upstream validation status:
 
-1. Read the output of the previous node (`spec-kitty-check-validation-result`)
-2. If the output contains `"action": "skip_fallback"` or `"status": "passed"`:
+1. Read the JSON output of the previous node (`spec-kitty-check-validation-result`)
+2. If the output contains `"validation_status": "passed"` or `"action": "skip_fallback"`:
    - **Exit immediately** — no fixes are needed
    - Output: `{"status": "skipped", "reason": "validation passed, no fixes needed"}`
    - Do NOT read synthesis files, do NOT modify code, do NOT commit
-3. If the output contains `"status": "failed"` or `"action": "run_fixes"`:
-   - Proceed to Phase 1 below
-4. If no upstream output is available (direct invocation):
+3. If the output contains `"validation_status": "failed"` or `"action": "run_fallback"`:
+   - Parse the `failures` array to understand which categories need attention
+   - Proceed to Phase 1 below, prioritizing fixes for the failed categories
+4. If the output contains `"validation_status": "unknown"`:
+   - Proceed with comprehensive fixes as precaution (legacy behavior)
+5. If no upstream output is available (direct invocation without check node):
    - Proceed to Phase 1 below (legacy behavior)
 
 **This early-exit check MUST complete in < 5 seconds.** It is the difference between a 9-minute no-op and instant skip.
