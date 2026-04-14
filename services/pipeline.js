@@ -454,6 +454,8 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 durationMs: Date.now() - axStartedAt,
                 metadata: {
                     intentCount: intents.length,
+                    checklistIntentCount: intents.filter(i => Array.isArray(i.checklistItems) && i.checklistItems.length > 0).length,
+                    totalExtractedChecklistItems: intents.reduce((sum, i) => sum + (Array.isArray(i.checklistItems) ? i.checklistItems.length : 0), 0),
                 },
             });
 
@@ -470,6 +472,40 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     },
                 });
                 return buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS);
+            }
+
+            // Checklist/multi-task classification (WP04): detect ambiguous structure requests
+            const hasChecklist = intents.some(i => Array.isArray(i.checklistItems) && i.checklistItems.length > 0);
+            const hasMultipleCreates = intents.filter(i => i.type === 'create').length > 1;
+
+            if (hasChecklist && hasMultipleCreates) {
+                // Ambiguous: user described both a checklist and separate tasks
+                console.warn(`[Pipeline:${context.requestId}] Ambiguous checklist/multi-task request — asking for clarification.`);
+                const clarificationResult = {
+                    type: 'clarification',
+                    results: [],
+                    errors: [],
+                    confirmationText: 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?',
+                    clarification: {
+                        candidates: intents,
+                        reason: 'ambiguous_checklist_vs_multi_task',
+                    },
+                    requestId: context.requestId || null,
+                    entryPoint: context.entryPoint || null,
+                    mode: context.mode || null,
+                };
+
+                await telemetry.emit(context, {
+                    eventType: 'pipeline.request.completed',
+                    step: 'result',
+                    status: 'success',
+                    durationMs: Date.now() - requestStartedAt,
+                    metadata: {
+                        type: 'clarification',
+                        reason: 'ambiguous_checklist_vs_multi_task',
+                    },
+                });
+                return clarificationResult;
             }
 
             // Mutation routing (WP04): detect mutation intents and resolve targets
@@ -632,6 +668,8 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     normalizedCount: normalizedActions.length,
                     validCount: validActions.length,
                     invalidCount: invalidActions.length,
+                    checklistActionCount: validActions.filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0).length,
+                    totalNormalizedChecklistItems: validActions.reduce((sum, a) => sum + (Array.isArray(a.checklistItems) ? a.checklistItems.length : 0), 0),
                 },
             });
 
@@ -728,6 +766,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 metadata: {
                     type: 'task',
                     actionCount: validActions.length,
+                    checklistActionCount: validActions.filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0).length,
                 },
             });
 
@@ -741,6 +780,9 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 entryPoint: context.entryPoint,
                 mode: context.mode,
                 warnings: invalidActions.map(a => a.validationErrors).flat(),
+                checklistMetadata: validActions
+                    .filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0)
+                    .map(a => ({ actionIndex: a._index ?? null, checklistItemCount: a.checklistItems.length })),
             };
         } catch (error) {
             let failureClass = FAILURE_CLASSES.UNEXPECTED;
@@ -821,6 +863,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         rolledBack: false,
                         metadata: {
                             actionIndex: index,
+                            checklistItemCount: Array.isArray(action.checklistItems) ? action.checklistItems.length : null,
                         },
                     });
                     break;

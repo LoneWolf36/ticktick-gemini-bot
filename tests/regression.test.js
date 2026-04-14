@@ -3489,3 +3489,82 @@ test('WP07 T074: pipeline harness does not reference nonexistent modules', () =>
     );
   }
 });
+
+// ─── WP04: Pipeline Checklist Integration (T046) ─────────────
+
+test('WP04 T046: checklist create creates one parent task with items', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Onboard new client',
+        confidence: 0.95,
+        checklistItems: [
+          { title: 'Send welcome email' },
+          { title: 'Create project folder' },
+          { title: 'Schedule kickoff meeting' },
+        ],
+      },
+    ],
+  });
+
+  const result = await processMessage('Onboard new client: send welcome email, create project folder, schedule kickoff');
+
+  assert.equal(result.type, 'task', 'should return task type');
+  assert.equal(adapterCalls.create.length, 1, 'should create exactly one parent task');
+  const createdAction = adapterCalls.create[0];
+  // Title gets normalized with verb-led prefix
+  assert.ok(createdAction.title.includes('Onboard new client'), 'title should contain original text');
+  assert.ok(Array.isArray(createdAction.checklistItems), 'checklistItems should be present in adapter call');
+  assert.equal(createdAction.checklistItems.length, 3, 'should have 3 checklist items');
+  assert.equal(createdAction.checklistItems[0].title, 'Send welcome email');
+  assert.equal(createdAction.checklistItems[1].title, 'Create project folder');
+  assert.equal(createdAction.checklistItems[2].title, 'Schedule kickoff meeting');
+});
+
+test('WP04 T046: multi-task create creates separate tasks without checklist', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      { type: 'create', title: 'Buy groceries', confidence: 0.9 },
+      { type: 'create', title: 'Pick up dry cleaning', confidence: 0.9 },
+    ],
+  });
+
+  const result = await processMessage('Buy groceries and pick up dry cleaning');
+
+  assert.equal(result.type, 'task', 'should return task type');
+  assert.equal(adapterCalls.create.length, 2, 'should create two separate tasks');
+  // Neither task should have checklistItems
+  for (const created of adapterCalls.create) {
+    assert.equal(
+      Object.hasOwn(created, 'checklistItems') && Array.isArray(created.checklistItems) && created.checklistItems.length > 0,
+      false,
+      'no task should have checklist items for multi-task request',
+    );
+  }
+});
+
+test('WP04 T046: ambiguous checklist vs multi-task returns clarification', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Plan event',
+        confidence: 0.8,
+        checklistItems: [
+          { title: 'Book venue' },
+          { title: 'Send invites' },
+        ],
+      },
+      { type: 'create', title: 'Buy decorations', confidence: 0.8 },
+    ],
+  });
+
+  const result = await processMessage('Plan an event with venue and invites, also buy decorations');
+
+  assert.equal(result.type, 'clarification', 'should return clarification type');
+  assert.ok(result.confirmationText, 'should have a clarification question');
+  assert.ok(result.clarification, 'should have clarification metadata');
+  assert.equal(result.clarification.reason, 'ambiguous_checklist_vs_multi_task');
+  assert.equal(adapterCalls.create.length, 0, 'should not create any tasks');
+});
