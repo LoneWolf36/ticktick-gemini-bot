@@ -736,6 +736,76 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         // New pipeline path. Note: we leave gemini check in for the coach fallback optionally.
         await ctx.reply('🤔 Processing...');
         try {
+            // Check for pending checklist clarification resume (WP05)
+            const pendingChecklist = store.getPendingChecklistClarification();
+            if (pendingChecklist) {
+                // User replied to a checklist clarification — resume with their answer
+                const answer = userMessage.toLowerCase().trim();
+                await store.clearPendingChecklistClarification();
+                console.log('[ChecklistClarification] Reply received, resuming with answer:', answer);
+
+                const resolvedMode = answer === 'checklist' || answer === 'checklist please' || answer === 'subtasks'
+                    ? 'checklist'
+                    : answer === 'separate' || answer === 'separate tasks' || answer === 'separate'
+                        ? 'separate'
+                        : answer === 'skip' || answer === 'cancel' || answer === 'nevermind'
+                            ? 'skip'
+                            : null; // ambiguous reply — treat as fallback
+
+                if (resolvedMode === 'skip') {
+                    console.log('[ChecklistClarification] User skipped — creating plain parent task only');
+                    const result = await pipeline.processMessage(pendingChecklist.originalMessage, {
+                        entryPoint: 'telegram:checklist-clarification-skip',
+                        mode: 'interactive',
+                        skipChecklist: true,
+                        availableProjects: ticktick.getLastFetchedProjects(),
+                    });
+                    if (result.type === 'task') {
+                        await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                    } else if (result.type === 'error') {
+                        await ctx.reply(formatPipelineFailure(result));
+                    } else {
+                        await ctx.reply(result.confirmationText || '✅ Created as a single task.');
+                    }
+                    return;
+                }
+
+                if (resolvedMode === 'checklist' || resolvedMode === 'separate') {
+                    console.log('[ChecklistClarification] Resuming pipeline with mode:', resolvedMode);
+                    const result = await pipeline.processMessage(pendingChecklist.originalMessage, {
+                        entryPoint: 'telegram:checklist-clarification-resume',
+                        mode: 'interactive',
+                        checklistPreference: resolvedMode,
+                        availableProjects: ticktick.getLastFetchedProjects(),
+                    });
+                    if (result.type === 'task') {
+                        await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                    } else if (result.type === 'error') {
+                        await ctx.reply(formatPipelineFailure(result));
+                    } else {
+                        await ctx.reply(result.confirmationText || '✅ Done.');
+                    }
+                    return;
+                }
+
+                // Ambiguous reply — conservative fallback (T054)
+                console.log('[ChecklistClarification] Ambiguous reply — falling back to plain parent task');
+                const result = await pipeline.processMessage(pendingChecklist.originalMessage, {
+                    entryPoint: 'telegram:checklist-clarification-fallback',
+                    mode: 'interactive',
+                    skipChecklist: true, // Never create inferred checklist after ignored clarification
+                    availableProjects: ticktick.getLastFetchedProjects(),
+                });
+                if (result.type === 'task') {
+                    await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                } else if (result.type === 'error') {
+                    await ctx.reply(formatPipelineFailure(result));
+                } else {
+                    await ctx.reply(result.confirmationText || '✅ Created as a single task.');
+                }
+                return;
+            }
+
             const result = await pipeline.processMessage(userMessage, {
                 entryPoint: 'telegram:freeform',
                 mode: 'interactive'
@@ -752,25 +822,53 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 const tasks = await ticktick.getAllTasksCached(60000);
                 await ctx.reply(result.confirmationText || 'Got it — no actionable tasks detected.');
             } else if (result.type === 'clarification') {
-                // Ambiguous mutation request — present candidates for user to pick
-                const candidates = result.clarification?.candidates || [];
-                const reason = result.clarification?.reason || null;
-                if (candidates.length === 0) {
-                    await ctx.reply('Not sure what you mean — could you rephrase?');
-                } else {
-                    // Persist pending clarification so callbacks can resume
-                    await store.setPendingMutationClarification({
+                // Determine clarification type: checklist vs mutation
+                const reason = result.clarification?.reason || '';
+
+                if (reason === 'ambiguous_checklist_vs_multi_task') {
+                    // WP05: Checklist vs separate tasks clarification
+                    const intents = result.clarification?.candidates || [];
+                    const question = result.confirmationText || 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?';
+
+                    // Persist pending clarification with TTL (T052)
+                    await store.setPendingChecklistClarification({
                         originalMessage: userMessage,
-                        candidates: candidates.map(c => ({ id: c.id, title: c.title })),
-                        intentSummary: result.confirmationText,
+                        intents: intents.map(i => ({ type: i.type, title: i.title })),
                         chatId: ctx.chat?.id ?? null,
                         userId: ctx.from?.id ?? null,
                         entryPoint: 'telegram:freeform',
                         mode: 'interactive',
                     });
-                    const msg = buildMutationClarificationMessage(reason, candidates, result.confirmationText);
-                    const keyboard = buildMutationCandidateKeyboard(candidates);
-                    await replyWithMarkdown(ctx, msg, { reply_markup: keyboard });
+                    console.log('[ChecklistClarification] Question sent — pending state persisted');
+
+                    // Send question with optional inline buttons (T055)
+                    const keyboard = new InlineKeyboard()
+                        .text('📋 Checklist', 'cl:checklist')
+                        .text('📝 Separate', 'cl:separate')
+                        .row()
+                        .text('⏭ Skip', 'cl:skip');
+
+                    await replyWithMarkdown(ctx, question + '\n\nReply with your choice or tap a button:', { reply_markup: keyboard });
+                } else {
+                    // Existing mutation clarification flow
+                    const candidates = result.clarification?.candidates || [];
+                    if (candidates.length === 0) {
+                        await ctx.reply('Not sure what you mean — could you rephrase?');
+                    } else {
+                        // Persist pending clarification so callbacks can resume
+                        await store.setPendingMutationClarification({
+                            originalMessage: userMessage,
+                            candidates: candidates.map(c => ({ id: c.id, title: c.title })),
+                            intentSummary: result.confirmationText,
+                            chatId: ctx.chat?.id ?? null,
+                            userId: ctx.from?.id ?? null,
+                            entryPoint: 'telegram:freeform',
+                            mode: 'interactive',
+                        });
+                        const msg = buildMutationClarificationMessage(reason, candidates, result.confirmationText);
+                        const keyboard = buildMutationCandidateKeyboard(candidates);
+                        await replyWithMarkdown(ctx, msg, { reply_markup: keyboard });
+                    }
                 }
             } else if (result.type === 'not-found') {
                 const reason = result.notFound?.reason || '';

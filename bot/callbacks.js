@@ -1,4 +1,4 @@
-// Inline keyboard callback handlers — approve, skip, drop, mutation clarification
+// Inline keyboard callback handlers — approve, skip, drop, mutation clarification, checklist clarification (WP05)
 // These move tasks from pendingTasks → processedTasks and resume mutation clarifications
 import { InlineKeyboard } from 'grammy';
 import * as store from '../services/store.js';
@@ -234,5 +234,156 @@ export function registerCallbacks(bot, ticktick, gemini, adapter, pipeline) {
         await store.clearPendingMutationClarification();
         await ctx.answerCallbackQuery({ text: 'Canceled' });
         await editWithMarkdown(ctx, '❌ **Clarification canceled.** Rephrase or try again.');
+    });
+
+    // ─── Checklist Clarification: Checklist (WP05) ───────────
+    bot.callbackQuery(/^cl:checklist$/, async (ctx) => {
+        if (!isAuthorized(ctx)) {
+            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            return;
+        }
+        const pending = store.getPendingChecklistClarification();
+        const chatId = ctx.chat?.id;
+        const userId = ctx.from?.id;
+
+        if (!pending) {
+            await ctx.answerCallbackQuery({ text: '⚠️ No pending clarification found.' });
+            await editWithMarkdown(ctx, '⚠️ **No pending clarification.** Rephrase your request.');
+            return;
+        }
+        if (pending.chatId && chatId && pending.chatId !== chatId) {
+            await ctx.answerCallbackQuery({ text: '⚠️ Wrong chat.' });
+            return;
+        }
+        if (pending.userId && userId && pending.userId !== userId) {
+            await ctx.answerCallbackQuery({ text: '⚠️ Wrong user.' });
+            return;
+        }
+
+        await store.clearPendingChecklistClarification();
+        await ctx.answerCallbackQuery({ text: '📋 Checklist mode' });
+        console.log('[ChecklistClarification] Button: checklist selected');
+
+        // Resume pipeline with checklist preference
+        try {
+            const result = await pipeline.processMessage(pending.originalMessage, {
+                entryPoint: 'telegram:checklist-clarification-button',
+                mode: 'interactive',
+                checklistPreference: 'checklist',
+                availableProjects: ticktick?.getLastFetchedProjects?.() || [],
+            });
+
+            if (result.type === 'task') {
+                await editWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+            } else if (result.type === 'error') {
+                const diag = result.isDevMode && result.diagnostics?.length > 0
+                    ? `\n\n${result.diagnostics.slice(0, 3).join('\n')}`
+                    : '';
+                await editWithMarkdown(ctx, `❌ ${result.confirmationText}${diag}`);
+            } else {
+                await editWithMarkdown(ctx, `✅ **Checklist mode.** ${result.confirmationText || 'Proceeding.'}`);
+            }
+        } catch (err) {
+            console.error('Checklist clarification resume error:', err.message);
+            await editWithMarkdown(ctx, '❌ Failed to process. Please try again.');
+        }
+    });
+
+    // ─── Checklist Clarification: Separate Tasks (WP05) ──────
+    bot.callbackQuery(/^cl:separate$/, async (ctx) => {
+        if (!isAuthorized(ctx)) {
+            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            return;
+        }
+        const pending = store.getPendingChecklistClarification();
+        const chatId = ctx.chat?.id;
+        const userId = ctx.from?.id;
+
+        if (!pending) {
+            await ctx.answerCallbackQuery({ text: '⚠️ No pending clarification found.' });
+            await editWithMarkdown(ctx, '⚠️ **No pending clarification.** Rephrase your request.');
+            return;
+        }
+        if (pending.chatId && chatId && pending.chatId !== chatId) {
+            await ctx.answerCallbackQuery({ text: '⚠️ Wrong chat.' });
+            return;
+        }
+        if (pending.userId && userId && pending.userId !== userId) {
+            await ctx.answerCallbackQuery({ text: '⚠️ Wrong user.' });
+            return;
+        }
+
+        await store.clearPendingChecklistClarification();
+        await ctx.answerCallbackQuery({ text: '📝 Separate tasks' });
+        console.log('[ChecklistClarification] Button: separate selected');
+
+        try {
+            const result = await pipeline.processMessage(pending.originalMessage, {
+                entryPoint: 'telegram:checklist-clarification-button',
+                mode: 'interactive',
+                checklistPreference: 'separate',
+                availableProjects: ticktick?.getLastFetchedProjects?.() || [],
+            });
+
+            if (result.type === 'task') {
+                await editWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+            } else if (result.type === 'error') {
+                await editWithMarkdown(ctx, `❌ ${result.confirmationText}`);
+            } else {
+                await editWithMarkdown(ctx, `✅ **Separate tasks.** ${result.confirmationText || 'Proceeding.'}`);
+            }
+        } catch (err) {
+            console.error('Checklist clarification resume error:', err.message);
+            await editWithMarkdown(ctx, '❌ Failed to process. Please try again.');
+        }
+    });
+
+    // ─── Checklist Clarification: Skip (WP05) ────────────────
+    bot.callbackQuery(/^cl:skip$/, async (ctx) => {
+        if (!isAuthorized(ctx)) {
+            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            return;
+        }
+        const pending = store.getPendingChecklistClarification();
+        const chatId = ctx.chat?.id;
+        const userId = ctx.from?.id;
+
+        if (!pending) {
+            await ctx.answerCallbackQuery({ text: '⚠️ No pending clarification found.' });
+            await editWithMarkdown(ctx, '⚠️ **No pending clarification.** Rephrase your request.');
+            return;
+        }
+        if (pending.chatId && chatId && pending.chatId !== chatId) {
+            await ctx.answerCallbackQuery({ text: '⚠️ Wrong chat.' });
+            return;
+        }
+        if (pending.userId && userId && pending.userId !== userId) {
+            await ctx.answerCallbackQuery({ text: '⚠️ Wrong user.' });
+            return;
+        }
+
+        await store.clearPendingChecklistClarification();
+        await ctx.answerCallbackQuery({ text: '⏭ Skipped' });
+        console.log('[ChecklistClarification] Button: skip selected');
+
+        try {
+            const result = await pipeline.processMessage(pending.originalMessage, {
+                entryPoint: 'telegram:checklist-clarification-skip',
+                mode: 'interactive',
+                skipChecklist: true,
+                availableProjects: ticktick?.getLastFetchedProjects?.() || [],
+            });
+
+            if (result.type === 'task') {
+                await editWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+            } else if (result.type === 'error') {
+                await editWithMarkdown(ctx, `❌ ${result.confirmationText}`);
+            } else {
+                await editWithMarkdown(ctx, `✅ **Single task.** ${result.confirmationText || 'Proceeding.'}`);
+            }
+        } catch (err) {
+            console.error('Checklist clarification skip error:', err.message);
+            await editWithMarkdown(ctx, '❌ Failed to process. Please try again.');
+        }
     });
 }

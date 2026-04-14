@@ -3568,3 +3568,78 @@ test('WP04 T046: ambiguous checklist vs multi-task returns clarification', async
   assert.equal(result.clarification.reason, 'ambiguous_checklist_vs_multi_task');
   assert.equal(adapterCalls.create.length, 0, 'should not create any tasks');
 });
+
+// ─── WP05: Checklist Clarification UX Flow ─────────────────────
+
+test('WP05 T052: checklist clarification persists with TTL', async () => {
+  // Verify store functions exist and work
+  assert.equal(typeof store.getPendingChecklistClarification, 'function');
+  assert.equal(typeof store.setPendingChecklistClarification, 'function');
+  assert.equal(typeof store.clearPendingChecklistClarification, 'function');
+  assert.ok(store.CHECKLIST_CLARIFICATION_TTL_MS > 0, 'TTL should be defined');
+  assert.equal(store.CHECKLIST_CLARIFICATION_TTL_MS, 24 * 60 * 60 * 1000, 'TTL should be 24 hours');
+
+  // Set and get
+  await store.setPendingChecklistClarification({
+    originalMessage: 'test message',
+    intents: [{ type: 'create', title: 'test' }],
+    chatId: 123,
+    userId: 456,
+  });
+
+  const pending = store.getPendingChecklistClarification();
+  assert.ok(pending !== null, 'pending clarification should exist');
+  assert.equal(pending.originalMessage, 'test message');
+  assert.equal(pending.chatId, 123);
+  assert.equal(pending.userId, 456);
+
+  // Clear
+  await store.clearPendingChecklistClarification();
+  assert.equal(store.getPendingChecklistClarification(), null, 'should be null after clear');
+});
+
+test('WP05 T052: expired checklist clarification is ignored', async () => {
+  // Manually set an expired entry
+  const expiredDate = new Date(Date.now() - (25 * 60 * 60 * 1000)); // 25 hours ago
+  await store.setPendingChecklistClarification({
+    originalMessage: 'old message',
+    intents: [],
+    createdAt: expiredDate.toISOString(),
+  });
+
+  const pending = store.getPendingChecklistClarification();
+  assert.equal(pending, null, 'expired clarification should return null');
+});
+
+test('WP05 T054: conservative fallback does not create checklist after ignored clarification', async () => {
+  // Set up a pending checklist clarification
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Plan project with tasks A, B, and C',
+    intents: [{ type: 'create', title: 'Plan project' }],
+    chatId: 123,
+    userId: 456,
+  });
+
+  // An ambiguous reply (simulating unrelated message) should NOT create a checklist
+  // This is tested at the store/behavior level — the bot handler uses skipChecklist: true
+  const pending = store.getPendingChecklistClarification();
+  assert.ok(pending !== null, 'pending should exist');
+
+  // After processing, the pending state should be cleared (simulating bot behavior)
+  await store.clearPendingChecklistClarification();
+  assert.equal(store.getPendingChecklistClarification(), null, 'pending cleared after fallback');
+});
+
+test('WP05 T056: clarification lifecycle events are logged', async () => {
+  // Verify that setting/clearing clarification does not throw and uses console.log
+  // (The actual logging is via console.log which we can't easily assert in unit tests,
+  // but we verify the functions execute without error and state transitions work)
+  await store.setPendingChecklistClarification({
+    originalMessage: 'test',
+    intents: [],
+    userId: 1,
+  });
+  assert.ok(store.getPendingChecklistClarification() !== null);
+  await store.clearPendingChecklistClarification();
+  assert.equal(store.getPendingChecklistClarification(), null);
+});

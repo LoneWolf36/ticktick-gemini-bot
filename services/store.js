@@ -23,6 +23,7 @@ const DEFAULT_STATE = {
     pendingTasks: {},    // Analyzed + sent to Telegram, awaiting user review
     pendingReorg: null,  // Proposed global reorg plan awaiting apply/refine/cancel
     pendingMutationClarification: null, // Pending mutation clarification state for free-form handler
+    pendingChecklistClarification: null, // Pending checklist vs separate-tasks clarification (WP05)
     processedTasks: {},  // User has clicked approve/skip/drop
     failedTasks: {},     // AI analysis failed (rate limit) — parked to prevent re-polling
     undoLog: [],
@@ -81,6 +82,7 @@ async function loadFromRedis() {
                 pendingTasks: parsed.pendingTasks || {},
                 pendingReorg: parsed.pendingReorg || null,
                 pendingMutationClarification: parsed.pendingMutationClarification || null,
+                pendingChecklistClarification: parsed.pendingChecklistClarification || null,
                 processedTasks: parsed.processedTasks || {},
                 undoLog: parsed.undoLog || [],
             };
@@ -149,6 +151,7 @@ function loadFromFile() {
             pendingTasks: parsed.pendingTasks || {},
             pendingReorg: parsed.pendingReorg || null,
             pendingMutationClarification: parsed.pendingMutationClarification || null,
+            pendingChecklistClarification: parsed.pendingChecklistClarification || null,
             processedTasks: parsed.processedTasks || {},
             undoLog: parsed.undoLog || [],
         };
@@ -414,6 +417,44 @@ export async function setPendingMutationClarification(data) {
 
 export async function clearPendingMutationClarification() {
     state.pendingMutationClarification = null;
+    await save();
+}
+
+// ─── Pending Checklist Clarification (WP05) ──────────────────
+// Narrow state for resuming ambiguous checklist vs separate-tasks requests.
+// TTL: 24 hours — after expiry, the clarification is ignored and a conservative
+// fallback creates a plain parent task only.
+
+/** Checklist clarification TTL: 24 hours */
+export const CHECKLIST_CLARIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
+
+export function getPendingChecklistClarification() {
+    const pending = state.pendingChecklistClarification;
+    if (!pending) return null;
+
+    // TTL check — expire silently
+    const createdAt = pending.createdAt ? new Date(pending.createdAt).getTime() : 0;
+    if (createdAt && (Date.now() - createdAt > CHECKLIST_CLARIFICATION_TTL_MS)) {
+        console.log('[ChecklistClarification] Expired pending state cleared (TTL exceeded)');
+        state.pendingChecklistClarification = null;
+        save().catch(() => {}); // Best-effort cleanup
+        return null;
+    }
+
+    return pending;
+}
+
+export async function setPendingChecklistClarification(data) {
+    state.pendingChecklistClarification = {
+        ...data,
+        createdAt: data.createdAt || new Date().toISOString(),
+    };
+    await save();
+    console.log('[ChecklistClarification] Pending state persisted');
+}
+
+export async function clearPendingChecklistClarification() {
+    state.pendingChecklistClarification = null;
     await save();
 }
 
