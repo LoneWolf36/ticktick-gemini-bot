@@ -246,6 +246,7 @@ function assertUserId(userId) {
 
 export async function getUrgentMode(userId) {
     assertUserId(userId);
+    await load(); // Ensure state is loaded
 
     if (useRedis) {
         try {
@@ -261,6 +262,7 @@ export async function getUrgentMode(userId) {
 
 export async function setUrgentMode(userId, value) {
     assertUserId(userId);
+    await load(); // Ensure state is loaded
 
     const normalizedValue = value === true;
     if (!state.urgentModes || typeof state.urgentModes !== 'object' || Array.isArray(state.urgentModes)) {
