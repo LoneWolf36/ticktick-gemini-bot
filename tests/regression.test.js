@@ -3785,3 +3785,450 @@ test('WP05 P0#3: _handleChecklistClarification passes checklistPreference to pip
   // Should not return clarification since preference was provided
   assert.notEqual(result.type, 'clarification', 'should resolve ambiguity with provided preference');
 });
+
+// ─── WP05 P0#2: Bot Clarification Handler Tests ──────────────
+
+test('WP05 P0#2: cl:checklist callback resumes pipeline with checklistPreference', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on(eventName, handler) { handlers.events.push({ eventName, handler }); return this; },
+  };
+
+  const pipelineCalls = [];
+  const mockTicktick = {
+    isAuthenticated: () => true,
+    getCacheAgeSeconds: () => null,
+    getAllTasksCached: async () => [],
+    getLastFetchedProjects: () => [],
+  };
+
+  await registerCallbacksForTest(bot, mockTicktick, {
+    processMessage: async (msg, opts) => {
+      pipelineCalls.push({ message: msg, options: opts });
+      return { type: 'task', confirmationText: '✅ Created task with checklist.' };
+    },
+  });
+
+  const authChatId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Plan event with venue, catering, and decorations',
+    chatId: authChatId,
+    userId: authChatId,
+    createdAt: new Date().toISOString(),
+  });
+
+  const clChecklist = handlers.callbacks.find(cb => cb.pattern.source === '^cl:checklist$');
+  assert.ok(clChecklist, 'cl:checklist callback should be registered');
+
+  const replies = [];
+  const ctx = {
+    chat: { id: authChatId },
+    from: { id: authChatId },
+    match: [],
+    answerCallbackQuery: async () => {},
+    reply: async (msg) => { replies.push(msg); },
+    editMessageText: async (text, opts) => { replies.push(text); },
+  };
+
+  await clChecklist.handler(ctx);
+
+  assert.equal(pipelineCalls.length, 1, 'pipeline should be called once');
+  assert.equal(pipelineCalls[0].options.checklistPreference, 'checklist', 'should pass checklistPreference');
+  assert.equal(pipelineCalls[0].options.skipChecklist, undefined, 'should not set skipChecklist');
+  assert.equal(pipelineCalls[0].options.entryPoint, 'telegram:checklist-clarification-button');
+  // The answerCallbackQuery sends '📋 Checklist mode', editMessageText sends pipeline result
+  assert.ok(replies.some(r => r && r.includes('Created task with checklist')), 'should show pipeline result');
+
+  // Pending state should be cleared
+  assert.equal(store.getPendingChecklistClarification(), null, 'pending should be cleared');
+});
+
+test('WP05 P0#2: cl:separate callback resumes pipeline with separate preference', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on(eventName, handler) { handlers.events.push({ eventName, handler }); return this; },
+  };
+
+  const pipelineCalls = [];
+  const mockTicktick = {
+    isAuthenticated: () => true,
+    getCacheAgeSeconds: () => null,
+    getAllTasksCached: async () => [],
+    getLastFetchedProjects: () => [],
+  };
+
+  await registerCallbacksForTest(bot, mockTicktick, {
+    processMessage: async (msg, opts) => {
+      pipelineCalls.push({ message: msg, options: opts });
+      return { type: 'task', confirmationText: '✅ Created separate tasks.' };
+    },
+  });
+
+  const authChatId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Plan event with venue and buy decorations',
+    chatId: authChatId,
+    userId: authChatId,
+    createdAt: new Date().toISOString(),
+  });
+
+  const clSeparate = handlers.callbacks.find(cb => cb.pattern.source === '^cl:separate$');
+  assert.ok(clSeparate, 'cl:separate callback should be registered');
+
+  const replies = [];
+  const ctx = {
+    chat: { id: authChatId },
+    from: { id: authChatId },
+    match: [],
+    answerCallbackQuery: async () => {},
+    reply: async (msg) => { replies.push(msg); },
+    editMessageText: async (text, opts) => { replies.push(text); },
+  };
+
+  await clSeparate.handler(ctx);
+
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].options.checklistPreference, 'separate');
+  assert.equal(pipelineCalls[0].options.skipChecklist, undefined);
+  assert.ok(replies.some(r => r && r.includes('Created separate tasks')), 'should show pipeline result');
+});
+
+test('WP05 P0#2: cl:skip callback resumes pipeline with skipChecklist=true', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on(eventName, handler) { handlers.events.push({ eventName, handler }); return this; },
+  };
+
+  const pipelineCalls = [];
+  const mockTicktick = {
+    isAuthenticated: () => true,
+    getCacheAgeSeconds: () => null,
+    getAllTasksCached: async () => [],
+    getLastFetchedProjects: () => [],
+  };
+
+  await registerCallbacksForTest(bot, mockTicktick, {
+    processMessage: async (msg, opts) => {
+      pipelineCalls.push({ message: msg, options: opts });
+      return { type: 'task', confirmationText: '✅ Created single task.' };
+    },
+  });
+
+  const authChatId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Plan event with venue and buy decorations',
+    chatId: authChatId,
+    userId: authChatId,
+    createdAt: new Date().toISOString(),
+  });
+
+  const clSkip = handlers.callbacks.find(cb => cb.pattern.source === '^cl:skip$');
+  assert.ok(clSkip, 'cl:skip callback should be registered');
+
+  const replies = [];
+  const ctx = {
+    chat: { id: authChatId },
+    from: { id: authChatId },
+    match: [],
+    answerCallbackQuery: async () => {},
+    reply: async (msg) => { replies.push(msg); },
+    editMessageText: async (text, opts) => { replies.push(text); },
+  };
+
+  await clSkip.handler(ctx);
+
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].options.skipChecklist, true);
+  assert.equal(pipelineCalls[0].options.checklistPreference, undefined);
+  assert.ok(replies.some(r => r && r.includes('Created single task')), 'should show pipeline result');
+});
+
+test('WP05 P0#2: checklist callback rejects unauthorized user', async () => {
+  const handlers = { callbacks: [] };
+  const bot = {
+    command() { return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on() { return this; },
+  };
+
+  await registerCallbacksForTest(bot, { isAuthenticated: () => true }, {
+    processMessage: async () => ({ type: 'task', confirmationText: 'ok' }),
+  });
+
+  const authChatId = AUTHORIZED_CHAT_ID || Date.now();
+  const unauthorizedId = authChatId + 99999;
+
+  const clChecklist = handlers.callbacks.find(cb => cb.pattern.source === '^cl:checklist$');
+  const replies = [];
+  const ctx = {
+    chat: { id: unauthorizedId },
+    from: { id: unauthorizedId },
+    match: [],
+    answerCallbackQuery: async ({ text }) => { replies.push(text); },
+    reply: async () => {},
+  };
+
+  await clChecklist.handler(ctx);
+
+  assert.equal(replies.some(r => r.includes('Unauthorized')), true, 'should reject unauthorized');
+});
+
+test('WP05 P0#2: checklist callback rejects cross-chat user', async () => {
+  const handlers = { callbacks: [] };
+  const bot = {
+    command() { return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on() { return this; },
+  };
+
+  await registerCallbacksForTest(bot, { isAuthenticated: () => true }, {
+    processMessage: async () => ({ type: 'task', confirmationText: 'ok' }),
+  });
+
+  // ctx uses AUTHORIZED_CHAT_ID so isAuthorized passes,
+  // but pending has a different chatId so cross-chat check fires
+  const authorizedChatId = AUTHORIZED_CHAT_ID || 42;
+  const pendingChatId = authorizedChatId + 99999;
+
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Test message',
+    chatId: pendingChatId,
+    userId: pendingChatId,
+    createdAt: new Date().toISOString(),
+  });
+
+  const clChecklist = handlers.callbacks.find(cb => cb.pattern.source === '^cl:checklist$');
+  const replies = [];
+  const ctx = {
+    chat: { id: authorizedChatId },
+    from: { id: authorizedChatId },
+    match: [],
+    answerCallbackQuery: async ({ text }) => { replies.push(text); },
+    reply: async () => {},
+    editMessageText: async () => {},
+  };
+
+  await clChecklist.handler(ctx);
+
+  assert.equal(replies.some(r => r && r.includes('Wrong chat')), true, 'should reject cross-chat');
+});
+
+test('WP05 P0#2: free-form reply "checklist" resumes with checklistPreference', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on(eventName, handler) { handlers.events.push({ eventName, handler }); return this; },
+  };
+
+  const pipelineCalls = [];
+  const mockTicktick = {
+    isAuthenticated: () => true,
+    getCacheAgeSeconds: () => null,
+    getAllTasksCached: async () => [],
+    getAllTasks: async () => [],
+    getLastFetchedProjects: () => [],
+  };
+
+  registerCommands(
+    bot,
+    mockTicktick,
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
+    {},
+    {
+      processMessage: async (msg, opts) => {
+        pipelineCalls.push({ message: msg, options: opts });
+        return { type: 'task', confirmationText: '✅ Created with checklist.' };
+      },
+    },
+  );
+
+  const authChatId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Plan event with venue and buy decorations',
+    chatId: authChatId,
+    userId: authChatId,
+    createdAt: new Date().toISOString(),
+  });
+
+  const messageHandler = handlers.events.find(e => e.eventName === 'message:text')?.handler;
+  assert.ok(messageHandler, 'message:text handler should be registered');
+
+  const replies = [];
+  const ctx = {
+    message: { text: 'checklist' },
+    chat: { id: authChatId },
+    from: { id: authChatId },
+    reply: async (msg) => { replies.push(msg); },
+  };
+
+  await messageHandler(ctx);
+
+  assert.equal(pipelineCalls.length, 1, 'pipeline should be called');
+  assert.equal(pipelineCalls[0].options.checklistPreference, 'checklist', 'should pass checklist preference');
+});
+
+test('WP05 P0#2: free-form reply "separate tasks" resumes with separate preference', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on(eventName, handler) { handlers.events.push({ eventName, handler }); return this; },
+  };
+
+  const pipelineCalls = [];
+  const mockTicktick = {
+    isAuthenticated: () => true,
+    getCacheAgeSeconds: () => null,
+    getAllTasksCached: async () => [],
+    getAllTasks: async () => [],
+    getLastFetchedProjects: () => [],
+  };
+
+  registerCommands(
+    bot,
+    mockTicktick,
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
+    {},
+    {
+      processMessage: async (msg, opts) => {
+        pipelineCalls.push({ message: msg, options: opts });
+        return { type: 'task', confirmationText: '✅ Created separate tasks.' };
+      },
+    },
+  );
+
+  const authChatId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Plan event with venue and buy decorations',
+    chatId: authChatId,
+    userId: authChatId,
+    createdAt: new Date().toISOString(),
+  });
+
+  const messageHandler = handlers.events.find(e => e.eventName === 'message:text')?.handler;
+  const replies = [];
+  const ctx = {
+    message: { text: 'separate tasks' },
+    chat: { id: authChatId },
+    from: { id: authChatId },
+    reply: async (msg) => { replies.push(msg); },
+  };
+
+  await messageHandler(ctx);
+
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].options.checklistPreference, 'separate');
+});
+
+test('WP05 P0#2: free-form reply "skip" resumes with skipChecklist=true', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on(eventName, handler) { handlers.events.push({ eventName, handler }); return this; },
+  };
+
+  const pipelineCalls = [];
+  const mockTicktick = {
+    isAuthenticated: () => true,
+    getCacheAgeSeconds: () => null,
+    getAllTasksCached: async () => [],
+    getAllTasks: async () => [],
+    getLastFetchedProjects: () => [],
+  };
+
+  registerCommands(
+    bot,
+    mockTicktick,
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
+    {},
+    {
+      processMessage: async (msg, opts) => {
+        pipelineCalls.push({ message: msg, options: opts });
+        return { type: 'task', confirmationText: '✅ Created single task.' };
+      },
+    },
+  );
+
+  const authChatId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Plan event with venue and buy decorations',
+    chatId: authChatId,
+    userId: authChatId,
+    createdAt: new Date().toISOString(),
+  });
+
+  const messageHandler = handlers.events.find(e => e.eventName === 'message:text')?.handler;
+  const replies = [];
+  const ctx = {
+    message: { text: 'skip' },
+    chat: { id: authChatId },
+    from: { id: authChatId },
+    reply: async (msg) => { replies.push(msg); },
+  };
+
+  await messageHandler(ctx);
+
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].options.skipChecklist, true);
+});
+
+test('WP05 P0#2: free-form reply with no pending clarification falls through to normal pipeline', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on(eventName, handler) { handlers.events.push({ eventName, handler }); return this; },
+  };
+
+  const pipelineCalls = [];
+  const mockTicktick = {
+    isAuthenticated: () => true,
+    getCacheAgeSeconds: () => null,
+    getAllTasksCached: async () => [],
+    getAllTasks: async () => [],
+    getLastFetchedProjects: () => [],
+  };
+
+  registerCommands(
+    bot,
+    mockTicktick,
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
+    {},
+    {
+      processMessage: async (msg, opts) => {
+        pipelineCalls.push({ message: msg, options: opts });
+        return { type: 'non-task', confirmationText: 'Got it.' };
+      },
+    },
+  );
+
+  // No pending clarification set
+  const messageHandler = handlers.events.find(e => e.eventName === 'message:text')?.handler;
+  const replies = [];
+  const ctx = {
+    message: { text: 'buy groceries' },
+    chat: { id: AUTHORIZED_CHAT_ID || Date.now() },
+    from: { id: AUTHORIZED_CHAT_ID || Date.now() },
+    reply: async (msg) => { replies.push(msg); },
+  };
+
+  await messageHandler(ctx);
+
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].message, 'buy groceries');
+  assert.equal(pipelineCalls[0].options.entryPoint, 'telegram:freeform');
+});
+
+// ─── Helper: registerCallbacks without TickTick client ───────
+async function registerCallbacksForTest(bot, ticktickMock, pipeline) {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  registerCallbacks(bot, ticktickMock, {}, ticktickMock, pipeline);
+}
