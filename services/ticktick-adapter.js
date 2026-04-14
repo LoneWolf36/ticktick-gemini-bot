@@ -1,4 +1,5 @@
 import { TickTickClient } from './ticktick.js';
+import { validateChecklistItem } from './shared-utils.js';
 
 const PROJECT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const VALID_PRIORITIES = [0, 1, 3, 5]; // TickTick valid priority values
@@ -141,6 +142,7 @@ export class TickTickAdapter {
 
     /**
      * Validates and sanitizes a checklist item.
+     * Delegates to shared validateChecklistItem for consistency.
      * @param {Object} item - Checklist item to validate
      * @param {string} item.title - Item title (required, non-empty string)
      * @param {number} [item.status] - Item status (default: 0 for incomplete)
@@ -149,19 +151,7 @@ export class TickTickAdapter {
      * @private
      */
     _validateChecklistItem(item) {
-        if (!item || typeof item !== 'object') {
-            return null;
-        }
-
-        // Check title without throwing
-        if (!item.title || typeof item.title !== 'string' || item.title.trim().length === 0) {
-            return null;
-        }
-
-        const status = typeof item.status === 'number' ? item.status : 0;
-        const sortOrder = typeof item.sortOrder === 'number' ? item.sortOrder : 0;
-
-        return { title: item.title.trim(), status, sortOrder };
+        return validateChecklistItem(item);
     }
 
     /**

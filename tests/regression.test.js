@@ -3643,3 +3643,145 @@ test('WP05 T056: clarification lifecycle events are logged', async () => {
   await store.clearPendingChecklistClarification();
   assert.equal(store.getPendingChecklistClarification(), null);
 });
+
+// ─── WP05: Pipeline Consumption of Clarification Options ─────
+
+test('WP05 P0#1: pipeline resolves ambiguity with checklistPreference=checklist', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Plan event',
+        confidence: 0.8,
+        checklistItems: [
+          { title: 'Book venue' },
+          { title: 'Send invites' },
+        ],
+      },
+      { type: 'create', title: 'Buy decorations', confidence: 0.8 },
+    ],
+  });
+
+  // Simulate clarification resume with checklist preference
+  const result = await processMessage('Plan an event with venue and invites, also buy decorations', {
+    checklistPreference: 'checklist',
+    entryPoint: 'telegram:checklist-clarification-button',
+  });
+
+  assert.equal(result.type, 'task', 'should return task type after resolving preference');
+  // Should have merged into one create with checklist
+  assert.equal(adapterCalls.create.length, 1, 'should create one parent task');
+  const createdTask = adapterCalls.create[0];
+  assert.ok(Array.isArray(createdTask.checklistItems) || Array.isArray(createdTask.items), 'created task should have checklist items');
+  const checklistArray = createdTask.checklistItems || createdTask.items || [];
+  assert.ok(checklistArray.length >= 2, 'checklist should have multiple items');
+});
+
+test('WP05 P0#1: pipeline resolves ambiguity with checklistPreference=separate', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Plan event',
+        confidence: 0.8,
+        checklistItems: [
+          { title: 'Book venue' },
+          { title: 'Send invites' },
+        ],
+      },
+      { type: 'create', title: 'Buy decorations', confidence: 0.8 },
+    ],
+  });
+
+  // Simulate clarification resume with separate preference
+  const result = await processMessage('Plan an event with venue and invites, also buy decorations', {
+    checklistPreference: 'separate',
+    entryPoint: 'telegram:checklist-clarification-button',
+  });
+
+  assert.equal(result.type, 'task', 'should return task type after resolving preference');
+  // Should have created separate tasks (no checklist)
+  assert.ok(adapterCalls.create.length >= 1, 'should create tasks');
+  // None of the created tasks should have checklist items
+  for (const task of adapterCalls.create) {
+    assert.equal(task.items, undefined, 'tasks should not have checklist items when separate');
+  }
+});
+
+test('WP05 P0#1: pipeline resolves ambiguity with skipChecklist=true', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Plan event',
+        confidence: 0.8,
+        checklistItems: [
+          { title: 'Book venue' },
+          { title: 'Send invites' },
+        ],
+      },
+      { type: 'create', title: 'Buy decorations', confidence: 0.8 },
+    ],
+  });
+
+  // Simulate clarification skip
+  const result = await processMessage('Plan an event with venue and invites, also buy decorations', {
+    skipChecklist: true,
+    entryPoint: 'telegram:checklist-clarification-skip',
+  });
+
+  assert.equal(result.type, 'task', 'should return task type after skipping');
+  // Should create only the first task without checklist
+  assert.ok(adapterCalls.create.length >= 1, 'should create at least one task');
+  const firstTask = adapterCalls.create[0];
+  assert.equal(firstTask.items, undefined, 'first task should not have checklist items');
+});
+
+test('WP05 P0#1: pipeline asks for clarification when no preference provided', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Plan event',
+        confidence: 0.8,
+        checklistItems: [
+          { title: 'Book venue' },
+          { title: 'Send invites' },
+        ],
+      },
+      { type: 'create', title: 'Buy decorations', confidence: 0.8 },
+    ],
+  });
+
+  const result = await processMessage('Plan an event with venue and invites, also buy decorations');
+
+  assert.equal(result.type, 'clarification', 'should return clarification when no preference given');
+  assert.equal(result.clarification.reason, 'ambiguous_checklist_vs_multi_task');
+  assert.equal(adapterCalls.create.length, 0, 'should not create tasks');
+});
+
+// ─── WP05: Bot Callback Handler Extraction (P0#3) ─────────────
+
+test('WP05 P0#3: _handleChecklistClarification passes checklistPreference to pipeline', async () => {
+  // This tests the extracted handler's behavior at the pipeline level.
+  // The bot handler itself is tested via integration tests, but we verify
+  // the pipeline options flow here.
+  const { processMessage } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Test task',
+        checklistItems: [{ title: 'Subtask A' }],
+      },
+      { type: 'create', title: 'Another task' },
+    ],
+  });
+
+  // Verify the pipeline consumes the option correctly
+  const result = await processMessage('test', {
+    checklistPreference: 'checklist',
+  });
+
+  // Should not return clarification since preference was provided
+  assert.notEqual(result.type, 'clarification', 'should resolve ambiguity with provided preference');
+});

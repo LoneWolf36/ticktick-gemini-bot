@@ -479,33 +479,73 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
             const hasMultipleCreates = intents.filter(i => i.type === 'create').length > 1;
 
             if (hasChecklist && hasMultipleCreates) {
-                // Ambiguous: user described both a checklist and separate tasks
-                console.warn(`[Pipeline:${context.requestId}] Ambiguous checklist/multi-task request — asking for clarification.`);
-                const clarificationResult = {
-                    type: 'clarification',
-                    results: [],
-                    errors: [],
-                    confirmationText: 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?',
-                    clarification: {
-                        candidates: intents,
-                        reason: 'ambiguous_checklist_vs_multi_task',
-                    },
-                    requestId: context.requestId || null,
-                    entryPoint: context.entryPoint || null,
-                    mode: context.mode || null,
-                };
+                // Check if user already provided a preference (clarification resume path)
+                const userPreference = options.checklistPreference || null;
+                const userSkipped = options.skipChecklist === true;
 
-                await telemetry.emit(context, {
-                    eventType: 'pipeline.request.completed',
-                    step: 'result',
-                    status: 'success',
-                    durationMs: Date.now() - requestStartedAt,
-                    metadata: {
+                if (userSkipped) {
+                    // User chose "single task" — drop checklist intent, keep first create
+                    console.log(`[Pipeline:${context.requestId}] User skipped checklist clarification — creating single task only.`);
+                    const firstCreate = intents.find(i => i.type === 'create');
+                    if (firstCreate) {
+                        // Remove checklist items from the intent
+                        delete firstCreate.checklistItems;
+                    }
+                    // Continue processing with modified intents
+                } else if (userPreference === 'checklist') {
+                    // User chose checklist mode — merge multiple creates into one with checklist
+                    console.log(`[Pipeline:${context.requestId}] User chose checklist mode — merging creates into single task.`);
+                    const checklistItems = [];
+                    for (const intent of intents) {
+                        if (Array.isArray(intent.checklistItems) && intent.checklistItems.length > 0) {
+                            checklistItems.push(...intent.checklistItems);
+                        } else if (intent.type === 'create' && intent.title) {
+                            // Convert standalone create into checklist item
+                            checklistItems.push({ title: intent.title, sortOrder: checklistItems.length });
+                        }
+                    }
+                    // Replace intents with single checklist create
+                    intents = [{
+                        type: 'create',
+                        title: checklistItems[0]?.title || 'Checklist',
+                        checklistItems,
+                    }];
+                } else if (userPreference === 'separate') {
+                    // User chose separate tasks — strip checklist, keep all creates
+                    console.log(`[Pipeline:${context.requestId}] User chose separate tasks — keeping all creates.`);
+                    for (const intent of intents) {
+                        delete intent.checklistItems;
+                    }
+                    // Continue processing with modified intents
+                } else {
+                    // No preference provided — ask for clarification
+                    console.warn(`[Pipeline:${context.requestId}] Ambiguous checklist/multi-task request — asking for clarification.`);
+                    const clarificationResult = {
                         type: 'clarification',
-                        reason: 'ambiguous_checklist_vs_multi_task',
-                    },
-                });
-                return clarificationResult;
+                        results: [],
+                        errors: [],
+                        confirmationText: 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?',
+                        clarification: {
+                            candidates: intents,
+                            reason: 'ambiguous_checklist_vs_multi_task',
+                        },
+                        requestId: context.requestId || null,
+                        entryPoint: context.entryPoint || null,
+                        mode: context.mode || null,
+                    };
+
+                    await telemetry.emit(context, {
+                        eventType: 'pipeline.request.completed',
+                        step: 'result',
+                        status: 'success',
+                        durationMs: Date.now() - requestStartedAt,
+                        metadata: {
+                            type: 'clarification',
+                            reason: 'ambiguous_checklist_vs_multi_task',
+                        },
+                    });
+                    return clarificationResult;
+                }
             }
 
             // Mutation routing (WP04): detect mutation intents and resolve targets

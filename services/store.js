@@ -428,6 +428,11 @@ export async function clearPendingMutationClarification() {
 /** Checklist clarification TTL: 24 hours */
 export const CHECKLIST_CLARIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 
+/**
+ * Gets the pending checklist clarification if it exists and hasn't expired.
+ *
+ * @returns {Object|null} Pending clarification data with {originalMessage, intents, chatId, userId, createdAt}, or null if none/expired
+ */
 export function getPendingChecklistClarification() {
     const pending = state.pendingChecklistClarification;
     if (!pending) return null;
@@ -444,6 +449,18 @@ export function getPendingChecklistClarification() {
     return pending;
 }
 
+/**
+ * Stores a pending checklist clarification with automatic timestamp.
+ *
+ * @param {Object} data - Clarification data
+ * @param {string} data.originalMessage - The original user message that triggered clarification
+ * @param {Array} data.intents - Summary of extracted intents
+ * @param {number|null} [data.chatId] - Telegram chat ID for cross-chat validation
+ * @param {number|null} [data.userId] - Telegram user ID for cross-user validation
+ * @param {string} [data.entryPoint] - Pipeline entry point for resume routing
+ * @param {string} [data.mode] - Pipeline mode for resume routing
+ * @returns {Promise<void>}
+ */
 export async function setPendingChecklistClarification(data) {
     state.pendingChecklistClarification = {
         ...data,
@@ -453,6 +470,10 @@ export async function setPendingChecklistClarification(data) {
     console.log('[ChecklistClarification] Pending state persisted');
 }
 
+/**
+ * Clears the pending checklist clarification state.
+ * @returns {Promise<void>}
+ */
 export async function clearPendingChecklistClarification() {
     state.pendingChecklistClarification = null;
     await save();

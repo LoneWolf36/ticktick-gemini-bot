@@ -539,3 +539,80 @@ export function buildMutationClarificationMessage(reason, candidates, intentSumm
     lines.push(`\nTap a task below or rephrase your request.`);
     return lines.join('\n');
 }
+
+// ─── Checklist Item Validation (P1 #4) ──────────────────────
+
+/**
+ * Validates a single checklist item's structural integrity.
+ * Used by both normalizer (post-cleaning) and adapter (pre-API).
+ *
+ * @param {Object|null} item - Raw or cleaned checklist item
+ * @returns {Object|null} Validated item with {title, status, sortOrder} or null if invalid
+ */
+export function validateChecklistItem(item) {
+    if (!item || typeof item !== 'object') return null;
+
+    const rawTitle = item.title;
+    if (!rawTitle || typeof rawTitle !== 'string' || rawTitle.trim().length === 0) return null;
+
+    return {
+        title: rawTitle.trim(),
+        status: typeof item.status === 'number' ? item.status : 0,
+        sortOrder: typeof item.sortOrder === 'number' ? item.sortOrder : 0,
+    };
+}
+
+/**
+ * Validates and normalizes an array of checklist items.
+ * Applies structural validation, defaults, and sort order assignment.
+ *
+ * @param {Array|null} items - Raw checklist items
+ * @param {Object} [options]
+ * @param {number} [options.maxItems=30] - Maximum items to keep
+ * @param {boolean} [options.cleanTitles=false] - Whether to apply text cleaning (normalizer's concern)
+ * @param {Function} [options.titleCleaner=null] - Custom title cleaner function
+ * @returns {Array} Validated, normalized items
+ */
+export function validateChecklistItems(items, options = {}) {
+    const { maxItems = 30, titleCleaner = null } = options;
+
+    if (!items || !Array.isArray(items) || items.length === 0) return [];
+
+    const validItems = [];
+    let droppedCount = 0;
+
+    for (let i = 0; i < items.length; i++) {
+        const raw = items[i];
+
+        // Reject nested checklist structures
+        if (raw && typeof raw === 'object' && raw.items && Array.isArray(raw.items)) {
+            droppedCount++;
+            continue;
+        }
+
+        // Apply title cleaning if requested
+        const itemToValidate = titleCleaner && (raw?.title ?? raw)
+            ? { ...raw, title: titleCleaner(raw?.title ?? raw) }
+            : raw;
+
+        const validated = validateChecklistItem(itemToValidate);
+        if (!validated) {
+            droppedCount++;
+            continue;
+        }
+
+        validated.sortOrder = i;
+        validItems.push(validated);
+    }
+
+    // Cap at maxItems
+    if (validItems.length > maxItems) {
+        validItems.length = maxItems;
+    }
+
+    if (droppedCount > 0) {
+        console.warn(`[validateChecklistItems] Dropped ${droppedCount} invalid item(s), kept ${validItems.length}`);
+    }
+
+    return validItems;
+}
