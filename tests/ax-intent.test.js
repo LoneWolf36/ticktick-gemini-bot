@@ -1,6 +1,7 @@
 import { describe, it, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
-import { createAxIntent, detectUrgentModeIntent, QuotaExhaustedError, validateIntentAction } from '../services/ax-intent.js';
+import { createAxIntent, detectUrgentModeIntent, QuotaExhaustedError, validateIntentAction, validateChecklistItems } from '../services/ax-intent.js';
+import { MAX_CHECKLIST_ITEMS } from '../services/schemas.js';
 
 describe('AX Intent Extraction', () => {
     let mockKeyManager;
@@ -498,5 +499,206 @@ describe('AX Intent Extraction - Integration Scenarios', () => {
             // With 1 key, maxRotations should be 0
             assert.ok(true, 'Tested indirectly through quota retry logic');
         });
+    });
+});
+
+describe('validateChecklistItems', () => {
+    it('returns valid=true for empty array', () => {
+        const result = validateChecklistItems([]);
+        assert.equal(result.valid, true);
+        assert.deepEqual(result.items, []);
+        assert.equal(result.errors.length, 0);
+        assert.equal(result.wasCapped, false);
+    });
+
+    it('returns valid=false for non-array input', () => {
+        const result = validateChecklistItems(null);
+        assert.equal(result.valid, false);
+        assert.ok(result.errors.some((e) => e.includes('must be an array')));
+    });
+
+    it('returns valid=false for undefined input', () => {
+        const result = validateChecklistItems(undefined);
+        assert.equal(result.valid, false);
+    });
+
+    it('accepts valid checklist items with titles', () => {
+        const result = validateChecklistItems([
+            { title: 'Buy decorations' },
+            { title: 'Send invitations' },
+            { title: 'Bake cake' },
+        ]);
+        assert.equal(result.valid, true);
+        assert.equal(result.items.length, 3);
+        assert.equal(result.items[0].title, 'Buy decorations');
+        assert.equal(result.items[1].title, 'Send invitations');
+        assert.equal(result.wasCapped, false);
+    });
+
+    it('accepts items with optional status and sortOrder', () => {
+        const result = validateChecklistItems([
+            { title: 'First step', status: 'incomplete', sortOrder: 1 },
+            { title: 'Second step', status: 'completed', sortOrder: 2 },
+        ]);
+        assert.equal(result.valid, true);
+        assert.equal(result.items[0].status, 'incomplete');
+        assert.equal(result.items[0].sortOrder, 1);
+        assert.equal(result.items[1].status, 'completed');
+    });
+
+    it('rejects items without a title', () => {
+        const result = validateChecklistItems([
+            { title: 'Valid item' },
+            { status: 'incomplete' },
+            { title: '' },
+            { title: '   ' },
+        ]);
+        assert.equal(result.valid, true);
+        assert.equal(result.items.length, 1);
+        assert.equal(result.items[0].title, 'Valid item');
+        assert.ok(result.errors.length > 0);
+    });
+
+    it('rejects items with invalid status', () => {
+        const result = validateChecklistItems([
+            { title: 'Good item' },
+            { title: 'Bad status', status: 'done' },
+        ]);
+        assert.equal(result.valid, true);
+        assert.equal(result.items.length, 1);
+        assert.ok(result.errors.some((e) => e.includes('invalid status')));
+    });
+
+    it('rejects non-object items in array', () => {
+        const result = validateChecklistItems([
+            { title: 'Valid' },
+            'not an object',
+            42,
+        ]);
+        assert.equal(result.valid, true);
+        assert.equal(result.items.length, 1);
+        assert.ok(result.errors.some((e) => e.includes('is not an object')));
+    });
+
+    it('caps items at MAX_CHECKLIST_ITEMS', () => {
+        const manyItems = Array.from({ length: 50 }, (_, i) => ({ title: `Item ${i + 1}` }));
+        const result = validateChecklistItems(manyItems);
+        assert.equal(result.valid, true);
+        assert.equal(result.items.length, MAX_CHECKLIST_ITEMS);
+        assert.equal(result.wasCapped, true);
+        assert.ok(result.errors.some((e) => e.includes('capped at')));
+    });
+
+    it('trims whitespace from titles', () => {
+        const result = validateChecklistItems([
+            { title: '  Trimmed title  ' },
+        ]);
+        assert.equal(result.valid, true);
+        assert.equal(result.items[0].title, 'Trimmed title');
+    });
+});
+
+describe('validateIntentAction - checklist and clarification fields', () => {
+    it('accepts create action with valid checklistItems', () => {
+        const result = validateIntentAction({
+            type: 'create',
+            title: 'Plan birthday party',
+            checklistItems: [
+                { title: 'Buy decorations' },
+                { title: 'Send invites' },
+            ],
+            confidence: 0.88,
+        }, 0);
+        assert.equal(result.valid, true);
+        assert.equal(result.errors.length, 0);
+    });
+
+    it('accepts create action without checklistItems (backward compat)', () => {
+        const result = validateIntentAction({
+            type: 'create',
+            title: 'Simple task',
+            confidence: 0.95,
+        }, 0);
+        assert.equal(result.valid, true);
+    });
+
+    it('rejects checklistItems on non-create actions', () => {
+        const result = validateIntentAction({
+            type: 'update',
+            targetQuery: 'some task',
+            checklistItems: [{ title: 'step 1' }],
+            confidence: 0.9,
+        }, 0);
+        assert.equal(result.valid, false);
+        assert.ok(result.errors.some((e) => e.includes('checklistItems is only valid for create')));
+    });
+
+    it('rejects create action with empty checklistItems array', () => {
+        const result = validateIntentAction({
+            type: 'create',
+            title: 'Plan something',
+            checklistItems: [],
+            confidence: 0.5,
+        }, 0);
+        // Empty array is technically valid (no invalid items), but should not fail
+        assert.equal(result.valid, true);
+    });
+
+    it('accepts clarification action with low confidence', () => {
+        const result = validateIntentAction({
+            type: 'create',
+            title: 'Plan project',
+            clarification: true,
+            clarificationQuestion: 'Is this one task with steps, or several separate tasks?',
+            confidence: 0.3,
+        }, 0);
+        assert.equal(result.valid, true);
+    });
+
+    it('rejects clarification action with high confidence', () => {
+        const result = validateIntentAction({
+            type: 'create',
+            title: 'Plan project',
+            clarification: true,
+            clarificationQuestion: 'What do you mean?',
+            confidence: 0.8,
+        }, 0);
+        assert.equal(result.valid, false);
+        assert.ok(result.errors.some((e) => e.includes('clarification actions should have confidence')));
+    });
+
+    it('rejects non-boolean clarification', () => {
+        const result = validateIntentAction({
+            type: 'create',
+            title: 'Test',
+            clarification: 'yes',
+            confidence: 0.9,
+        }, 0);
+        assert.equal(result.valid, false);
+        assert.ok(result.errors.some((e) => e.includes('clarification must be a boolean')));
+    });
+
+    it('rejects non-string clarificationQuestion', () => {
+        const result = validateIntentAction({
+            type: 'create',
+            title: 'Test',
+            clarification: true,
+            clarificationQuestion: 123,
+            confidence: 0.3,
+        }, 0);
+        assert.equal(result.valid, false);
+        assert.ok(result.errors.some((e) => e.includes('clarificationQuestion must be a string')));
+    });
+
+    it('accepts create action with all new fields set to null (backward compat)', () => {
+        const result = validateIntentAction({
+            type: 'create',
+            title: 'Ordinary task',
+            checklistItems: null,
+            clarification: null,
+            clarificationQuestion: null,
+            confidence: 0.95,
+        }, 0);
+        assert.equal(result.valid, true);
     });
 });
