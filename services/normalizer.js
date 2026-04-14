@@ -327,6 +327,120 @@ function _contentAddsValue(newContent, existingContent) {
     return hasNewUrls || hasNewLocations || hasNewInstructions || hasSubstantialContent;
 }
 
+// Checklist normalization constants (T021-T026)
+const CHECKLIST_ITEM_MAX_LENGTH = 50;
+const MAX_CHECKLIST_ITEMS = 30;
+
+/**
+ * Cleans a single checklist item title.
+ * Trims whitespace, strips filler, truncates at word boundary.
+ * @param {string} rawTitle - Raw item title
+ * @returns {string|null} Cleaned title or null if empty
+ */
+function _cleanChecklistItemTitle(rawTitle) {
+    if (!rawTitle || typeof rawTitle !== 'string') return null;
+
+    let title = rawTitle.trim();
+    if (!title) return null;
+
+    // Strip bracket prefixes like "[Step 1] "
+    title = title.replace(BRACKET_PREFIX, '');
+
+    // Strip priority markers
+    title = title.replace(PRIORITY_PATTERNS, '');
+
+    // Strip filler patterns
+    for (const pattern of FILLER_PATTERNS) {
+        title = title.replace(pattern, '').trim();
+    }
+
+    if (!title) return null;
+
+    // Truncate at word boundary
+    if (title.length > CHECKLIST_ITEM_MAX_LENGTH) {
+        const truncated = title.substring(0, CHECKLIST_ITEM_MAX_LENGTH);
+        const lastSpace = truncated.lastIndexOf(' ');
+        title = (lastSpace > 0 ? truncated.substring(0, lastSpace) : truncated) + '…';
+    }
+
+    // Capitalize first letter
+    title = title.charAt(0).toUpperCase() + title.slice(1);
+
+    return title || null;
+}
+
+/**
+ * Normalizes and validates raw AX checklist items.
+ *
+ * T021: Accept raw AX checklistItems, return clean items or empty array.
+ * T022: Clean item text — trim, strip filler, drop empty, truncate ~50 chars.
+ * T023: Cap at 30 items, log truncation.
+ * T024: Assign zero-based sort order when absent.
+ * T025: Validate — require non-empty title, default status to 0 (incomplete),
+ *        reject nested checklist structures.
+ *
+ * @param {Array|null} rawItems - Raw checklistItems from AX intent
+ * @returns {Array} Clean, validated checklist items (may be empty)
+ */
+function _normalizeChecklistItems(rawItems) {
+    // T021: Ordinary actions ignore absent field
+    if (!rawItems || !Array.isArray(rawItems) || rawItems.length === 0) {
+        return [];
+    }
+
+    const cleanedItems = [];
+    let droppedCount = 0;
+
+    for (let i = 0; i < rawItems.length; i++) {
+        const raw = rawItems[i];
+
+        // T025: Reject unsupported nested checklist structures
+        if (raw && typeof raw === 'object' && raw.items && Array.isArray(raw.items)) {
+            console.warn(`[Normalizer] Dropping checklist item ${i}: nested checklists not supported`);
+            droppedCount++;
+            continue;
+        }
+
+        // T025: Require non-empty title
+        const cleanedTitle = _cleanChecklistItemTitle(raw?.title ?? raw);
+
+        if (!cleanedTitle) {
+            droppedCount++;
+            continue;
+        }
+
+        // T025: Default status to 0 (incomplete / unchecked)
+        const status = 0;
+
+        // T024: Assign zero-based sort order; normalize numeric if present
+        let sortOrder = i;
+        if (raw && typeof raw === 'object' && raw.sortOrder !== undefined) {
+            const parsed = Number(raw.sortOrder);
+            if (!Number.isNaN(parsed)) {
+                sortOrder = parsed;
+            }
+        }
+
+        cleanedItems.push({
+            title: cleanedTitle,
+            status,
+            sortOrder,
+        });
+    }
+
+    // T023: Cap at 30 items
+    if (cleanedItems.length > MAX_CHECKLIST_ITEMS) {
+        console.warn(`[Normalizer] Checklist truncated: ${cleanedItems.length} -> ${MAX_CHECKLIST_ITEMS} items (${cleanedItems.length - MAX_CHECKLIST_ITEMS} dropped)`);
+        cleanedItems.length = MAX_CHECKLIST_ITEMS;
+    }
+
+    if (droppedCount > 0) {
+        console.warn(`[Normalizer] Checklist normalization dropped ${droppedCount} invalid item(s)`);
+    }
+
+    return cleanedItems;
+}
+
 /**
  * Converts natural-language recurrence hints to RRULE strings per FR-008.
  * 
@@ -705,6 +819,11 @@ export function normalizeAction(intentAction, options = {}) {
         ? _normalizeContentForMutation(intentAction.content, existingTaskContent)
         : _normalizeContent(intentAction.content, existingTaskContent);
 
+    // T026: Attach checklist items to create actions only
+    const checklistItems = intentAction.type === 'create' && intentAction.checklistItems !== undefined
+        ? _normalizeChecklistItems(intentAction.checklistItems)
+        : undefined;
+
     const normalized = {
         type: _resolveActionType(intentAction, options.existingTask),
         confidence: intentAction.confidence !== undefined ? intentAction.confidence : 1.0,
@@ -724,6 +843,11 @@ export function normalizeAction(intentAction, options = {}) {
         valid: true,
         validationErrors: []
     };
+
+    // T026: Only attach checklistItems to create actions
+    if (checklistItems !== undefined) {
+        normalized.checklistItems = checklistItems;
+    }
 
     return _validateAction(normalized, minConfidence);
 }
