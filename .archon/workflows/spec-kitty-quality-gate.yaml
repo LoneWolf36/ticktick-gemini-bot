@@ -1,17 +1,17 @@
 name: spec-kitty-quality-gate
 description: |
-  Reusable quality gate for Spec Kitty projects.
+  Reusable quality gate for repositories that use Spec Kitty missions.
 
-  Archon discovers missions, checks state integrity, audits artifacts, routes
-  Codex model tiers, and blocks unsafe execution. Spec Kitty remains the
-  lifecycle authority for worktrees, WP state, review, and merge operations.
+  Archon only discovers, audits, routes model risk, and decides whether work is
+  safe to start. Spec Kitty remains the lifecycle authority for worktrees, WP
+  state, review, and merge operations.
 
 provider: codex
 model: gpt-5.4-mini
 
 inputs:
   project_root:
-    default: /home/lonewolf09/Documents/Projects/ticktick-gemini
+    default: .
   kitty_specs_dir:
     default: kitty-specs
   product_vision_path:
@@ -20,40 +20,116 @@ inputs:
     default: all-active
   mode:
     default: dry-run
+  required_spec_kitty_version:
+    default: 3.1.4
   validation_command:
     default: node tests/run-regression-tests.mjs
   reconciliation_status_path:
     default: .archon/reconciliation/spec-kitty-002-009.json
+  allow_spec_kitty_probes:
+    default: "false"
 
 nodes:
-  - id: discover-missions
+  - id: preflight-health
     context: fresh
     bash: |
       set -euo pipefail
 
-      project_root="${project_root:-/home/lonewolf09/Documents/Projects/ticktick-gemini}"
+      project_root="${project_root:-.}"
+      required_spec_kitty_version="${required_spec_kitty_version:-3.1.4}"
+      mode="${mode:-dry-run}"
+
+      project_root="$(cd "$project_root" && pwd)"
+      cd "$project_root"
+
+      spec_output="$(spec-kitty --version 2>&1 || true)"
+      spec_version="$(printf '%s\n' "$spec_output" | sed -n 's/.*version \([0-9][0-9.]*\).*/\1/p' | tail -1)"
+      workflow_validation="$(archon validate workflows spec-kitty-quality-gate 2>&1 || true)"
+      command_validation="$(archon validate commands spec-kitty-quality-gate-check 2>&1 || true)"
+
+      export project_root required_spec_kitty_version mode spec_output spec_version workflow_validation command_validation
+      node --input-type=module <<'NODE'
+      const specVersion = process.env.spec_version || null;
+      const requiredVersion = process.env.required_spec_kitty_version;
+      const mode = process.env.mode || 'dry-run';
+      const allowedModes = new Set(['dry-run', 'enforce']);
+      const workflowValidation = process.env.workflow_validation || '';
+      const commandValidation = process.env.command_validation || '';
+
+      console.log(JSON.stringify({
+        project_root: process.env.project_root,
+        mode,
+        mode_ok: allowedModes.has(mode),
+        spec_kitty: {
+          required_version: requiredVersion,
+          detected_version: specVersion,
+          ok: specVersion === requiredVersion
+        },
+        archon_health: {
+          workflow_validation_ok: /spec-kitty-quality-gate\s+ok/.test(workflowValidation),
+          command_validation_ok: /spec-kitty-quality-gate-check\s+ok/.test(commandValidation)
+        }
+      }, null, 2));
+      NODE
+
+  - id: discover-missions
+    depends_on: [preflight-health]
+    context: fresh
+    bash: |
+      set -euo pipefail
+
+      project_root="${project_root:-.}"
       kitty_specs_dir="${kitty_specs_dir:-kitty-specs}"
       mission_selector="${mission_selector:-all-active}"
+      project_root="$(cd "$project_root" && pwd)"
       export project_root kitty_specs_dir mission_selector
-      specs_path="$project_root/$kitty_specs_dir"
 
-      if [ ! -d "$specs_path" ]; then
-          echo "{\"error\":\"kitty specs directory not found\",\"path\":\"$specs_path\"}"
-          exit 1
-      fi
+      node --input-type=module <<'NODE'
+      import fs from 'node:fs';
+      import path from 'node:path';
 
-      if [ "$mission_selector" = "all-active" ]; then
-          find "$specs_path" -maxdepth 1 -mindepth 1 -type d \
-              -regextype posix-extended -regex '.*/[0-9][0-9][0-9]-.+' \
-              -printf '%f\n' | sort
-      else
-          if [ -d "$specs_path/$mission_selector" ]; then
-              echo "$mission_selector"
-          else
-              find "$specs_path" -maxdepth 1 -mindepth 1 -type d \
-                  -name "$mission_selector*" -printf '%f\n' | sort
-          fi
-      fi
+      const projectRoot = process.env.project_root;
+      const specsDir = process.env.kitty_specs_dir || 'kitty-specs';
+      const missionSelector = process.env.mission_selector || 'all-active';
+      const specsPath = path.join(projectRoot, specsDir);
+
+      if (!fs.existsSync(specsPath)) {
+        console.log(JSON.stringify({
+          error: 'kitty specs directory not found',
+          path: specsPath,
+          missions: []
+        }, null, 2));
+        process.exit(1);
+      }
+
+      const allMissions = fs.readdirSync(specsPath)
+        .filter((name) => /^\d{3}-.+/.test(name))
+        .filter((name) => fs.statSync(path.join(specsPath, name)).isDirectory())
+        .sort();
+
+      const missions = missionSelector === 'all-active'
+        ? allMissions
+        : allMissions.filter((name) => name === missionSelector || name.startsWith(`${missionSelector}-`) || name.startsWith(missionSelector));
+
+      const records = missions.map((mission) => {
+        const missionPath = path.join(specsPath, mission);
+        return {
+          mission,
+          path: missionPath,
+          has_spec: fs.existsSync(path.join(missionPath, 'spec.md')),
+          has_plan: fs.existsSync(path.join(missionPath, 'plan.md')),
+          has_tasks_dir: fs.existsSync(path.join(missionPath, 'tasks')),
+          has_status_events: fs.existsSync(path.join(missionPath, 'status.events.jsonl'))
+        };
+      });
+
+      console.log(JSON.stringify({
+        project_root: projectRoot,
+        kitty_specs_dir: specsDir,
+        mission_selector: missionSelector,
+        missions: records
+      }, null, 2));
+      NODE
 
   - id: state-integrity-scan
     depends_on: [discover-missions]
@@ -61,85 +137,132 @@ nodes:
     bash: |
       set -euo pipefail
 
-      project_root="${project_root:-/home/lonewolf09/Documents/Projects/ticktick-gemini}"
+      project_root="${project_root:-.}"
       kitty_specs_dir="${kitty_specs_dir:-kitty-specs}"
+      mission_selector="${mission_selector:-all-active}"
       reconciliation_status_path="${reconciliation_status_path:-.archon/reconciliation/spec-kitty-002-009.json}"
-      export project_root kitty_specs_dir
+      allow_spec_kitty_probes="${allow_spec_kitty_probes:-false}"
+      project_root="$(cd "$project_root" && pwd)"
+      export project_root kitty_specs_dir mission_selector reconciliation_status_path allow_spec_kitty_probes
 
       node --input-type=module <<'NODE'
       import fs from 'node:fs';
       import path from 'node:path';
 
-      const projectRoot = process.env.project_root || '/home/lonewolf09/Documents/Projects/ticktick-gemini';
+      const projectRoot = process.env.project_root;
       const specsDir = process.env.kitty_specs_dir || 'kitty-specs';
+      const missionSelector = process.env.mission_selector || 'all-active';
       const reconciliationStatusPath = process.env.reconciliation_status_path || '.archon/reconciliation/spec-kitty-002-009.json';
+      const allowSpecKittyProbes = process.env.allow_spec_kitty_probes === 'true';
       const specsPath = path.join(projectRoot, specsDir);
       const reconciliationPath = path.join(projectRoot, reconciliationStatusPath);
-      const missions = fs.readdirSync(specsPath)
-        .filter((name) => /^\d{3}-/.test(name) && fs.statSync(path.join(specsPath, name)).isDirectory())
+
+      const allMissions = fs.readdirSync(specsPath)
+        .filter((name) => /^\d{3}-.+/.test(name))
+        .filter((name) => fs.statSync(path.join(specsPath, name)).isDirectory())
         .sort();
+      const missions = missionSelector === 'all-active'
+        ? allMissions
+        : allMissions.filter((name) => name === missionSelector || name.startsWith(`${missionSelector}-`) || name.startsWith(missionSelector));
 
       let reconciliation = { missions: {} };
       if (fs.existsSync(reconciliationPath)) {
         try {
           reconciliation = JSON.parse(fs.readFileSync(reconciliationPath, 'utf8'));
         } catch (error) {
-          reconciliation = {
-            missions: {},
-            error: `invalid reconciliation status file: ${error.message}`
-          };
+          reconciliation = { missions: {}, parse_error: error.message };
         }
       }
 
-      const results = missions.map((mission) => {
+      const scanStatusEvents = (mission) => {
         const statusPath = path.join(specsPath, mission, 'status.events.jsonl');
-        const badEvents = [];
+        const findings = [];
+        const workPackageClaims = new Map();
 
         if (!fs.existsSync(statusPath)) {
-          return { mission, trust: 'untrusted', state_integrity: 'fail', bad_events: [{ line: 0, reason: 'status.events.jsonl missing' }] };
+          return {
+            statusPath,
+            findings: [{ line: 0, severity: 'blocker', reason: 'status.events.jsonl missing' }],
+            workPackageClaims: []
+          };
         }
 
         const lines = fs.readFileSync(statusPath, 'utf8').split(/\r?\n/).filter(Boolean);
         lines.forEach((line, index) => {
+          let event;
           try {
-            const event = JSON.parse(line);
-            const type = event.type || event.event || event.to_lane || event.to || event.status;
-            const isDone = event.to_lane === 'done' || event.to === 'done' || type === 'done';
-            if (isDone && event.evidence && !event.evidence.review && !event.review_ref && !event.evidence.review_ref) {
-              badEvents.push({
-                line: index + 1,
-                event_type: 'done',
-                reason: 'done event has no review evidence reference'
-              });
-            }
+            event = JSON.parse(line);
           } catch (error) {
-            badEvents.push({ line: index + 1, reason: `invalid JSON: ${error.message}` });
+            findings.push({ line: index + 1, severity: 'blocker', reason: `invalid JSON: ${error.message}` });
+            return;
+          }
+
+          if (!event || typeof event !== 'object') {
+            findings.push({ line: index + 1, severity: 'blocker', reason: 'event is not an object' });
+            return;
+          }
+
+          if (!event.event_id && !event.id) {
+            findings.push({ line: index + 1, severity: 'warning', reason: 'event has no event_id' });
+          }
+
+          const wpId = event.work_package_id || event.wp || event.wp_id || event.workPackageId;
+          const toLane = event.to_lane || event.to || event.status || event.lane || event.event;
+          if (wpId && toLane) {
+            workPackageClaims.set(wpId, { lane: toLane, line: index + 1 });
+          }
+
+          const isDone = toLane === 'done' || event.event === 'done';
+          const evidence = event.evidence || {};
+          const reviewEvidence = evidence.review || evidence.review_ref || event.review_ref || event.review_artifact;
+          if (isDone && !reviewEvidence) {
+            findings.push({
+              line: index + 1,
+              severity: 'blocker',
+              event_type: 'done',
+              reason: 'done event has no review evidence reference'
+            });
           }
         });
 
+        return {
+          statusPath,
+          findings,
+          workPackageClaims: [...workPackageClaims.entries()].map(([work_package_id, claim]) => ({ work_package_id, ...claim }))
+        };
+      };
+
+      const results = missions.map((mission) => {
         const missionId = mission.slice(0, 3);
         const inReconciliationWindow = missionId >= '002' && missionId <= '009';
-        const reconciliationEntry = reconciliation?.missions?.[missionId] || null;
-        const reconciliationEvents = [];
+        const statusScan = scanStatusEvents(mission);
+        const findings = [...statusScan.findings];
 
-        if (reconciliation?.error) {
-          reconciliationEvents.push({ line: 0, reason: reconciliation.error });
-        } else if (
-          inReconciliationWindow
-          && (!reconciliationEntry || reconciliationEntry.verified !== true)
-        ) {
-          reconciliationEvents.push({
+        if (reconciliation.parse_error) {
+          findings.push({
             line: 0,
-            reason: 'mission 002-009 is untrusted until reconciled in .archon/reconciliation/spec-kitty-002-009.json'
+            severity: 'blocker',
+            reason: `invalid reconciliation status file: ${reconciliation.parse_error}`
           });
         }
-        const allBadEvents = [...badEvents, ...reconciliationEvents];
 
+        const reconciliationEntry = reconciliation?.missions?.[missionId] || null;
+        const trustedByReconciliation = reconciliationEntry?.verified === true && reconciliationEntry?.trust === 'trusted';
+        if (inReconciliationWindow && !trustedByReconciliation) {
+          findings.push({
+            line: 0,
+            severity: 'blocker',
+            reason: 'mission 002-009 is blocked until a fresh reconciliation marks trust: trusted'
+          });
+        }
+
+        const hasBlocker = findings.some((finding) => finding.severity === 'blocker');
         return {
           mission,
-          trust: allBadEvents.length ? 'untrusted' : 'candidate',
-          state_integrity: allBadEvents.length ? 'fail' : 'pass',
-          bad_events: allBadEvents
+          trust: hasBlocker ? 'untrusted' : 'candidate',
+          state_integrity: hasBlocker ? 'fail' : 'pass',
+          findings,
+          claimed_work_packages: statusScan.workPackageClaims
         };
       });
 
@@ -152,22 +275,64 @@ nodes:
     bash: |
       set -euo pipefail
 
-      project_root="${project_root:-/home/lonewolf09/Documents/Projects/ticktick-gemini}"
+      project_root="${project_root:-.}"
       kitty_specs_dir="${kitty_specs_dir:-kitty-specs}"
-      export project_root kitty_specs_dir
-      cd "$project_root"
+      mission_selector="${mission_selector:-all-active}"
+      reconciliation_status_path="${reconciliation_status_path:-.archon/reconciliation/spec-kitty-002-009.json}"
+      project_root="$(cd "$project_root" && pwd)"
+      export project_root kitty_specs_dir mission_selector reconciliation_status_path
 
       node --input-type=module <<'NODE'
       import fs from 'node:fs';
       import path from 'node:path';
       import { spawnSync } from 'node:child_process';
 
-      const projectRoot = process.env.project_root || '/home/lonewolf09/Documents/Projects/ticktick-gemini';
+      const projectRoot = process.env.project_root;
       const specsDir = process.env.kitty_specs_dir || 'kitty-specs';
+      const missionSelector = process.env.mission_selector || 'all-active';
+      const reconciliationStatusPath = process.env.reconciliation_status_path || '.archon/reconciliation/spec-kitty-002-009.json';
       const specsPath = path.join(projectRoot, specsDir);
-      const missions = fs.readdirSync(specsPath)
-        .filter((name) => /^\d{3}-/.test(name) && fs.statSync(path.join(specsPath, name)).isDirectory())
+      const reconciliationPath = path.join(projectRoot, reconciliationStatusPath);
+      const allMissions = fs.readdirSync(specsPath)
+        .filter((name) => /^\d{3}-.+/.test(name))
+        .filter((name) => fs.statSync(path.join(specsPath, name)).isDirectory())
         .sort();
+      const missions = missionSelector === 'all-active'
+        ? allMissions
+        : allMissions.filter((name) => name === missionSelector || name.startsWith(`${missionSelector}-`) || name.startsWith(missionSelector));
+
+      let reconciliation = { missions: {} };
+      if (fs.existsSync(reconciliationPath)) {
+        try {
+          reconciliation = JSON.parse(fs.readFileSync(reconciliationPath, 'utf8'));
+        } catch {
+          reconciliation = { missions: {} };
+        }
+      }
+
+      const hasLocalBlocker = (mission) => {
+        const missionId = mission.slice(0, 3);
+        const inReconciliationWindow = missionId >= '002' && missionId <= '009';
+        const reconciliationEntry = reconciliation?.missions?.[missionId] || null;
+        const trustedByReconciliation = reconciliationEntry?.verified === true && reconciliationEntry?.trust === 'trusted';
+        if (inReconciliationWindow && !trustedByReconciliation) {
+          return true;
+        }
+
+        const statusPath = path.join(specsPath, mission, 'status.events.jsonl');
+        if (!fs.existsSync(statusPath)) {
+          return true;
+        }
+
+        return fs.readFileSync(statusPath, 'utf8').split(/\r?\n/).filter(Boolean).some((line) => {
+          try {
+            JSON.parse(line);
+            return false;
+          } catch {
+            return true;
+          }
+        });
+      };
 
       const run = (args) => {
         const result = spawnSync('spec-kitty', args, { cwd: projectRoot, encoding: 'utf8' });
@@ -175,28 +340,179 @@ nodes:
           command: `spec-kitty ${args.join(' ')}`,
           ok: result.status === 0,
           status: result.status,
-          stderr: result.stderr.trim().split('\n').slice(-8).join('\n')
+          stdout_tail: result.stdout.trim().split('\n').slice(-8).join('\n'),
+          stderr_tail: result.stderr.trim().split('\n').slice(-8).join('\n')
         };
       };
 
-      const probes = missions.map((mission) => ({
-        mission,
-        probes: [
-          run(['orchestrator-api', 'mission-state', '--mission', mission]),
-          run(['orchestrator-api', 'list-ready', '--mission', mission]),
-          run(['next', '--mission', mission, '--json'])
-        ]
-      }));
+      const probes = missions.map((mission) => {
+        const plannedCommands = [
+          `spec-kitty orchestrator-api mission-state --mission ${mission}`,
+          `spec-kitty orchestrator-api list-ready --mission ${mission}`,
+          `spec-kitty next --mission ${mission} --json`
+        ];
+
+        if (hasLocalBlocker(mission)) {
+          return {
+            mission,
+            spec_kitty_probe: 'skipped',
+            reason: 'state integrity or reconciliation gate blocked API probing',
+            planned_commands: plannedCommands
+          };
+        }
+
+        if (!allowSpecKittyProbes) {
+          return {
+            mission,
+            spec_kitty_probe: 'not-run',
+            reason: 'Spec Kitty probes are opt-in because some read-like commands can materialize status files',
+            planned_commands: plannedCommands
+          };
+        }
+
+        return {
+          mission,
+          spec_kitty_probe: 'performed',
+          probes: [
+            run(['orchestrator-api', 'mission-state', '--mission', mission]),
+            run(['orchestrator-api', 'list-ready', '--mission', mission]),
+            run(['next', '--mission', mission, '--json'])
+          ]
+        };
+      });
 
       console.log(JSON.stringify({ probes }, null, 2));
       NODE
 
-  - id: risk-classifier
+  - id: spec-code-audit
     depends_on: [spec-kitty-api-probe]
+    context: fresh
+    bash: |
+      set -euo pipefail
+
+      project_root="${project_root:-.}"
+      kitty_specs_dir="${kitty_specs_dir:-kitty-specs}"
+      mission_selector="${mission_selector:-all-active}"
+      project_root="$(cd "$project_root" && pwd)"
+      export project_root kitty_specs_dir mission_selector
+
+      node --input-type=module <<'NODE'
+      import fs from 'node:fs';
+      import path from 'node:path';
+
+      const projectRoot = process.env.project_root;
+      const specsDir = process.env.kitty_specs_dir || 'kitty-specs';
+      const missionSelector = process.env.mission_selector || 'all-active';
+      const specsPath = path.join(projectRoot, specsDir);
+      const testsPath = path.join(projectRoot, 'tests');
+      const allMissions = fs.readdirSync(specsPath)
+        .filter((name) => /^\d{3}-.+/.test(name))
+        .filter((name) => fs.statSync(path.join(specsPath, name)).isDirectory())
+        .sort();
+      const missions = missionSelector === 'all-active'
+        ? allMissions
+        : allMissions.filter((name) => name === missionSelector || name.startsWith(`${missionSelector}-`) || name.startsWith(missionSelector));
+
+      const testFiles = fs.existsSync(testsPath)
+        ? fs.readdirSync(testsPath).filter((name) => name.endsWith('.test.js') || name.endsWith('.mjs')).sort()
+        : [];
+
+      const audits = missions.map((mission) => {
+        const missionPath = path.join(specsPath, mission);
+        const specPath = path.join(missionPath, 'spec.md');
+        const planPath = path.join(missionPath, 'plan.md');
+        const tasksPath = path.join(missionPath, 'tasks');
+        const findings = [];
+
+        if (!fs.existsSync(specPath)) {
+          findings.push({ severity: 'blocker', reason: 'spec.md missing' });
+        }
+        if (!fs.existsSync(planPath)) {
+          findings.push({ severity: 'blocker', reason: 'plan.md missing' });
+        }
+        if (!fs.existsSync(tasksPath)) {
+          findings.push({ severity: 'warning', reason: 'tasks directory missing' });
+        }
+
+        const specText = fs.existsSync(specPath) ? fs.readFileSync(specPath, 'utf8') : '';
+        const planText = fs.existsSync(planPath) ? fs.readFileSync(planPath, 'utf8') : '';
+        const taskFiles = fs.existsSync(tasksPath)
+          ? fs.readdirSync(tasksPath).filter((name) => /^WP\d+.*\.md$/.test(name)).sort()
+          : [];
+
+        if (specText && !/acceptance criteria|requirements?|user stor(?:y|ies)|FR-\d+/i.test(specText)) {
+          findings.push({ severity: 'warning', reason: 'spec.md lacks obvious acceptance or requirement markers' });
+        }
+        if (planText && !/architecture|implementation|tests?|validation/i.test(planText)) {
+          findings.push({ severity: 'warning', reason: 'plan.md lacks obvious implementation or validation markers' });
+        }
+        if (fs.existsSync(tasksPath) && taskFiles.length === 0) {
+          findings.push({ severity: 'blocker', reason: 'tasks directory has no WP markdown files' });
+        }
+
+        const missionId = mission.slice(0, 3);
+        if ((missionId === '002' || missionId === '003') && testFiles.length === 0) {
+          findings.push({ severity: 'blocker', reason: '002/003 audit requires repository test evidence' });
+        }
+
+        return {
+          mission,
+          spec_code_audit: findings.some((finding) => finding.severity === 'blocker') ? 'fail' : 'pass',
+          files: {
+            spec: fs.existsSync(specPath),
+            plan: fs.existsSync(planPath),
+            wp_count: taskFiles.length,
+            test_evidence_count: testFiles.length
+          },
+          findings
+        };
+      });
+
+      console.log(JSON.stringify({ audits }, null, 2));
+      NODE
+
+  - id: product-vision-context
+    depends_on: [spec-code-audit]
+    context: fresh
+    bash: |
+      set -euo pipefail
+
+      project_root="${project_root:-.}"
+      product_vision_path="${product_vision_path:-}"
+      project_root="$(cd "$project_root" && pwd)"
+      export project_root product_vision_path
+
+      node --input-type=module <<'NODE'
+      import fs from 'node:fs';
+      import path from 'node:path';
+
+      const projectRoot = process.env.project_root;
+      const configuredPath = process.env.product_vision_path || '';
+      const visionPath = configuredPath ? path.join(projectRoot, configuredPath) : null;
+
+      if (!visionPath || !fs.existsSync(visionPath)) {
+        console.log(JSON.stringify({
+          product_vision_supplied: false,
+          product_vision_checked: false,
+          reason: configuredPath ? 'configured product vision file not found' : 'product vision path omitted'
+        }, null, 2));
+      } else {
+        const text = fs.readFileSync(visionPath, 'utf8');
+        console.log(JSON.stringify({
+          product_vision_supplied: true,
+          product_vision_checked: true,
+          path: visionPath,
+          excerpt: text.slice(0, 6000)
+        }, null, 2));
+      }
+      NODE
+
+  - id: risk-classifier
+    depends_on: [product-vision-context]
     context: fresh
     model: gpt-5.4-mini
     prompt: |
-      Classify each mission and ready WP from the prior scan.
+      Classify each mission and ready WP from the prior scans.
 
       Use these labels:
       - low-risk
@@ -223,7 +539,10 @@ nodes:
     prompt: |
       Review the discovered mission risks against the configured product vision.
 
-      Block any work that drifts toward:
+      If the product vision path was omitted or the file was not found, mark the
+      product vision gate as skipped, not failed.
+
+      When a product vision document is supplied, block any work that drifts toward:
       - Generic task manager behavior
       - Passive list management
       - Busywork optimization without execution support
@@ -232,6 +551,7 @@ nodes:
       Return JSON only:
       {
         "product_vision_passed": true,
+        "product_vision_skipped": false,
         "blocked_missions": [],
         "notes": []
       }
@@ -245,12 +565,24 @@ nodes:
 
       Rules:
       - In dry-run mode, execution_allowed must be false.
-      - In audit mode, execution_allowed must be false.
-      - In execute mode, execution_allowed may be true only when mission state
-        is trusted, Spec Kitty probes pass, spec/code audit is clean, and the
-        product vision gate passes.
+      - In enforce mode, execution_allowed may be true only when every selected
+        mission is trusted, Spec Kitty probes pass, spec/code audit is clean,
+        Archon validation is healthy, and the product vision gate passes or is
+        explicitly skipped because no product vision path was supplied.
+      - Any selected mission in the 002-009 reconciliation window is blocked
+        unless the reconciliation status records verified: true and trust: trusted.
       - Archon must never edit `status.events.jsonl`.
-      - Any implementation start must happen through Spec Kitty lifecycle
-        commands, not through direct lane-file mutation.
+      - Any implementation start must happen through Spec Kitty CLI or
+        orchestrator-api lifecycle commands, not through direct lane-file changes.
 
-      Return a compact JSON decision with blockers.
+      Return compact JSON:
+      {
+        "mode": "dry-run",
+        "execution_allowed": false,
+        "blocked_missions": [],
+        "required_models": {
+          "low_risk": "gpt-5.4-mini",
+          "high_risk": "gpt-5.4"
+        },
+        "blockers": []
+      }
