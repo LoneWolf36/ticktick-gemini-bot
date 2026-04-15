@@ -11,7 +11,7 @@ model: gpt-5.4-mini
 
 inputs:
   project_root:
-    default: /home/lonewolf09/Documents/Projects/ticktick-gemini
+    default: .
   kitty_specs_dir:
     default: kitty-specs
   product_vision_path:
@@ -29,7 +29,10 @@ nodes:
     bash: |
       set -euo pipefail
 
-      project_root="${project_root:-/home/lonewolf09/Documents/Projects/ticktick-gemini}"
+      project_root="${project_root:-$(pwd)}"
+      if [ "$project_root" = "." ]; then
+          project_root="$(pwd)"
+      fi
       kitty_specs_dir="${kitty_specs_dir:-kitty-specs}"
       mission_selector="${mission_selector:-all-active}"
       export project_root kitty_specs_dir mission_selector
@@ -59,7 +62,10 @@ nodes:
     bash: |
       set -euo pipefail
 
-      project_root="${project_root:-/home/lonewolf09/Documents/Projects/ticktick-gemini}"
+      project_root="${project_root:-$(pwd)}"
+      if [ "$project_root" = "." ]; then
+          project_root="$(pwd)"
+      fi
       kitty_specs_dir="${kitty_specs_dir:-kitty-specs}"
       export project_root kitty_specs_dir
 
@@ -67,7 +73,7 @@ nodes:
       import fs from 'node:fs';
       import path from 'node:path';
 
-      const projectRoot = process.env.project_root || '/home/lonewolf09/Documents/Projects/ticktick-gemini';
+      const projectRoot = process.env.project_root || process.cwd();
       const specsDir = process.env.kitty_specs_dir || 'kitty-specs';
       const specsPath = path.join(projectRoot, specsDir);
       const missions = fs.readdirSync(specsPath)
@@ -100,11 +106,18 @@ nodes:
           }
         });
 
+        const missionId = mission.slice(0, 3);
+        const inReconciliationWindow = missionId >= '002' && missionId <= '009';
+        const reconciliationEvents = inReconciliationWindow
+          ? [{ line: 0, reason: 'mission 002-009 is untrusted until reconciled' }]
+          : [];
+        const allBadEvents = [...badEvents, ...reconciliationEvents];
+
         return {
           mission,
-          trust: badEvents.length ? 'untrusted' : 'candidate',
+          trust: allBadEvents.length ? 'untrusted' : 'candidate',
           state_integrity: badEvents.length ? 'fail' : 'pass',
-          bad_events: badEvents
+          bad_events: allBadEvents
         };
       });
 
@@ -117,7 +130,10 @@ nodes:
     bash: |
       set -euo pipefail
 
-      project_root="${project_root:-/home/lonewolf09/Documents/Projects/ticktick-gemini}"
+      project_root="${project_root:-$(pwd)}"
+      if [ "$project_root" = "." ]; then
+          project_root="$(pwd)"
+      fi
       kitty_specs_dir="${kitty_specs_dir:-kitty-specs}"
       export project_root kitty_specs_dir
       cd "$project_root"
@@ -127,7 +143,7 @@ nodes:
       import path from 'node:path';
       import { spawnSync } from 'node:child_process';
 
-      const projectRoot = process.env.project_root || '/home/lonewolf09/Documents/Projects/ticktick-gemini';
+      const projectRoot = process.env.project_root || process.cwd();
       const specsDir = process.env.kitty_specs_dir || 'kitty-specs';
       const specsPath = path.join(projectRoot, specsDir);
       const missions = fs.readdirSync(specsPath)
@@ -170,6 +186,12 @@ nodes:
       - blocked-state
       - blocked-spec-code-drift
 
+      Allowed required_model values:
+      - gpt-5.4-mini for classifiers, artifact scans, and low-risk implementation
+      - gpt-5.4 for high-risk gates and important review decisions
+
+      Do not return any non-Codex or unrecognized model names.
+
       High-risk triggers:
       - Pipeline write path changes
       - TickTick mutations
@@ -207,6 +229,11 @@ nodes:
     model: gpt-5.4
     prompt: |
       Decide whether execution is allowed.
+
+      Workflow arguments: $ARGUMENTS
+      Default mode: dry-run
+      Resolve mode from the workflow arguments if they contain `mode=dry-run`,
+      `mode=audit`, or `mode=execute`; otherwise use dry-run.
 
       Rules:
       - In dry-run mode, execution_allowed must be false.
