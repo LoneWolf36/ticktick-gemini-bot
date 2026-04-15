@@ -25,7 +25,7 @@
   "mission": "software-dev",
   "slug": "001-task-operations-pipeline",
   "source_description": "Replace prompt-heavy freeform task logic with a structured AX intent extraction, deterministic normalization, and TickTick MCP adapter pipeline covering create, update, complete, and delete operations.",
-  "target_branch": "master",
+  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
   "vcs": "git",
   "mission_id": "01KNT55PMWQ9GQH7JH6E61VDZD"
 }

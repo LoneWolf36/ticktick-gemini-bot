@@ -7,9 +7,16 @@ export const DEFAULT_PROJECTS = [
     { id: 'cccccccccccccccccccccccc', name: 'Personal' },
 ];
 
+export const DEFAULT_ACTIVE_TASKS = [
+    { id: 'task000000000000000000001', title: 'Review PR #123', projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa', projectName: 'Inbox', priority: 3, dueDate: null, content: null, status: 0 },
+    { id: 'task000000000000000000002', title: 'Write weekly report', projectId: 'bbbbbbbbbbbbbbbbbbbbbbbb', projectName: 'Career', priority: 5, dueDate: '2026-03-15', content: 'Draft and send', status: 0 },
+    { id: 'task000000000000000000003', title: 'Buy groceries', projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa', projectName: 'Inbox', priority: 1, dueDate: null, content: null, status: 0 },
+];
+
 export function createPipelineHarness({
     intents = [],
     projects = DEFAULT_PROJECTS,
+    activeTasks = DEFAULT_ACTIVE_TASKS,
     now = '2026-03-10T10:00:00Z',
     useRealNormalizer = true,
     normalizedActions = null,
@@ -19,6 +26,7 @@ export function createPipelineHarness({
     const axCalls = [];
     const adapterCalls = {
         listProjects: 0,
+        listActiveTasks: 0,
         create: [],
         update: [],
         complete: [],
@@ -39,6 +47,10 @@ export function createPipelineHarness({
         listProjects: async () => {
             adapterCalls.listProjects += 1;
             return projects;
+        },
+        listActiveTasks: async () => {
+            adapterCalls.listActiveTasks += 1;
+            return activeTasks;
         },
         getTaskSnapshot: async (taskId, projectId) => ({
             id: taskId,
@@ -95,5 +107,6 @@ export function createPipelineHarness({
         axCalls,
         adapter,
         projects,
+        activeTasks,
     };
 }

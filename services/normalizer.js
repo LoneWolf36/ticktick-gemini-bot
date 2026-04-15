@@ -1,6 +1,13 @@
 /**
  * services/normalizer.js
  * Transforms raw AX intent actions into clean, validated, execution-ready normalised actions.
+ *
+ * Mutation support (WP03 — 002-natural-language-task-mutations):
+ * - Mutation actions (update/complete/delete) carry targetQuery from AX and resolved
+ *   taskId/originalProjectId from the task resolver.
+ * - Mutation actions require resolved task context (taskId) to pass validation.
+ * - Content is preserved on updates per FR-005 unless explicit replacement is requested.
+ * - Mixed create+mutation or multi-mutation batches are rejected cleanly.
  */
 
 // Title normalization constants
@@ -320,6 +327,120 @@ function _contentAddsValue(newContent, existingContent) {
     return hasNewUrls || hasNewLocations || hasNewInstructions || hasSubstantialContent;
 }
 
+// Checklist normalization constants (T021-T026)
+const CHECKLIST_ITEM_MAX_LENGTH = 50;
+const MAX_CHECKLIST_ITEMS = 30;
+
+/**
+ * Cleans a single checklist item title.
+ * Trims whitespace, strips filler, truncates at word boundary.
+ * @param {string} rawTitle - Raw item title
+ * @returns {string|null} Cleaned title or null if empty
+ */
+function _cleanChecklistItemTitle(rawTitle) {
+    if (!rawTitle || typeof rawTitle !== 'string') return null;
+
+    let title = rawTitle.trim();
+    if (!title) return null;
+
+    // Strip bracket prefixes like "[Step 1] "
+    title = title.replace(BRACKET_PREFIX, '');
+
+    // Strip priority markers
+    title = title.replace(PRIORITY_PATTERNS, '');
+
+    // Strip filler patterns
+    for (const pattern of FILLER_PATTERNS) {
+        title = title.replace(pattern, '').trim();
+    }
+
+    if (!title) return null;
+
+    // Truncate at word boundary
+    if (title.length > CHECKLIST_ITEM_MAX_LENGTH) {
+        const truncated = title.substring(0, CHECKLIST_ITEM_MAX_LENGTH);
+        const lastSpace = truncated.lastIndexOf(' ');
+        title = (lastSpace > 0 ? truncated.substring(0, lastSpace) : truncated) + '…';
+    }
+
+    // Capitalize first letter
+    title = title.charAt(0).toUpperCase() + title.slice(1);
+
+    return title || null;
+}
+
+/**
+ * Normalizes and validates raw AX checklist items.
+ *
+ * T021: Accept raw AX checklistItems, return clean items or empty array.
+ * T022: Clean item text — trim, strip filler, drop empty, truncate ~50 chars.
+ * T023: Cap at 30 items, log truncation.
+ * T024: Assign zero-based sort order when absent.
+ * T025: Validate — require non-empty title, default status to 0 (incomplete),
+ *        reject nested checklist structures.
+ *
+ * @param {Array|null} rawItems - Raw checklistItems from AX intent
+ * @returns {Array} Clean, validated checklist items (may be empty)
+ */
+function _normalizeChecklistItems(rawItems) {
+    // T021: Ordinary actions ignore absent field
+    if (!rawItems || !Array.isArray(rawItems) || rawItems.length === 0) {
+        return [];
+    }
+
+    const cleanedItems = [];
+    let droppedCount = 0;
+
+    for (let i = 0; i < rawItems.length; i++) {
+        const raw = rawItems[i];
+
+        // T025: Reject unsupported nested checklist structures
+        if (raw && typeof raw === 'object' && raw.items && Array.isArray(raw.items)) {
+            console.warn(`[Normalizer] Dropping checklist item ${i}: nested checklists not supported`);
+            droppedCount++;
+            continue;
+        }
+
+        // T025: Require non-empty title
+        const cleanedTitle = _cleanChecklistItemTitle(raw?.title ?? raw);
+
+        if (!cleanedTitle) {
+            droppedCount++;
+            continue;
+        }
+
+        // T025: Default status to 0 (incomplete / unchecked)
+        const status = 0;
+
+        // T024: Assign zero-based sort order; normalize numeric if present
+        let sortOrder = i;
+        if (raw && typeof raw === 'object' && raw.sortOrder !== undefined) {
+            const parsed = Number(raw.sortOrder);
+            if (!Number.isNaN(parsed)) {
+                sortOrder = parsed;
+            }
+        }
+
+        cleanedItems.push({
+            title: cleanedTitle,
+            status,
+            sortOrder,
+        });
+    }
+
+    // T023: Cap at 30 items
+    if (cleanedItems.length > MAX_CHECKLIST_ITEMS) {
+        console.warn(`[Normalizer] Checklist truncated: ${cleanedItems.length} -> ${MAX_CHECKLIST_ITEMS} items (${cleanedItems.length - MAX_CHECKLIST_ITEMS} dropped)`);
+        cleanedItems.length = MAX_CHECKLIST_ITEMS;
+    }
+
+    if (droppedCount > 0) {
+        console.warn(`[Normalizer] Checklist normalization dropped ${droppedCount} invalid item(s)`);
+    }
+
+    return cleanedItems;
+}
+
 /**
  * Converts natural-language recurrence hints to RRULE strings per FR-008.
  * 
@@ -487,7 +608,105 @@ function _expandDueDate(dueDateString, { currentDate = new Date(), timezone = 'E
 }
 
 /**
+ * Normalizes content for mutation actions (update/complete/delete).
+ *
+ * WP03 (T033): Preserve existing task content on updates per FR-005.
+ * Only replaces content when the user explicitly provides new content that
+ * adds value beyond the existing description. Otherwise, existing content
+ * is preserved verbatim.
+ *
+ * @param {string|null} newContent - New content from mutation intent
+ * @param {string|null} existingContent - Current task content
+ * @returns {string|null} Preserved or merged content
+ */
+function _normalizeContentForMutation(newContent, existingContent) {
+    // If no new content is provided, preserve existing content unchanged
+    if (!newContent || !newContent.trim()) {
+        return existingContent;
+    }
+
+    let cleaned = newContent.trim();
+
+    // Strip filler patterns from the new content
+    for (const pattern of FILLER_PATTERNS) {
+        cleaned = cleaned.replace(pattern, '').trim();
+    }
+
+    // Clean up multiple newlines/spaces
+    cleaned = cleaned.replace(/\n{3,}/g, '\n\n').trim();
+
+    // If cleaning removed everything, preserve existing
+    if (!cleaned) {
+        return existingContent;
+    }
+
+    // If there's no existing content, return the cleaned new content
+    if (!existingContent || !existingContent.trim()) {
+        return cleaned || null;
+    }
+
+    // Check if new content adds value beyond existing
+    const newValueIsUseful = _contentAddsValue(cleaned, existingContent);
+
+    if (!newValueIsUseful) {
+        // New content is just noise — preserve existing unchanged
+        return existingContent;
+    }
+
+    // Avoid duplication: if new content is already a substring of existing
+    if (existingContent.toLowerCase().includes(cleaned.toLowerCase())) {
+        return existingContent;
+    }
+
+    // Append new content below existing, separated by divider
+    return `${existingContent}\n---\n${cleaned}`;
+}
+
+/**
+ * Validates a batch of normalized actions for supported mutation shapes.
+ *
+ * WP03 (T033): Reject mixed create+mutation and multi-mutation batches
+ * that are out of scope for v1 single-target mutation.
+ *
+ * @param {Array<object>} actions - Normalized actions to validate
+ * @returns {{valid: boolean, reason: string|null}}
+ */
+export function validateMutationBatch(actions) {
+    if (!actions || actions.length === 0) {
+        return { valid: false, reason: 'empty_batch' };
+    }
+
+    // Single action: always OK (validation happens per-action)
+    if (actions.length === 1) {
+        return { valid: true, reason: null };
+    }
+
+    const types = actions.map(a => a.type);
+    const hasCreate = types.includes('create');
+    const mutationTypes = ['update', 'complete', 'delete'];
+    const hasMutation = types.some(t => mutationTypes.includes(t));
+
+    // Mixed create + mutation: out of scope for v1
+    if (hasCreate && hasMutation) {
+        return { valid: false, reason: 'mixed_create_and_mutation' };
+    }
+
+    // Multiple mutations: out of scope for v1 (single-target only, FR-009)
+    const mutationCount = types.filter(t => mutationTypes.includes(t)).length;
+    if (mutationCount > 1) {
+        return { valid: false, reason: 'multiple_mutations' };
+    }
+
+    return { valid: true, reason: null };
+}
+
+/**
  * Validates a normalized action.
+ *
+ * Mutation validation (WP03):
+ * - Mutation actions (update/complete/delete) require a resolved taskId.
+ * - Fails closed when taskId is missing (FR-008).
+ * - Confidence threshold still applies.
  */
 function _validateAction(action, minConfidence = 0.5) {
     const errors = [];
@@ -501,8 +720,9 @@ function _validateAction(action, minConfidence = 0.5) {
         errors.push("Empty title after normalization");
     }
 
+    // WP03 (T032): Mutation actions require resolved task context — fail closed
     if (['update', 'complete', 'delete'].includes(action.type) && !action.taskId) {
-        errors.push(`Missing taskId for ${action.type}`);
+        errors.push(`Missing taskId for ${action.type}: mutation requires resolved task context`);
     }
 
     if (action.confidence !== undefined && action.confidence < minConfidence) {
@@ -510,14 +730,15 @@ function _validateAction(action, minConfidence = 0.5) {
     }
 
     // Validate original priority (before normalization)
-    if (action.originalPriority !== undefined && action.originalPriority !== null && 
+    if (action.originalPriority !== undefined && action.originalPriority !== null &&
         ![0, 1, 3, 5].includes(action.originalPriority)) {
         errors.push(`Invalid priority: ${action.originalPriority}`);
     }
 
     if (action.projectId && !/^[a-fA-F0-9]{24}$/.test(action.projectId)) {
-        // If it's the default null/fallback, that's fine, but if provided, must be validish ID.
-        // Let's not strictly fail it just in case, but standard TickTick IDs are 24 hex. 
+        // If it's already a 24-char hex ID, that's fine.
+        // If it's the default null/fallback, that's fine too.
+        // Don't fail on non-hex project hints — the adapter handles gracefully.
     }
 
     action.valid = errors.length === 0;
@@ -566,6 +787,12 @@ function _resolveActionType(intentAction, existingTask) {
 
 /**
  * Normalizes a single intent action.
+ *
+ * Mutation support (WP03):
+ * - `options.resolvedTask` carries the resolver's selected task { id, projectId, title }.
+ * - `options.existingTaskContent` preserves the original task description on updates.
+ * - `targetQuery` is passed through from AX for logging/diagnostics.
+ * - Mutation actions without a resolved taskId fail validation (fail-closed per FR-008).
  */
 export function normalizeAction(intentAction, options = {}) {
     const {
@@ -573,20 +800,40 @@ export function normalizeAction(intentAction, options = {}) {
         existingTaskContent = null,
         projects = [],
         defaultProjectId = null,
-        minConfidence = 0.5
+        minConfidence = 0.5,
+        resolvedTask = null,        // { id, projectId, title } from task-resolver
     } = options;
+
+    const isMutation = ['update', 'complete', 'delete'].includes(intentAction.type);
 
     // Normalize priority but keep original for validation
     const originalPriority = intentAction.priority;
     const normalizedPriority = [0, 1, 3, 5].includes(originalPriority) ? originalPriority : null;
 
+    // Resolve taskId from resolver output first, then fall back to direct assignment
+    const resolvedTaskId = resolvedTask?.id || intentAction.taskId || options.existingTask?.id || null;
+    const resolvedOriginalProjectId = resolvedTask?.projectId ?? options.existingTask?.projectId ?? null;
+
+    // For mutation actions, preserve existing content unless explicitly replacing
+    const mutationContent = isMutation && existingTaskContent !== null
+        ? _normalizeContentForMutation(intentAction.content, existingTaskContent)
+        : _normalizeContent(intentAction.content, existingTaskContent);
+
+    // T026: Attach checklist items to create actions only
+    const checklistItems = intentAction.type === 'create' && intentAction.checklistItems !== undefined
+        ? _normalizeChecklistItems(intentAction.checklistItems)
+        : undefined;
+
     const normalized = {
         type: _resolveActionType(intentAction, options.existingTask),
         confidence: intentAction.confidence !== undefined ? intentAction.confidence : 1.0,
-        taskId: intentAction.taskId || options.existingTask?.id || null,
-        originalProjectId: options.existingTask?.projectId || null,
-        title: _normalizeTitle(intentAction.title, maxTitleLength),
-        content: _normalizeContent(intentAction.content, existingTaskContent),
+        taskId: resolvedTaskId,
+        originalProjectId: resolvedOriginalProjectId,
+        targetQuery: isMutation ? (intentAction.targetQuery || null) : null,
+        title: isMutation && !intentAction.title
+            ? (resolvedTask?.title || _normalizeTitle(intentAction.title, maxTitleLength))
+            : _normalizeTitle(intentAction.title, maxTitleLength),
+        content: mutationContent,
         priority: normalizedPriority,
         originalPriority: originalPriority,  // Keep for validation
         projectId: _resolveProject(intentAction.projectHint, projects, defaultProjectId),
@@ -597,11 +844,19 @@ export function normalizeAction(intentAction, options = {}) {
         validationErrors: []
     };
 
+    // T026: Only attach checklistItems to create actions
+    if (checklistItems !== undefined) {
+        normalized.checklistItems = checklistItems;
+    }
+
     return _validateAction(normalized, minConfidence);
 }
 
 /**
  * Normalizes multiple intent actions, expanding multi-day tasks.
+ *
+ * WP03: Validates batch shape to reject mixed create+mutation or
+ * multi-mutation requests that are out of scope for v1.
  */
 export function normalizeActions(intentActions, options = {}) {
     const results = [];
@@ -619,4 +874,27 @@ export function normalizeActions(intentActions, options = {}) {
     }
 
     return results;
+}
+
+/**
+ * Normalizes and validates a batch of intent actions.
+ * Returns { actions, batchError } where batchError is set when the
+ * batch shape is unsupported (mixed create+mutation, multi-mutation).
+ *
+ * WP03 (T033): Single entry point for pipeline to normalize + validate batch shape.
+ */
+export function normalizeActionBatch(intentActions, options = {}) {
+    const actions = normalizeActions(intentActions, options);
+    const batchValidation = validateMutationBatch(actions);
+
+    if (!batchValidation.valid) {
+        // Mark all actions as invalid with the batch-level reason
+        for (const action of actions) {
+            action.valid = false;
+            action.validationErrors.push(`Batch validation failed: ${batchValidation.reason}`);
+        }
+        return { actions, batchError: batchValidation.reason };
+    }
+
+    return { actions, batchError: null };
 }

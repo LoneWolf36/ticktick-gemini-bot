@@ -22,6 +22,8 @@ const DEFAULT_STATE = {
     urgentModes: {},
     pendingTasks: {},    // Analyzed + sent to Telegram, awaiting user review
     pendingReorg: null,  // Proposed global reorg plan awaiting apply/refine/cancel
+    pendingMutationClarification: null, // Pending mutation clarification state for free-form handler
+    pendingChecklistClarification: null, // Pending checklist vs separate-tasks clarification (WP05)
     processedTasks: {},  // User has clicked approve/skip/drop
     failedTasks: {},     // AI analysis failed (rate limit) — parked to prevent re-polling
     undoLog: [],
@@ -79,6 +81,8 @@ async function loadFromRedis() {
                 urgentModes: parsed.urgentModes || {},
                 pendingTasks: parsed.pendingTasks || {},
                 pendingReorg: parsed.pendingReorg || null,
+                pendingMutationClarification: parsed.pendingMutationClarification || null,
+                pendingChecklistClarification: parsed.pendingChecklistClarification || null,
                 processedTasks: parsed.processedTasks || {},
                 undoLog: parsed.undoLog || [],
             };
@@ -146,6 +150,8 @@ function loadFromFile() {
             urgentModes: parsed.urgentModes || {},
             pendingTasks: parsed.pendingTasks || {},
             pendingReorg: parsed.pendingReorg || null,
+            pendingMutationClarification: parsed.pendingMutationClarification || null,
+            pendingChecklistClarification: parsed.pendingChecklistClarification || null,
             processedTasks: parsed.processedTasks || {},
             undoLog: parsed.undoLog || [],
         };
@@ -243,6 +249,7 @@ function assertUserId(userId) {
 
 export async function getUrgentMode(userId) {
     assertUserId(userId);
+    await load(); // Ensure state is loaded
 
     if (useRedis) {
         try {
@@ -258,6 +265,7 @@ export async function getUrgentMode(userId) {
 
 export async function setUrgentMode(userId, value) {
     assertUserId(userId);
+    await load(); // Ensure state is loaded
 
     const normalizedValue = value === true;
     if (!state.urgentModes || typeof state.urgentModes !== 'object' || Array.isArray(state.urgentModes)) {
@@ -389,6 +397,85 @@ export async function setPendingReorg(data) {
 
 export async function clearPendingReorg() {
     state.pendingReorg = null;
+    await save();
+}
+
+// ─── Pending Mutation Clarification ──────────────────────────
+// Narrow state for resuming ambiguous mutation requests after user selects a candidate.
+
+export function getPendingMutationClarification() {
+    return state.pendingMutationClarification;
+}
+
+export async function setPendingMutationClarification(data) {
+    state.pendingMutationClarification = {
+        ...data,
+        createdAt: data.createdAt || new Date().toISOString(),
+    };
+    await save();
+}
+
+export async function clearPendingMutationClarification() {
+    state.pendingMutationClarification = null;
+    await save();
+}
+
+// ─── Pending Checklist Clarification (WP05) ──────────────────
+// Narrow state for resuming ambiguous checklist vs separate-tasks requests.
+// TTL: 24 hours — after expiry, the clarification is ignored and a conservative
+// fallback creates a plain parent task only.
+
+/** Checklist clarification TTL: 24 hours */
+export const CHECKLIST_CLARIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * Gets the pending checklist clarification if it exists and hasn't expired.
+ *
+ * @returns {Object|null} Pending clarification data with {originalMessage, intents, chatId, userId, createdAt}, or null if none/expired
+ */
+export function getPendingChecklistClarification() {
+    const pending = state.pendingChecklistClarification;
+    if (!pending) return null;
+
+    // TTL check — expire silently
+    const createdAt = pending.createdAt ? new Date(pending.createdAt).getTime() : 0;
+    if (createdAt && (Date.now() - createdAt > CHECKLIST_CLARIFICATION_TTL_MS)) {
+        console.log('[ChecklistClarification] Expired pending state cleared (TTL exceeded)');
+        state.pendingChecklistClarification = null;
+        save().catch(() => {}); // Best-effort cleanup
+        return null;
+    }
+
+    return pending;
+}
+
+/**
+ * Stores a pending checklist clarification with automatic timestamp.
+ *
+ * @param {Object} data - Clarification data
+ * @param {string} data.originalMessage - The original user message that triggered clarification
+ * @param {Array} data.intents - Summary of extracted intents
+ * @param {number|null} [data.chatId] - Telegram chat ID for cross-chat validation
+ * @param {number|null} [data.userId] - Telegram user ID for cross-user validation
+ * @param {string} [data.entryPoint] - Pipeline entry point for resume routing
+ * @param {string} [data.mode] - Pipeline mode for resume routing
+ * @returns {Promise<void>}
+ */
+export async function setPendingChecklistClarification(data) {
+    state.pendingChecklistClarification = {
+        ...data,
+        createdAt: data.createdAt || new Date().toISOString(),
+    };
+    await save();
+    console.log('[ChecklistClarification] Pending state persisted');
+}
+
+/**
+ * Clears the pending checklist clarification state.
+ * @returns {Promise<void>}
+ */
+export async function clearPendingChecklistClarification() {
+    state.pendingChecklistClarification = null;
     await save();
 }
 

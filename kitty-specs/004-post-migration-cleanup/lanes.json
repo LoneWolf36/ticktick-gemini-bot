@@ -3,7 +3,7 @@
   "mission_slug": "004-post-migration-cleanup",
   "mission_id": "01KNT55PMXDGM4VDMWY0YT3CQW",
   "mission_branch": "kitty/mission-004-post-migration-cleanup",
-  "target_branch": "master",
+  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
   "lanes": [
     {
       "lane_id": "lane-a",

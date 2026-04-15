@@ -7,9 +7,9 @@ requirement_refs:
 - FR-003
 - FR-008
 - FR-009
-base_branch: master
-base_commit: 111cae226a11249ff7a2270848cd289dfdd6b596
-created_at: '2026-04-01T00:22:34+01:00'
+base_branch: kitty/mission-002-natural-language-task-mutations
+base_commit: f92efd44b6ca3546321d10f8e2b10cb099372ebb
+created_at: '2026-04-11T18:49:30.248474+00:00'
 subtasks:
 - T011
 - T012
@@ -17,6 +17,7 @@ subtasks:
 - T014
 - T015
 phase: Phase 1 - Parallel Foundations
+shell_pid: "3867"
 authoritative_surface: ''
 execution_mode: code_change
 mission_id: 01KNT55PMXDGM4VDMWY0YT3CQT
@@ -28,6 +29,7 @@ owned_files:
 - tests/pipeline-harness.js
 - tests/task-resolver.test.js
 wp_code: WP01
+agent: "qwen:coder-model:implementer:implementer"
 ---
 
 # Work Package Prompt: WP01 - Task Resolver Core
@@ -244,6 +246,7 @@ If this WP is already marked done, this contract does not rewrite Spec Kitty his
 - 2026-04-01: WP regenerated after review-first audit; prior prompt replaced because it drifted from the repo structure and current Spec Kitty contract.
 
 ---
+- 2026-04-11T18:49:38Z – qwen:coder-model:implementer:implementer – shell_pid=3867 – Assigned agent via action command
 
 ## Review Comments (Added 2026-04-11)
 

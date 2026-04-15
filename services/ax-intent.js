@@ -1,4 +1,5 @@
 import { AxAI, AxGen } from '@ax-llm/ax';
+import { MAX_CHECKLIST_ITEMS, CHECKLIST_ITEM_SHAPE } from './schemas.js';
 
 const URGENT_MODE_ON_PATTERNS = [
     /\b(?:turn|switch|set)\s+(?:on|into)\s+urgent mode\b/i,
@@ -48,12 +49,72 @@ export class QuotaExhaustedError extends Error {
 }
 
 /**
+ * Validates and normalizes checklist items from AX intent output.
+ * Caps at MAX_CHECKLIST_ITEMS, validates each item has a title,
+ * and strips invalid entries.
+ * @param {Array} items - Raw checklist items from AX output
+ * @returns {{valid: boolean, items?: Array, errors: string[], wasCapped: boolean}} Validation result
+ */
+export function validateChecklistItems(items) {
+    if (!Array.isArray(items)) {
+        return { valid: false, errors: ['checklistItems must be an array'], wasCapped: false };
+    }
+
+    if (items.length === 0) {
+        return { valid: true, items: [], errors: [], wasCapped: false };
+    }
+
+    const errors = [];
+    const validItems = [];
+
+    for (let i = 0; i < items.length; i++) {
+        const item = items[i];
+
+        if (!item || typeof item !== 'object') {
+            errors.push(`Checklist item ${i} is not an object`);
+            continue;
+        }
+
+        if (!item.title || typeof item.title !== 'string' || item.title.trim().length === 0) {
+            errors.push(`Checklist item ${i} requires a non-empty title`);
+            continue;
+        }
+
+        if (item.status !== undefined && item.status !== null && !['completed', 'incomplete'].includes(item.status)) {
+            errors.push(`Checklist item ${i}: invalid status "${item.status}"`);
+            continue;
+        }
+
+        validItems.push({
+            title: item.title.trim(),
+            ...(item.status ? { status: item.status } : {}),
+            ...(item.sortOrder !== undefined && item.sortOrder !== null ? { sortOrder: item.sortOrder } : {}),
+        });
+    }
+
+    const wasCapped = validItems.length > MAX_CHECKLIST_ITEMS;
+    const cappedItems = wasCapped ? validItems.slice(0, MAX_CHECKLIST_ITEMS) : validItems;
+
+    if (wasCapped) {
+        errors.push(`checklistItems capped at ${MAX_CHECKLIST_ITEMS}; ${validItems.length - MAX_CHECKLIST_ITEMS} items dropped`);
+    }
+
+    return {
+        valid: cappedItems.length > 0,
+        items: cappedItems,
+        errors,
+        wasCapped,
+    };
+}
+
+/**
  * Validates an intent action object at runtime (defense in depth).
+ * Exported for testing purposes.
  * @param {object} action - The action object to validate
  * @param {number} index - The index of the action in the array
  * @returns {{valid: boolean, errors: string[]}} Validation result with error messages
  */
-function validateIntentAction(action, index) {
+export function validateIntentAction(action, index) {
     const errors = [];
 
     if (!action || typeof action !== 'object') {
@@ -61,20 +122,38 @@ function validateIntentAction(action, index) {
         return { valid: false, errors };
     }
 
-    // Required fields validation
+    // Validate action type
     if (!['create', 'update', 'complete', 'delete'].includes(action.type)) {
         errors.push(`Action ${index}: Invalid type "${action.type}"`);
     }
 
-    if (!action.title || typeof action.title !== 'string' || action.title.trim().length === 0) {
-        errors.push(`Action ${index}: Missing or invalid title`);
-    }
-
+    // Validate confidence (common across all action types)
     if (typeof action.confidence !== 'number' || action.confidence < 0 || action.confidence > 1) {
         errors.push(`Action ${index}: Confidence must be 0-1, got ${action.confidence}`);
     }
 
-    // Optional field validation
+    // Split validation: create requires title, mutations require targetQuery
+    const isMutation = ['update', 'complete', 'delete'].includes(action.type);
+
+    if (action.type === 'create') {
+        // Create actions MUST have a title
+        if (!action.title || typeof action.title !== 'string' || action.title.trim().length === 0) {
+            errors.push(`Action ${index}: Create action requires a non-empty title`);
+        }
+    } else if (isMutation) {
+        // Mutation actions MUST have targetQuery
+        if (!action.targetQuery || typeof action.targetQuery !== 'string' || action.targetQuery.trim().length === 0) {
+            errors.push(`Action ${index}: Mutation action requires a non-empty targetQuery`);
+        }
+        // Title is optional for mutations (only present when renaming)
+        if (action.title !== undefined && action.title !== null) {
+            if (typeof action.title !== 'string' || action.title.trim().length === 0) {
+                errors.push(`Action ${index}: If title is provided, it must be a non-empty string`);
+            }
+        }
+    }
+
+    // Optional field validation (common across all types)
     if (action.priority !== undefined && action.priority !== null) {
         if (![0, 1, 3, 5].includes(action.priority)) {
             errors.push(`Action ${index}: Invalid priority ${action.priority}`);
@@ -85,6 +164,40 @@ function validateIntentAction(action, index) {
         if (!['single', 'multi-task', 'multi-day'].includes(action.splitStrategy)) {
             errors.push(`Action ${index}: Invalid splitStrategy "${action.splitStrategy}"`);
         }
+    }
+
+    // Checklist items validation (only meaningful for create actions)
+    if (action.checklistItems !== undefined && action.checklistItems !== null) {
+        if (action.type !== 'create') {
+            errors.push(`Action ${index}: checklistItems is only valid for create actions`);
+        } else {
+            const checklistValidation = validateChecklistItems(action.checklistItems);
+            if (!checklistValidation.valid && checklistValidation.items?.length === 0) {
+                errors.push(`Action ${index}: checklistItems must contain at least one valid item with a title`);
+            }
+            // Propagate capping warnings but don't fail validation
+            if (checklistValidation.wasCapped) {
+                console.warn(`Action ${index}: ${checklistValidation.errors.join('; ')}`);
+            }
+        }
+    }
+
+    // Clarification fields validation
+    if (action.clarification !== undefined && action.clarification !== null) {
+        if (typeof action.clarification !== 'boolean') {
+            errors.push(`Action ${index}: clarification must be a boolean`);
+        }
+    }
+
+    if (action.clarificationQuestion !== undefined && action.clarificationQuestion !== null) {
+        if (typeof action.clarificationQuestion !== 'string') {
+            errors.push(`Action ${index}: clarificationQuestion must be a string`);
+        }
+    }
+
+    // Clarification should have low confidence
+    if (action.clarification === true && (action.confidence === undefined || action.confidence > 0.5)) {
+        errors.push(`Action ${index}: clarification actions should have confidence <= 0.5`);
     }
 
     return { valid: errors.length === 0, errors };
@@ -171,36 +284,68 @@ Instructions:
 - Set confidence low when intent is ambiguous.
 - The output must be a JSON array of action objects.
 
+CHECKLIST vs MULTI-TASK DISCRIMINATION:
+- When the user describes ONE outcome with multiple sub-steps (e.g., "plan party: buy decorations, send invites, bake cake"), emit a SINGLE "create" action with "checklistItems" array.
+- When the user describes INDEPENDENT tasks (e.g., "buy groceries and call mom"), emit SEPARATE "create" actions with splitStrategy "multi-task".
+- When it is unclear whether items are sub-steps or independent tasks, emit ONE action with "clarification": true and a short "clarificationQuestion".
+- Checklist items should be short (under 80 chars), verb-first, and executable. Cap at 30 items.
+- Do NOT turn brainstorm dumps into checklists. If the input looks like raw brainstorming, ask for clarification.
+
+ACTION TYPES AND REQUIRED FIELDS:
+
+For type "create":
+- "title" is REQUIRED (non-empty string describing the new task)
+- "checklistItems" is OPTIONAL (array of {title, status?, sortOrder?} for sub-steps)
+- All other fields are optional (null when not applicable)
+
+For type "update", "complete", or "delete" (mutation actions):
+- "targetQuery" is REQUIRED (the user's reference to find the existing task, e.g. "buy groceries", "that meeting task")
+- "title" is OPTIONAL for mutations — only include it when the user is renaming the task
+- For "update": include change fields (title, dueDate, priority, content) as needed
+- For "complete"/"delete": targetQuery is sufficient; omit title unless explicitly renaming
+
+For AMBIGUOUS intent (cannot safely determine checklist vs multi-task):
+- Emit ONE "create" action with "clarification": true
+- Set "clarificationQuestion" to a short, narrow question (under 120 chars)
+- Set "confidence" to 0.3 or lower
+- Do NOT include checklistItems until the user clarifies
+
 Each action object MUST have this exact structure:
 {
   "type": "create" | "update" | "complete" | "delete",
-  "title": "string (clean, verb-led task title)",
+  "targetQuery": "string or null (required for mutations, null for create)",
+  "title": "string or null (required for create, optional for mutations)",
   "content": "string or null (additional details)",
   "priority": 0 | 1 | 3 | 5 | null,
   "projectHint": "string or null (project name hint)",
   "dueDate": "string or null (natural language date)",
   "repeatHint": "string or null (recurrence pattern)",
   "splitStrategy": "single" | "multi-task" | "multi-day" | null,
+  "checklistItems": "array of {title, status?, sortOrder?} or null (sub-steps within one task)",
+  "clarification": "boolean or null (true when intent is ambiguous and needs user input)",
+  "clarificationQuestion": "string or null (short question to resolve ambiguity)",
   "confidence": number (0.0 to 1.0)
 }
 
-Required fields for every action:
-- type: Must be one of "create", "update", "complete", "delete"
-- title: Non-empty string describing the task
-- confidence: Number between 0.0 and 1.0
+Required fields by action type:
+- create: requires "title"; targetQuery should be null
+- update/complete/delete: requires "targetQuery"; title is optional (only when renaming)
+- clarification actions: requires "clarification": true, "clarificationQuestion", confidence <= 0.5
+- confidence: always required (0.0 to 1.0)
 
-Optional fields (use null when not applicable):
-- content: Additional task details
-- priority: 0 (none), 1 (low), 3 (medium), 5 (high)
-- projectHint: Project name for resolution
-- dueDate: Natural language date (e.g., "tomorrow", "next Friday")
-- repeatHint: Recurrence pattern (e.g., "daily", "every weekday")
-- splitStrategy: How to split multiple intents
+Mutation field semantics:
+- For "update": title = new title (not the lookup key), targetQuery = lookup key
+- dueDate, priority, content = the new values the user wants
+- For "complete"/"delete": usually only targetQuery is needed
 
-Example output:
+Checklist item shape:
+{ "title": "string (required)", "status": "completed|incomplete (optional)", "sortOrder": "number (optional)" }
+
+Example output for ordinary create:
 [
   {
     "type": "create",
+    "targetQuery": null,
     "title": "Buy groceries",
     "content": "Milk, eggs, bread",
     "priority": 1,
@@ -208,9 +353,169 @@ Example output:
     "dueDate": "tomorrow",
     "repeatHint": null,
     "splitStrategy": "single",
+    "checklistItems": null,
+    "clarification": null,
+    "clarificationQuestion": null,
     "confidence": 0.95
   }
-]`);
+]
+
+Example output for checklist (one task with sub-steps):
+[
+  {
+    "type": "create",
+    "targetQuery": null,
+    "title": "Plan birthday party",
+    "content": null,
+    "priority": 3,
+    "projectHint": null,
+    "dueDate": "next Saturday",
+    "repeatHint": null,
+    "splitStrategy": "single",
+    "checklistItems": [
+      { "title": "Buy decorations" },
+      { "title": "Send invitations" },
+      { "title": "Bake cake" }
+    ],
+    "clarification": null,
+    "clarificationQuestion": null,
+    "confidence": 0.88
+  }
+]
+
+Example output for multi-task (independent tasks):
+[
+  {
+    "type": "create",
+    "targetQuery": null,
+    "title": "Buy groceries",
+    "content": null,
+    "priority": null,
+    "projectHint": null,
+    "dueDate": null,
+    "repeatHint": null,
+    "splitStrategy": "multi-task",
+    "checklistItems": null,
+    "clarification": null,
+    "clarificationQuestion": null,
+    "confidence": 0.92
+  },
+  {
+    "type": "create",
+    "targetQuery": null,
+    "title": "Call mom",
+    "content": null,
+    "priority": null,
+    "projectHint": null,
+    "dueDate": null,
+    "repeatHint": null,
+    "splitStrategy": "multi-task",
+    "checklistItems": null,
+    "clarification": null,
+    "clarificationQuestion": null,
+    "confidence": 0.92
+  }
+]
+
+Example output for ambiguous intent (needs clarification):
+[
+  {
+    "type": "create",
+    "targetQuery": null,
+    "title": "Plan project",
+    "content": null,
+    "priority": null,
+    "projectHint": null,
+    "dueDate": null,
+    "repeatHint": null,
+    "splitStrategy": null,
+    "checklistItems": null,
+    "clarification": true,
+    "clarificationQuestion": "Is this one task with steps, or several separate tasks?",
+    "confidence": 0.3
+  }
+]
+
+Example output for mutation (update due date):
+[
+  {
+    "type": "update",
+    "targetQuery": "buy groceries",
+    "title": null,
+    "content": null,
+    "priority": null,
+    "projectHint": null,
+    "dueDate": "tomorrow",
+    "repeatHint": null,
+    "splitStrategy": null,
+    "checklistItems": null,
+    "clarification": null,
+    "clarificationQuestion": null,
+    "confidence": 0.9
+  }
+]
+
+Example output for mutation (rename):
+[
+  {
+    "type": "update",
+    "targetQuery": "netflix task",
+    "title": "Finish system design notes",
+    "content": null,
+    "priority": null,
+    "projectHint": null,
+    "dueDate": null,
+    "repeatHint": null,
+    "splitStrategy": null,
+    "checklistItems": null,
+    "clarification": null,
+    "clarificationQuestion": null,
+    "confidence": 0.85
+  }
+]
+
+Example output for mutation (complete):
+[
+  {
+    "type": "complete",
+    "targetQuery": "buy groceries",
+    "title": null,
+    "content": null,
+    "priority": null,
+    "projectHint": null,
+    "dueDate": null,
+    "repeatHint": null,
+    "splitStrategy": null,
+    "checklistItems": null,
+    "clarification": null,
+    "clarificationQuestion": null,
+    "confidence": 0.92
+  }
+]
+
+Example output for mutation (delete):
+[
+  {
+    "type": "delete",
+    "targetQuery": "old wifi task",
+    "title": null,
+    "content": null,
+    "priority": null,
+    "projectHint": null,
+    "dueDate": null,
+    "repeatHint": null,
+    "splitStrategy": null,
+    "checklistItems": null,
+    "clarification": null,
+    "clarificationQuestion": null,
+    "confidence": 0.88
+  }
+]
+
+OUT-OF-SCOPE EXAMPLES (should return low confidence or unsupported):
+- Mixed create+mutation: "add buy milk and move groceries to tomorrow" — do not split into create + mutation
+- Underspecified pronouns: "move that one to Friday" — should have low confidence (<0.5)
+- Reschedule as a separate type: do NOT emit type "reschedule"; use "update" with dueDate instead`);
 
     /**
      * Extracts structured intent actions from a user message.

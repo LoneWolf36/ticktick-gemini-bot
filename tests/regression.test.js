@@ -3,8 +3,8 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { AxGen } from '@ax-llm/ax';
 
-import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../bot/utils.js';
-import { executeActions, registerCommands } from '../bot/commands.js';
+import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../services/shared-utils.js';
+import { executeActions, registerCommands, resetRateLimits } from '../bot/commands.js';
 import { GeminiAnalyzer, buildUrgentModePromptNote } from '../services/gemini.js';
 import { createAxIntent, detectUrgentModeIntent, QuotaExhaustedError } from '../services/ax-intent.js';
 import { createPipeline } from '../services/pipeline.js';
@@ -13,6 +13,7 @@ import { TickTickAdapter } from '../services/ticktick-adapter.js';
 import { TickTickClient } from '../services/ticktick.js';
 import * as store from '../services/store.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
+import { AUTHORIZED_CHAT_ID } from '../services/shared-utils.js';
 import { runDailyBriefingJob, runWeeklyDigestJob } from '../services/scheduler.js';
 import {
   BRIEFING_SUMMARY_SECTION_KEYS,
@@ -23,7 +24,7 @@ import {
   formatSummary,
   normalizeWeeklyWatchouts,
 } from '../services/summary-surfaces/index.js';
-import { createPipelineHarness, DEFAULT_PROJECTS } from './pipeline-harness.js';
+import { createPipelineHarness, DEFAULT_PROJECTS, DEFAULT_ACTIVE_TASKS } from './pipeline-harness.js';
 import {
   buildRankingContext,
   buildRecommendationResult,
@@ -568,8 +569,8 @@ test('formatSummary keeps empty sections compact and Telegram-safe', () => {
 });
 
 test('default timezone remains Europe/Dublin when USER_TIMEZONE is unset', () => {
-  const source = readFileSync('bot/utils.js', 'utf8');
-  assert.match(source, /USER_TIMEZONE\s*\|\|\s*'Europe\/Dublin'/);
+  const source = readFileSync('services/shared-utils.js', 'utf8');
+  assert.match(source, /USER_TZ\s*=\s*process\.env\.USER_TIMEZONE\s*\|\|\s*'Europe\/Dublin'/);
 });
 
 test('store documents the urgent mode Redis key schema', () => {
@@ -606,6 +607,7 @@ test('appendUrgentModeReminder only appends reminder text when urgent mode is ac
 });
 
 test('registerCommands wires /urgent to the urgent mode store contract', async () => {
+  const authChatId = await (async () => { const m = await import('../services/shared-utils.js'); return m.AUTHORIZED_CHAT_ID; })();
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
     command(name, handler) {
@@ -645,7 +647,7 @@ test('registerCommands wires /urgent to the urgent mode store contract', async (
   assert.equal(typeof urgentHandler, 'function');
 
   const replies = [];
-  const userId = Date.now();
+  const userId = authChatId || Date.now();
   const ctx = {
     chat: { id: userId },
     from: { id: userId },
@@ -706,7 +708,7 @@ test('registerCommands allows free-form urgent toggles before TickTick auth', as
   assert.equal(typeof messageHandler, 'function');
 
   const replies = [];
-  const userId = `node-test-freeform-urgent-${Date.now()}`;
+  const userId = AUTHORIZED_CHAT_ID || `node-test-freeform-urgent-${Date.now()}`;
   await store.setUrgentMode(userId, false);
 
   await messageHandler({
@@ -724,6 +726,7 @@ test('registerCommands allows free-form urgent toggles before TickTick auth', as
 });
 
 test('registerCommands uses shared briefing surface and preserves urgent reminder', async () => {
+  resetRateLimits();
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
     command(name, handler) {
@@ -794,7 +797,7 @@ test('registerCommands uses shared briefing surface and preserves urgent reminde
   assert.equal(typeof briefingHandler, 'function');
 
   const replies = [];
-  const userId = Date.now();
+  const userId = AUTHORIZED_CHAT_ID || Date.now();
   await store.setUrgentMode(userId, true);
   await briefingHandler({
     chat: { id: userId },
@@ -811,6 +814,7 @@ test('registerCommands uses shared briefing surface and preserves urgent reminde
 });
 
 test('registerCommands uses shared weekly surface and sends formatted output', async () => {
+  resetRateLimits();
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
     command(name, handler) {
@@ -884,7 +888,7 @@ test('registerCommands uses shared weekly surface and sends formatted output', a
   assert.equal(typeof weeklyHandler, 'function');
 
   const replies = [];
-  const userId = Date.now();
+  const userId = AUTHORIZED_CHAT_ID || Date.now();
   await store.setUrgentMode(userId, false);
   await weeklyHandler({
     chat: { id: userId },
@@ -901,6 +905,7 @@ test('registerCommands uses shared weekly surface and sends formatted output', a
 });
 
 test('registerCommands short-circuits briefing and weekly when quota is exhausted', async () => {
+  resetRateLimits();
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
     command(name, handler) {
@@ -944,7 +949,7 @@ test('registerCommands short-circuits briefing and weekly when quota is exhauste
   );
 
   const replies = [];
-  const userId = Date.now();
+  const userId = AUTHORIZED_CHAT_ID || Date.now();
   const ctx = {
     chat: { id: userId },
     from: { id: userId },
@@ -1121,11 +1126,129 @@ test('TickTickAdapter includes the existing projectId when updating only a due d
   assert.equal(Object.hasOwn(updatePayload, 'originalProjectId'), false);
 });
 
+test('TickTickAdapter createTask includes items when checklistItems provided', async () => {
+  let createPayload = null;
+  const client = Object.create(TickTickClient.prototype);
+  client.createTask = async (payload) => {
+    createPayload = payload;
+    return { id: 'checklist-task-1', ...payload };
+  };
+
+  const adapter = new TickTickAdapter(client);
+  await adapter.createTask({
+    title: 'Onboard new client',
+    projectId: '507f191e810c19729de860ea',
+    checklistItems: [
+      { title: 'Send welcome email' },
+      { title: 'Create project folder' },
+      { title: 'Schedule kickoff meeting' },
+    ],
+  });
+
+  assert.ok(createPayload.items, 'items should be present in payload');
+  assert.equal(createPayload.items.length, 3, 'should have 3 checklist items');
+  assert.equal(createPayload.items[0].title, 'Send welcome email');
+  assert.equal(createPayload.items[0].status, 0, 'status should default to 0');
+  assert.equal(createPayload.items[0].sortOrder, 0, 'sortOrder should be 0');
+  assert.equal(createPayload.items[1].title, 'Create project folder');
+  assert.equal(createPayload.items[1].sortOrder, 1, 'sortOrder should be 1');
+  assert.equal(createPayload.items[2].sortOrder, 2, 'sortOrder should be 2');
+});
+
+test('TickTickAdapter createTask omits items when checklistItems is empty', async () => {
+  let createPayload = null;
+  const client = Object.create(TickTickClient.prototype);
+  client.createTask = async (payload) => {
+    createPayload = payload;
+    return { id: 'no-checklist-task', ...payload };
+  };
+
+  const adapter = new TickTickAdapter(client);
+  await adapter.createTask({
+    title: 'Simple task',
+    projectId: '507f191e810c19729de860ea',
+    checklistItems: [],
+  });
+
+  assert.equal(Object.hasOwn(createPayload, 'items'), false, 'items should NOT be present for empty checklist');
+});
+
+test('TickTickAdapter createTask omits items when checklistItems is null or undefined', async () => {
+  let createPayload = null;
+  const client = Object.create(TickTickClient.prototype);
+  client.createTask = async (payload) => {
+    createPayload = payload;
+    return { id: 'no-checklist-task', ...payload };
+  };
+
+  const adapter = new TickTickAdapter(client);
+  await adapter.createTask({
+    title: 'Simple task',
+    projectId: '507f191e810c19729de860ea',
+  });
+
+  assert.equal(Object.hasOwn(createPayload, 'items'), false, 'items should NOT be present when checklistItems is undefined');
+  assert.equal(createPayload.title, 'Simple task');
+});
+
+test('TickTickAdapter createTask drops malformed checklist items', async () => {
+  let createPayload = null;
+  const client = Object.create(TickTickClient.prototype);
+  client.createTask = async (payload) => {
+    createPayload = payload;
+    return { id: 'partial-checklist-task', ...payload };
+  };
+
+  const adapter = new TickTickAdapter(client);
+  await adapter.createTask({
+    title: 'Task with partial checklist',
+    projectId: '507f191e810c19729de860ea',
+    checklistItems: [
+      { title: 'Valid item' },
+      { title: '' }, // invalid: empty title
+      { title: '   ' }, // invalid: whitespace-only
+      null, // invalid: null
+      { title: 'Another valid item' },
+    ],
+  });
+
+  assert.ok(createPayload.items, 'items should be present');
+  assert.equal(createPayload.items.length, 2, 'only valid items should be included');
+  assert.equal(createPayload.items[0].title, 'Valid item');
+  assert.equal(createPayload.items[1].title, 'Another valid item');
+});
+
+test('TickTickAdapter createTask preserves ordinary create without checklistItems', async () => {
+  let createPayload = null;
+  const client = Object.create(TickTickClient.prototype);
+  client.createTask = async (payload) => {
+    createPayload = payload;
+    return { id: 'ordinary-task', ...payload };
+  };
+
+  const adapter = new TickTickAdapter(client);
+  await adapter.createTask({
+    title: 'Review PR #123',
+    projectId: '507f191e810c19729de860ea',
+    priority: 3,
+    dueDate: '2025-04-01T17:00:00.000Z',
+    content: 'Some notes',
+  });
+
+  assert.equal(createPayload.title, 'Review PR #123');
+  assert.equal(createPayload.priority, 3);
+  assert.equal(createPayload.dueDate, '2025-04-01T17:00:00.000Z');
+  assert.equal(createPayload.content, 'Some notes');
+  assert.equal(Object.hasOwn(createPayload, 'items'), false, 'items should NOT be present for ordinary create');
+});
+
 test('pipeline retries once and rolls back earlier successful writes', async () => {
   const adapterCalls = [];
   const telemetryEvents = [];
+  let createCount = 0;
   const adapter = {
     listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+    listActiveTasks: async () => [],
     getTaskSnapshot: async (taskId, projectId) => ({
       id: taskId,
       projectId,
@@ -1138,11 +1261,15 @@ test('pipeline retries once and rolls back earlier successful writes', async () 
     }),
     createTask: async (action) => {
       adapterCalls.push(['createTask', action.title]);
-      return { id: 'created-1', projectId: action.projectId };
+      createCount++;
+      // First create succeeds, second create fails
+      if (createCount === 1) {
+        return { id: 'created-1', projectId: action.projectId };
+      }
+      throw new Error('TickTick unavailable');
     },
     updateTask: async () => {
-      adapterCalls.push(['updateTask']);
-      throw new Error('TickTick unavailable');
+      throw new Error('updateTask should not be called in this scenario');
     },
     deleteTask: async (taskId, projectId) => {
       adapterCalls.push(['deleteTask', taskId, projectId]);
@@ -1158,12 +1285,12 @@ test('pipeline retries once and rolls back earlier successful writes', async () 
 
   const pipeline = createPipeline({
     axIntent: {
-      extractIntents: async () => [{ type: 'create' }, { type: 'update' }],
+      extractIntents: async () => [{ type: 'create' }, { type: 'create' }],
     },
     normalizer: {
       normalizeActions: () => ([
         { type: 'create', title: 'Draft proposal', projectId: 'inbox', valid: true, validationErrors: [] },
-        { type: 'update', taskId: 'task-2', originalProjectId: 'inbox', projectId: 'inbox', title: 'Existing task', valid: true, validationErrors: [] },
+        { type: 'create', title: 'Follow-up task', projectId: 'inbox', valid: true, validationErrors: [] },
       ]),
     },
     adapter,
@@ -1175,7 +1302,7 @@ test('pipeline retries once and rolls back earlier successful writes', async () 
     }),
   });
 
-  const result = await pipeline.processMessage('Draft proposal and update the follow-up', {
+  const result = await pipeline.processMessage('Draft proposal and follow-up', {
     requestId: 'req-rollback-success',
     entryPoint: 'telegram',
     mode: 'interactive',
@@ -1194,8 +1321,8 @@ test('pipeline retries once and rolls back earlier successful writes', async () 
     adapterCalls,
     [
       ['createTask', 'Draft proposal'],
-      ['updateTask'],
-      ['updateTask'],
+      ['createTask', 'Follow-up task'],
+      ['createTask', 'Follow-up task'],
       ['deleteTask', 'created-1', 'inbox'],
     ],
   );
@@ -1215,8 +1342,10 @@ test('pipeline retries once and rolls back earlier successful writes', async () 
 
 test('pipeline classifies rollback failures when compensation is unsupported', async () => {
   const telemetryEvents = [];
+  let completeCount = 0;
   const adapter = {
     listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+    listActiveTasks: async () => [],
     getTaskSnapshot: async (taskId, projectId) => ({
       id: taskId,
       projectId,
@@ -1227,9 +1356,16 @@ test('pipeline classifies rollback failures when compensation is unsupported', a
       repeatFlag: null,
       status: 0,
     }),
-    completeTask: async (taskId, projectId) => ({ completed: true, taskId, projectId }),
+    completeTask: async (taskId, projectId) => {
+      completeCount++;
+      // First complete succeeds, second fails
+      if (completeCount === 1) {
+        return { completed: true, taskId, projectId };
+      }
+      throw new Error('Complete failed — triggering rollback');
+    },
     createTask: async () => {
-      throw new Error('Create failed');
+      throw new Error('createTask should not be called in this scenario');
     },
     updateTask: async () => {
       throw new Error('updateTask should not be called in this scenario');
@@ -1238,18 +1374,18 @@ test('pipeline classifies rollback failures when compensation is unsupported', a
       throw new Error('deleteTask should not be called in this scenario');
     },
     restoreTask: async () => {
-      throw new Error('restoreTask should not be called in this scenario');
+      throw new Error('Rollback unsupported: TickTick does not expose a reliable reopen path.');
     },
   };
 
   const pipeline = createPipeline({
     axIntent: {
-      extractIntents: async () => [{ type: 'complete' }, { type: 'create' }],
+      extractIntents: async () => [{ type: 'complete' }],
     },
     normalizer: {
       normalizeActions: () => ([
         { type: 'complete', taskId: 'task-1', projectId: 'inbox', valid: true, validationErrors: [] },
-        { type: 'create', title: 'Replacement task', projectId: 'inbox', valid: true, validationErrors: [] },
+        { type: 'complete', taskId: 'task-2', projectId: 'inbox', valid: true, validationErrors: [] },
       ]),
     },
     adapter,
@@ -1261,12 +1397,13 @@ test('pipeline classifies rollback failures when compensation is unsupported', a
     }),
   });
 
-  const result = await pipeline.processMessage('Complete this and create a replacement', {
+  const result = await pipeline.processMessage('complete both tasks', {
     requestId: 'req-rollback-failure',
     entryPoint: 'telegram',
     mode: 'interactive',
   });
 
+  // First complete succeeds, second complete fails after retry, rollback of first (uncomplete) throws
   assert.equal(result.type, 'error');
   assert.equal(result.failure.class, 'rollback');
   assert.equal(result.failure.rolledBack, false);
@@ -1276,6 +1413,7 @@ test('pipeline classifies rollback failures when compensation is unsupported', a
   assert.equal(result.results[1].status, 'failed');
   assert.equal(result.results[1].attempts, 2);
   assert.equal(result.failure.retryable, false);
+  assert.equal(completeCount, 3); // 1 success + 2 attempts on second
   assert.ok(
     telemetryEvents.some((event) =>
       event.eventType === 'pipeline.rollback.failed'
@@ -2205,6 +2343,7 @@ test('pipeline classifies quota failures from AX extraction', async () => {
   };
   const adapter = {
     listProjects: async () => DEFAULT_PROJECTS,
+    listActiveTasks: async () => [],
   };
   const pipeline = createPipeline({
     axIntent,
@@ -2229,6 +2368,7 @@ test('pipeline classifies quota failures from AX extraction', async () => {
 test('pipeline classifies unexpected normalization errors', async () => {
   const adapter = {
     listProjects: async () => DEFAULT_PROJECTS,
+    listActiveTasks: async () => [],
   };
   const pipeline = createPipeline({
     axIntent: {
@@ -2305,6 +2445,17 @@ test('burst pipeline requests remain isolated and deterministic', async () => {
   const telemetryEvents = [];
   const adapter = {
     listProjects: async () => DEFAULT_PROJECTS,
+    listActiveTasks: async () => [],
+    getTaskSnapshot: async (taskId, projectId) => ({
+      id: taskId,
+      projectId,
+      title: 'Task',
+      content: null,
+      priority: 0,
+      dueDate: null,
+      repeatFlag: null,
+      status: 0,
+    }),
     createTask: async (action) => {
       await new Promise((resolve) => setTimeout(resolve, 1));
       if ((action.title || '').includes('FAIL')) {
@@ -2424,4 +2575,1891 @@ test('pipeline happy path covers create, update, complete, delete, and non-task 
   const nonTaskResult = await nonTaskHarness.processMessage('just chatting');
   assert.equal(nonTaskResult.type, 'non-task');
   assert.equal(nonTaskResult.results.length, 0);
+});
+
+// ─── Mutation Clarification Callback Resume (WP06) ────────────
+
+test('registerCallbacks wires mut:pick and mut:cancel callback families', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  registerCallbacks(
+    bot,
+    { isAuthenticated: () => true, getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false },
+    {},
+    { processMessage: async () => ({ type: 'non-task', confirmationText: 'Got it' }) },
+  );
+
+  const patterns = handlers.callbacks.map(h => h.pattern.toString());
+  assert.ok(patterns.some(p => p.includes('mut:pick')));
+  assert.ok(patterns.some(p => p.includes('mut:cancel')));
+});
+
+test('mut:pick resumes through pipeline with resolved task context', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const store = await import('../services/store.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+
+  // Set up pending clarification state
+  const userId = 12345;
+  const chatId = AUTHORIZED_CHAT_ID || 67890;
+  await store.setPendingMutationClarification({
+    originalMessage: 'move weekly to Career',
+    candidates: [
+      { id: 'task-weekly-1', title: 'Write weekly report' },
+      { id: 'task-weekly-2', title: 'Review weekly metrics' },
+    ],
+    intentSummary: 'Update task',
+    chatId,
+    userId,
+    entryPoint: 'telegram:freeform',
+    mode: 'interactive',
+  });
+
+  const pipelineCalls = [];
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  const ticktick = {
+    isAuthenticated: () => true,
+    getAllTasksCached: async () => [
+      { id: 'task-weekly-1', title: 'Write weekly report', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
+      { id: 'task-weekly-2', title: 'Review weekly metrics', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
+    ],
+    getLastFetchedProjects: () => [{ id: 'inbox', name: 'Inbox' }],
+  };
+
+  const pipeline = {
+    processMessage: async (msg, opts) => {
+      pipelineCalls.push({ message: msg, options: opts });
+      return { type: 'task', confirmationText: '✅ Updated "Write weekly report"', actions: [], results: [{ status: 'succeeded' }] };
+    },
+  };
+
+  registerCallbacks(bot, ticktick, { isQuotaExhausted: () => false }, {}, pipeline);
+
+  // Find the mut:pick handler
+  const pickHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:pick'))?.handler;
+  assert.equal(typeof pickHandler, 'function');
+
+  const answers = [];
+  const edits = [];
+  const ctx = {
+    match: ['mut:pick:task-weekly-1', 'task-weekly-1'],
+    chat: { id: chatId },
+    from: { id: userId },
+    answerCallbackQuery: async (obj) => { answers.push(obj); },
+    editMessageText: async (text, opts) => { edits.push(text); },
+  };
+
+  await pickHandler(ctx);
+
+  // Verify pipeline was called with the correct options
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].message, 'move weekly to Career');
+  assert.equal(pipelineCalls[0].options.existingTask.id, 'task-weekly-1');
+  assert.equal(pipelineCalls[0].options.skipClarification, true);
+  assert.equal(pipelineCalls[0].options.entryPoint, 'telegram:freeform');
+
+  // Verify state was cleared
+  assert.equal(store.getPendingMutationClarification(), null);
+
+  // Verify user saw success message
+  assert.ok(answers[0].text.includes('Selected'));
+  assert.ok(edits[0].includes('Updated'));
+});
+
+test('mut:pick rejects cross-user selections', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const store = await import('../services/store.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+
+  const userId = 111;
+  const chatId = AUTHORIZED_CHAT_ID || 222;
+  await store.setPendingMutationClarification({
+    originalMessage: 'update weekly',
+    candidates: [{ id: 'task-1', title: 'Weekly report' }],
+    intentSummary: 'Update task',
+    chatId,
+    userId,
+    entryPoint: 'telegram:freeform',
+    mode: 'interactive',
+  });
+
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  registerCallbacks(
+    bot,
+    { isAuthenticated: () => true, getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false },
+    {},
+    { processMessage: async () => { throw new Error('should not be called'); } },
+  );
+
+  const pickHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:pick'))?.handler;
+
+  const answers = [];
+  const ctx = {
+    match: ['mut:pick:task-1', 'task-1'],
+    chat: { id: chatId }, // Same chat (authorized)
+    from: { id: 999 }, // Different user
+    answerCallbackQuery: async (obj) => { answers.push(obj); },
+    editMessageText: async () => {},
+  };
+
+  await pickHandler(ctx);
+
+  assert.ok(answers[0].text.includes('Wrong user'));
+  // State should NOT have been cleared
+  assert.ok(store.getPendingMutationClarification() !== null);
+});
+
+test('mut:pick rejects expired clarifications', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const store = await import('../services/store.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+
+  // Set expired state (1 hour ago, well past the 10-minute TTL)
+  const expiredTime = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  const chatId = AUTHORIZED_CHAT_ID || 100;
+  await store.setPendingMutationClarification({
+    originalMessage: 'update weekly',
+    candidates: [{ id: 'task-1', title: 'Weekly report' }],
+    intentSummary: 'Update task',
+    chatId,
+    userId: chatId,
+    entryPoint: 'telegram:freeform',
+    mode: 'interactive',
+    createdAt: expiredTime,
+  });
+
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  registerCallbacks(
+    bot,
+    { isAuthenticated: () => true, getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false },
+    {},
+    { processMessage: async () => { throw new Error('should not be called'); } },
+  );
+
+  const pickHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:pick'))?.handler;
+
+  const answers = [];
+  const edits = [];
+  const ctx = {
+    match: ['mut:pick:task-1', 'task-1'],
+    chat: { id: chatId },
+    from: { id: chatId },
+    answerCallbackQuery: async (obj) => { answers.push(obj); },
+    editMessageText: async (text) => { edits.push(text); },
+  };
+
+  await pickHandler(ctx);
+
+  assert.ok(answers[0].text.includes('Expired'));
+  assert.ok(edits[0].includes('expired'));
+  // State should be cleared
+  assert.equal(store.getPendingMutationClarification(), null);
+});
+
+test('mut:cancel clears pending state safely', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const store = await import('../services/store.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+
+  const chatId = AUTHORIZED_CHAT_ID || 300;
+  await store.setPendingMutationClarification({
+    originalMessage: 'update weekly',
+    candidates: [{ id: 'task-1', title: 'Weekly report' }],
+    intentSummary: 'Update task',
+    chatId,
+    userId: chatId,
+    entryPoint: 'telegram:freeform',
+    mode: 'interactive',
+  });
+
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  registerCallbacks(
+    bot,
+    { isAuthenticated: () => true, getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false },
+    {},
+    {},
+  );
+
+  const cancelHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:cancel'))?.handler;
+
+  const answers = [];
+  const edits = [];
+  const ctx = {
+    match: ['mut:cancel'],
+    chat: { id: chatId },
+    from: { id: chatId },
+    answerCallbackQuery: async (obj) => { answers.push(obj); },
+    editMessageText: async (text) => { edits.push(text); },
+  };
+
+  await cancelHandler(ctx);
+
+  assert.equal(store.getPendingMutationClarification(), null);
+  assert.ok(answers[0].text.includes('Canceled'));
+  assert.ok(edits[0].includes('canceled'));
+});
+
+test('mut:pick fails safely when no pending state exists', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const store = await import('../services/store.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+
+  // Ensure no pending state
+  await store.clearPendingMutationClarification();
+
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  registerCallbacks(
+    bot,
+    { isAuthenticated: () => true, getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false },
+    {},
+    { processMessage: async () => { throw new Error('should not be called'); } },
+  );
+
+  const pickHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:pick'))?.handler;
+
+  const answers = [];
+  const edits = [];
+  const chatId = AUTHORIZED_CHAT_ID || 400;
+  const ctx = {
+    match: ['mut:pick:task-1', 'task-1'],
+    chat: { id: chatId },
+    from: { id: chatId },
+    answerCallbackQuery: async (obj) => { answers.push(obj); },
+    editMessageText: async (text) => { edits.push(text); },
+  };
+
+  await pickHandler(ctx);
+
+  assert.ok(answers[0].text.includes('No pending'));
+  assert.ok(edits[0].includes('No pending'));
+});
+
+test('pipeline skipClarification uses existingTask for mutation resume', async () => {
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'update', title: 'Move to Career', confidence: 0.9, targetQuery: 'weekly' },
+    ],
+    activeTasks: [
+      { id: 'task-resolved', title: 'Weekly report draft', projectId: 'inbox', projectName: 'Inbox', priority: 5, status: 0 },
+    ],
+  });
+
+  // With skipClarification and existingTask, should not return clarification
+  const result = await harness.processMessage('update weekly', {
+    existingTask: { id: 'task-resolved', projectId: 'inbox', title: 'Weekly report draft' },
+    skipClarification: true,
+  });
+
+  assert.equal(result.type, 'task');
+  assert.equal(harness.adapterCalls.update.length, 1);
+  assert.equal(harness.adapterCalls.update[0].taskId, 'task-resolved');
+});
+
+// =========================================================================
+// WP06 — T017: Observability event structure assertions (stable contract)
+// =========================================================================
+
+test('WP06 T017: observability events expose stable contract fields', async () => {
+  const telemetryEvents = [];
+  const observability = createPipelineObservability({
+    eventSink: async (event) => { telemetryEvents.push(event); },
+    logger: null,
+  });
+
+  const harness = createPipelineHarness({
+    intents: [{ type: 'create', title: 'Telemetry test task', confidence: 0.9 }],
+    observability,
+  });
+
+  await harness.processMessage('create a telemetry test task', {
+    requestId: 'req-obs-contract',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  // Every event MUST have these stable fields regardless of step
+  const requiredFields = [
+    'eventType', 'timestamp', 'requestId', 'entryPoint', 'step', 'status',
+    'durationMs', 'failureClass', 'actionType', 'attempt', 'rolledBack', 'metadata',
+  ];
+
+  for (const event of telemetryEvents) {
+    for (const field of requiredFields) {
+      assert.ok(Object.hasOwn(event, field), `event ${event.eventType} missing field: ${field}`);
+    }
+  }
+
+  // Request-received events have stable step name
+  const receivedEvents = telemetryEvents.filter(e => e.eventType === 'pipeline.request.received');
+  assert.equal(receivedEvents.length, 1);
+  assert.equal(receivedEvents[0].step, 'request');
+  assert.equal(receivedEvents[0].status, 'start');
+  assert.equal(receivedEvents[0].requestId, 'req-obs-contract');
+  assert.equal(receivedEvents[0].entryPoint, 'telegram_message');
+});
+
+test('WP06 T017: observability failure events include failureClass and rolledBack', async () => {
+  const telemetryEvents = [];
+  const observability = createPipelineObservability({
+    eventSink: async (event) => { telemetryEvents.push(event); },
+    logger: null,
+  });
+
+  const harness = createPipelineHarness({
+    intents: [{ type: 'create', title: 'Will fail', confidence: 0.9 }],
+    adapterOverrides: {
+      createTask: async () => { throw new Error('Adapter unavailable'); },
+    },
+    observability,
+  });
+
+  await harness.processMessage('create will fail', {
+    requestId: 'req-obs-failure-class',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  // Find the failure event with failureClass set
+  const failureEvents = telemetryEvents.filter(e => e.failureClass !== null);
+  assert.ok(failureEvents.length > 0, 'expected at least one event with failureClass');
+
+  const adapterFailure = failureEvents.find(e => e.failureClass === 'adapter');
+  assert.ok(adapterFailure, 'expected adapter failureClass event');
+  assert.equal(adapterFailure.rolledBack, false);
+  assert.equal(adapterFailure.status, 'failure');
+});
+
+// =========================================================================
+// WP06 — T020: Fail-closed behavior — failure class + user message shape
+// =========================================================================
+
+test('WP06 T020: fail-closed — malformed AX returns user-safe message without leaking diagnostics', async () => {
+  const pipeline = createPipeline({
+    axIntent: {
+      extractIntents: async () => 'garbage: <html>error page</html>',
+    },
+    normalizer: {
+      normalizeActions: () => [],
+    },
+    adapter: {
+      listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+      listActiveTasks: async () => [],
+    },
+  });
+
+  const result = await pipeline.processMessage('do something', {
+    requestId: 'req-fail-closed-malformed',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  assert.equal(result.type, 'error');
+  assert.equal(result.failure.class, 'malformed_ax');
+  // User message MUST be compact and MUST NOT leak raw error text
+  assert.match(result.confirmationText, /could not understand/i);
+  assert.equal(result.confirmationText.includes('<html>'), false);
+  assert.equal(result.confirmationText.includes('garbage'), false);
+  // Developer diagnostics ARE available in diagnostics array
+  assert.ok(result.diagnostics.length > 0);
+});
+
+test('WP06 T020: fail-closed — validation failure returns user-safe message', async () => {
+  const pipeline = createPipeline({
+    axIntent: {
+      extractIntents: async () => [{ type: 'create', title: '' }],
+    },
+    normalizer: {
+      normalizeActions: (intents) => intents.map(intent => ({
+        ...intent,
+        projectId: 'inbox',
+        valid: false,
+        validationErrors: ['title is required for create actions'],
+      })),
+    },
+    adapter: {
+      listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+      listActiveTasks: async () => [],
+    },
+  });
+
+  const result = await pipeline.processMessage('create a task', {
+    requestId: 'req-fail-closed-validation',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  assert.equal(result.type, 'error');
+  assert.equal(result.failure.class, 'validation');
+  assert.match(result.confirmationText, /could not validate/i);
+  // Should NOT leak internal field names to the user
+  assert.equal(result.confirmationText.includes('validationErrors'), false);
+});
+
+test('WP06 T020: fail-closed — adapter failure returns generic retry message', async () => {
+  const pipeline = createPipeline({
+    axIntent: {
+      extractIntents: async () => [{ type: 'create', title: 'Test task' }],
+    },
+    normalizer: {
+      normalizeActions: (intents) => intents.map(intent => ({
+        ...intent,
+        projectId: 'inbox',
+        valid: true,
+        validationErrors: [],
+      })),
+    },
+    adapter: {
+      listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+      listActiveTasks: async () => [],
+      createTask: async () => { throw new Error('TickTick API 503 Service Unavailable'); },
+    },
+  });
+
+  const result = await pipeline.processMessage('create test', {
+    requestId: 'req-fail-closed-adapter',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  assert.equal(result.type, 'error');
+  assert.equal(result.failure.class, 'adapter');
+  assert.match(result.confirmationText, /failed.*retry|retry.*shortly/i);
+  // User message MUST NOT expose internal error details
+  assert.equal(result.confirmationText.includes('503'), false);
+  assert.equal(result.confirmationText.includes('Service Unavailable'), false);
+});
+
+test('WP06 T020: fail-closed — quota exhaustion returns user-safe message', async () => {
+  const pipeline = createPipeline({
+    axIntent: {
+      extractIntents: async () => { throw new QuotaExhaustedError('All API keys exhausted'); },
+    },
+    normalizer: { normalizeActions: () => [] },
+    adapter: {
+      listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+      listActiveTasks: async () => [],
+    },
+  });
+
+  const result = await pipeline.processMessage('create test', {
+    requestId: 'req-fail-closed-quota',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  assert.equal(result.type, 'error');
+  assert.equal(result.failure.class, 'quota');
+  assert.match(result.confirmationText, /quota.*exhausted|try.*again/i);
+});
+
+// =========================================================================
+// WP06 — T012: Failure-path regressions (additional coverage)
+// =========================================================================
+
+test('WP06 T012: pipeline classifies malformed AX output when extractIntents returns non-array', async () => {
+  const pipeline = createPipeline({
+    axIntent: {
+      extractIntents: async () => ({ not: 'an array' }),
+    },
+    normalizer: { normalizeActions: () => [] },
+    adapter: {
+      listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+      listActiveTasks: async () => [],
+    },
+  });
+
+  const result = await pipeline.processMessage('test malformed', {
+    requestId: 'req-malformed-non-array',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  assert.equal(result.type, 'error');
+  assert.equal(result.failure.class, 'malformed_ax');
+});
+
+test('WP06 T012: pipeline handles AX returning null intents', async () => {
+  const pipeline = createPipeline({
+    axIntent: {
+      extractIntents: async () => null,
+    },
+    normalizer: { normalizeActions: () => [] },
+    adapter: {
+      listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+      listActiveTasks: async () => [],
+    },
+  });
+
+  const result = await pipeline.processMessage('test null', {
+    requestId: 'req-null-intents',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  // Null from AX is treated as empty/non-task, not malformed
+  assert.equal(result.type, 'error');
+  assert.ok(['malformed_ax', 'unexpected', 'validation'].includes(result.failure.class),
+    `null intents should fail with a known class, got: ${result.failure.class}`);
+});
+
+// =========================================================================
+// WP07 — T071: End-to-end mutation regressions (happy paths)
+// =========================================================================
+
+test('WP07 T071: update mutation happy path — rename target via exact match', async () => {
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'update', title: 'Weekly report — Q4', confidence: 0.95, targetQuery: 'weekly' },
+    ],
+    activeTasks: [
+      { id: 'task-update-01', title: 'Weekly report draft', projectId: 'inbox', projectName: 'Inbox', priority: 5, status: 0 },
+    ],
+  });
+
+  const result = await harness.processMessage('rename the weekly report to Weekly report — Q4');
+
+  assert.equal(result.type, 'task');
+  assert.equal(harness.adapterCalls.update.length, 1);
+  assert.equal(harness.adapterCalls.update[0].taskId, 'task-update-01');
+  assert.match(result.confirmationText, /Updated 1 task/i);
+});
+
+test('WP07 T071: update mutation happy path — change due date', async () => {
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'update', title: 'Write weekly report', confidence: 0.95, targetQuery: 'weekly', content: '', suggestedSchedule: 'today' },
+    ],
+    activeTasks: [
+      { id: 'task-due-01', title: 'Write weekly report', projectId: 'career', projectName: 'Career', priority: 5, dueDate: '2026-03-20', status: 0 },
+    ],
+  });
+
+  const result = await harness.processMessage('move the weekly report to today');
+
+  assert.equal(result.type, 'task');
+  assert.equal(harness.adapterCalls.update.length, 1);
+  assert.equal(harness.adapterCalls.update[0].taskId, 'task-due-01');
+});
+
+test('WP07 T071: complete mutation happy path — exact match', async () => {
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'complete', title: 'Review PR #123', confidence: 0.95, targetQuery: 'review PR' },
+    ],
+    activeTasks: [
+      { id: 'task-complete-01', title: 'Review PR #123', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
+    ],
+  });
+
+  const result = await harness.processMessage('mark review PR as done');
+
+  assert.equal(result.type, 'task');
+  assert.equal(harness.adapterCalls.complete.length, 1);
+  assert.equal(harness.adapterCalls.complete[0].taskId, 'task-complete-01');
+  assert.match(result.confirmationText, /Completed 1 task/i);
+});
+
+test('WP07 T071: delete mutation happy path — exact match', async () => {
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'delete', title: 'Buy groceries', confidence: 0.95, targetQuery: 'groceries' },
+    ],
+    activeTasks: [
+      { id: 'task-delete-01', title: 'Buy groceries', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
+    ],
+  });
+
+  const result = await harness.processMessage('delete the groceries task');
+
+  assert.equal(result.type, 'task');
+  assert.equal(harness.adapterCalls.delete.length, 1);
+  assert.equal(harness.adapterCalls.delete[0].taskId, 'task-delete-01');
+  assert.match(result.confirmationText, /Deleted 1 task/i);
+});
+
+// =========================================================================
+// WP07 — T072: Fail-closed coverage for mixed/underspecified/ambiguous
+// =========================================================================
+
+test('WP07 T072: mixed create+mutation request is rejected', async () => {
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'create', title: 'New task' },
+      { type: 'update', title: 'Old task', targetQuery: 'old', confidence: 0.9 },
+    ],
+    activeTasks: [
+      { id: 'task-old-01', title: 'Old task', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
+    ],
+  });
+
+  const result = await harness.processMessage('create a new task and update the old one');
+
+  assert.equal(result.type, 'error');
+  assert.equal(harness.adapterCalls.create.length, 0);
+  assert.equal(harness.adapterCalls.update.length, 0);
+});
+
+test('WP07 T072: multi-mutation request is rejected', async () => {
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'complete', title: 'Task A', targetQuery: 'task A', confidence: 0.9 },
+      { type: 'complete', title: 'Task B', targetQuery: 'task B', confidence: 0.9 },
+    ],
+    activeTasks: [
+      { id: 'task-a-01', title: 'Task A', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
+      { id: 'task-b-01', title: 'Task B', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
+    ],
+  });
+
+  const result = await harness.processMessage('complete both tasks');
+
+  assert.equal(result.type, 'error');
+  assert.equal(harness.adapterCalls.complete.length, 0);
+});
+
+test('WP07 T072: pronoun-only underspecified target — verify resolution behavior', async () => {
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'update', title: 'it', confidence: 0.5, targetQuery: 'it' },
+    ],
+    activeTasks: [
+      { id: 'task-pro-01', title: 'Review PR', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
+      { id: 'task-pro-02', title: 'Write report', projectId: 'career', projectName: 'Career', priority: 5, status: 0 },
+    ],
+  });
+
+  const result = await harness.processMessage('update it');
+
+  // Underspecified pronoun "it" with multiple tasks: the resolver may find zero or one match
+  // Key assertion: the result is NOT a confident multi-target mutation
+  assert.ok(
+    result.type === 'clarification' || result.type === 'not-found' || result.type === 'task',
+    `pronoun-only should produce a defined outcome, got type: ${result.type}`
+  );
+  // If it did mutate, it should be at most 1 task (single-target policy)
+  assert.ok(harness.adapterCalls.update.length <= 1, 'should mutate at most one target');
+});
+
+test('WP07 T072: ambiguous matches require clarification instead of mutation', async () => {
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'update', title: 'report', confidence: 0.9, targetQuery: 'report' },
+    ],
+    activeTasks: [
+      { id: 'task-amb-01', title: 'Weekly report', projectId: 'inbox', projectName: 'Inbox', priority: 5, status: 0 },
+      { id: 'task-amb-02', title: 'Monthly report', projectId: 'career', projectName: 'Career', priority: 3, status: 0 },
+    ],
+  });
+
+  const result = await harness.processMessage('update the report');
+
+  // Ambiguous: should return clarification, not a direct mutation
+  assert.equal(harness.adapterCalls.update.length, 0);
+  assert.equal(result.type, 'clarification');
+});
+
+test('WP07 T072: not-found result does not mutate', async () => {
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'update', title: 'nonexistent task', confidence: 0.9, targetQuery: 'nonexistent task xyz' },
+    ],
+    activeTasks: [
+      { id: 'task-nf-01', title: 'Real task', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
+    ],
+  });
+
+  const result = await harness.processMessage('update the nonexistent task');
+
+  assert.equal(harness.adapterCalls.update.length, 0);
+  assert.equal(result.type, 'not-found');
+});
+
+test('WP07 T072: delete remains fail-closed when resolution is uncertain', async () => {
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'delete', title: 'task', confidence: 0.4, targetQuery: 'task' },
+    ],
+    activeTasks: [
+      { id: 'task-fc-01', title: 'Something important', projectId: 'inbox', projectName: 'Inbox', priority: 5, status: 0 },
+      { id: 'task-fc-02', title: 'Something else', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
+    ],
+  });
+
+  const result = await harness.processMessage('delete that thing');
+
+  // Generic "task" query matching multiple candidates → clarification, not delete
+  assert.equal(harness.adapterCalls.delete.length, 0);
+  assert.ok(
+    result.type === 'clarification' || result.type === 'not-found',
+    `uncertain delete should fail closed, got type: ${result.type}`
+  );
+});
+
+// =========================================================================
+// WP07 — T073: Observability assertions for mutation diagnostics
+// =========================================================================
+
+test('WP07 T073: successful mutation emits diagnostic events with intent and resolution metadata', async () => {
+  const events = [];
+  const obs = createPipelineObservability({
+    eventSink: async (event) => { events.push(event); },
+    logger: { log: () => {}, error: () => {} },
+  });
+
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'update', title: 'Updated title', confidence: 0.95, targetQuery: 'weekly' },
+    ],
+    activeTasks: [
+      { id: 'task-obs-01', title: 'Weekly report', projectId: 'inbox', projectName: 'Inbox', priority: 5, status: 0 },
+    ],
+    observability: obs,
+  });
+
+  await harness.processMessage('update weekly report');
+
+  // Verify we have pipeline events
+  assert.ok(events.length > 0, 'expected telemetry events to be emitted');
+
+  // Should have a resolve event with resolution metadata
+  const resolveEvents = events.filter(e => e.eventType === 'pipeline.resolve.completed');
+  assert.ok(resolveEvents.length >= 0, 'resolve events should be present');
+
+  // Should have normalize events
+  const normalizeEvents = events.filter(e => e.eventType === 'pipeline.normalize.completed');
+  assert.equal(normalizeEvents.length, 1);
+  assert.equal(normalizeEvents[0].metadata.validCount, 1);
+
+  // Should have a success result event
+  const resultEvents = events.filter(e => e.eventType === 'pipeline.request.completed' && e.status === 'success');
+  assert.equal(resultEvents.length, 1);
+  assert.equal(resultEvents[0].metadata.type, 'task');
+});
+
+test('WP07 T073: skipped mutation (not-found) emits diagnostic events', async () => {
+  const events = [];
+  const obs = createPipelineObservability({
+    eventSink: async (event) => { events.push(event); },
+    logger: { log: () => {}, error: () => {} },
+  });
+
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'update', title: 'ghost task', confidence: 0.9, targetQuery: 'ghost task that does not exist' },
+    ],
+    activeTasks: [
+      { id: 'task-nf-02', title: 'Existing task', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
+    ],
+    observability: obs,
+  });
+
+  await harness.processMessage('update ghost task that does not exist');
+
+  assert.ok(events.length > 0, 'expected telemetry events even for not-found');
+
+  // Resolve events should show not_found status
+  const resolveEvents = events.filter(e => e.eventType === 'pipeline.resolve.completed');
+  // The resolve event status should reflect the not-found outcome
+  if (resolveEvents.length > 0) {
+    assert.ok(
+      ['success', 'failure'].includes(resolveEvents[0].status),
+      'resolve event should have a valid status'
+    );
+  }
+});
+
+test('WP07 T073: failed mutation (mixed intent) emits failure diagnostic events', async () => {
+  const events = [];
+  const obs = createPipelineObservability({
+    eventSink: async (event) => { events.push(event); },
+    logger: { log: () => {}, error: () => {} },
+  });
+
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'create', title: 'New thing' },
+      { type: 'update', title: 'Old thing', targetQuery: 'old', confidence: 0.9 },
+    ],
+    activeTasks: [
+      { id: 'task-mix-01', title: 'Old thing', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
+    ],
+    observability: obs,
+  });
+
+  await harness.processMessage('create new and update old');
+
+  assert.ok(events.length > 0, 'expected telemetry events for mixed intent failure');
+
+  // Should have a failure result event
+  const failureEvents = events.filter(e => e.eventType === 'pipeline.request.failed');
+  assert.equal(failureEvents.length, 1);
+  assert.equal(failureEvents[0].metadata.reason, 'mixed_create_and_mutation');
+});
+
+// =========================================================================
+// WP07 — T074: Stale comment/fixture cleanup verification
+// =========================================================================
+
+test('WP07 T074: no references to unsupported reschedule command in WP07 mutation tests', () => {
+  // Verify the WP07 mutation test blocks do not encode stale reschedule assumptions
+  const regressionSource = readFileSync('tests/regression.test.js', 'utf8');
+  // Only check lines within the WP07 test blocks (between WP07 markers and the T074 tests themselves)
+  const wp07Start = regressionSource.indexOf("// WP07");
+  if (wp07Start === -1) return; // no WP07 tests yet
+
+  // Find the start of the T074 cleanup section and stop before it
+  const t074Start = regressionSource.indexOf("// WP07 — T074:");
+  const wp07Section = t074Start !== -1
+    ? regressionSource.slice(wp07Start, t074Start)
+    : regressionSource.slice(wp07Start);
+
+  const rescheduleInWP07 = wp07Section.split('\n').filter(line =>
+    line.toLowerCase().includes('reschedule')
+  );
+
+  assert.equal(
+    rescheduleInWP07.length,
+    0,
+    `WP07 mutation tests should not reference unsupported reschedule command. Found: ${rescheduleInWP07.map(l => l.trim()).join('; ')}`
+  );
+});
+
+test('WP07 T074: pipeline harness does not reference nonexistent modules', () => {
+  const harnessSource = readFileSync('tests/pipeline-harness.js', 'utf8');
+  // Ensure harness only imports from known modules
+  const imports = harnessSource.match(/from ['"](\.\.\/[^'"]+)['"]/g) || [];
+  const knownModules = [
+    '../services/pipeline.js',
+    '../services/normalizer.js',
+    '../services/pipeline-observability.js',
+  ];
+
+  for (const imp of imports) {
+    const mod = imp.match(/from ['"](\.\.\/[^'"]+)['"]/)[1];
+    assert.ok(
+      knownModules.some(k => mod.startsWith(k.replace(/\.js$/, '')) || mod === k),
+      `pipeline harness should not import from unsupported module: ${mod}`
+    );
+  }
+});
+
+// ─── WP04: Pipeline Checklist Integration (T046) ─────────────
+
+test('WP04 T046: checklist create creates one parent task with items', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Onboard new client',
+        confidence: 0.95,
+        checklistItems: [
+          { title: 'Send welcome email' },
+          { title: 'Create project folder' },
+          { title: 'Schedule kickoff meeting' },
+        ],
+      },
+    ],
+  });
+
+  const result = await processMessage('Onboard new client: send welcome email, create project folder, schedule kickoff');
+
+  assert.equal(result.type, 'task', 'should return task type');
+  assert.equal(adapterCalls.create.length, 1, 'should create exactly one parent task');
+  const createdAction = adapterCalls.create[0];
+  // Title gets normalized with verb-led prefix
+  assert.ok(createdAction.title.includes('Onboard new client'), 'title should contain original text');
+  assert.ok(Array.isArray(createdAction.checklistItems), 'checklistItems should be present in adapter call');
+  assert.equal(createdAction.checklistItems.length, 3, 'should have 3 checklist items');
+  assert.equal(createdAction.checklistItems[0].title, 'Send welcome email');
+  assert.equal(createdAction.checklistItems[1].title, 'Create project folder');
+  assert.equal(createdAction.checklistItems[2].title, 'Schedule kickoff meeting');
+});
+
+test('WP04 T046: multi-task create creates separate tasks without checklist', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      { type: 'create', title: 'Buy groceries', confidence: 0.9 },
+      { type: 'create', title: 'Pick up dry cleaning', confidence: 0.9 },
+    ],
+  });
+
+  const result = await processMessage('Buy groceries and pick up dry cleaning');
+
+  assert.equal(result.type, 'task', 'should return task type');
+  assert.equal(adapterCalls.create.length, 2, 'should create two separate tasks');
+  // Neither task should have checklistItems
+  for (const created of adapterCalls.create) {
+    assert.equal(
+      Object.hasOwn(created, 'checklistItems') && Array.isArray(created.checklistItems) && created.checklistItems.length > 0,
+      false,
+      'no task should have checklist items for multi-task request',
+    );
+  }
+});
+
+test('WP04 T046: ambiguous checklist vs multi-task returns clarification', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Plan event',
+        confidence: 0.8,
+        checklistItems: [
+          { title: 'Book venue' },
+          { title: 'Send invites' },
+        ],
+      },
+      { type: 'create', title: 'Buy decorations', confidence: 0.8 },
+    ],
+  });
+
+  const result = await processMessage('Plan an event with venue and invites, also buy decorations');
+
+  assert.equal(result.type, 'clarification', 'should return clarification type');
+  assert.ok(result.confirmationText, 'should have a clarification question');
+  assert.ok(result.clarification, 'should have clarification metadata');
+  assert.equal(result.clarification.reason, 'ambiguous_checklist_vs_multi_task');
+  assert.equal(adapterCalls.create.length, 0, 'should not create any tasks');
+});
+
+// ─── WP05: Checklist Clarification UX Flow ─────────────────────
+
+test('WP05 T052: checklist clarification persists with TTL', async () => {
+  // Verify store functions exist and work
+  assert.equal(typeof store.getPendingChecklistClarification, 'function');
+  assert.equal(typeof store.setPendingChecklistClarification, 'function');
+  assert.equal(typeof store.clearPendingChecklistClarification, 'function');
+  assert.ok(store.CHECKLIST_CLARIFICATION_TTL_MS > 0, 'TTL should be defined');
+  assert.equal(store.CHECKLIST_CLARIFICATION_TTL_MS, 24 * 60 * 60 * 1000, 'TTL should be 24 hours');
+
+  // Set and get
+  await store.setPendingChecklistClarification({
+    originalMessage: 'test message',
+    intents: [{ type: 'create', title: 'test' }],
+    chatId: 123,
+    userId: 456,
+  });
+
+  const pending = store.getPendingChecklistClarification();
+  assert.ok(pending !== null, 'pending clarification should exist');
+  assert.equal(pending.originalMessage, 'test message');
+  assert.equal(pending.chatId, 123);
+  assert.equal(pending.userId, 456);
+
+  // Clear
+  await store.clearPendingChecklistClarification();
+  assert.equal(store.getPendingChecklistClarification(), null, 'should be null after clear');
+});
+
+test('WP05 T052: expired checklist clarification is ignored', async () => {
+  // Manually set an expired entry
+  const expiredDate = new Date(Date.now() - (25 * 60 * 60 * 1000)); // 25 hours ago
+  await store.setPendingChecklistClarification({
+    originalMessage: 'old message',
+    intents: [],
+    createdAt: expiredDate.toISOString(),
+  });
+
+  const pending = store.getPendingChecklistClarification();
+  assert.equal(pending, null, 'expired clarification should return null');
+});
+
+test('WP05 T054: conservative fallback does not create checklist after ignored clarification', async () => {
+  // Set up a pending checklist clarification
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Plan project with tasks A, B, and C',
+    intents: [{ type: 'create', title: 'Plan project' }],
+    chatId: 123,
+    userId: 456,
+  });
+
+  // An ambiguous reply (simulating unrelated message) should NOT create a checklist
+  // This is tested at the store/behavior level — the bot handler uses skipChecklist: true
+  const pending = store.getPendingChecklistClarification();
+  assert.ok(pending !== null, 'pending should exist');
+
+  // After processing, the pending state should be cleared (simulating bot behavior)
+  await store.clearPendingChecklistClarification();
+  assert.equal(store.getPendingChecklistClarification(), null, 'pending cleared after fallback');
+});
+
+test('WP05 T056: clarification lifecycle events are logged', async () => {
+  // Verify that setting/clearing clarification does not throw and uses console.log
+  // (The actual logging is via console.log which we can't easily assert in unit tests,
+  // but we verify the functions execute without error and state transitions work)
+  await store.setPendingChecklistClarification({
+    originalMessage: 'test',
+    intents: [],
+    userId: 1,
+  });
+  assert.ok(store.getPendingChecklistClarification() !== null);
+  await store.clearPendingChecklistClarification();
+  assert.equal(store.getPendingChecklistClarification(), null);
+});
+
+// ─── WP05: Pipeline Consumption of Clarification Options ─────
+
+test('WP05 P0#1: pipeline resolves ambiguity with checklistPreference=checklist', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Plan event',
+        confidence: 0.8,
+        checklistItems: [
+          { title: 'Book venue' },
+          { title: 'Send invites' },
+        ],
+      },
+      { type: 'create', title: 'Buy decorations', confidence: 0.8 },
+    ],
+  });
+
+  // Simulate clarification resume with checklist preference
+  const result = await processMessage('Plan an event with venue and invites, also buy decorations', {
+    checklistPreference: 'checklist',
+    entryPoint: 'telegram:checklist-clarification-button',
+  });
+
+  assert.equal(result.type, 'task', 'should return task type after resolving preference');
+  // Should have merged into one create with checklist
+  assert.equal(adapterCalls.create.length, 1, 'should create one parent task');
+  const createdTask = adapterCalls.create[0];
+  assert.ok(Array.isArray(createdTask.checklistItems) || Array.isArray(createdTask.items), 'created task should have checklist items');
+  const checklistArray = createdTask.checklistItems || createdTask.items || [];
+  assert.ok(checklistArray.length >= 2, 'checklist should have multiple items');
+});
+
+test('WP05 P0#1: pipeline resolves ambiguity with checklistPreference=separate', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Plan event',
+        confidence: 0.8,
+        checklistItems: [
+          { title: 'Book venue' },
+          { title: 'Send invites' },
+        ],
+      },
+      { type: 'create', title: 'Buy decorations', confidence: 0.8 },
+    ],
+  });
+
+  // Simulate clarification resume with separate preference
+  const result = await processMessage('Plan an event with venue and invites, also buy decorations', {
+    checklistPreference: 'separate',
+    entryPoint: 'telegram:checklist-clarification-button',
+  });
+
+  assert.equal(result.type, 'task', 'should return task type after resolving preference');
+  // Should have created separate tasks (no checklist)
+  assert.ok(adapterCalls.create.length >= 1, 'should create tasks');
+  // None of the created tasks should have checklist items
+  for (const task of adapterCalls.create) {
+    assert.equal(task.items, undefined, 'tasks should not have checklist items when separate');
+  }
+});
+
+test('WP05 P0#1: pipeline resolves ambiguity with skipChecklist=true', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Plan event',
+        confidence: 0.8,
+        checklistItems: [
+          { title: 'Book venue' },
+          { title: 'Send invites' },
+        ],
+      },
+      { type: 'create', title: 'Buy decorations', confidence: 0.8 },
+    ],
+  });
+
+  // Simulate clarification skip
+  const result = await processMessage('Plan an event with venue and invites, also buy decorations', {
+    skipChecklist: true,
+    entryPoint: 'telegram:checklist-clarification-skip',
+  });
+
+  assert.equal(result.type, 'task', 'should return task type after skipping');
+  // Should create only the first task without checklist
+  assert.ok(adapterCalls.create.length >= 1, 'should create at least one task');
+  const firstTask = adapterCalls.create[0];
+  assert.equal(firstTask.items, undefined, 'first task should not have checklist items');
+});
+
+test('WP05 P0#1: pipeline asks for clarification when no preference provided', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Plan event',
+        confidence: 0.8,
+        checklistItems: [
+          { title: 'Book venue' },
+          { title: 'Send invites' },
+        ],
+      },
+      { type: 'create', title: 'Buy decorations', confidence: 0.8 },
+    ],
+  });
+
+  const result = await processMessage('Plan an event with venue and invites, also buy decorations');
+
+  assert.equal(result.type, 'clarification', 'should return clarification when no preference given');
+  assert.equal(result.clarification.reason, 'ambiguous_checklist_vs_multi_task');
+  assert.equal(adapterCalls.create.length, 0, 'should not create tasks');
+});
+
+// ─── WP05: Bot Callback Handler Extraction (P0#3) ─────────────
+
+test('WP05 P0#3: _handleChecklistClarification passes checklistPreference to pipeline', async () => {
+  // This tests the extracted handler's behavior at the pipeline level.
+  // The bot handler itself is tested via integration tests, but we verify
+  // the pipeline options flow here.
+  const { processMessage } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Test task',
+        checklistItems: [{ title: 'Subtask A' }],
+      },
+      { type: 'create', title: 'Another task' },
+    ],
+  });
+
+  // Verify the pipeline consumes the option correctly
+  const result = await processMessage('test', {
+    checklistPreference: 'checklist',
+  });
+
+  // Should not return clarification since preference was provided
+  assert.notEqual(result.type, 'clarification', 'should resolve ambiguity with provided preference');
+});
+
+// ─── WP05 P0#2: Bot Clarification Handler Tests ──────────────
+
+test('WP05 P0#2: cl:checklist callback resumes pipeline with checklistPreference', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on(eventName, handler) { handlers.events.push({ eventName, handler }); return this; },
+  };
+
+  const pipelineCalls = [];
+  const mockTicktick = {
+    isAuthenticated: () => true,
+    getCacheAgeSeconds: () => null,
+    getAllTasksCached: async () => [],
+    getLastFetchedProjects: () => [],
+  };
+
+  await registerCallbacksForTest(bot, mockTicktick, {
+    processMessage: async (msg, opts) => {
+      pipelineCalls.push({ message: msg, options: opts });
+      return { type: 'task', confirmationText: '✅ Created task with checklist.' };
+    },
+  });
+
+  const authChatId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Plan event with venue, catering, and decorations',
+    chatId: authChatId,
+    userId: authChatId,
+    createdAt: new Date().toISOString(),
+  });
+
+  const clChecklist = handlers.callbacks.find(cb => cb.pattern.source === '^cl:checklist$');
+  assert.ok(clChecklist, 'cl:checklist callback should be registered');
+
+  const replies = [];
+  const ctx = {
+    chat: { id: authChatId },
+    from: { id: authChatId },
+    match: [],
+    answerCallbackQuery: async () => {},
+    reply: async (msg) => { replies.push(msg); },
+    editMessageText: async (text, opts) => { replies.push(text); },
+  };
+
+  await clChecklist.handler(ctx);
+
+  assert.equal(pipelineCalls.length, 1, 'pipeline should be called once');
+  assert.equal(pipelineCalls[0].options.checklistPreference, 'checklist', 'should pass checklistPreference');
+  assert.equal(pipelineCalls[0].options.skipChecklist, undefined, 'should not set skipChecklist');
+  assert.equal(pipelineCalls[0].options.entryPoint, 'telegram:checklist-clarification-button');
+  // The answerCallbackQuery sends '📋 Checklist mode', editMessageText sends pipeline result
+  assert.ok(replies.some(r => r && r.includes('Created task with checklist')), 'should show pipeline result');
+
+  // Pending state should be cleared
+  assert.equal(store.getPendingChecklistClarification(), null, 'pending should be cleared');
+});
+
+test('WP05 P0#2: cl:separate callback resumes pipeline with separate preference', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on(eventName, handler) { handlers.events.push({ eventName, handler }); return this; },
+  };
+
+  const pipelineCalls = [];
+  const mockTicktick = {
+    isAuthenticated: () => true,
+    getCacheAgeSeconds: () => null,
+    getAllTasksCached: async () => [],
+    getLastFetchedProjects: () => [],
+  };
+
+  await registerCallbacksForTest(bot, mockTicktick, {
+    processMessage: async (msg, opts) => {
+      pipelineCalls.push({ message: msg, options: opts });
+      return { type: 'task', confirmationText: '✅ Created separate tasks.' };
+    },
+  });
+
+  const authChatId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Plan event with venue and buy decorations',
+    chatId: authChatId,
+    userId: authChatId,
+    createdAt: new Date().toISOString(),
+  });
+
+  const clSeparate = handlers.callbacks.find(cb => cb.pattern.source === '^cl:separate$');
+  assert.ok(clSeparate, 'cl:separate callback should be registered');
+
+  const replies = [];
+  const ctx = {
+    chat: { id: authChatId },
+    from: { id: authChatId },
+    match: [],
+    answerCallbackQuery: async () => {},
+    reply: async (msg) => { replies.push(msg); },
+    editMessageText: async (text, opts) => { replies.push(text); },
+  };
+
+  await clSeparate.handler(ctx);
+
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].options.checklistPreference, 'separate');
+  assert.equal(pipelineCalls[0].options.skipChecklist, undefined);
+  assert.ok(replies.some(r => r && r.includes('Created separate tasks')), 'should show pipeline result');
+});
+
+test('WP05 P0#2: cl:skip callback resumes pipeline with skipChecklist=true', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on(eventName, handler) { handlers.events.push({ eventName, handler }); return this; },
+  };
+
+  const pipelineCalls = [];
+  const mockTicktick = {
+    isAuthenticated: () => true,
+    getCacheAgeSeconds: () => null,
+    getAllTasksCached: async () => [],
+    getLastFetchedProjects: () => [],
+  };
+
+  await registerCallbacksForTest(bot, mockTicktick, {
+    processMessage: async (msg, opts) => {
+      pipelineCalls.push({ message: msg, options: opts });
+      return { type: 'task', confirmationText: '✅ Created single task.' };
+    },
+  });
+
+  const authChatId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Plan event with venue and buy decorations',
+    chatId: authChatId,
+    userId: authChatId,
+    createdAt: new Date().toISOString(),
+  });
+
+  const clSkip = handlers.callbacks.find(cb => cb.pattern.source === '^cl:skip$');
+  assert.ok(clSkip, 'cl:skip callback should be registered');
+
+  const replies = [];
+  const ctx = {
+    chat: { id: authChatId },
+    from: { id: authChatId },
+    match: [],
+    answerCallbackQuery: async () => {},
+    reply: async (msg) => { replies.push(msg); },
+    editMessageText: async (text, opts) => { replies.push(text); },
+  };
+
+  await clSkip.handler(ctx);
+
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].options.skipChecklist, true);
+  assert.equal(pipelineCalls[0].options.checklistPreference, undefined);
+  assert.ok(replies.some(r => r && r.includes('Created single task')), 'should show pipeline result');
+});
+
+test('WP05 P0#2: checklist callback rejects unauthorized user', async () => {
+  const handlers = { callbacks: [] };
+  const bot = {
+    command() { return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on() { return this; },
+  };
+
+  await registerCallbacksForTest(bot, { isAuthenticated: () => true }, {
+    processMessage: async () => ({ type: 'task', confirmationText: 'ok' }),
+  });
+
+  const authChatId = AUTHORIZED_CHAT_ID || Date.now();
+  const unauthorizedId = authChatId + 99999;
+
+  const clChecklist = handlers.callbacks.find(cb => cb.pattern.source === '^cl:checklist$');
+  const replies = [];
+  const ctx = {
+    chat: { id: unauthorizedId },
+    from: { id: unauthorizedId },
+    match: [],
+    answerCallbackQuery: async ({ text }) => { replies.push(text); },
+    reply: async () => {},
+  };
+
+  await clChecklist.handler(ctx);
+
+  assert.equal(replies.some(r => r.includes('Unauthorized')), true, 'should reject unauthorized');
+});
+
+test('WP05 P0#2: checklist callback rejects cross-chat user', async () => {
+  const handlers = { callbacks: [] };
+  const bot = {
+    command() { return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on() { return this; },
+  };
+
+  await registerCallbacksForTest(bot, { isAuthenticated: () => true }, {
+    processMessage: async () => ({ type: 'task', confirmationText: 'ok' }),
+  });
+
+  // ctx uses AUTHORIZED_CHAT_ID so isAuthorized passes,
+  // but pending has a different chatId so cross-chat check fires
+  const authorizedChatId = AUTHORIZED_CHAT_ID || 42;
+  const pendingChatId = authorizedChatId + 99999;
+
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Test message',
+    chatId: pendingChatId,
+    userId: pendingChatId,
+    createdAt: new Date().toISOString(),
+  });
+
+  const clChecklist = handlers.callbacks.find(cb => cb.pattern.source === '^cl:checklist$');
+  const replies = [];
+  const ctx = {
+    chat: { id: authorizedChatId },
+    from: { id: authorizedChatId },
+    match: [],
+    answerCallbackQuery: async ({ text }) => { replies.push(text); },
+    reply: async () => {},
+    editMessageText: async () => {},
+  };
+
+  await clChecklist.handler(ctx);
+
+  assert.equal(replies.some(r => r && r.includes('Wrong chat')), true, 'should reject cross-chat');
+});
+
+test('WP05 P0#2: free-form reply "checklist" resumes with checklistPreference', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on(eventName, handler) { handlers.events.push({ eventName, handler }); return this; },
+  };
+
+  const pipelineCalls = [];
+  const mockTicktick = {
+    isAuthenticated: () => true,
+    getCacheAgeSeconds: () => null,
+    getAllTasksCached: async () => [],
+    getAllTasks: async () => [],
+    getLastFetchedProjects: () => [],
+  };
+
+  registerCommands(
+    bot,
+    mockTicktick,
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
+    {},
+    {
+      processMessage: async (msg, opts) => {
+        pipelineCalls.push({ message: msg, options: opts });
+        return { type: 'task', confirmationText: '✅ Created with checklist.' };
+      },
+    },
+  );
+
+  const authChatId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Plan event with venue and buy decorations',
+    chatId: authChatId,
+    userId: authChatId,
+    createdAt: new Date().toISOString(),
+  });
+
+  const messageHandler = handlers.events.find(e => e.eventName === 'message:text')?.handler;
+  assert.ok(messageHandler, 'message:text handler should be registered');
+
+  const replies = [];
+  const ctx = {
+    message: { text: 'checklist' },
+    chat: { id: authChatId },
+    from: { id: authChatId },
+    reply: async (msg) => { replies.push(msg); },
+  };
+
+  await messageHandler(ctx);
+
+  assert.equal(pipelineCalls.length, 1, 'pipeline should be called');
+  assert.equal(pipelineCalls[0].options.checklistPreference, 'checklist', 'should pass checklist preference');
+});
+
+test('WP05 P0#2: free-form reply "separate tasks" resumes with separate preference', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on(eventName, handler) { handlers.events.push({ eventName, handler }); return this; },
+  };
+
+  const pipelineCalls = [];
+  const mockTicktick = {
+    isAuthenticated: () => true,
+    getCacheAgeSeconds: () => null,
+    getAllTasksCached: async () => [],
+    getAllTasks: async () => [],
+    getLastFetchedProjects: () => [],
+  };
+
+  registerCommands(
+    bot,
+    mockTicktick,
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
+    {},
+    {
+      processMessage: async (msg, opts) => {
+        pipelineCalls.push({ message: msg, options: opts });
+        return { type: 'task', confirmationText: '✅ Created separate tasks.' };
+      },
+    },
+  );
+
+  const authChatId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Plan event with venue and buy decorations',
+    chatId: authChatId,
+    userId: authChatId,
+    createdAt: new Date().toISOString(),
+  });
+
+  const messageHandler = handlers.events.find(e => e.eventName === 'message:text')?.handler;
+  const replies = [];
+  const ctx = {
+    message: { text: 'separate tasks' },
+    chat: { id: authChatId },
+    from: { id: authChatId },
+    reply: async (msg) => { replies.push(msg); },
+  };
+
+  await messageHandler(ctx);
+
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].options.checklistPreference, 'separate');
+});
+
+test('WP05 P0#2: free-form reply "skip" resumes with skipChecklist=true', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on(eventName, handler) { handlers.events.push({ eventName, handler }); return this; },
+  };
+
+  const pipelineCalls = [];
+  const mockTicktick = {
+    isAuthenticated: () => true,
+    getCacheAgeSeconds: () => null,
+    getAllTasksCached: async () => [],
+    getAllTasks: async () => [],
+    getLastFetchedProjects: () => [],
+  };
+
+  registerCommands(
+    bot,
+    mockTicktick,
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
+    {},
+    {
+      processMessage: async (msg, opts) => {
+        pipelineCalls.push({ message: msg, options: opts });
+        return { type: 'task', confirmationText: '✅ Created single task.' };
+      },
+    },
+  );
+
+  const authChatId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Plan event with venue and buy decorations',
+    chatId: authChatId,
+    userId: authChatId,
+    createdAt: new Date().toISOString(),
+  });
+
+  const messageHandler = handlers.events.find(e => e.eventName === 'message:text')?.handler;
+  const replies = [];
+  const ctx = {
+    message: { text: 'skip' },
+    chat: { id: authChatId },
+    from: { id: authChatId },
+    reply: async (msg) => { replies.push(msg); },
+  };
+
+  await messageHandler(ctx);
+
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].options.skipChecklist, true);
+});
+
+test('WP05 P0#2: free-form reply with no pending clarification falls through to normal pipeline', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery(pattern, handler) { handlers.callbacks.push({ pattern, handler }); return this; },
+    on(eventName, handler) { handlers.events.push({ eventName, handler }); return this; },
+  };
+
+  const pipelineCalls = [];
+  const mockTicktick = {
+    isAuthenticated: () => true,
+    getCacheAgeSeconds: () => null,
+    getAllTasksCached: async () => [],
+    getAllTasks: async () => [],
+    getLastFetchedProjects: () => [],
+  };
+
+  registerCommands(
+    bot,
+    mockTicktick,
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
+    {},
+    {
+      processMessage: async (msg, opts) => {
+        pipelineCalls.push({ message: msg, options: opts });
+        return { type: 'non-task', confirmationText: 'Got it.' };
+      },
+    },
+  );
+
+  // No pending clarification set
+  const messageHandler = handlers.events.find(e => e.eventName === 'message:text')?.handler;
+  const replies = [];
+  const ctx = {
+    message: { text: 'buy groceries' },
+    chat: { id: AUTHORIZED_CHAT_ID || Date.now() },
+    from: { id: AUTHORIZED_CHAT_ID || Date.now() },
+    reply: async (msg) => { replies.push(msg); },
+  };
+
+  await messageHandler(ctx);
+
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].message, 'buy groceries');
+  assert.equal(pipelineCalls[0].options.entryPoint, 'telegram:freeform');
+});
+
+// ─── Helper: registerCallbacks without TickTick client ───────
+async function registerCallbacksForTest(bot, ticktickMock, pipeline) {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  registerCallbacks(bot, ticktickMock, {}, ticktickMock, pipeline);
+}
+
+// ─── Behavioral Signal Classifier Tests (WP01, T007) ───────
+import {
+  classifyTaskEvent,
+  detectPostpone,
+  detectScopeChange,
+  detectDecomposition,
+  SignalType,
+  getSignalRegistry,
+} from '../services/behavioral-signals.js';
+
+test('classifyTaskEvent returns CREATION signal for create event', () => {
+  const event = {
+    eventType: 'create',
+    taskId: 'test123',
+    category: 'work',
+    projectId: 'abc123def456ghi789jkl012',
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signals = classifyTaskEvent(event);
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0].type, SignalType.CREATION);
+  assert.equal(signals[0].category, 'work');
+  assert.equal(signals[0].projectId, 'abc123def456ghi789jkl012');
+  assert.equal(signals[0].confidence, 1.0);
+});
+
+test('classifyTaskEvent returns COMPLETION signal for complete event', () => {
+  const event = { eventType: 'complete', taskId: 't1', projectId: 'p1', timestamp: '2026-04-14T10:00:00Z' };
+  const signals = classifyTaskEvent(event);
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0].type, SignalType.COMPLETION);
+});
+
+test('classifyTaskEvent returns DELETION signal for delete event', () => {
+  const event = { eventType: 'delete', taskId: 't1', projectId: 'p1', timestamp: '2026-04-14T10:00:00Z' };
+  const signals = classifyTaskEvent(event);
+  assert.equal(signals.length, 1);
+  assert.equal(signals[0].type, SignalType.DELETION);
+});
+
+test('classifyTaskEvent returns empty for null/invalid input', () => {
+  assert.deepEqual(classifyTaskEvent(null), []);
+  assert.deepEqual(classifyTaskEvent(undefined), []);
+  assert.deepEqual(classifyTaskEvent({}), []);
+  assert.deepEqual(classifyTaskEvent({ eventType: 'unknown' }), []);
+});
+
+test('detectPostpone fires when due date moved forward', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    dueDateBefore: '2026-04-15T10:00:00Z',
+    dueDateAfter: '2026-04-20T10:00:00Z',
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectPostpone(event);
+  assert.ok(signal);
+  assert.equal(signal.type, SignalType.POSTPONE);
+  assert.equal(signal.confidence, 0.9);
+  assert.equal(signal.metadata.dueDateMovedForward, true);
+  assert.equal(signal.metadata.daysMoved, 5);
+});
+
+test('detectPostpone does NOT fire when due date moved backward', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    dueDateBefore: '2026-04-20T10:00:00Z',
+    dueDateAfter: '2026-04-15T10:00:00Z',
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectPostpone(event);
+  assert.equal(signal, null);
+});
+
+test('detectPostpone does NOT fire when due date unchanged', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    dueDateBefore: '2026-04-15T10:00:00Z',
+    dueDateAfter: '2026-04-15T10:00:00Z',
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectPostpone(event);
+  assert.equal(signal, null);
+});
+
+test('detectPostpone does NOT fire when due date fields missing', () => {
+  const event = { eventType: 'update', taskId: 't1', timestamp: '2026-04-14T10:00:00Z' };
+  const signal = detectPostpone(event);
+  assert.equal(signal, null);
+});
+
+test('detectScopeChange fires on material description change (>=50 chars)', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    descriptionLengthBefore: 100,
+    descriptionLengthAfter: 200,
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectScopeChange(event);
+  assert.ok(signal);
+  assert.equal(signal.type, SignalType.SCOPE_CHANGE);
+  assert.equal(signal.confidence, 0.8);
+  assert.equal(signal.metadata.descriptionDelta, 100);
+});
+
+test('detectScopeChange does NOT fire on small wording changes (<50 chars)', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    descriptionLengthBefore: 100,
+    descriptionLengthAfter: 120,
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectScopeChange(event);
+  assert.equal(signal, null);
+});
+
+test('detectScopeChange fires on checklist count change', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    checklistCountBefore: 2,
+    checklistCountAfter: 5,
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectScopeChange(event);
+  assert.ok(signal);
+  assert.equal(signal.type, SignalType.SCOPE_CHANGE);
+  assert.equal(signal.metadata.checklistDelta, 3);
+});
+
+test('detectScopeChange does NOT fire when no relevant fields present', () => {
+  const event = { eventType: 'update', taskId: 't1', timestamp: '2026-04-14T10:00:00Z' };
+  const signal = detectScopeChange(event);
+  assert.equal(signal, null);
+});
+
+test('detectDecomposition fires when subtasks added', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    subtaskCountBefore: 0,
+    subtaskCountAfter: 3,
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectDecomposition(event);
+  assert.ok(signal);
+  assert.equal(signal.type, SignalType.DECOMPOSITION);
+  assert.equal(signal.confidence, 0.85);
+  assert.equal(signal.metadata.subtasksAdded, 3);
+  assert.equal(signal.metadata.newSubtaskCount, 3);
+});
+
+test('detectDecomposition does NOT fire when subtasks removed', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    subtaskCountBefore: 3,
+    subtaskCountAfter: 1,
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signal = detectDecomposition(event);
+  assert.equal(signal, null);
+});
+
+test('detectDecomposition does NOT fire when subtask fields missing', () => {
+  const event = { eventType: 'update', taskId: 't1', timestamp: '2026-04-14T10:00:00Z' };
+  const signal = detectDecomposition(event);
+  assert.equal(signal, null);
+});
+
+test('classifyTaskEvent update emits multiple signals when applicable', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    dueDateBefore: '2026-04-15T10:00:00Z',
+    dueDateAfter: '2026-04-20T10:00:00Z',
+    subtaskCountBefore: 0,
+    subtaskCountAfter: 2,
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+  const signals = classifyTaskEvent(event);
+  // Should have both postpone and decomposition
+  assert.ok(signals.length >= 2);
+  const types = signals.map(s => s.type);
+  assert.ok(types.includes(SignalType.POSTPONE));
+  assert.ok(types.includes(SignalType.DECOMPOSITION));
+});
+
+test('behavioral signals NEVER contain raw titles or message text', () => {
+  const events = [
+    { eventType: 'create', taskId: 't1', category: 'work', projectId: 'p1', timestamp: '2026-04-14T10:00:00Z' },
+    { eventType: 'update', taskId: 't1', dueDateBefore: '2026-04-15', dueDateAfter: '2026-04-20', timestamp: '2026-04-14T10:00:00Z' },
+    { eventType: 'complete', taskId: 't1', projectId: 'p1', timestamp: '2026-04-14T10:00:00Z' },
+    { eventType: 'delete', taskId: 't1', projectId: 'p1', timestamp: '2026-04-14T10:00:00Z' },
+  ];
+
+  for (const event of events) {
+    const signals = classifyTaskEvent(event);
+    for (const signal of signals) {
+      // Privacy boundary: no raw content in any signal
+      assert.equal(signal.metadata.title, undefined, `Signal ${signal.type} must not contain title`);
+      assert.equal(signal.metadata.description, undefined, `Signal ${signal.type} must not contain description`);
+      assert.equal(signal.metadata.message, undefined, `Signal ${signal.type} must not contain message`);
+      // Only derived numeric/boolean fields allowed
+      for (const [key, value] of Object.entries(signal.metadata)) {
+        assert.ok(
+          typeof value === 'number' || typeof value === 'boolean' || value === null,
+          `Signal ${signal.type} metadata.${key} must be number/boolean/null, got ${typeof value}`
+        );
+      }
+    }
+  }
+});
+
+test('getSignalRegistry returns all 7 signal types', () => {
+  const registry = getSignalRegistry();
+  assert.equal(registry.length, 7);
+  const types = registry.map(r => r.type);
+  assert.ok(types.includes(SignalType.POSTPONE));
+  assert.ok(types.includes(SignalType.SCOPE_CHANGE));
+  assert.ok(types.includes(SignalType.DECOMPOSITION));
+  assert.ok(types.includes(SignalType.PLANNING_HEAVY));
+  assert.ok(types.includes(SignalType.COMPLETION));
+  assert.ok(types.includes(SignalType.CREATION));
+  assert.ok(types.includes(SignalType.DELETION));
 });

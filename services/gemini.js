@@ -3,7 +3,7 @@ import { GoogleGenerativeAI } from '@google/generative-ai';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import path from 'path';
-import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from '../bot/utils.js';
+import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from './shared-utils.js';
 import { briefingSummarySchema, reorgSchema, weeklySummarySchema } from './schemas.js';
 import * as store from './store.js';
 import { composeBriefingSummary, composeWeeklySummary } from './summary-surfaces/index.js';
@@ -588,6 +588,10 @@ export class GeminiAnalyzer {
         const raw = result.response.text().trim();
         const parsed = this._safeParseJson(raw);
         if (parsed) return this._safeNormalizeReorgProposal(parsed, tasks, projects);
+        // Fallback: deterministic reorg proposal when model output is malformed.
+        // This path is retained because the /reorg command depends on it for
+        // graceful degradation — the user still gets a useful proposal even if
+        // Gemini returns non-JSON.
         return this._safeNormalizeReorgProposal(this._buildFallbackReorgProposal(tasks, projects, recommendationState), tasks, projects);
     }
 
@@ -630,6 +634,18 @@ export class GeminiAnalyzer {
         return null;
     }
 
+    // RETAINED SCOPE: _buildFallbackReorgProposal generates a deterministic
+    // reorg proposal when Gemini's model output is malformed or unparsable.
+    // It is called by generateReorgProposal() as a fallback path and by
+    // _safeNormalizeReorgProposal as a secondary fallback.
+    //
+    // This helper is NOT a primary task-writing path. It exists solely to
+    // ensure the /reorg command never fails silently — even if Gemini returns
+    // garbage, the user gets a sensible default reorg (inbox triage + priority
+    // inference).
+    //
+    // Do NOT call this from new code paths unless you need graceful degradation
+    // for the reorg flow.
     _buildFallbackReorgProposal(tasks = [], projects = [], options = {}) {
         const fallbackTasks = this._compactReorgTasks(tasks, options, 40);
         const fallbackGoalThemeProfile = createGoalThemeProfile(USER_CONTEXT, { source: USER_CONTEXT_SOURCE });
@@ -667,6 +683,10 @@ export class GeminiAnalyzer {
         };
     }
 
+    // RETAINED SCOPE: _safeNormalizeReorgProposal wraps _normalizeReorgProposal
+    // with a try/catch. If normalization fails, it falls back to building a
+    // deterministic proposal from scratch. This ensures the /reorg command
+    // always returns usable output.
     _safeNormalizeReorgProposal(parsed, tasks, projects) {
         try {
             return this._normalizeReorgProposal(parsed, tasks, projects);
@@ -680,6 +700,12 @@ export class GeminiAnalyzer {
         return orderedTasks.slice(0, limit);
     }
 
+    // RETAINED SCOPE: _normalizeReorgProposal sanitizes and deduplicates
+    // raw reorg proposals from Gemini or the fallback builder. It is called
+    // by _safeNormalizeReorgProposal and generateReorgProposal.
+    //
+    // This is NOT a primary task-writing path. It exists to ensure reorg
+    // proposals are well-structured before being sent to the user via /reorg.
     _normalizeReorgProposal(proposal = {}, tasks = [], projects = []) {
         const cleaned = {
             summary: typeof proposal.summary === 'string' && proposal.summary.trim()

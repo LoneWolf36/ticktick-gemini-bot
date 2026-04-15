@@ -1,0 +1,23 @@
+{
+  "wp_id": "WP01",
+  "mission_slug": "002-natural-language-task-mutations",
+  "worktree_path": ".worktrees/002-natural-language-task-mutations-lane-a",
+  "branch_name": "kitty/mission-002-natural-language-task-mutations-lane-a",
+  "base_branch": "kitty/mission-002-natural-language-task-mutations",
+  "base_commit": "f92efd44b6ca3546321d10f8e2b10cb099372ebb",
+  "dependencies": [],
+  "created_at": "2026-04-11T18:49:30.248474+00:00",
+  "created_by": "implement-command-lane",
+  "vcs_backend": "git",
+  "lane_id": "lane-a",
+  "lane_wp_ids": [
+    "WP01",
+    "WP02",
+    "WP03",
+    "WP04",
+    "WP05",
+    "WP06",
+    "WP07"
+  ],
+  "current_wp": "WP01"
+}

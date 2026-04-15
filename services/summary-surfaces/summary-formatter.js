@@ -3,7 +3,7 @@ import {
     formatBriefingHeader,
     parseTelegramMarkdownToHTML,
     truncateMessage,
-} from '../../bot/utils.js';
+} from '../shared-utils.js';
 
 const EMPTY_LABEL = 'None';
 export const SUMMARY_FORMATTER_VERSION = 'summary-formatter.v1';

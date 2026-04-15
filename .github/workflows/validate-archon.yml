@@ -1,0 +1,245 @@
+name: Validate Archon Workflow
+
+on:
+  push:
+    paths:
+      - '.archon/workflows/*.yaml'
+      - '.archon/workflow-config*.json'
+      - '.github/workflows/validate-archon.yml'
+  pull_request:
+    paths:
+      - '.archon/workflows/*.yaml'
+      - '.archon/workflow-config*.json'
+
+jobs:
+  validate:
+    name: Validate Workflow & Config
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '18'
+
+      - name: Validate Workflow YAML Syntax
+        run: |
+          echo "=== Validating YAML Syntax ==="
+          FAILED=0
+          for f in .archon/workflows/*.yaml; do
+            [ -f "$f" ] || continue
+            python3 -c "
+import yaml, sys
+try:
+    with open('$f') as fh:
+        data = yaml.safe_load(fh)
+    if 'nodes' not in data:
+        print(f'ERROR: $f — missing top-level \"nodes\" key')
+        sys.exit(1)
+    for node in data['nodes']:
+        if 'id' not in node:
+            print(f'ERROR: $f — node missing \"id\" field')
+            sys.exit(1)
+        if 'bash' not in node:
+            print(f'ERROR: $f — node \"{node[\"id\"]}\" missing \"bash\" field')
+            sys.exit(1)
+    print(f'OK: $f ({len(data[\"nodes\"])} nodes)')
+except yaml.YAMLError as e:
+    print(f'ERROR: $f — {e}')
+    sys.exit(1)
+" || FAILED=1
+          done
+          if [ "$FAILED" -eq 1 ]; then
+            echo "::error::One or more workflow files failed YAML validation"
+            exit 1
+          fi
+        shell: bash
+
+      - name: Validate Workflow Config JSON
+        run: |
+          echo "=== Validating Workflow Config ==="
+          if [ ! -f .archon/workflow-config.json ]; then
+            echo "SKIP: .archon/workflow-config.json not found (optional file)"
+            exit 0
+          fi
+
+          # Basic JSON syntax check
+          python3 -c "
+import json, sys
+with open('.archon/workflow-config.json') as f:
+    config = json.load(f)
+
+errors = []
+
+# Check required top-level keys
+for key in ['project', 'review']:
+    if key not in config:
+        errors.append(f'Missing required key: {key}')
+
+# Check project section
+if 'project' in config:
+    proj = config['project']
+    for key in ['root', 'specDirectory', 'baseBranch']:
+        if key not in proj:
+            errors.append(f'Missing project.{key}')
+
+# Check review section
+if 'review' in config:
+    rev = config['review']
+    if 'agents' not in rev:
+        errors.append('Missing review.agents')
+    else:
+        for i, agent in enumerate(rev['agents']):
+            for key in ['id', 'skill', 'weight']:
+                if key not in agent:
+                    errors.append(f'Missing review.agents[{i}].{key}')
+    if 'quorum' in rev:
+        q = rev['quorum']
+        if 'minimumPassing' not in q:
+            errors.append('Missing review.quorum.minimumPassing')
+
+if errors:
+    for e in errors:
+        print(f'ERROR: {e}')
+    sys.exit(1)
+
+print(f'OK: workflow-config.json valid')
+print(f'  - {len(config.get(\"missions\", []))} missions configured')
+print(f'  - {len(config.get(\"review\", {}).get(\"agents\", []))} review agents configured')
+"
+        shell: bash
+
+      - name: Detect Dependency Cycles
+        run: |
+          echo "=== Detecting Dependency Cycles ==="
+          python3 << 'PYTHON'
+import yaml, sys
+from collections import defaultdict, deque
+
+def detect_cycles(workflow_file):
+    with open(workflow_file) as f:
+        data = yaml.safe_load(f)
+
+    nodes = data.get('nodes', [])
+    graph = defaultdict(list)
+    in_degree = defaultdict(int)
+    node_ids = set()
+
+    for node in nodes:
+        node_id = node['id']
+        node_ids.add(node_id)
+        deps = node.get('depends_on', [])
+        if deps is None:
+            deps = []
+        for dep in deps:
+            graph[dep].append(node_id)
+            in_degree[node_id] += 1
+        if node_id not in in_degree:
+            in_degree[node_id] = 0
+
+    # Kahn's algorithm for topological sort
+    queue = deque([n for n in node_ids if in_degree[n] == 0])
+    sorted_nodes = []
+
+    while queue:
+        node = queue.popleft()
+        sorted_nodes.append(node)
+        for neighbor in graph[node]:
+            in_degree[neighbor] -= 1
+            if in_degree[neighbor] == 0:
+                queue.append(neighbor)
+
+    if len(sorted_nodes) != len(node_ids):
+        # Cycle detected — find which nodes are involved
+        remaining = node_ids - set(sorted_nodes)
+        print(f"ERROR: Dependency cycle detected in {workflow_file}")
+        print(f"  Nodes involved in cycle: {', '.join(sorted(remaining))}")
+        return False
+    else:
+        print(f"OK: {workflow_file} — no cycles ({len(sorted_nodes)} nodes, topological order valid)")
+        return True
+
+# Check all workflow files
+import glob, os
+failed = False
+for f in glob.glob('.archon/workflows/*.yaml'):
+    if not os.path.isfile(f):
+        continue
+    try:
+        if not detect_cycles(f):
+            failed = True
+    except Exception as e:
+        print(f"ERROR: Failed to analyze {f}: {e}")
+        failed = True
+
+if failed:
+    sys.exit(1)
+PYTHON
+        shell: bash
+
+      - name: Validate Timeout Values
+        run: |
+          echo "=== Validating Timeout Values ==="
+          python3 << 'PYTHON'
+import yaml, sys, glob, os
+
+def validate_timeouts(workflow_file):
+    with open(workflow_file) as f:
+        data = yaml.safe_load(f)
+
+    issues = []
+    for node in data.get('nodes', []):
+        timeout = node.get('timeout')
+        if timeout is None:
+            issues.append(f"Node '{node['id']}' has no timeout — will run forever if stuck")
+        elif not isinstance(timeout, (int, float)):
+            issues.append(f"Node '{node['id']}' timeout is not a number: {timeout}")
+        elif timeout <= 0:
+            issues.append(f"Node '{node['id']}' timeout is <= 0: {timeout}")
+        elif timeout > 86400000:
+            issues.append(f"Node '{node['id']}' timeout > 24h ({timeout}ms) — is this intentional?")
+
+    if issues:
+        print(f"WARNINGS in {workflow_file}:")
+        for issue in issues:
+            print(f"  - {issue}")
+        return False
+    else:
+        node_count = len(data.get('nodes', []))
+        print(f"OK: {workflow_file} — all {node_count} nodes have valid timeouts")
+        return True
+
+failed = False
+for f in glob.glob('.archon/workflows/*.yaml'):
+    if not os.path.isfile(f):
+        continue
+    try:
+        if not validate_timeouts(f):
+            failed = True
+    except Exception as e:
+        print(f"ERROR: Failed to validate {f}: {e}")
+        failed = True
+
+if failed:
+    print("\n::warning::Some nodes have missing or invalid timeouts. Review and fix before deploying.")
+PYTHON
+        shell: bash
+
+      - name: Summary
+        run: |
+          echo ""
+          echo "=== Validation Summary ==="
+          WORKFLOW_COUNT=$(ls .archon/workflows/*.yaml 2>/dev/null | wc -l | tr -d ' ')
+          echo "Workflow files found: $WORKFLOW_COUNT"
+
+          if [ -f .archon/workflow-config.json ]; then
+            echo "Config file: valid"
+          else
+            echo "Config file: not present (optional)"
+          fi
+
+          echo ""
+          echo "All validations passed ✓"

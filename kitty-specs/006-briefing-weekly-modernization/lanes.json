@@ -3,7 +3,7 @@
   "mission_slug": "006-briefing-weekly-modernization",
   "mission_id": "01KNT55PMYXNH3ATTB29REH4RQ",
   "mission_branch": "kitty/mission-006-briefing-weekly-modernization",
-  "target_branch": "master",
+  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
   "lanes": [
     {
       "lane_id": "lane-a",

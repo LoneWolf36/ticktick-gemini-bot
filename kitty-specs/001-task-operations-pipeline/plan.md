@@ -108,7 +108,16 @@ This plan details the implementation of the new task operations pipeline, replac
 
 **All phases completed.** See `tasks.md` and `status.events.jsonl` for completed work package details.
 
-## Original Plan (Archived)
+### Completed Work Summary
+
+All WPs in mission 001 have been implemented, tested, and recorded:
+
+- **WP01** — Foundations (TickTick adapter refactor)
+- **WP02** — AX intent extraction and normalizer layer
+- **WP03** — Pipeline integration (Telegram → AX → Normalizer → Adapter)
+- **WP04** — Verification, cleanup, and legacy path removal
+
+### Original Plan (Archived for Reference)
 
 ### Phase 1: TickTick Adapter (Foundations)
 - Refactor `services/ticktick.js` into a compliant adapter module (`TickTickAdapter`).

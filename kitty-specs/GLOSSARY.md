@@ -15,7 +15,7 @@
 **Distinction:** Unlike behavioral signals or weak inferences, behavioral patterns are **explicitly provided by the user**, not detected or inferred by the system. They represent intentional self-knowledge (e.g., "I work best in the morning", "I tend to procrastinate admin tasks").
 
 **Cross-References:**
-- Used by Spec 008 (Behavioral Mode System) for mode transitions
+- Used by Spec 008 (Work Style and Urgent Mode) for mode transitions
 - Referenced in user context initialization
 
 ---
@@ -66,7 +66,7 @@
 
 **Definition:** The default work-style state for the bot, characterized by a considerate, conversational tone. Used when tasks are not time-critical and the user benefits from contextual, supportive communication.
 
-**Owner Spec:** Spec 008 (Behavioral Mode System)
+**Owner Spec:** Spec 008 (Work Style and Urgent Mode)
 
 **Distinction:** Humane mode is the **baseline state**, not a response to urgency. It differs from urgent mode in tone (conversational vs. minimal), message length (detailed vs. terse), and interaction style (supportive vs. action-oriented).
 
@@ -94,7 +94,7 @@
 
 **Definition:** A user-defined consequential life area (e.g., career, health, family, fitness) stored in `user_context.js`. Used to provide contextually relevant framing for task suggestions and prioritization.
 
-**Owner Spec:** Spec 007 (Life Theme Integration)
+**Owner Spec:** Spec 007 (Execution Prioritization Foundations)
 
 **Distinction:** Life themes are **explicitly defined by the user**, not inferred by the system. They represent areas the user has identified as important, which differs from behavioral patterns (tendencies) and behavioral signals (event records).
 
@@ -122,7 +122,7 @@
 
 **Definition:** A structured request to modify an existing task — specifically to update its properties, mark it complete, or delete it.
 
-**Owner Spec:** Spec 002 (Task Mutation & Undo)
+**Owner Spec:** Spec 002 (Natural-Language Task Mutations)
 
 **Distinction:** Mutation intents **change existing tasks**, whereas intent actions and normalized actions are focused on task creation. Mutation intents require task identification (via title matching, ID, or context) before the mutation can be applied.
 
@@ -164,13 +164,13 @@
 
 **Definition:** A single, shared module that provides task urgency classification via the `classifyUrgency` function. Used by multiple specs to determine whether a task or situation requires urgent-mode responses.
 
-**Owner Spec:** Spec 008 (Behavioral Mode System)
+**Owner Spec:** Spec 008 (Work Style and Urgent Mode)
 
 **Distinction:** Despite being owned by Spec 008, the Shared Urgency Utility is **queried by both Spec 006 and Spec 008**. It is the single source of truth for urgency classification, preventing divergent urgency logic across specs.
 
 **Cross-References:**
 - Queried by Spec 006 (Briefing/Review) for task prioritization
-- Queried by Spec 008 (Behavioral Mode) for mode transitions
+- Queried by Spec 008 (Work Style and Urgent Mode) for mode transitions
 
 ---
 

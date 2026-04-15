@@ -3,7 +3,7 @@
   "mission_slug": "009-behavioral-signals-and-memory",
   "mission_id": "01KNT55PMZK4VQERH6AB2FE18C",
   "mission_branch": "kitty/mission-009-behavioral-signals-and-memory",
-  "target_branch": "master",
+  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
   "lanes": [
     {
       "lane_id": "lane-a",

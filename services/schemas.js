@@ -1,3 +1,15 @@
+// ─── Gemini Response Schemas ──────────────────────────────────
+//
+// RETAINED SCOPE: This module exports structured JSON schemas used
+// by Gemini's responseSchema config for the briefing, weekly, and
+// reorg summary models. These schemas enforce strict JSON output
+// from Gemini's structured generation API.
+//
+// Primary schemas: briefingSummarySchema, weeklySummarySchema, reorgSchema.
+// Supporting constants: notice codes, severities, evidence sources.
+//
+// These are NOT task-writing schemas. They govern summary/reorg output
+// from the briefing, weekly, and reorg commands only.
 import { SchemaType } from '@google/generative-ai';
 
 
@@ -75,6 +87,29 @@ export const WEEKLY_WATCHOUT_EVIDENCE_SOURCES = Object.freeze([
     'processed_history',
     'missing_data',
 ]);
+
+// ─── Intent Action Schemas ─────────────────────────────────────
+//
+// SCOPED FOR AX INTENT EXTRACTION: These schemas validate the
+// structured output from Gemini's intent extraction pipeline.
+// They govern create/update/complete/delete actions including
+// checklist subtask support.
+
+/**
+ * Maximum number of checklist items allowed in a single create action.
+ * Prevents brain-dump overload and keeps checklists execution-friendly.
+ */
+export const MAX_CHECKLIST_ITEMS = 30;
+
+/**
+ * Shape descriptor for checklist items in AX intent output.
+ * Used by validateIntentAction to check checklistItems arrays.
+ */
+export const CHECKLIST_ITEM_SHAPE = Object.freeze({
+    title: { type: 'string', required: true, description: 'Short, actionable checklist step title' },
+    status: { type: 'string', enum: ['completed', 'incomplete'], description: 'Item completion status' },
+    sortOrder: { type: 'number', description: 'Display order within checklist' },
+});
 
 const summaryNoticeSchema = {
     type: SchemaType.OBJECT,

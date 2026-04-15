@@ -122,6 +122,10 @@ export function createPipelineContextBuilder({
             ? options.availableProjects
             : (Array.isArray(options.projects) ? options.projects : null);
         const availableProjects = normalizeProjects(providedProjects ?? await adapter.listProjects());
+        const providedActiveTasks = Array.isArray(options.activeTasks)
+            ? options.activeTasks
+            : null;
+        const activeTasks = providedActiveTasks ?? await adapter.listActiveTasks();
 
         const context = {
             requestId: options.requestId || requestIdFactory(),
@@ -133,6 +137,7 @@ export function createPipelineContextBuilder({
             availableProjects,
             availableProjectNames: deriveProjectNames(availableProjects),
             existingTask: options.existingTask || null,
+            activeTasks,
         };
 
         const strict = options.strictContext ?? (process.env.NODE_ENV !== 'production');

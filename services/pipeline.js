@@ -6,6 +6,7 @@
 import { createPipelineContextBuilder } from './pipeline-context.js';
 import { createPipelineObservability } from './pipeline-observability.js';
 import { QuotaExhaustedError } from './ax-intent.js';
+import { resolveTarget, buildClarificationPrompt } from './task-resolver.js';
 
 const FAILURE_CLASSES = {
     QUOTA: 'quota',
@@ -134,6 +135,38 @@ function buildNonTaskResult(context, reason, details = null) {
         confirmationText: 'Got it — no actionable tasks detected.',
         nonTaskReason: reason,
         nonTaskDetails: details,
+        requestId: context?.requestId || null,
+        entryPoint: context?.entryPoint || null,
+        mode: context?.mode || null,
+    };
+}
+
+function buildClarificationResult(context, resolverResult) {
+    const clarificationPrompt = buildClarificationPrompt(resolverResult);
+    return {
+        type: 'clarification',
+        results: [],
+        errors: [],
+        confirmationText: clarificationPrompt,
+        clarification: {
+            candidates: resolverResult.candidates,
+            reason: resolverResult.reason,
+        },
+        requestId: context?.requestId || null,
+        entryPoint: context?.entryPoint || null,
+        mode: context?.mode || null,
+    };
+}
+
+function buildNotFoundResult(context, reason) {
+    return {
+        type: 'not-found',
+        results: [],
+        errors: [],
+        confirmationText: `Couldn't find a matching task for that request.`,
+        notFound: {
+            reason,
+        },
         requestId: context?.requestId || null,
         entryPoint: context?.entryPoint || null,
         mode: context?.mode || null,
@@ -321,6 +354,19 @@ function buildExecutionFailure(action, message, attempt) {
     };
 }
 
+/**
+ * Create a pipeline instance that orchestrates intent extraction, normalization,
+ * and TickTick adapter execution.
+ *
+ * @param {Object} options
+ * @param {Object} options.axIntent - Intent extractor with `extractIntents(message, opts)` method
+ * @param {Object} options.normalizer - Normalizer module with `normalize(action, tasks, projects, opts)` method
+ * @param {TickTickAdapter} options.adapter - TickTick adapter instance
+ * @param {Object} [options.observability] - Optional observability emitter (see createPipelineObservability)
+ * @returns {{ processMessage: Function, getTelemetry: Function }}
+ *   - `processMessage(userMessage, options?)` → `{ type: 'task'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`
+ *   - `getTelemetry()` → the observability instance for this pipeline
+ */
 export function createPipeline({ axIntent, normalizer, adapter, observability } = {}) {
     const contextBuilder = createPipelineContextBuilder({ adapter });
     const telemetry = observability || createPipelineObservability();
@@ -344,17 +390,13 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
 
             console.log(`[Pipeline:${context.requestId}] Processing message: "${context.userMessage.substring(0, 50)}..."`);
 
-            const availableProjectNames = context.availableProjects
-                .map(p => p?.name)
-                .filter(name => typeof name === 'string' && name.trim());
-
             const axStartedAt = Date.now();
             let intents;
 
             try {
                 intents = await axIntent.extractIntents(context.userMessage, {
                     currentDate: context.currentDate,
-                    availableProjects: availableProjectNames,
+                    availableProjects: context.availableProjectNames,
                     requestId: context.requestId,
                 });
             } catch (error) {
@@ -412,6 +454,8 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 durationMs: Date.now() - axStartedAt,
                 metadata: {
                     intentCount: intents.length,
+                    checklistIntentCount: intents.filter(i => Array.isArray(i.checklistItems) && i.checklistItems.length > 0).length,
+                    totalExtractedChecklistItems: intents.reduce((sum, i) => sum + (Array.isArray(i.checklistItems) ? i.checklistItems.length : 0), 0),
                 },
             });
 
@@ -430,14 +474,221 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 return buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS);
             }
 
+            // Checklist/multi-task classification (WP04): detect ambiguous structure requests
+            const hasChecklist = intents.some(i => Array.isArray(i.checklistItems) && i.checklistItems.length > 0);
+            const hasMultipleCreates = intents.filter(i => i.type === 'create').length > 1;
+
+            if (hasChecklist && hasMultipleCreates) {
+                // Check if user already provided a preference (clarification resume path)
+                const userPreference = options.checklistPreference || null;
+                const userSkipped = options.skipChecklist === true;
+
+                if (userSkipped) {
+                    // User chose "single task" — drop checklist intent, keep first create
+                    console.log(`[Pipeline:${context.requestId}] User skipped checklist clarification — creating single task only.`);
+                    const firstCreate = intents.find(i => i.type === 'create');
+                    if (firstCreate) {
+                        // Remove checklist items from the intent
+                        delete firstCreate.checklistItems;
+                    }
+                    // Continue processing with modified intents
+                } else if (userPreference === 'checklist') {
+                    // User chose checklist mode — merge multiple creates into one with checklist
+                    console.log(`[Pipeline:${context.requestId}] User chose checklist mode — merging creates into single task.`);
+                    const checklistItems = [];
+                    for (const intent of intents) {
+                        if (Array.isArray(intent.checklistItems) && intent.checklistItems.length > 0) {
+                            checklistItems.push(...intent.checklistItems);
+                        } else if (intent.type === 'create' && intent.title) {
+                            // Convert standalone create into checklist item
+                            checklistItems.push({ title: intent.title, sortOrder: checklistItems.length });
+                        }
+                    }
+                    // Replace intents with single checklist create
+                    intents = [{
+                        type: 'create',
+                        title: checklistItems[0]?.title || 'Checklist',
+                        checklistItems,
+                    }];
+                } else if (userPreference === 'separate') {
+                    // User chose separate tasks — strip checklist, keep all creates
+                    console.log(`[Pipeline:${context.requestId}] User chose separate tasks — keeping all creates.`);
+                    for (const intent of intents) {
+                        delete intent.checklistItems;
+                    }
+                    // Continue processing with modified intents
+                } else {
+                    // No preference provided — ask for clarification
+                    console.warn(`[Pipeline:${context.requestId}] Ambiguous checklist/multi-task request — asking for clarification.`);
+                    const clarificationResult = {
+                        type: 'clarification',
+                        results: [],
+                        errors: [],
+                        confirmationText: 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?',
+                        clarification: {
+                            candidates: intents,
+                            reason: 'ambiguous_checklist_vs_multi_task',
+                        },
+                        requestId: context.requestId || null,
+                        entryPoint: context.entryPoint || null,
+                        mode: context.mode || null,
+                    };
+
+                    await telemetry.emit(context, {
+                        eventType: 'pipeline.request.completed',
+                        step: 'result',
+                        status: 'success',
+                        durationMs: Date.now() - requestStartedAt,
+                        metadata: {
+                            type: 'clarification',
+                            reason: 'ambiguous_checklist_vs_multi_task',
+                        },
+                    });
+                    return clarificationResult;
+                }
+            }
+
+            // Mutation routing (WP04): detect mutation intents and resolve targets
+            const mutationTypes = ['update', 'complete', 'delete'];
+            const hasMutation = intents.some(i => mutationTypes.includes(i.type));
+            const hasCreate = intents.some(i => i.type === 'create');
+
+            if (hasMutation && hasCreate) {
+                // Mixed create+mutation: out of scope for v1
+                console.warn(`[Pipeline:${context.requestId}] Mixed create+mutation request rejected.`);
+                const failureResult = buildFailureResult(context, {
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    stage: 'mutation-routing',
+                    summary: 'Mixed create+mutation request is out of scope.',
+                    details: {
+                        intentTypes: intents.map(i => i.type),
+                    },
+                    retryable: true,
+                });
+                await telemetry.emit(context, {
+                    eventType: 'pipeline.request.failed',
+                    step: 'result',
+                    status: 'failure',
+                    durationMs: Date.now() - requestStartedAt,
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    rolledBack: false,
+                    metadata: {
+                        reason: 'mixed_create_and_mutation',
+                    },
+                });
+                return failureResult;
+            }
+
+            if (hasMutation && intents.length > 1) {
+                // Multi-mutation: out of scope for v1 (single-target only)
+                console.warn(`[Pipeline:${context.requestId}] Multi-mutation request rejected.`);
+                const failureResult = buildFailureResult(context, {
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    stage: 'mutation-routing',
+                    summary: 'Multiple mutation targets are not supported yet.',
+                    details: {
+                        intentTypes: intents.map(i => i.type),
+                    },
+                    retryable: true,
+                });
+                await telemetry.emit(context, {
+                    eventType: 'pipeline.request.failed',
+                    step: 'result',
+                    status: 'failure',
+                    durationMs: Date.now() - requestStartedAt,
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    rolledBack: false,
+                    metadata: {
+                        reason: 'multiple_mutations',
+                    },
+                });
+                return failureResult;
+            }
+
+            let resolvedTask = null;
+            let resolvedTaskContent = null;
+
+            if (hasMutation) {
+                const mutationIntent = intents.find(i => mutationTypes.includes(i.type));
+                const targetQuery = mutationIntent?.targetQuery || null;
+
+                // Use active tasks from context (populated by pipeline-context builder)
+                const activeTasks = context.activeTasks || [];
+
+                // If the intent already has a resolved taskId (from test harnesses or direct calls), use it
+                if (mutationIntent?.taskId) {
+                    resolvedTask = {
+                        id: mutationIntent.taskId,
+                        projectId: mutationIntent.originalProjectId || mutationIntent.projectId || null,
+                        title: mutationIntent.title || null,
+                    };
+                    // Try to get content from active tasks
+                    resolvedTaskContent = activeTasks.find(t => t.id === resolvedTask.id)?.content ?? null;
+                } else if (targetQuery && !options.skipClarification) {
+                    const resolveStartedAt = Date.now();
+                    const resolverResult = resolveTarget({ targetQuery, activeTasks });
+
+                    await telemetry.emit(context, {
+                        eventType: 'pipeline.resolve.completed',
+                        step: 'resolve',
+                        status: resolverResult.status === 'resolved' ? 'success' : 'failure',
+                        durationMs: Date.now() - resolveStartedAt,
+                        metadata: {
+                            targetQuery,
+                            resultStatus: resolverResult.status,
+                            candidateCount: resolverResult.candidates.length,
+                        },
+                    });
+
+                    if (resolverResult.status === 'clarification') {
+                        return buildClarificationResult(context, resolverResult);
+                    }
+
+                    if (resolverResult.status === 'not_found') {
+                        return buildNotFoundResult(context, resolverResult.reason);
+                    }
+
+                    // resolved
+                    resolvedTask = {
+                        id: resolverResult.selected.taskId,
+                        projectId: resolverResult.selected.projectId,
+                        title: resolverResult.selected.title,
+                    };
+                    resolvedTaskContent = activeTasks.find(t => t.id === resolvedTask.id)?.content ?? null;
+
+                    // Enrich the mutation intent with resolved context
+                    mutationIntent.taskId = resolvedTask.id;
+                    mutationIntent.resolvedTaskId = resolvedTask.id;
+                    if (resolvedTask.projectId) {
+                        mutationIntent.originalProjectId = resolvedTask.projectId;
+                    }
+                } else if (targetQuery && options.skipClarification && context.existingTask?.id) {
+                    // Clarification resume: user selected a candidate, skip re-resolution
+                    resolvedTask = context.existingTask;
+                    resolvedTaskContent = activeTasks.find(t => t.id === resolvedTask.id)?.content ?? null;
+                    mutationIntent.taskId = resolvedTask.id;
+                    mutationIntent.resolvedTaskId = resolvedTask.id;
+                    if (resolvedTask.projectId) {
+                        mutationIntent.originalProjectId = resolvedTask.projectId;
+                    }
+                    console.log(`[Pipeline:${context.requestId}] Clarification resume: using pre-resolved task "${resolvedTask.title}"`);
+                } else {
+                    // No targetQuery and no taskId — try to use existingTask from context
+                    if (context.existingTask?.id) {
+                        resolvedTask = context.existingTask;
+                        resolvedTaskContent = context.existingTask?.content ?? null;
+                    }
+                }
+            }
+
             const defaultProjectId = context.availableProjects
                 .find(p => p?.name?.toLowerCase() === 'inbox')?.id || null;
 
             const normOptions = {
                 projects: context.availableProjects,
                 defaultProjectId,
-                existingTask: context.existingTask,
-                existingTaskContent: context.existingTask?.content || null,
+                existingTask: resolvedTask || context.existingTask,
+                existingTaskContent: resolvedTaskContent || context.existingTask?.content || null,
                 timezone: context.timezone,
                 currentDate: context.currentDate,
             };
@@ -457,6 +708,8 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     normalizedCount: normalizedActions.length,
                     validCount: validActions.length,
                     invalidCount: invalidActions.length,
+                    checklistActionCount: validActions.filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0).length,
+                    totalNormalizedChecklistItems: validActions.reduce((sum, a) => sum + (Array.isArray(a.checklistItems) ? a.checklistItems.length : 0), 0),
                 },
             });
 
@@ -553,6 +806,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 metadata: {
                     type: 'task',
                     actionCount: validActions.length,
+                    checklistActionCount: validActions.filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0).length,
                 },
             });
 
@@ -566,6 +820,9 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 entryPoint: context.entryPoint,
                 mode: context.mode,
                 warnings: invalidActions.map(a => a.validationErrors).flat(),
+                checklistMetadata: validActions
+                    .filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0)
+                    .map(a => ({ actionIndex: a._index ?? null, checklistItemCount: a.checklistItems.length })),
             };
         } catch (error) {
             let failureClass = FAILURE_CLASSES.UNEXPECTED;
@@ -646,6 +903,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         rolledBack: false,
                         metadata: {
                             actionIndex: index,
+                            checklistItemCount: Array.isArray(action.checklistItems) ? action.checklistItems.length : null,
                         },
                     });
                     break;

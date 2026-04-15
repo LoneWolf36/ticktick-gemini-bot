@@ -4,7 +4,7 @@
   "feature_slug": "004-post-migration-cleanup",
   "friendly_name": "Post-Migration Cleanup",
   "mission": "software-dev",
-  "target_branch": "master",
+  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
   "source_description": "Reconcile stale docs, plan artifacts, and retained legacy paths after the task-operations pipeline migration.",
   "vcs": "git",
   "created_at": "2026-03-12T14:21:00.958431+00:00",

@@ -3,7 +3,7 @@
   "mission_slug": "007-execution-prioritization-foundations",
   "mission_id": "01KNT55PMYXNH3ATTB29REH4RR",
   "mission_branch": "kitty/mission-007-execution-prioritization-foundations",
-  "target_branch": "master",
+  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
   "lanes": [
     {
       "lane_id": "lane-a",

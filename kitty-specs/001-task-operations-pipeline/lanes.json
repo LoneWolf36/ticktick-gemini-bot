@@ -3,7 +3,7 @@
   "mission_slug": "001-task-operations-pipeline",
   "mission_id": "01KNT55PMWQ9GQH7JH6E61VDZD",
   "mission_branch": "kitty/mission-001-task-operations-pipeline",
-  "target_branch": "master",
+  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
   "lanes": [
     {
       "lane_id": "lane-a",

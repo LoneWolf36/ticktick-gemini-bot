@@ -22,7 +22,7 @@
   "mission": "software-dev",
   "slug": "007-execution-prioritization-foundations",
   "source_description": "Define the governing product rules for leverage-first prioritization, goal alignment, recovery-aware ranking, and non-goals so downstream specs stop inventing local prioritization logic.",
-  "target_branch": "master",
+  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
   "vcs": "git",
   "mission_id": "01KNT55PMYXNH3ATTB29REH4RR"
 }

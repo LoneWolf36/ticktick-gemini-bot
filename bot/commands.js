@@ -6,11 +6,61 @@ import {
     buildTaskCard,
     sleep, userLocaleString, isAuthorized, guardAccess, buildUndoEntry,
     filterProcessedThisWeek, buildQuotaExhaustedMessage,
-    parseDateStringToTickTickISO, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent, pendingToAnalysis
+    parseDateStringToTickTickISO, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent, pendingToAnalysis,
+    buildMutationCandidateKeyboard,
+    buildMutationClarificationMessage,
+    formatPipelineFailure,
 } from './utils.js';
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
 import { detectUrgentModeIntent } from '../services/ax-intent.js';
+
+// ─── Simple per-user rate limiter ───────────────────────────
+// Heavy commands (/scan, /briefing, /weekly, /review, /reorg) are rate-limited
+// to prevent accidental spam that burns TickTick/Gemini API quotas.
+// Light commands (/start, /menu, /status, /urgent, /pending, /undo, /reset) are not limited.
+
+const RATE_LIMIT_WINDOW_MS = 30_000;  // 30-second window
+const RATE_LIMIT_MAX = 1;              // 1 heavy command per window
+const HEAVY_COMMANDS = new Set(['scan', 'briefing', 'weekly', 'review', 'reorg']);
+
+const rateLimitWindows = new Map(); // `${userId}:${command}` -> { count, resetAt }
+
+function isRateLimited(userId, command) {
+    if (!HEAVY_COMMANDS.has(command)) return false;
+    const key = `${userId}:${command}`;
+    const now = Date.now();
+    const entry = rateLimitWindows.get(key);
+    if (!entry || now >= entry.resetAt) {
+        rateLimitWindows.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
+        return false;
+    }
+    entry.count += 1;
+    if (entry.count > RATE_LIMIT_MAX) return true;
+    return false;
+}
+
+function rateLimitRemaining(userId, command) {
+    const key = `${userId}:${command}`;
+    const entry = rateLimitWindows.get(key);
+    if (!entry || Date.now() >= entry.resetAt) return RATE_LIMIT_MAX;
+    return Math.max(0, RATE_LIMIT_MAX - entry.count);
+}
+
+/** Reset rate limit state — useful for test isolation */
+export function resetRateLimits() {
+    rateLimitWindows.clear();
+}
+
+/** Middleware-style guard — returns true if request should be rejected */
+export function guardRateLimit(ctx, command) {
+    const userId = ctx.from?.id ?? ctx.chat?.id;
+    if (!userId || !isRateLimited(userId, command)) return false;
+    const remaining = rateLimitRemaining(userId, command);
+    const waitSec = Math.ceil((rateLimitWindows.get(`${userId}:${command}`)?.resetAt - Date.now()) / 1000);
+    ctx.reply(`⏳ Slow down — ${command} can be run once every ${RATE_LIMIT_WINDOW_MS / 1000}s. Try again in ~${waitSec}s.`);
+    return true;
+}
 
 export function registerCommands(bot, ticktick, gemini, adapter, pipeline, config = {}) {
     const {
@@ -61,15 +111,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         return '⚠️ AI is temporarily unavailable (keys expired/invalid/quota-limited). Update GEMINI_API_KEYS or retry shortly.';
     };
 
-    const formatPipelineFailure = (result, { compact = false } = {}) => {
-        if (!result) return '⚠️ Pipeline failed.';
-        const diagnostics = result.isDevMode && Array.isArray(result.diagnostics) && result.diagnostics.length > 0
-            ? `\n\n${result.diagnostics.join('\n')}`
-            : '';
-        const message = `${result.confirmationText || '⚠️ Pipeline failed.'}${diagnostics}`;
-        return compact ? message.replace(/\n+/g, ' | ') : message;
-    };
-
     const buildSummaryContext = ({ kind, userId, urgentMode }) => ({
         kind,
         entryPoint: 'manual_command',
@@ -111,6 +152,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
     bot.command('reorg', async (ctx) => {
         if (!await guardAccess(ctx)) return;
+        if (guardRateLimit(ctx, 'reorg')) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
             await ctx.reply(buildQuotaExhaustedMessage(gemini));
@@ -312,6 +354,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     // ─── /scan — manual poll, BATCHED (5 at a time) ───────────
     bot.command('scan', async (ctx) => {
         if (!await guardAccess(ctx)) return;
+        if (guardRateLimit(ctx, 'scan')) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected. Run the OAuth flow first.'); return; }
 
         const pendingCount = store.getPendingCount();
@@ -476,6 +519,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     // ─── /briefing ────────────────────────────────────────────
     bot.command('briefing', async (ctx) => {
         if (!await guardAccess(ctx)) return;
+        if (guardRateLimit(ctx, 'briefing')) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
             await ctx.reply(buildQuotaExhaustedMessage(gemini));
@@ -510,6 +554,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     // ─── /weekly ──────────────────────────────────────────────
     bot.command('weekly', async (ctx) => {
         if (!await guardAccess(ctx)) return;
+        if (guardRateLimit(ctx, 'weekly')) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
             await ctx.reply(buildQuotaExhaustedMessage(gemini));
@@ -558,6 +603,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     // ─── /review ──────────────────────────────────────────────
     bot.command('review', async (ctx) => {
         if (!await guardAccess(ctx)) return;
+        if (guardRateLimit(ctx, 'review')) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
 
         const pendingCount = store.getPendingCount();
@@ -690,6 +736,76 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         // New pipeline path. Note: we leave gemini check in for the coach fallback optionally.
         await ctx.reply('🤔 Processing...');
         try {
+            // Check for pending checklist clarification resume (WP05)
+            const pendingChecklist = store.getPendingChecklistClarification();
+            if (pendingChecklist) {
+                // User replied to a checklist clarification — resume with their answer
+                const answer = userMessage.toLowerCase().trim();
+                await store.clearPendingChecklistClarification();
+                console.log('[ChecklistClarification] Reply received, resuming with answer:', answer);
+
+                const resolvedMode = answer === 'checklist' || answer === 'checklist please' || answer === 'subtasks'
+                    ? 'checklist'
+                    : answer === 'separate' || answer === 'separate tasks' || answer === 'separate'
+                        ? 'separate'
+                        : answer === 'skip' || answer === 'cancel' || answer === 'nevermind'
+                            ? 'skip'
+                            : null; // ambiguous reply — treat as fallback
+
+                if (resolvedMode === 'skip') {
+                    console.log('[ChecklistClarification] User skipped — creating plain parent task only');
+                    const result = await pipeline.processMessage(pendingChecklist.originalMessage, {
+                        entryPoint: 'telegram:checklist-clarification-skip',
+                        mode: 'interactive',
+                        skipChecklist: true,
+                        availableProjects: ticktick.getLastFetchedProjects(),
+                    });
+                    if (result.type === 'task') {
+                        await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                    } else if (result.type === 'error') {
+                        await ctx.reply(formatPipelineFailure(result));
+                    } else {
+                        await ctx.reply(result.confirmationText || '✅ Created as a single task.');
+                    }
+                    return;
+                }
+
+                if (resolvedMode === 'checklist' || resolvedMode === 'separate') {
+                    console.log('[ChecklistClarification] Resuming pipeline with mode:', resolvedMode);
+                    const result = await pipeline.processMessage(pendingChecklist.originalMessage, {
+                        entryPoint: 'telegram:checklist-clarification-resume',
+                        mode: 'interactive',
+                        checklistPreference: resolvedMode,
+                        availableProjects: ticktick.getLastFetchedProjects(),
+                    });
+                    if (result.type === 'task') {
+                        await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                    } else if (result.type === 'error') {
+                        await ctx.reply(formatPipelineFailure(result));
+                    } else {
+                        await ctx.reply(result.confirmationText || '✅ Done.');
+                    }
+                    return;
+                }
+
+                // Ambiguous reply — conservative fallback (T054)
+                console.log('[ChecklistClarification] Ambiguous reply — falling back to plain parent task');
+                const result = await pipeline.processMessage(pendingChecklist.originalMessage, {
+                    entryPoint: 'telegram:checklist-clarification-fallback',
+                    mode: 'interactive',
+                    skipChecklist: true, // Never create inferred checklist after ignored clarification
+                    availableProjects: ticktick.getLastFetchedProjects(),
+                });
+                if (result.type === 'task') {
+                    await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                } else if (result.type === 'error') {
+                    await ctx.reply(formatPipelineFailure(result));
+                } else {
+                    await ctx.reply(result.confirmationText || '✅ Created as a single task.');
+                }
+                return;
+            }
+
             const result = await pipeline.processMessage(userMessage, {
                 entryPoint: 'telegram:freeform',
                 mode: 'interactive'
@@ -705,6 +821,58 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 }
                 const tasks = await ticktick.getAllTasksCached(60000);
                 await ctx.reply(result.confirmationText || 'Got it — no actionable tasks detected.');
+            } else if (result.type === 'clarification') {
+                // Determine clarification type: checklist vs mutation
+                const reason = result.clarification?.reason || '';
+
+                if (reason === 'ambiguous_checklist_vs_multi_task') {
+                    // WP05: Checklist vs separate tasks clarification
+                    const intents = result.clarification?.candidates || [];
+                    const question = result.confirmationText || 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?';
+
+                    // Persist pending clarification with TTL (T052)
+                    await store.setPendingChecklistClarification({
+                        originalMessage: userMessage,
+                        intents: intents.map(i => ({ type: i.type, title: i.title })),
+                        chatId: ctx.chat?.id ?? null,
+                        userId: ctx.from?.id ?? null,
+                        entryPoint: 'telegram:freeform',
+                        mode: 'interactive',
+                    });
+                    console.log('[ChecklistClarification] Question sent — pending state persisted');
+
+                    // Send question with optional inline buttons (T055)
+                    const keyboard = new InlineKeyboard()
+                        .text('📋 Checklist', 'cl:checklist')
+                        .text('📝 Separate', 'cl:separate')
+                        .row()
+                        .text('⏭ Skip', 'cl:skip');
+
+                    await replyWithMarkdown(ctx, question + '\n\nReply with your choice or tap a button:', { reply_markup: keyboard });
+                } else {
+                    // Existing mutation clarification flow
+                    const candidates = result.clarification?.candidates || [];
+                    if (candidates.length === 0) {
+                        await ctx.reply('Not sure what you mean — could you rephrase?');
+                    } else {
+                        // Persist pending clarification so callbacks can resume
+                        await store.setPendingMutationClarification({
+                            originalMessage: userMessage,
+                            candidates: candidates.map(c => ({ id: c.id, title: c.title })),
+                            intentSummary: result.confirmationText,
+                            chatId: ctx.chat?.id ?? null,
+                            userId: ctx.from?.id ?? null,
+                            entryPoint: 'telegram:freeform',
+                            mode: 'interactive',
+                        });
+                        const msg = buildMutationClarificationMessage(reason, candidates, result.confirmationText);
+                        const keyboard = buildMutationCandidateKeyboard(candidates);
+                        await replyWithMarkdown(ctx, msg, { reply_markup: keyboard });
+                    }
+                }
+            } else if (result.type === 'not-found') {
+                const reason = result.notFound?.reason || '';
+                await ctx.reply(`Couldn't find a matching task. ${reason ? reason : 'Try a different name or create a new task.'}`);
             } else if (result.type === 'error') {
                 await ctx.reply(formatPipelineFailure(result));
             }
@@ -720,6 +888,20 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 }
 
 // ─── Execute Gemini-suggested actions against TickTick ────────
+//
+// RETAINED SCOPE: This function is the canonical bridge between
+// Gemini's reorg proposals (structured JSON actions) and TickTick
+// writes via the adapter. It is ALSO used by the /reorg inline
+// apply flow (bot.callbackQuery /^reorg:(apply|refine|cancel)$/).
+//
+// Primary task creation/mutation for bot-driven flows uses the
+// structured pipeline path: AX intent -> normalizer -> ticktick-adapter.
+// This helper is NOT a general-purpose task writer — it exists solely
+// to apply Gemini-generated reorg actions (update/drop/create/complete)
+// that come from the /reorg command or policy-sweep automation.
+//
+// Do NOT call this from new bot handlers unless the action source is
+// a Gemini reorg proposal or a programmatic policy sweep.
 
 export async function executeActions(actions, adapter, currentTasks, options = {}) {
     const outcomes = [];

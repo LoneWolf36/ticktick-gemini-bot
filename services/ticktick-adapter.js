@@ -1,4 +1,6 @@
 import { TickTickClient } from './ticktick.js';
+import { validateChecklistItem } from './shared-utils.js';
+import { classifyTaskEvent } from './behavioral-signals.js';
 
 const PROJECT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const VALID_PRIORITIES = [0, 1, 3, 5]; // TickTick valid priority values
@@ -36,6 +38,31 @@ export class TickTickAdapter {
             console.error(`${timestamp} ${msg}`);
         } else {
             console.log(`${timestamp} ${msg}`);
+        }
+    }
+
+    /**
+     * Observes a task mutation event and emits behavioral signals.
+     * NON-BLOCKING: failures are caught and logged, never thrown.
+     *
+     * @param {string} eventType - 'create' | 'update' | 'complete' | 'delete'
+     * @param {object} eventMetadata - Derived metadata only (no raw titles/text)
+     * @private
+     */
+    _observeSignals(eventType, eventMetadata) {
+        try {
+            const event = {
+                eventType,
+                timestamp: new Date().toISOString(),
+                ...eventMetadata,
+            };
+            const signals = classifyTaskEvent(event);
+            if (signals.length > 0) {
+                this._log('behavioralSignals', { signals: signals.length, types: signals.map(s => s.type) });
+            }
+        } catch (error) {
+            // NEVER block the mutation — log and continue
+            this._log('behavioralSignals', `FAILED (non-blocking): ${error.message}`, true);
         }
     }
 
@@ -137,6 +164,56 @@ export class TickTickAdapter {
             throw err;
         }
         return trimmed;
+    }
+
+    /**
+     * Validates and sanitizes a checklist item.
+     * Delegates to shared validateChecklistItem for consistency.
+     * @param {Object} item - Checklist item to validate
+     * @param {string} item.title - Item title (required, non-empty string)
+     * @param {number} [item.status] - Item status (default: 0 for incomplete)
+     * @param {number} [item.sortOrder] - Item sort order (default: auto-assigned)
+     * @returns {Object|null} Validated checklist item with {title, status, sortOrder} or null if invalid
+     * @private
+     */
+    _validateChecklistItem(item) {
+        return validateChecklistItem(item);
+    }
+
+    /**
+     * Validates and maps checklist items to TickTick payload format.
+     * @param {Array<Object>|null|undefined} items - Raw checklist items
+     * @returns {Array<Object>|null} Mapped items or null if empty/invalid
+     * @private
+     */
+    _mapChecklistItems(items) {
+        if (!items || !Array.isArray(items) || items.length === 0) {
+            return null;
+        }
+
+        const validItems = [];
+        let droppedCount = 0;
+        let sortOrder = 0;
+
+        for (const item of items) {
+            const validated = this._validateChecklistItem(item);
+            if (validated) {
+                validated.sortOrder = sortOrder++;
+                validItems.push(validated);
+            } else {
+                droppedCount++;
+            }
+        }
+
+        if (validItems.length === 0) {
+            return null;
+        }
+
+        if (droppedCount > 0) {
+            this._log('mapChecklistItems', `DROPPED { dropped: ${droppedCount}, kept: ${validItems.length}, reason: "malformed items" }`, true);
+        }
+
+        return validItems;
     }
 
     /**
@@ -268,9 +345,10 @@ export class TickTickAdapter {
      * @param {number} [normalizedAction.priority] - Priority level: 0=none, 1=low, 3=medium, 5=high
      * @param {string} [normalizedAction.projectId] - 24-char hex project ID (falls back to default if null)
      * @param {string} [normalizedAction.repeatFlag] - Recurrence rule (e.g., 'FREQ=DAILY', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR')
+     * @param {Array<Object>} [normalizedAction.checklistItems] - Checklist subtask items with {title, status?, sortOrder?}
      * @returns {Promise<Object>} Created task object from TickTick API
      * @throws {Error} Classified error with code 'VALIDATION_ERROR' for invalid fields, or API error codes
-     * 
+     *
      * @example
      * const task = await adapter.createTask({
      *   title: 'Review PR #123',
@@ -278,10 +356,21 @@ export class TickTickAdapter {
      *   priority: 3,
      *   dueDate: '2025-04-01T17:00:00.000Z'
      * });
+     *
+     * @example
+     * const taskWithChecklist = await adapter.createTask({
+     *   title: 'Onboard new client',
+     *   projectId: 'abc123...',
+     *   checklistItems: [
+     *     { title: 'Send welcome email' },
+     *     { title: 'Create project folder' },
+     *     { title: 'Schedule kickoff meeting' }
+     *   ]
+     * });
      */
     async createTask(normalizedAction) {
         const start = Date.now();
-        this._log('createTask', { title: normalizedAction?.title, projectId: normalizedAction?.projectId });
+        this._log('createTask', { title: normalizedAction?.title, projectId: normalizedAction?.projectId, hasChecklist: Array.isArray(normalizedAction?.checklistItems) ? normalizedAction.checklistItems.length : 0 });
         try {
             // Validate fields before sending to API
             const validatedTitle = this._validateTitle(normalizedAction.title);
@@ -297,8 +386,24 @@ export class TickTickAdapter {
             if (validatedProjectId !== null) taskData.projectId = validatedProjectId;
             if (normalizedAction.repeatFlag !== undefined && normalizedAction.repeatFlag !== null) taskData.repeatFlag = normalizedAction.repeatFlag;
 
+            // Map checklist items to TickTick items payload (T032, T033, T034)
+            const mappedItems = this._mapChecklistItems(normalizedAction.checklistItems);
+            if (mappedItems) {
+                taskData.items = mappedItems;
+                this._log('createTask', `CHECKLIST { items: ${mappedItems.length} }`);
+            }
+
             const createdTask = await this._client.createTask(taskData);
             const elapsed = Date.now() - start;
+
+            // T006: Non-blocking behavioral signal observation
+            this._observeSignals('create', {
+                category: normalizedAction.category || null,
+                projectId: validatedProjectId,
+                checklistCountAfter: mappedItems ? mappedItems.length : 0,
+                descriptionLengthAfter: normalizedAction.content ? normalizedAction.content.length : 0,
+            });
+
             this._log('createTask', `SUCCESS { id: "${createdTask.id}", ${elapsed}ms }`);
             return createdTask;
         } catch (error) {
@@ -484,6 +589,21 @@ export class TickTickAdapter {
 
             const updatedTask = await this._client.updateTask(taskId, updatePayload);
             const elapsed = Date.now() - start;
+
+            // T006: Non-blocking behavioral signal observation
+            this._observeSignals('update', {
+                category: normalizedAction.category || null,
+                projectId: targetProjectId,
+                dueDateBefore: normalizedAction._dueDateBefore || null,
+                dueDateAfter: normalizedAction.dueDate || null,
+                checklistCountBefore: normalizedAction._checklistCountBefore,
+                checklistCountAfter: normalizedAction._checklistCountAfter,
+                descriptionLengthBefore: normalizedAction._descriptionLengthBefore,
+                descriptionLengthAfter: normalizedAction.content ? normalizedAction.content.length : normalizedAction._descriptionLengthBefore,
+                subtaskCountBefore: normalizedAction._subtaskCountBefore,
+                subtaskCountAfter: normalizedAction._subtaskCountAfter,
+            });
+
             this._log('updateTask', `SUCCESS { id: "${updatedTask.id}", changedProject: ${!!updatePayload.originalProjectId}, ${elapsed}ms }`);
             return updatedTask;
         } catch (error) {
@@ -541,13 +661,51 @@ export class TickTickAdapter {
     }
 
     /**
+     * Lists all active (incomplete) tasks across all projects.
+     * Reuses the client's cached task-list behavior where practical.
+     * Returns task objects with id, title, projectId, projectName, priority, dueDate, content, status.
+     * @param {boolean} forceRefresh - Force refresh the client's task cache
+     * @returns {Promise<Array<{id: string, title: string, projectId: string, projectName: string, priority: number|null, dueDate: string|null, content: string|null, status: number}>>}
+     * @throws {Error} Classified error with code if API call fails
+     */
+    async listActiveTasks(forceRefresh = false) {
+        const start = Date.now();
+        this._log('listActiveTasks', { forceRefresh });
+        try {
+            const tasks = forceRefresh
+                ? await this._client.getAllTasks()
+                : await this._client.getAllTasksCached();
+
+            const result = tasks.map(t => ({
+                id: t.id,
+                title: t.title || '',
+                projectId: t.projectId ?? null,
+                projectName: t.projectName ?? null,
+                priority: t.priority ?? null,
+                dueDate: t.dueDate ?? null,
+                content: t.content ?? null,
+                status: t.status ?? 0,
+            }));
+
+            const elapsed = Date.now() - start;
+            this._log('listActiveTasks', `SUCCESS { count: ${result.length}, ${elapsed}ms }`);
+            return result;
+        } catch (error) {
+            const elapsed = Date.now() - start;
+            const classified = this._classifyError(error, 'listActiveTasks');
+            this._log('listActiveTasks', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            throw classified;
+        }
+    }
+
+    /**
      * Marks a task as complete in TickTick.
      * Note: Requires both taskId and projectId per TickTick API requirements.
      * @param {string} taskId - 24-char hex task ID
      * @param {string} projectId - 24-char hex project ID (required by TickTick API)
      * @returns {Promise<{completed: boolean, taskId: string}>} Confirmation object
      * @throws {Error} Classified error with code if API call fails or validation fails
-     * 
+     *
      * @example
      * await adapter.completeTask('task123...', 'proj456...');
      */
@@ -560,6 +718,13 @@ export class TickTickAdapter {
 
             await this._client.completeTask(projectId, taskId);
             const elapsed = Date.now() - start;
+
+            // T006: Non-blocking behavioral signal observation
+            this._observeSignals('complete', {
+                taskId,
+                projectId,
+            });
+
             this._log('completeTask', `SUCCESS { id: "${taskId}", ${elapsed}ms }`);
             return { completed: true, taskId };
         } catch (error) {
@@ -590,6 +755,13 @@ export class TickTickAdapter {
 
             await this._client.deleteTask(projectId, taskId);
             const elapsed = Date.now() - start;
+
+            // T006: Non-blocking behavioral signal observation
+            this._observeSignals('delete', {
+                taskId,
+                projectId,
+            });
+
             this._log('deleteTask', `SUCCESS { id: "${taskId}", ${elapsed}ms }`);
             return { deleted: true, taskId };
         } catch (error) {
