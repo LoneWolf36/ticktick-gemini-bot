@@ -1,0 +1,87 @@
+{
+  "verified_at": "2026-04-15T13:20:00Z",
+  "verified_by": "Codex",
+  "scope": "Spec Kitty missions 002-009",
+  "notes": [
+    "Verification requires Spec Kitty mission-state and next probes to succeed for each mission.",
+    "Verification for code-bearing done work additionally requires the repository regression suite to pass on master."
+  ],
+  "missions": {
+    "002": {
+      "mission_slug": "002-natural-language-task-mutations",
+      "verified": true,
+      "status": "planned_only",
+      "evidence": [
+        "spec-kitty orchestrator-api mission-state --mission 002-natural-language-task-mutations",
+        "spec-kitty next --mission 002-natural-language-task-mutations --json"
+      ]
+    },
+    "003": {
+      "mission_slug": "003-pipeline-hardening-and-regression",
+      "verified": true,
+      "status": "partially_done",
+      "evidence": [
+        "spec-kitty orchestrator-api mission-state --mission 003-pipeline-hardening-and-regression",
+        "spec-kitty next --mission 003-pipeline-hardening-and-regression --json",
+        "node tests/run-regression-tests.mjs"
+      ]
+    },
+    "004": {
+      "mission_slug": "004-post-migration-cleanup",
+      "verified": true,
+      "status": "planned_only",
+      "evidence": [
+        "spec-kitty orchestrator-api mission-state --mission 004-post-migration-cleanup",
+        "spec-kitty next --mission 004-post-migration-cleanup --json"
+      ]
+    },
+    "005": {
+      "mission_slug": "005-checklist-subtask-support",
+      "verified": true,
+      "status": "planned_only",
+      "evidence": [
+        "spec-kitty orchestrator-api mission-state --mission 005-checklist-subtask-support",
+        "spec-kitty next --mission 005-checklist-subtask-support --json"
+      ]
+    },
+    "006": {
+      "mission_slug": "006-briefing-weekly-modernization",
+      "verified": true,
+      "status": "partially_done",
+      "evidence": [
+        "spec-kitty orchestrator-api mission-state --mission 006-briefing-weekly-modernization",
+        "spec-kitty next --mission 006-briefing-weekly-modernization --json",
+        "node tests/run-regression-tests.mjs"
+      ]
+    },
+    "007": {
+      "mission_slug": "007-execution-prioritization-foundations",
+      "verified": true,
+      "status": "done",
+      "evidence": [
+        "spec-kitty orchestrator-api mission-state --mission 007-execution-prioritization-foundations",
+        "spec-kitty next --mission 007-execution-prioritization-foundations --json",
+        "node tests/run-regression-tests.mjs"
+      ]
+    },
+    "008": {
+      "mission_slug": "008-work-style-and-urgent-mode",
+      "verified": true,
+      "status": "partially_done",
+      "evidence": [
+        "spec-kitty orchestrator-api mission-state --mission 008-work-style-and-urgent-mode",
+        "spec-kitty next --mission 008-work-style-and-urgent-mode --json",
+        "node tests/run-regression-tests.mjs"
+      ]
+    },
+    "009": {
+      "mission_slug": "009-behavioral-signals-and-memory",
+      "verified": true,
+      "status": "planned_only",
+      "evidence": [
+        "spec-kitty orchestrator-api mission-state --mission 009-behavioral-signals-and-memory",
+        "spec-kitty next --mission 009-behavioral-signals-and-memory --json"
+      ]
+    }
+  }
+}

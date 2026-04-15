@@ -34,6 +34,8 @@ if (existsSync(USER_CONTEXT_FILE)) {
     console.warn('⚠️  No user_context.js found and USER_CONTEXT env var not set. Using generic context.');
 }
 
+export { USER_CONTEXT, USER_CONTEXT_SOURCE };
+
 
 
 

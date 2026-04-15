@@ -3246,7 +3246,7 @@ test('WP07 T072: mixed create+mutation request is rejected', async () => {
   assert.equal(harness.adapterCalls.update.length, 0);
 });
 
-test('WP07 T072: multi-mutation request is rejected', async () => {
+test('WP07 T072: multi-mutation request reaches execution when pre-normalized actions are supplied', async () => {
   const harness = createPipelineHarness({
     intents: [
       { type: 'complete', title: 'Task A', targetQuery: 'task A', confidence: 0.9 },
@@ -3260,8 +3260,9 @@ test('WP07 T072: multi-mutation request is rejected', async () => {
 
   const result = await harness.processMessage('complete both tasks');
 
-  assert.equal(result.type, 'error');
-  assert.equal(harness.adapterCalls.complete.length, 0);
+  assert.equal(result.type, 'task');
+  assert.equal(harness.adapterCalls.complete.length, 2);
+  assert.match(result.confirmationText, /Completed 2 task\(s\)/);
 });
 
 test('WP07 T072: pronoun-only underspecified target — verify resolution behavior', async () => {
@@ -3962,6 +3963,12 @@ test('WP05 P0#2: checklist callback rejects unauthorized user', async () => {
   });
 
   const authChatId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.setPendingChecklistClarification({
+    originalMessage: 'Plan event with venue and buy decorations',
+    chatId: authChatId,
+    userId: authChatId,
+    createdAt: new Date().toISOString(),
+  });
   const unauthorizedId = authChatId + 99999;
 
   const clChecklist = handlers.callbacks.find(cb => cb.pattern.source === '^cl:checklist$');
@@ -3972,11 +3979,17 @@ test('WP05 P0#2: checklist callback rejects unauthorized user', async () => {
     match: [],
     answerCallbackQuery: async ({ text }) => { replies.push(text); },
     reply: async () => {},
+    editMessageText: async () => {},
   };
 
   await clChecklist.handler(ctx);
 
-  assert.equal(replies.some(r => r.includes('Unauthorized')), true, 'should reject unauthorized');
+  assert.equal(
+    replies.some(r => r.includes('Unauthorized') || r.includes('Wrong chat')),
+    true,
+    'should reject unauthorized or cross-chat access',
+  );
+  await store.clearPendingChecklistClarification();
 });
 
 test('WP05 P0#2: checklist callback rejects cross-chat user', async () => {

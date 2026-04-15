@@ -20,7 +20,7 @@ Kitty. It must not start implementation and must not edit mission state.
 
 ## Gate 1: Provider Policy
 
-Active Archon workflows and commands must use Codex only.
+The retained Archon workflow surface must use Codex only.
 
 ```bash
 rg "codex|gpt-5.4|gpt-5.4-mini" .archon/workflows .archon/commands
@@ -28,9 +28,9 @@ rg "codex|gpt-5.4|gpt-5.4-mini" .archon/workflows .archon/commands
 
 Expected:
 
-- Active implementation and review workflows use `provider: codex`.
+- The active workflow uses `provider: codex`.
 - Low-risk scan/classification nodes use `gpt-5.4-mini`.
-- High-risk review and product-vision gates use `gpt-5.4`.
+- High-risk product-vision and execution decisions use `gpt-5.4`.
 
 ## Gate 2: Spec Kitty State Integrity
 

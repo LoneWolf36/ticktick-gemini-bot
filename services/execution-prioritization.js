@@ -419,6 +419,10 @@ export function inferPriorityLabelFromTask(task, options = {}) {
         return 'important';
     }
 
+    if (decision?.exceptionReason === 'urgent_requirement') {
+        return 'important';
+    }
+
     if (decision?.rationaleCode === 'urgency' || decision?.exceptionApplied === true) {
         if (FINANCIAL_KEYWORDS.some((keyword) => haystack.includes(keyword))) {
             return 'life-admin';

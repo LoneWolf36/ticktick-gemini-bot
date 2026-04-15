@@ -4,8 +4,6 @@ import { classifyTaskEvent } from './behavioral-signals.js';
 
 const PROJECT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const VALID_PRIORITIES = [0, 1, 3, 5]; // TickTick valid priority values
-const HEX_24_REGEX = /^[0-9a-fA-F]{24}$/;
-
 /**
  * TickTick Adapter - Narrow interface for all TickTick REST API interactions.
  * Wraps TickTickClient with validation, error classification, and structured logging.
@@ -98,11 +96,13 @@ export class TickTickAdapter {
     }
 
     /**
-     * Validates a 24-character hex string project ID.
-     * @param {string|null|undefined} projectId - Project ID to validate
+     * Validates an opaque TickTick entity ID.
+     * TickTick IDs are treated as provider-owned opaque strings rather than
+     * enforcing a repo-local hex format assumption.
+     * @param {string|null|undefined} projectId - Entity ID to validate
      * @param {string} context - Context for error message (e.g., 'completeTask', 'updateTask')
-     * @returns {string|null} Validated project ID or null if input was null/undefined
-     * @throws {Error} If projectId is provided but invalid
+     * @returns {string|null} Validated ID or null if input was null/undefined
+     * @throws {Error} If the ID is provided but invalid
      * @private
      */
     _validateProjectId(projectId, context) {
@@ -110,12 +110,12 @@ export class TickTickAdapter {
             return null;
         }
         if (typeof projectId !== 'string') {
-            const err = new Error(`${context} requires projectId to be a 24-character hex string, got ${typeof projectId}`);
+            const err = new Error(`${context} requires projectId to be a non-empty string, got ${typeof projectId}`);
             err.code = 'VALIDATION_ERROR';
             throw err;
         }
-        if (!HEX_24_REGEX.test(projectId)) {
-            const err = new Error(`${context} requires projectId to be a 24-character hex string, got "${projectId}" (length: ${projectId.length})`);
+        if (projectId.trim().length === 0) {
+            const err = new Error(`${context} requires projectId to be a non-empty string`);
             err.code = 'VALIDATION_ERROR';
             throw err;
         }

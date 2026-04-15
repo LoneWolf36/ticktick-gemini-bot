@@ -1561,7 +1561,7 @@ async function run() {
 
     assert.equal(calls.length, 1);
     assert.equal(calls[0].taskId, 'rent-1');
-    assert.equal(calls[0].changes.priority, 1);
+    assert.equal(calls[0].changes.priority, 3);
     assert.equal(calls[0].changes.projectId, 'p-admin');
     console.log('PASS policy sweep inherits urgent maintenance priority from shared ranking');
   } catch (err) {

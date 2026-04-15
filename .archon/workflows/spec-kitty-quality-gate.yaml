@@ -22,6 +22,8 @@ inputs:
     default: dry-run
   validation_command:
     default: node tests/run-regression-tests.mjs
+  reconciliation_status_path:
+    default: .archon/reconciliation/spec-kitty-002-009.json
 
 nodes:
   - id: discover-missions
@@ -61,6 +63,7 @@ nodes:
 
       project_root="${project_root:-/home/lonewolf09/Documents/Projects/ticktick-gemini}"
       kitty_specs_dir="${kitty_specs_dir:-kitty-specs}"
+      reconciliation_status_path="${reconciliation_status_path:-.archon/reconciliation/spec-kitty-002-009.json}"
       export project_root kitty_specs_dir
 
       node --input-type=module <<'NODE'
@@ -69,10 +72,24 @@ nodes:
 
       const projectRoot = process.env.project_root || '/home/lonewolf09/Documents/Projects/ticktick-gemini';
       const specsDir = process.env.kitty_specs_dir || 'kitty-specs';
+      const reconciliationStatusPath = process.env.reconciliation_status_path || '.archon/reconciliation/spec-kitty-002-009.json';
       const specsPath = path.join(projectRoot, specsDir);
+      const reconciliationPath = path.join(projectRoot, reconciliationStatusPath);
       const missions = fs.readdirSync(specsPath)
         .filter((name) => /^\d{3}-/.test(name) && fs.statSync(path.join(specsPath, name)).isDirectory())
         .sort();
+
+      let reconciliation = { missions: {} };
+      if (fs.existsSync(reconciliationPath)) {
+        try {
+          reconciliation = JSON.parse(fs.readFileSync(reconciliationPath, 'utf8'));
+        } catch (error) {
+          reconciliation = {
+            missions: {},
+            error: `invalid reconciliation status file: ${error.message}`
+          };
+        }
+      }
 
       const results = missions.map((mission) => {
         const statusPath = path.join(specsPath, mission, 'status.events.jsonl');
@@ -100,11 +117,29 @@ nodes:
           }
         });
 
+        const missionId = mission.slice(0, 3);
+        const inReconciliationWindow = missionId >= '002' && missionId <= '009';
+        const reconciliationEntry = reconciliation?.missions?.[missionId] || null;
+        const reconciliationEvents = [];
+
+        if (reconciliation?.error) {
+          reconciliationEvents.push({ line: 0, reason: reconciliation.error });
+        } else if (
+          inReconciliationWindow
+          && (!reconciliationEntry || reconciliationEntry.verified !== true)
+        ) {
+          reconciliationEvents.push({
+            line: 0,
+            reason: 'mission 002-009 is untrusted until reconciled in .archon/reconciliation/spec-kitty-002-009.json'
+          });
+        }
+        const allBadEvents = [...badEvents, ...reconciliationEvents];
+
         return {
           mission,
-          trust: badEvents.length ? 'untrusted' : 'candidate',
-          state_integrity: badEvents.length ? 'fail' : 'pass',
-          bad_events: badEvents
+          trust: allBadEvents.length ? 'untrusted' : 'candidate',
+          state_integrity: allBadEvents.length ? 'fail' : 'pass',
+          bad_events: allBadEvents
         };
       });
 

@@ -1,6 +1,7 @@
 // Bot command handlers — /start, /status, /scan, /briefing, /weekly, /review, /pending, /undo
 import * as store from '../services/store.js';
 import { InlineKeyboard } from 'grammy';
+import { USER_CONTEXT } from '../services/gemini.js';
 import { taskReviewKeyboard } from './callbacks.js';
 import {
     buildTaskCard,
@@ -338,6 +339,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         enforcePolicySweep: true,
                         projects,
                         policyScopeTaskIds: (pending.actions || []).map((a) => a?.taskId).filter(Boolean),
+                        userContext: USER_CONTEXT,
                     }
                 );
                 await store.clearPendingReorg();
@@ -907,8 +909,8 @@ export async function executeActions(actions, adapter, currentTasks, options = {
     const outcomes = [];
     let hasUndoableActions = false;
     const policyGoalThemeProfile = options.goalThemeProfile || createGoalThemeProfile(
-        typeof options.userContext === 'string' ? options.userContext : (process.env.USER_CONTEXT || ''),
-        { source: typeof options.userContext === 'string' ? 'user_context' : (process.env.USER_CONTEXT ? 'env' : 'fallback') },
+        typeof options.userContext === 'string' ? options.userContext : '',
+        { source: typeof options.userContext === 'string' ? 'user_context' : 'fallback' },
     );
 
     const buildPolicySweepActions = (planned, tasks, projects = [], scopeTaskIds = null, sweepAllActive = false) => {
@@ -1116,5 +1118,3 @@ export async function executeActions(actions, adapter, currentTasks, options = {
     }
     return { outcomes, hasUndoableActions };
 }
-
-

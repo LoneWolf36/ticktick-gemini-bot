@@ -579,32 +579,6 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 return failureResult;
             }
 
-            if (hasMutation && intents.length > 1) {
-                // Multi-mutation: out of scope for v1 (single-target only)
-                console.warn(`[Pipeline:${context.requestId}] Multi-mutation request rejected.`);
-                const failureResult = buildFailureResult(context, {
-                    failureClass: FAILURE_CLASSES.VALIDATION,
-                    stage: 'mutation-routing',
-                    summary: 'Multiple mutation targets are not supported yet.',
-                    details: {
-                        intentTypes: intents.map(i => i.type),
-                    },
-                    retryable: true,
-                });
-                await telemetry.emit(context, {
-                    eventType: 'pipeline.request.failed',
-                    step: 'result',
-                    status: 'failure',
-                    durationMs: Date.now() - requestStartedAt,
-                    failureClass: FAILURE_CLASSES.VALIDATION,
-                    rolledBack: false,
-                    metadata: {
-                        reason: 'multiple_mutations',
-                    },
-                });
-                return failureResult;
-            }
-
             let resolvedTask = null;
             let resolvedTaskContent = null;
 
