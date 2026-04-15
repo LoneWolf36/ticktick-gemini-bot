@@ -280,7 +280,8 @@ nodes:
       mission_selector="${mission_selector:-all-active}"
       reconciliation_status_path="${reconciliation_status_path:-.archon/reconciliation/spec-kitty-002-009.json}"
       project_root="$(cd "$project_root" && pwd)"
-      export project_root kitty_specs_dir mission_selector reconciliation_status_path
+      allow_spec_kitty_probes="${allow_spec_kitty_probes:-false}"
+      export project_root kitty_specs_dir mission_selector reconciliation_status_path allow_spec_kitty_probes
 
       node --input-type=module <<'NODE'
       import fs from 'node:fs';
@@ -291,6 +292,7 @@ nodes:
       const specsDir = process.env.kitty_specs_dir || 'kitty-specs';
       const missionSelector = process.env.mission_selector || 'all-active';
       const reconciliationStatusPath = process.env.reconciliation_status_path || '.archon/reconciliation/spec-kitty-002-009.json';
+      const allowSpecKittyProbes = process.env.allow_spec_kitty_probes === 'true';
       const specsPath = path.join(projectRoot, specsDir);
       const reconciliationPath = path.join(projectRoot, reconciliationStatusPath);
       const allMissions = fs.readdirSync(specsPath)
