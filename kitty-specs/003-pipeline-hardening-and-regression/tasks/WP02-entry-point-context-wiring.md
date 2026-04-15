@@ -23,6 +23,8 @@ owned_files:
 - kitty-specs/003-pipeline-hardening-and-regression/plan.md
 - kitty-specs/003-pipeline-hardening-and-regression/spec.md
 wp_code: WP02
+agent: "reconciliation-audit"
+shell_pid: "audit-2026-04-15"
 ---
 
 # Work Package Prompt: WP02 - Entry-Point Context Wiring
