@@ -7,7 +7,9 @@ dependencies:
 requirement_refs:
 - FR-001
 - FR-004
-created_at: '2026-04-11T18:20:00+00:00'
+base_branch: kitty/mission-004-post-migration-cleanup
+base_commit: 3f0c32fb48b97538447208d172f1a260ade8ffc9
+created_at: '2026-04-15T17:49:25.985003+00:00'
 subtasks:
 - T014
 - T015
