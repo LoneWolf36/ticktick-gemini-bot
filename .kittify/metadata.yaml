@@ -3,9 +3,9 @@
 # DO NOT EDIT MANUALLY
 
 spec_kitty:
-  version: 3.1.1
+  version: 3.1.4
   initialized_at: '2026-03-10T15:03:41.128674'
-  last_upgraded_at: '2026-04-09T23:18:02.480821'
+  last_upgraded_at: '2026-04-15T12:36:51.496174'
 environment:
   python_version: 3.12.12
   platform: linux
@@ -111,3 +111,32 @@ migrations:
     applied_at: '2026-04-09T23:18:02.462906'
     result: skipped
     notes: Not applicable
+  - id: 3.1.2_globalize_commands
+    applied_at: '2026-04-15T12:36:51.482330'
+    result: success
+    notes: 'Removed: .claude/commands/spec-kitty.accept.md; Removed: .claude/commands/spec-kitty.analyze.md;
+      Removed: .claude/commands/spec-kitty.charter.md; Removed: .claude/commands/spec-kitty.checklist.md;
+      Removed: .claude/commands/spec-kitty.dashboard.md; Removed: .claude/commands/spec-kitty.implement.md;
+      Removed: .claude/commands/spec-kitty.merge.md; Removed: .claude/commands/spec-kitty.plan.md;
+      Removed: .claude/commands/spec-kitty.research.md; Removed: .claude/commands/spec-kitty.review.md;
+      Removed: .claude/commands/spec-kitty.specify.md; Removed: .claude/commands/spec-kitty.status.md;
+      Removed: .claude/commands/spec-kitty.tasks-finalize.md; Removed: .claude/commands/spec-kitty.tasks-outline.md;
+      Removed: .claude/commands/spec-kitty.tasks-packages.md; Removed: .claude/commands/spec-kitty.tasks.md;
+      Removed empty directory: .claude/commands; Removed: .gemini/commands/spec-kitty.accept.md;
+      Removed: .gemini/commands/spec-kitty.analyze.toml; Removed: .gemini/commands/spec-kitty.charter.toml;
+      Removed: .gemini/commands/spec-kitty.checklist.toml; Removed: .gemini/commands/spec-kitty.dashboard.md;
+      Removed: .gemini/commands/spec-kitty.implement.md; Removed: .gemini/commands/spec-kitty.merge.md;
+      Removed: .gemini/commands/spec-kitty.plan.toml; Removed: .gemini/commands/spec-kitty.research.toml;
+      Removed: .gemini/commands/spec-kitty.review.md; Removed: .gemini/commands/spec-kitty.specify.toml;
+      Removed: .gemini/commands/spec-kitty.status.md; Removed: .gemini/commands/spec-kitty.tasks-finalize.md;
+      Removed: .gemini/commands/spec-kitty.tasks-outline.toml; Removed: .gemini/commands/spec-kitty.tasks-packages.toml;
+      Removed: .gemini/commands/spec-kitty.tasks.toml; Removed empty directory: .gemini/commands;
+      Removed: .opencode/command/spec-kitty.accept.md; Removed: .opencode/command/spec-kitty.analyze.md;
+      Removed: .opencode/command/spec-kitty.charter.md; Removed: .opencode/command/spec-kitty.checklist.md;
+      Removed: .opencode/command/spec-kitty.dashboard.md; Removed: .opencode/command/spec-kitty.implement.md;
+      Removed: .opencode/command/spec-kitty.merge.md; Removed: .opencode/command/spec-kitty.plan.md;
+      Removed: .opencode/command/spec-kitty.research.md; Removed: .opencode/command/spec-kitty.review.md;
+      Removed: .opencode/command/spec-kitty.specify.md; Removed: .opencode/command/spec-kitty.status.md;
+      Removed: .opencode/command/spec-kitty.tasks-finalize.md; Removed: .opencode/command/spec-kitty.tasks-outline.md;
+      Removed: .opencode/command/spec-kitty.tasks-packages.md; Removed: .opencode/command/spec-kitty.tasks.md;
+      Removed empty directory: .opencode/command'
