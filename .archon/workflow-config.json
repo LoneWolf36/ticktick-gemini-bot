@@ -1,5 +1,5 @@
 {
-  "_comment": "Archon Spec Kitty quality gate config for TickTick-Gemini. Mission/WP discovery is dynamic; Spec Kitty owns execution state.",
+  "_comment": "Archon Spec Kitty quality gate config for TickTick-Gemini. Mission/WP discovery is dynamic; Spec Kitty owns execution state. Review agent skill fields are profile labels for local helper scripts; Codex does not automatically preload Archon per-node skills.",
   "_schema": ".archon/workflow-config.schema.json",
   "project": {
     "root": "/home/lonewolf09/Documents/Projects/ticktick-gemini",
