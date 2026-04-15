@@ -1,0 +1,24 @@
+{
+  "mission_slug": "003-pipeline-hardening-and-regression",
+  "mission_number": "003",
+  "mission_type": "software-dev",
+  "feature_slug": "003-pipeline-hardening-and-regression",
+  "acceptance_runs": [
+    {
+      "run_id": "reconciliation-audit-2026-04-15",
+      "actor": "audit",
+      "timestamp": "2026-04-15T18:40:00Z",
+      "test_commands": [
+        "node --test tests/pipeline-context.test.js",
+        "node --test tests/regression.test.js",
+        "node tests/run-regression-tests.mjs"
+      ],
+      "test_results": {
+        "exit_code": 0,
+        "total_pass": 500,
+        "total_fail": 0,
+        "summary": "All mission 003 tests passing"
+      }
+    }
+  ]
+}

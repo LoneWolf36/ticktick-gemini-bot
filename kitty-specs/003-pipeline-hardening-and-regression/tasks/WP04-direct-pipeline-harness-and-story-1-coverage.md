@@ -26,6 +26,8 @@ owned_files:
 - tests/regression.test.js
 - tests/run-regression-tests.mjs
 wp_code: WP04
+agent: "reconciliation-audit"
+shell_pid: "audit-2026-04-15"
 ---
 
 # Work Package Prompt: WP04 - Direct Pipeline Harness and Story 1 Coverage
