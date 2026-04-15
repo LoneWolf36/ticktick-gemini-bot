@@ -214,8 +214,8 @@
   },
 
   "ai": {
-    "provider": "qwen",
-    "model": "coder-model",
+    "provider": "codex",
+    "model": "gpt-5.4-mini",
     "temperature": 0.2,
     "maxTokens": 8192
   },

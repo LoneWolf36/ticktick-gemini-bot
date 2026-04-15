@@ -1,124 +1,102 @@
 ---
-description: Hard gate check — blocks workflow on YAGNI or Product Vision violations
-argument-hint: <mission-slug>
+description: Hard quality gate for Spec Kitty missions before Archon allows execution.
+argument-hint: <project-root> <kitty-specs-dir> <product-vision-path> <mission-selector> <mode>
 ---
 
-# Quality Gate Check
+# Spec Kitty Quality Gate Check
 
-**Input**: $ARGUMENTS
+**Input:** `$ARGUMENTS`
 
-## Purpose
+Default values when omitted:
 
-This is a **HARD BLOCK**. If the checks below fail, the workflow MUST stop. This prevents YAGNI violations and Product Vision drift from silently accumulating across missions.
+- `project_root`: current repository root
+- `kitty_specs_dir`: `kitty-specs`
+- `product_vision_path`: `Product Vision and Behavioural Scope.md`
+- `mission_selector`: `all-active`
+- `mode`: `dry-run`
 
-## Gate 1: YAGNI Violations (BLOCKER)
+This command is read-only. It checks whether Archon may safely orchestrate Spec
+Kitty. It must not start implementation and must not edit mission state.
 
-Scan the codebase for forbidden MVP patterns. The MVP is for 1 user — these features are explicitly out of scope:
+## Gate 1: Provider Policy
 
-### 1.1 Authentication / Multi-tenant scaffolding
-```bash
-# Check for USER auth frameworks (NOT service OAuth like TickTick integration)
-grep -rn "requireAuth\|passport\|auth.*middleware\|session.*store\|jwt.*verify\|isAuthenticated.*=\|protect.*route\|auth.*guard" --include="*.js" --include="*.ts" services/ bot/ 2>/dev/null | grep -v "node_modules" | grep -v "\.test" | grep -v "ticktick.*oauth\|TICKTICK.*OAUTH"
-```
-
-If found:
-- Output: `YAGNI_AUTH_VIOLATION: <files and lines>`
-- Exit code: **1** (hard block)
-
-### 1.2 Billing / Payment infrastructure
-```bash
-grep -rn "stripe\|subscription.*plan\|pricing.*tier\|billing.*cycle\|payment.*gateway\|checkout.*session" --include="*.js" --include="*.ts" services/ bot/ 2>/dev/null | grep -v "node_modules" | grep -v "\.test"
-```
-
-If found:
-- Output: `YAGNI_BILLING_VIOLATION: <files and lines>`
-- Exit code: **1** (hard block)
-
-### 1.3 Rate limiting / Throttling
-```bash
-# Check for rate-limiting PACKAGE imports (NOT defensive retry logic)
-grep -rn "express-rate-limit\|slow\.down\|rate-limit-redis\|express-brute" --include="*.js" --include="*.ts" services/ bot/ 2>/dev/null | grep -v "node_modules" | grep -v "\.test"
-```
-
-If found:
-- Output: `YAGNI_RATE_LIMIT_VIOLATION: <files and lines>`
-- Exit code: **1** (hard block)
-
-### 1.4 Over-engineering indicators (WARNING — requires human judgment)
-```bash
-# Flag patterns that MAY indicate overengineering — agent must justify, not auto-block
-grep -rn "abstract class\|extends.*Factory\|implements.*Strategy\|class.*Provider" --include="*.js" --include="*.ts" services/ bot/ 2>/dev/null | grep -v "node_modules" | grep -v "\.test"
-```
-
-If found:
-- Output: `YAGNI_OVERENGINEERING_SUSPECTED: <patterns found> — architecture review must justify why multiple implementations exist`
-- Exit code: **0** (warning — does NOT block, but will be flagged in review artifacts)
-
-## Gate 2: Product Vision Violations (BLOCKER)
-
-Check that the feature aligns with "behavioral support system for task execution" — NOT a task manager.
-
-### 2.1 Busywork enablement (WARNING — flagged for review, not auto-blocked)
-Check if the feature adds bulk operations. The architecture review agent must assess whether these have execution context.
+Active Archon workflows and commands must use Codex only.
 
 ```bash
-grep -rn "bulk.*create\|bulk.*update\|bulk.*move\|mass.*edit\|multi.*select" --include="*.js" --include="*.ts" services/ bot/ 2>/dev/null | grep -v "node_modules" | grep -v "\.test"
+rg "codex|gpt-5.4|gpt-5.4-mini" .archon/workflows .archon/commands
 ```
 
-If found:
-- Output: `VISION_BUSYWORK_SUSPECTED: <files> — architecture review must verify execution context exists`
-- Exit code: **0** (warning — does NOT block, review agent assesses)
+Expected:
 
-### 2.2 Passive management patterns (WARNING — flagged for review, not auto-blocked)
-Count org-only features vs execution-focused features in the NEW code (git diff).
+- Active implementation and review workflows use `provider: codex`.
+- Low-risk scan/classification nodes use `gpt-5.4-mini`.
+- High-risk review and product-vision gates use `gpt-5.4`.
+
+## Gate 2: Spec Kitty State Integrity
+
+For each selected active mission under `${kitty_specs_dir}`:
+
+1. Parse `status.events.jsonl` as JSONL.
+2. Flag malformed JSON.
+3. Flag `done` events with evidence shapes that crash Spec Kitty.
+4. Mark the mission `untrusted` if any event cannot be consumed by Spec Kitty.
+
+Use the Spec Kitty APIs only after the JSONL scan says the mission is safe to
+probe:
 
 ```bash
-cd /home/lonewolf09/Documents/Projects/ticktick-gemini
-NEW_FILES=$(git diff --name-only HEAD~3..HEAD 2>/dev/null | grep -E '\.(js|ts)$' | grep -v '\.test' | tr '\n' ' ')
-if [ -n "$NEW_FILES" ]; then
-  ORG_COUNT=$(grep -l "addTag\|removeTag\|renameProject\|moveProject\|setPriority" $NEW_FILES 2>/dev/null | wc -l)
-  EXEC_COUNT=$(grep -l "procrastinat\|executionPriority\|dailyBrief\|accountability" $NEW_FILES 2>/dev/null | wc -l)
-  if [ "$ORG_COUNT" -gt 0 ] && [ "$EXEC_COUNT" -eq 0 ]; then
-    echo "VISION_PASSIVE_MGMT_SUSPECTED: ${ORG_COUNT} new files with org-only patterns, no execution focus"
-    # Exit 0 — warning only, review agent must assess intent
-  fi
-fi
+spec-kitty orchestrator-api mission-state --mission <mission-slug>
+spec-kitty orchestrator-api list-ready --mission <mission-slug>
+spec-kitty next --mission <mission-slug> --json
 ```
 
-## Gate 3: DRY Violations (WARNING — not a hard block, but reported)
+If any command crashes, mark the mission `blocked-state`.
 
-Check for obvious duplication (>50 line clones in new code):
+## Gate 3: Product Vision
+
+Read the configured product vision document and block work that drifts toward:
+
+- Generic task manager behavior.
+- Passive list management.
+- Busywork optimization without execution support.
+- SaaS scaffolding not required by an accepted spec.
+
+## Gate 4: YAGNI
+
+For the TickTick-Gemini MVP, flag new or changed code that introduces:
+
+- User auth or multi-tenant scaffolding.
+- Billing or pricing infrastructure.
+- Rate limiting packages unrelated to existing defensive retries.
+- Large abstractions that are not required by the current WP.
+
+## Gate 5: Test Readiness
+
+Run the configured validation command only when `mode` is `audit` or `execute`.
+In `dry-run`, report the command that would run.
+
+Default:
 
 ```bash
-cd /home/lonewolf09/Documents/Projects/ticktick-gemini
-BASELINE_FILE=".archon/quality-gate-jscpd-baseline"
-jscp_output=$(npx jscpd --min-lines 50 --min-tokens 200 --reporters console 2>/dev/null || true)
-new_clones=$(echo "$jscp_output" | grep -c "Clone found" || echo "0")
-baseline_clones=0
-[ -f "$BASELINE_FILE" ] && baseline_clones=$(cat "$BASELINE_FILE")
+node tests/run-regression-tests.mjs
 ```
 
-If `new_clones > baseline_clones + 5`:
-- Output: `DRY_WARNING: ${new_clones} duplication clusters (baseline was ${baseline_clones})`
-- Exit code: **0** (warning only — does NOT block)
+## Required Output
 
-## Output
+Return a machine-readable summary:
 
-If ALL gates pass:
+```json
+{
+  "mode": "dry-run",
+  "missions": [
+    {
+      "mission": "002-natural-language-task-mutations",
+      "trust": "untrusted",
+      "state_integrity": "fail",
+      "spec_kitty_probe": "skipped",
+      "blocking_findings": []
+    }
+  ],
+  "execution_allowed": false
+}
 ```
-GATE_PASSED: No YAGNI or Product Vision violations detected
-```
-Exit code: **0**
-
-If ANY gate fails:
-```
-GATE_FAILED
-<specific violation details>
-```
-Exit code: **1** (workflow will be cancelled via `cancel:` node)
-
-## Notes
-
-- This command scans the ACTUAL code on disk, not the agent's claims
-- Grep patterns are conservative — they flag potential violations for review
-- If a legitimate use case exists (e.g., auth for TickTick OAuth, not user auth), the agent should document why it's not a violation and re-run

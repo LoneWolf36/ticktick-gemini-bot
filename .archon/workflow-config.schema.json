@@ -134,7 +134,7 @@
               },
               "skill": {
                 "type": "string",
-                "description": "The Qwen skill name to invoke for this reviewer.",
+                "description": "The Codex skill name to invoke for this reviewer.",
                 "examples": ["security-auditor", "ai-engineer", "architect-review", "api-design-principles"]
               },
               "weight": {
@@ -349,13 +349,13 @@
       "properties": {
         "provider": {
           "type": "string",
-          "default": "qwen",
-          "examples": ["qwen", "openai", "anthropic", "gemini"]
+          "default": "codex",
+          "examples": ["codex", "openai", "anthropic", "gemini"]
         },
         "model": {
           "type": "string",
-          "default": "coder-model",
-          "examples": ["coder-model", "claude-sonnet-4", "gpt-5"]
+          "default": "gpt-5.4-mini",
+          "examples": ["gpt-5.4-mini", "claude-sonnet-4", "gpt-5"]
         },
         "temperature": {
           "type": "number",

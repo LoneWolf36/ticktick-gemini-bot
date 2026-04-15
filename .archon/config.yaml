@@ -2,8 +2,8 @@ worktree:
   baseBranch: master
 
 ai:
-  provider: qwen
-  model: coder-model
+  provider: codex
+  model: gpt-5.4-mini
 
 docs:
   path: docs/
