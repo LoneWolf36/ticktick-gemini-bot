@@ -15,8 +15,8 @@ description: |
 
   NOT for: Bug fixes (use fix-issue), executing existing plans, code reviews.
 
-provider: qwen
-model: qwen-coder
+provider: codex
+model: gpt-5.4-mini
 
 nodes:
   # ═══════════════════════════════════════════════════════════════

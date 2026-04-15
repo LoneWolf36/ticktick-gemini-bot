@@ -16,8 +16,8 @@ description: |
   6. Self-fixes any findings
   7. Reports results
 
-provider: qwen
-model: qwen-coder
+provider: codex
+model: gpt-5.4-mini
 
 nodes:
   # ═══════════════════════════════════════════════════════════════

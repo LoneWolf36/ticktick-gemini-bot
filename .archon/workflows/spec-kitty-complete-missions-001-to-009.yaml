@@ -1,0 +1,17 @@
+name: spec-kitty-complete-missions-001-to-009-retired
+description: |
+  Retired workflow.
+
+  This file previously hard-coded TickTick-Gemini missions 001-009 and is not
+  safe to reuse. Missions 002-009 are untrusted until reconciled. Use
+  spec-kitty-quality-gate.yaml for dry-run, audit, and gated execution.
+
+provider: codex
+model: gpt-5.4-mini
+
+nodes:
+  - id: retired
+    context: fresh
+    prompt: |
+      This workflow is retired and intentionally does not execute missions.
+      Use `.archon/workflows/spec-kitty-quality-gate.yaml`.

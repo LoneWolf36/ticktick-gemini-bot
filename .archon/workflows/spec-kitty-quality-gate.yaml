@@ -1,0 +1,221 @@
+name: spec-kitty-quality-gate
+description: |
+  Reusable quality gate for Spec Kitty projects.
+
+  Archon discovers missions, checks state integrity, audits artifacts, routes
+  Codex model tiers, and blocks unsafe execution. Spec Kitty remains the
+  lifecycle authority for worktrees, WP state, review, and merge operations.
+
+provider: codex
+model: gpt-5.4-mini
+
+inputs:
+  project_root:
+    default: /home/lonewolf09/Documents/Projects/ticktick-gemini
+  kitty_specs_dir:
+    default: kitty-specs
+  product_vision_path:
+    default: Product Vision and Behavioural Scope.md
+  mission_selector:
+    default: all-active
+  mode:
+    default: dry-run
+  validation_command:
+    default: node tests/run-regression-tests.mjs
+
+nodes:
+  - id: discover-missions
+    context: fresh
+    bash: |
+      set -euo pipefail
+
+      project_root="${project_root:-/home/lonewolf09/Documents/Projects/ticktick-gemini}"
+      kitty_specs_dir="${kitty_specs_dir:-kitty-specs}"
+      mission_selector="${mission_selector:-all-active}"
+      export project_root kitty_specs_dir mission_selector
+      specs_path="$project_root/$kitty_specs_dir"
+
+      if [ ! -d "$specs_path" ]; then
+          echo "{\"error\":\"kitty specs directory not found\",\"path\":\"$specs_path\"}"
+          exit 1
+      fi
+
+      if [ "$mission_selector" = "all-active" ]; then
+          find "$specs_path" -maxdepth 1 -mindepth 1 -type d \
+              -regextype posix-extended -regex '.*/[0-9][0-9][0-9]-.+' \
+              -printf '%f\n' | sort
+      else
+          if [ -d "$specs_path/$mission_selector" ]; then
+              echo "$mission_selector"
+          else
+              find "$specs_path" -maxdepth 1 -mindepth 1 -type d \
+                  -name "$mission_selector*" -printf '%f\n' | sort
+          fi
+      fi
+
+  - id: state-integrity-scan
+    depends_on: [discover-missions]
+    context: fresh
+    bash: |
+      set -euo pipefail
+
+      project_root="${project_root:-/home/lonewolf09/Documents/Projects/ticktick-gemini}"
+      kitty_specs_dir="${kitty_specs_dir:-kitty-specs}"
+      export project_root kitty_specs_dir
+
+      node --input-type=module <<'NODE'
+      import fs from 'node:fs';
+      import path from 'node:path';
+
+      const projectRoot = process.env.project_root || '/home/lonewolf09/Documents/Projects/ticktick-gemini';
+      const specsDir = process.env.kitty_specs_dir || 'kitty-specs';
+      const specsPath = path.join(projectRoot, specsDir);
+      const missions = fs.readdirSync(specsPath)
+        .filter((name) => /^\d{3}-/.test(name) && fs.statSync(path.join(specsPath, name)).isDirectory())
+        .sort();
+
+      const results = missions.map((mission) => {
+        const statusPath = path.join(specsPath, mission, 'status.events.jsonl');
+        const badEvents = [];
+
+        if (!fs.existsSync(statusPath)) {
+          return { mission, trust: 'untrusted', state_integrity: 'fail', bad_events: [{ line: 0, reason: 'status.events.jsonl missing' }] };
+        }
+
+        const lines = fs.readFileSync(statusPath, 'utf8').split(/\r?\n/).filter(Boolean);
+        lines.forEach((line, index) => {
+          try {
+            const event = JSON.parse(line);
+            const type = event.type || event.event || event.to_lane || event.to || event.status;
+            const isDone = event.to_lane === 'done' || event.to === 'done' || type === 'done';
+            if (isDone && event.evidence && !event.evidence.review && !event.review_ref && !event.evidence.review_ref) {
+              badEvents.push({
+                line: index + 1,
+                event_type: 'done',
+                reason: 'done event has no review evidence reference'
+              });
+            }
+          } catch (error) {
+            badEvents.push({ line: index + 1, reason: `invalid JSON: ${error.message}` });
+          }
+        });
+
+        return {
+          mission,
+          trust: badEvents.length ? 'untrusted' : 'candidate',
+          state_integrity: badEvents.length ? 'fail' : 'pass',
+          bad_events: badEvents
+        };
+      });
+
+      console.log(JSON.stringify({ missions: results }, null, 2));
+      NODE
+
+  - id: spec-kitty-api-probe
+    depends_on: [state-integrity-scan]
+    context: fresh
+    bash: |
+      set -euo pipefail
+
+      project_root="${project_root:-/home/lonewolf09/Documents/Projects/ticktick-gemini}"
+      kitty_specs_dir="${kitty_specs_dir:-kitty-specs}"
+      export project_root kitty_specs_dir
+      cd "$project_root"
+
+      node --input-type=module <<'NODE'
+      import fs from 'node:fs';
+      import path from 'node:path';
+      import { spawnSync } from 'node:child_process';
+
+      const projectRoot = process.env.project_root || '/home/lonewolf09/Documents/Projects/ticktick-gemini';
+      const specsDir = process.env.kitty_specs_dir || 'kitty-specs';
+      const specsPath = path.join(projectRoot, specsDir);
+      const missions = fs.readdirSync(specsPath)
+        .filter((name) => /^\d{3}-/.test(name) && fs.statSync(path.join(specsPath, name)).isDirectory())
+        .sort();
+
+      const run = (args) => {
+        const result = spawnSync('spec-kitty', args, { cwd: projectRoot, encoding: 'utf8' });
+        return {
+          command: `spec-kitty ${args.join(' ')}`,
+          ok: result.status === 0,
+          status: result.status,
+          stderr: result.stderr.trim().split('\n').slice(-8).join('\n')
+        };
+      };
+
+      const probes = missions.map((mission) => ({
+        mission,
+        probes: [
+          run(['orchestrator-api', 'mission-state', '--mission', mission]),
+          run(['orchestrator-api', 'list-ready', '--mission', mission]),
+          run(['next', '--mission', mission, '--json'])
+        ]
+      }));
+
+      console.log(JSON.stringify({ probes }, null, 2));
+      NODE
+
+  - id: risk-classifier
+    depends_on: [spec-kitty-api-probe]
+    context: fresh
+    model: gpt-5.4-mini
+    prompt: |
+      Classify each mission and ready WP from the prior scan.
+
+      Use these labels:
+      - low-risk
+      - medium-risk
+      - high-risk
+      - blocked-state
+      - blocked-spec-code-drift
+
+      High-risk triggers:
+      - Pipeline write path changes
+      - TickTick mutations
+      - State repair
+      - Behavioral coaching or product-vision logic
+      - Persistence or scheduler behavior
+      - Failed or stale regression tests
+      - Mission status inconsistencies
+
+      Return JSON only with mission, risk, required_model, and blockers.
+
+  - id: product-vision-gate
+    depends_on: [risk-classifier]
+    context: fresh
+    model: gpt-5.4
+    prompt: |
+      Review the discovered mission risks against the configured product vision.
+
+      Block any work that drifts toward:
+      - Generic task manager behavior
+      - Passive list management
+      - Busywork optimization without execution support
+      - SaaS scaffolding outside accepted specs
+
+      Return JSON only:
+      {
+        "product_vision_passed": true,
+        "blocked_missions": [],
+        "notes": []
+      }
+
+  - id: execution-gate
+    depends_on: [product-vision-gate]
+    context: fresh
+    model: gpt-5.4
+    prompt: |
+      Decide whether execution is allowed.
+
+      Rules:
+      - In dry-run mode, execution_allowed must be false.
+      - In audit mode, execution_allowed must be false.
+      - In execute mode, execution_allowed may be true only when mission state
+        is trusted, Spec Kitty probes pass, spec/code audit is clean, and the
+        product vision gate passes.
+      - Archon must never edit `status.events.jsonl`.
+      - Any implementation start must happen through Spec Kitty lifecycle
+        commands, not through direct lane-file mutation.
+
+      Return a compact JSON decision with blockers.

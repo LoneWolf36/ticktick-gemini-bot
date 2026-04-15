@@ -1,104 +1,54 @@
 name: spec-kitty-wp-implement
 description: |
-  Use when: Implementing or re-implementing a single Spec Kitty work package
-  from a generated implementation prompt inside the Spec Kitty worktree.
+  Use when: Implementing a single Spec Kitty work package from a generated
+  implementation prompt inside the Spec Kitty-created worktree.
 
   Input format:
     <absolute prompt path>
 
-  This workflow intentionally uses --no-worktree with --cwd set to the
-  Spec Kitty-created workspace. Spec Kitty owns WP state, dependencies,
-  and worktree lifecycle. Archon owns the Qwen execution wrapper, evidence
-  capture, and post-run verification.
+  Spec Kitty owns WP state, dependencies, worktree lifecycle, review state,
+  and merge state. Archon owns only Codex routing and quality discipline.
+
+provider: codex
+model: gpt-5.4-mini
 
 nodes:
-  - id: preflight
-    bash: |
-      set -euo pipefail
-
-      prompt_path="$ARGUMENTS"
-      if [ ! -f "$prompt_path" ]; then
-          echo "Spec Kitty implementation prompt not found: $prompt_path" >&2
-          exit 1
-      fi
-
-      cp "$prompt_path" "$ARTIFACTS_DIR/wp-implement-prompt.md"
-      {
-          echo "prompt_path=$prompt_path"
-          echo "product_vision=$(pwd)/Product Vision and Behavioural Scope.md"
-          echo "repo_root=$(pwd)"
-          echo "branch=$(git branch --show-current)"
-          echo "head=$(git rev-parse --short HEAD)"
-          echo
-          echo "[git status --short]"
-          git status --short
-      } > "$ARTIFACTS_DIR/preflight.txt"
-
-      echo "Preflight complete"
-
   - id: implement-wp
-    depends_on: [preflight]
     timeout: 7200000
-    bash: |
-      set -euo pipefail
-
-      qwen_prompt="$ARTIFACTS_DIR/qwen-spec-kitty-prompt.md"
-      cat > "$qwen_prompt" <<'EOF'
-      You are Qwen Coder running through Archon for a Spec Kitty work package.
+    context: fresh
+    prompt: |
+      You are Codex running through Archon for a Spec Kitty work package.
 
       The single source of truth is the implementation prompt at:
-      __SPEC_KITTY_PROMPT_PATH__
+      $ARGUMENTS
 
       Mandatory workflow:
-      1. Read the full prompt at __SPEC_KITTY_PROMPT_PATH__ before editing anything.
-      2. Read Product Vision and Behavioural Scope.md before editing anything.
-      3. Work only in the current repository checkout; this should be the
-         Spec Kitty worktree passed to Archon via --cwd.
-      4. Preserve Spec Kitty frontmatter and event-sourced status conventions.
-      5. Implement the WP exactly as specified, including the Product Vision
-         Alignment Gate and Implement-Review No-Drift Contract.
+      1. Read the full prompt at `$ARGUMENTS` before editing anything.
+      2. Work only in the current repository checkout; this should be the
+         Spec Kitty-created worktree passed to Archon via --cwd.
+      3. Preserve Spec Kitty frontmatter and event-sourced state conventions.
+      4. Do not edit `status.events.jsonl`; use the exact Spec Kitty command
+         from the prompt for state transitions.
+      5. Implement the WP exactly as specified, including Product Vision
+         alignment and no-drift requirements.
       6. Do not add SaaS scope, auth, billing, multi-tenant isolation, generic
          reminder behavior, or passive task-manager behavior unless the prompt
          explicitly requires it.
       7. Add or update tests required by the WP prompt.
       8. Run the validation commands specified in the prompt. If the prompt is
          silent, run the repository regression command that applies to the
-         files you changed, and prefer node --test tests/regression.test.js
-         for shared behavior.
+         files changed.
       9. Verify new code is called from the live entry point, not only tested
          in isolation.
       10. Commit the implementation in the worktree with a focused conventional
-         commit.
+          commit.
       11. Move the WP to for_review using the exact Spec Kitty command shown
-          in the prompt or the canonical equivalent:
-          `spec-kitty agent tasks move-task WP## --to for_review --mission
-          <mission-slug> --note "Ready for review: <summary>"`
-      12. Write a concise evidence file to __ARTIFACTS_DIR__/implementation-report.md
-          with:
-          - WP id
-          - files changed
-          - validation commands run and exact result
-          - product vision impact statement
-          - confirmation that the WP was moved to for_review, or the exact blocker
+          in the prompt or the canonical equivalent for Spec Kitty v3.1.4.
 
-      Your final terminal response must match the contents of that evidence file.
-      EOF
-      sed -i "s|__SPEC_KITTY_PROMPT_PATH__|$ARTIFACTS_DIR/wp-implement-prompt.md|g" "$qwen_prompt"
-      sed -i "s|__ARTIFACTS_DIR__|$ARTIFACTS_DIR|g" "$qwen_prompt"
-
-      qwen -y -m coder-model -p "$(cat "$qwen_prompt")" | tee "$ARTIFACTS_DIR/qwen-implement.stdout"
-
-  - id: postflight
-    depends_on: [implement-wp]
-    bash: |
-      set -euo pipefail
-
-      git status --short > "$ARTIFACTS_DIR/postflight-git-status.txt"
-      git rev-parse --short HEAD > "$ARTIFACTS_DIR/postflight-head.txt"
-
-      if [ ! -f "$ARTIFACTS_DIR/implementation-report.md" ]; then
-          echo "Missing implementation report: $ARTIFACTS_DIR/implementation-report.md" >&2
-          exit 1
-      fi
-
-      cat "$ARTIFACTS_DIR/implementation-report.md"
+      Required final response:
+      - WP id
+      - Files changed
+      - Tests run and exact result
+      - Product Vision impact statement
+      - Confirmation that the WP was moved to for_review, or the exact blocker
+        if that could not be done
