@@ -1,12 +1,13 @@
 {
+  "created_at": "2026-03-12T14:21:00.985843+00:00",
   "feature_number": "005",
-  "slug": "005-checklist-subtask-support",
   "feature_slug": "005-checklist-subtask-support",
   "friendly_name": "Checklist Creation Support",
   "mission": "software-dev",
-  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
+  "mission_id": "01KNT55PMYXNH3ATTB29REH4RP",
+  "mission_number": 3,
+  "slug": "005-checklist-subtask-support",
   "source_description": "Add create-time checklist extraction so structured task creation can produce sub-steps without opening full checklist editing scope.",
-  "vcs": "git",
-  "created_at": "2026-03-12T14:21:00.985843+00:00",
-  "mission_id": "01KNT55PMYXNH3ATTB29REH4RP"
+  "target_branch": "lonewolf36/feat/complete-spec-kitty-missions",
+  "vcs": "git"
 }
