@@ -1,1 +1,0 @@
-/home/lonewolf09/.agents/skills/spec-kitty-setup-doctor/references/agent-path-matrix.md

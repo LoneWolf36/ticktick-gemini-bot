@@ -2,9 +2,7 @@
 # These are internal directories that shouldn't be scanned by AI assistants
 
 # Template directories (not working code)
-.kittify/templates/
-.kittify/missions/
-.kittify/scripts/
+kitty-specs.archived/
 
 # Agent command directories (generated from templates, not source)
 .claude/

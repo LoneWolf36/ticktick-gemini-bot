@@ -1,1 +1,0 @@
-/home/lonewolf09/.agents/skills/spec-kitty-implement-review/references/rejection-loop-checklist.md

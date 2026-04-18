@@ -1,0 +1,128 @@
+name: cavekit-validate
+description: |
+  Use when: You want to run a comprehensive gap analysis against all domain kits.
+  Input: Optional kit name to focus on (default: all kits)
+  Output: Gap analysis report showing which requirements are done, pending, and blocked
+
+  Lightweight, read-only workflow — no code changes.
+  Equivalent to /ck:check but with Archon's structured output.
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: SCAN — Read all kits and build status matrix
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: scan-kits
+    context: fresh
+    denied_tools: [Write, Edit]
+    prompt: |
+      # Cavekit Validate — Scan Domain Kits
+
+      **Focus**: $ARGUMENTS (empty = all kits)
+
+      ---
+
+      ## Step 1: Read Overview
+
+      ```bash
+      cat context/kits/cavekit-overview.md
+      ```
+
+      ## Step 2: Scan Each Kit
+
+      For each kit file in `context/kits/cavekit-*.md`:
+
+      ```bash
+      ls context/kits/cavekit-*.md
+      ```
+
+      Read each kit and count:
+      - Total R-requirements
+      - Checked `[x]` requirements
+      - Unchecked `[ ]` requirements
+      - Requirements with unmet dependencies
+
+      ## Step 3: Build Status Matrix
+
+      Write to `$ARTIFACTS_DIR/gap-analysis.md`:
+
+      ```markdown
+      # Cavekit Gap Analysis — $(date -I)
+
+      ## Overall Progress
+
+      | Kit | Total | Done | Pending | Blocked | Progress |
+      |-----|-------|------|---------|---------|----------|
+      | {kit} | {n} | {n} | {n} | {n} | {%}% |
+      | **TOTAL** | {n} | {n} | {n} | {n} | {%}% |
+
+      ## Next Actions (Priority Order)
+
+      1. **{R-number}** ({kit}) — {title} — {complexity}
+         - Why next: {dependency analysis}
+      2. **{R-number}** ({kit}) — {title} — {complexity}
+         - Why next: {dependency analysis}
+      3. **{R-number}** ({kit}) — {title} — {complexity}
+         - Why next: {dependency analysis}
+
+      ## Blocked Requirements
+
+      | Requirement | Kit | Blocked By | Status of Blocker |
+      |------------|-----|------------|-------------------|
+      | {R-number} | {kit} | {R-dep} | {done/pending} |
+
+      ## Recommendations
+
+      - {actionable insight}
+      - {risk or concern}
+      ```
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: VERIFY — Cross-reference implementation with specs
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: verify-impl
+    depends_on: [scan-kits]
+    context: fresh
+    denied_tools: [Write, Edit]
+    prompt: |
+      # Cavekit Validate — Verify Implementation
+
+      Read `$ARTIFACTS_DIR/gap-analysis.md` for the status matrix.
+
+      ---
+
+      ## Step 1: Spot-Check Completed Requirements
+
+      For each `[x]` requirement, do a quick grep to verify the implementation exists:
+
+      ```bash
+      # Example: if R03 says "Redis caching", verify redis is actually used
+      grep -rn "{key term from AC}" --include="*.{js,ts,py}" --exclude-dir=node_modules | head -5
+      ```
+
+      ## Step 2: Check for Drift
+
+      Look for code that doesn't map to any R-requirement:
+      - New files not mentioned in any kit
+      - Features that exist in code but not in specs
+
+      ## Step 3: Append to Report
+
+      Add a "Verification" section to `$ARTIFACTS_DIR/gap-analysis.md`:
+
+      ```markdown
+      ## Verification Spot-Check
+
+      | Requirement | Claimed Status | Evidence Found | Verdict |
+      |------------|---------------|----------------|---------|
+      | {R-number} | [x] | {grep result} | CONFIRMED / SUSPECT |
+
+      ## Potential Drift
+
+      | File/Feature | Description | Mapped to Kit? |
+      |-------------|-------------|---------------|
+      | {file} | {what it does} | {R-number or UNMAPPED} |
+      ```
+
+      Present the final report to the user.
