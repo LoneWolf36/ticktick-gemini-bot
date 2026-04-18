@@ -1,5 +1,6 @@
 import { describe, it, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
+import { AxGen } from '@ax-llm/ax';
 import { createAxIntent, detectUrgentModeIntent, QuotaExhaustedError, validateIntentAction, validateChecklistItems } from '../services/ax-intent.js';
 import { MAX_CHECKLIST_ITEMS } from '../services/schemas.js';
 
@@ -197,6 +198,206 @@ describe('AX Intent Extraction', () => {
             } catch (error) {
                 // Expected to fail without AX mock
                 assert.ok(true);
+            }
+        });
+
+        it('extracts one create action with checklist items for a single outcome', async () => {
+            const originalForward = AxGen.prototype.forward;
+            AxGen.prototype.forward = async function forwardChecklistIntent() {
+                return {
+                    actions: [
+                        {
+                            type: 'create',
+                            targetQuery: null,
+                            title: 'Plan birthday party',
+                            content: null,
+                            priority: 3,
+                            projectHint: null,
+                            dueDate: 'next Saturday',
+                            repeatHint: null,
+                            splitStrategy: 'single',
+                            checklistItems: [
+                                { title: 'Buy decorations' },
+                                { title: 'Send invitations' },
+                                { title: 'Bake cake' },
+                            ],
+                            clarification: null,
+                            clarificationQuestion: null,
+                            confidence: 0.88,
+                        },
+                    ],
+                };
+            };
+
+            try {
+                const axIntent = createAxIntent(mockKeyManager);
+                const actions = await axIntent.extractIntents('plan birthday party: buy decorations, send invitations, bake cake', {
+                    currentDate: '2026-04-18',
+                    availableProjects: ['Personal'],
+                    requestId: 'req-checklist',
+                });
+
+                assert.deepEqual(actions, [
+                    {
+                        type: 'create',
+                        targetQuery: null,
+                        title: 'Plan birthday party',
+                        content: null,
+                        priority: 3,
+                        projectHint: null,
+                        dueDate: 'next Saturday',
+                        repeatHint: null,
+                        splitStrategy: 'single',
+                        checklistItems: [
+                            { title: 'Buy decorations' },
+                            { title: 'Send invitations' },
+                            { title: 'Bake cake' },
+                        ],
+                        clarification: null,
+                        clarificationQuestion: null,
+                        confidence: 0.88,
+                    },
+                ]);
+            } finally {
+                AxGen.prototype.forward = originalForward;
+            }
+        });
+
+        it('extracts separate create actions for independent tasks', async () => {
+            const originalForward = AxGen.prototype.forward;
+            AxGen.prototype.forward = async function forwardMultiTaskIntent() {
+                return {
+                    actions: [
+                        {
+                            type: 'create',
+                            targetQuery: null,
+                            title: 'Buy groceries',
+                            content: null,
+                            priority: null,
+                            projectHint: null,
+                            dueDate: null,
+                            repeatHint: null,
+                            splitStrategy: 'multi-task',
+                            checklistItems: null,
+                            clarification: null,
+                            clarificationQuestion: null,
+                            confidence: 0.92,
+                        },
+                        {
+                            type: 'create',
+                            targetQuery: null,
+                            title: 'Call mom',
+                            content: null,
+                            priority: null,
+                            projectHint: null,
+                            dueDate: null,
+                            repeatHint: null,
+                            splitStrategy: 'multi-task',
+                            checklistItems: null,
+                            clarification: null,
+                            clarificationQuestion: null,
+                            confidence: 0.92,
+                        },
+                    ],
+                };
+            };
+
+            try {
+                const axIntent = createAxIntent(mockKeyManager);
+                const actions = await axIntent.extractIntents('buy groceries and call mom', {
+                    currentDate: '2026-04-18',
+                    availableProjects: ['Inbox'],
+                    requestId: 'req-multi-task',
+                });
+
+                assert.deepEqual(actions, [
+                    {
+                        type: 'create',
+                        targetQuery: null,
+                        title: 'Buy groceries',
+                        content: null,
+                        priority: null,
+                        projectHint: null,
+                        dueDate: null,
+                        repeatHint: null,
+                        splitStrategy: 'multi-task',
+                        checklistItems: null,
+                        clarification: null,
+                        clarificationQuestion: null,
+                        confidence: 0.92,
+                    },
+                    {
+                        type: 'create',
+                        targetQuery: null,
+                        title: 'Call mom',
+                        content: null,
+                        priority: null,
+                        projectHint: null,
+                        dueDate: null,
+                        repeatHint: null,
+                        splitStrategy: 'multi-task',
+                        checklistItems: null,
+                        clarification: null,
+                        clarificationQuestion: null,
+                        confidence: 0.92,
+                    },
+                ]);
+            } finally {
+                AxGen.prototype.forward = originalForward;
+            }
+        });
+
+        it('extracts a clarification action when checklist intent is ambiguous', async () => {
+            const originalForward = AxGen.prototype.forward;
+            AxGen.prototype.forward = async function forwardClarificationIntent() {
+                return {
+                    actions: [
+                        {
+                            type: 'create',
+                            targetQuery: null,
+                            title: 'Plan project',
+                            content: null,
+                            priority: null,
+                            projectHint: null,
+                            dueDate: null,
+                            repeatHint: null,
+                            splitStrategy: null,
+                            checklistItems: null,
+                            clarification: true,
+                            clarificationQuestion: 'Is this one task with steps, or several separate tasks?',
+                            confidence: 0.3,
+                        },
+                    ],
+                };
+            };
+
+            try {
+                const axIntent = createAxIntent(mockKeyManager);
+                const actions = await axIntent.extractIntents('plan project: research, outline, review', {
+                    currentDate: '2026-04-18',
+                    availableProjects: ['Work'],
+                    requestId: 'req-clarification',
+                });
+
+                assert.deepEqual(actions, [
+                    {
+                        type: 'create',
+                        targetQuery: null,
+                        title: 'Plan project',
+                        content: null,
+                        priority: null,
+                        projectHint: null,
+                        dueDate: null,
+                        repeatHint: null,
+                        splitStrategy: null,
+                        checklistItems: null,
+                        clarification: true,
+                        clarificationQuestion: 'Is this one task with steps, or several separate tasks?',
+                        confidence: 0.3,
+                    },
+                ]);
+            } finally {
+                AxGen.prototype.forward = originalForward;
             }
         });
     });
