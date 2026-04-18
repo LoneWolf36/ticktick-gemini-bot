@@ -299,12 +299,12 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-001, FR-002, FR-003, FR-004, FR-005, FR-006
 
 ### Included Subtasks
-- [ ] T061 Add AX extraction test cases for checklist intent, multi-task intent, and ambiguous intent in `tests/ax-intent.test.js` (or inline in existing test file)
-- [ ] T062 Add normalizer checklist validation tests: cleaning, capping, sortOrder assignment, empty item dropping in `tests/normalizer.test.js`
-- [ ] T063 Add adapter checklist creation tests: payload mapping, field validation, backwards compatibility in adapter test surface
-- [ ] T064 Add pipeline regression tests for checklist flow, clarification result, and fallback behavior in `tests/regression.test.js`
-- [ ] T065 Add bot-layer tests for clarification UX: question sent, reply handled, fallback executed in `tests/regression.test.js`
-- [ ] T066 Run full regression suite (`node tests/run-regression-tests.mjs`) and verify all existing tests still pass
+- [x] T061 Add AX extraction test cases for checklist intent, multi-task intent, and ambiguous intent in `tests/ax-intent.test.js` (or inline in existing test file)
+- [x] T062 Add normalizer checklist validation tests: cleaning, capping, sortOrder assignment, empty item dropping in `tests/normalizer.test.js`
+- [x] T063 Add adapter checklist creation tests: payload mapping, field validation, backwards compatibility in adapter test surface
+- [x] T064 Add pipeline regression tests for checklist flow, clarification result, and fallback behavior in `tests/regression.test.js`
+- [x] T065 Add bot-layer tests for clarification UX: question sent, reply handled, fallback executed in `tests/regression.test.js`
+- [x] T066 Run full regression suite (`node tests/run-regression-tests.mjs`) and verify all existing tests still pass
 
 ### Implementation Notes
 - Tests should be added to existing test files where possible. Create new focused test files only if isolation is needed.
