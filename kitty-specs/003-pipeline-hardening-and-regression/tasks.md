@@ -112,10 +112,10 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-001, FR-002, FR-007, FR-008
 
 ### Included Subtasks
-- [ ] T001 Stabilize the canonical request-context builder in `services/pipeline-context.js`
-- [ ] T002 Align `services/ax-intent.js` and `services/pipeline.js` around the canonical context contract
-- [ ] T003 Align `services/normalizer.js` and `services/pipeline.js` so date and project resolution consume the same context shape
-- [ ] T004 Add fail-fast context validation and development-mode diagnostics before execution proceeds
+- [x] T001 Stabilize the canonical request-context builder in `services/pipeline-context.js`
+- [x] T002 Align `services/ax-intent.js` and `services/pipeline.js` around the canonical context contract
+- [x] T003 Align `services/normalizer.js` and `services/pipeline.js` so date and project resolution consume the same context shape
+- [x] T004 Add fail-fast context validation and development-mode diagnostics before execution proceeds
 
 ### Implementation Notes
 - Keep the write path unchanged: `AX -> normalizer -> TickTickAdapter`.
@@ -143,9 +143,9 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-001, FR-002, FR-005, FR-006
 
 ### Included Subtasks
-- [ ] T005 Update the free-form, `/scan`, and `/review` pipeline call sites in `bot/commands.js` to rely on the canonical context contract
-- [ ] T006 Update scheduler-triggered pipeline calls in `services/scheduler.js` and any needed bootstrap wiring in `server.js`
-- [ ] T007 Ensure project lookup and AX-facing project-name context are fetched once per request and reused consistently
+- [x] T005 Update the free-form, `/scan`, and `/review` pipeline call sites in `bot/commands.js` to rely on the canonical context contract
+- [x] T006 Update scheduler-triggered pipeline calls in `services/scheduler.js` and any needed bootstrap wiring in `server.js`
+- [x] T007 Ensure project lookup and AX-facing project-name context are fetched once per request and reused consistently
 
 ### Implementation Notes
 - Keep call-site-specific behavior thin; the shared context builder should own field names and defaults.
@@ -173,9 +173,9 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-003, FR-004, FR-007, FR-010
 
 ### Included Subtasks
-- [ ] T009 Reshape `services/pipeline.js` result handling around explicit pipeline failure classes
-- [ ] T010 Align configured-key rotation and quota semantics across `services/ax-intent.js`, `services/gemini.js`, and `services/pipeline.js`
-- [ ] T011 Implement deterministic mode-aware failure-message rendering for compact user mode and detailed dev mode
+- [x] T009 Reshape `services/pipeline.js` result handling around explicit pipeline failure classes
+- [x] T010 Align configured-key rotation and quota semantics across `services/ax-intent.js`, `services/gemini.js`, and `services/pipeline.js`
+- [x] T011 Implement deterministic mode-aware failure-message rendering for compact user mode and detailed dev mode
 
 ### Implementation Notes
 - Preserve request context during retries and classification.
@@ -203,9 +203,9 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-001, FR-002, FR-005, FR-006
 
 ### Included Subtasks
-- [ ] T008 Add direct regression coverage for relative-date and project-hint resolution through the hardened pipeline path
-- [ ] T018 Refactor `tests/pipeline-harness.js`, `tests/regression.test.js`, and `tests/run-regression-tests.mjs` around direct `createPipeline()` doubles
-- [ ] T019 Add direct happy-path pipeline regressions for create, update, complete, delete, and non-task outcomes
+- [x] T008 Add direct regression coverage for relative-date and project-hint resolution through the hardened pipeline path
+- [x] T018 Refactor `tests/pipeline-harness.js`, `tests/regression.test.js`, and `tests/run-regression-tests.mjs` around direct `createPipeline()` doubles
+- [x] T019 Add direct happy-path pipeline regressions for create, update, complete, delete, and non-task outcomes
 
 ### Implementation Notes
 - Reuse the existing `tests/pipeline-harness.js` seam instead of inventing a second harness.
@@ -234,10 +234,10 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-007, FR-008, FR-009
 
 ### Included Subtasks
-- [ ] T013 Introduce per-action execution records and rollback-step capture in `services/pipeline.js`
-- [ ] T014 Implement retry-once then rollback orchestration above `TickTickAdapter`
-- [ ] T015 Classify rollback outcomes explicitly, including partial rollback failure
-- [ ] T016 Extend the structured observability path in `services/pipeline-observability.js` for request, AX, normalization, execution, rollback, and terminal result stages
+- [x] T013 Introduce per-action execution records and rollback-step capture in `services/pipeline.js`
+- [x] T014 Implement retry-once then rollback orchestration above `TickTickAdapter`
+- [x] T015 Classify rollback outcomes explicitly, including partial rollback failure
+- [x] T016 Extend the structured observability path in `services/pipeline-observability.js` for request, AX, normalization, execution, rollback, and terminal result stages
 
 ### Implementation Notes
 - Do not bypass `services/ticktick-adapter.js`; rollback must use compensating adapter calls.
@@ -265,11 +265,11 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-003, FR-004, FR-005, FR-006, FR-007, FR-008, FR-009, FR-010
 
 ### Included Subtasks
-- [ ] T012 Add direct regression coverage for malformed AX output, empty intents, validation failures, and key-rotation-before-failure quota scenarios
-- [ ] T017 Add direct regression coverage for adapter rejection, successful rollback, rollback failure, and request-correlated observability emission
-- [ ] T020 Add direct pipeline failure-path coverage for validation failure, malformed AX, quota rotation, adapter failure, rollback success, and rollback failure
-- [ ] T021 Add burst-concurrency regressions for tens of concurrent mocked requests with unique request IDs and isolated results
-- [ ] T022 Update live validation notes and test doubles so the hardened contract is documented without making live scripts mandatory
+- [x] T012 Add direct regression coverage for malformed AX output, empty intents, validation failures, and key-rotation-before-failure quota scenarios
+- [x] T017 Add direct regression coverage for adapter rejection, successful rollback, rollback failure, and request-correlated observability emission
+- [x] T020 Add direct pipeline failure-path coverage for validation failure, malformed AX, quota rotation, adapter failure, rollback success, and rollback failure
+- [x] T021 Add burst-concurrency regressions for tens of concurrent mocked requests with unique request IDs and isolated results
+- [x] T022 Update live validation notes and test doubles so the hardened contract is documented without making live scripts mandatory
 
 ### Implementation Notes
 - Keep required regression coverage mocked and deterministic.

@@ -113,12 +113,12 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-001, FR-003, FR-006
 
 ### Included Subtasks
-- [ ] T011 Extend AX instructions in `services/ax-intent.js` to explain checklist vs multi-task intent discrimination with explicit examples
-- [ ] T012 Add `checklistItems` field to the AX output schema for create actions (array of `{ title, status?, sortOrder? }`)
-- [ ] T013 Add `clarification` flag to AX output shape for ambiguous intent (includes `clarificationQuestion` string)
-- [ ] T014 Extend runtime validation in `validateIntentAction()` to validate `checklistItems` array structure and cap at 30 items
-- [ ] T015 Add AX extraction test cases for checklist intent, multi-task intent, and ambiguous intent scenarios
-- [ ] T016 Preserve backwards compatibility for existing create-path tests (no `checklistItems` still works)
+- [x] T011 Extend AX instructions in `services/ax-intent.js` to explain checklist vs multi-task intent discrimination with explicit examples
+- [x] T012 Add `checklistItems` field to the AX output schema for create actions (array of `{ title, status?, sortOrder? }`)
+- [x] T013 Add `clarification` flag to AX output shape for ambiguous intent (includes `clarificationQuestion` string)
+- [x] T014 Extend runtime validation in `validateIntentAction()` to validate `checklistItems` array structure and cap at 30 items
+- [x] T015 Add AX extraction test cases for checklist intent, multi-task intent, and ambiguous intent scenarios
+- [x] T016 Preserve backwards compatibility for existing create-path tests (no `checklistItems` still works)
 
 ### Implementation Notes
 - Extend the existing `gen.setInstruction()` call; do not create a separate checklist extraction LLM call.
@@ -150,12 +150,12 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-002, FR-006
 
 ### Included Subtasks
-- [ ] T021 Add `_normalizeChecklistItems()` function in `services/normalizer.js` that processes raw `checklistItems` from AX output
-- [ ] T022 Clean each checklist item text: trim, strip filler patterns, ensure non-empty, truncate to reasonable length (50 chars)
-- [ ] T023 Cap checklist items at 30, log warning if truncated, drop empty items after cleaning
-- [ ] T024 Assign sequential `sortOrder` (0-indexed) to all items if not already provided
-- [ ] T025 Validate normalized items: each must have non-empty `title`, `status` defaults to 0
-- [ ] T026 Integrate checklist normalization into `normalizeAction()` so checklist items are attached to the normalized action
+- [x] T021 Add `_normalizeChecklistItems()` function in `services/normalizer.js` that processes raw `checklistItems` from AX output
+- [x] T022 Clean each checklist item text: trim, strip filler patterns, ensure non-empty, truncate to reasonable length (50 chars)
+- [x] T023 Cap checklist items at 30, log warning if truncated, drop empty items after cleaning
+- [x] T024 Assign sequential `sortOrder` (0-indexed) to all items if not already provided
+- [x] T025 Validate normalized items: each must have non-empty `title`, `status` defaults to 0
+- [x] T026 Integrate checklist normalization into `normalizeAction()` so checklist items are attached to the normalized action
 
 ### Implementation Notes
 - Checklist item text is cleaned separately from parent task title (different rules, no verb-led requirement).
@@ -187,12 +187,12 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-004, FR-006
 
 ### Included Subtasks
-- [ ] T031 Extend `TickTickAdapter.createTask()` to accept `checklistItems` field from normalized action
-- [ ] T032 Map `checklistItems` to TickTick API `items` array: `{ title, status: 0, sortOrder }` per item
-- [ ] T033 Add per-item field validation in adapter: title required, status defaults to 0, sortOrder from item or assigned
-- [ ] T034 Log adapter payload mapping: extracted items, normalized items, final `items` array sent to API
-- [ ] T035 Add adapter unit test for task creation with checklist items (mock the TickTick client)
-- [ ] T036 Preserve backwards compatibility: tasks without `checklistItems` create normally without `items` array
+- [x] T031 Extend `TickTickAdapter.createTask()` to accept `checklistItems` field from normalized action
+- [x] T032 Map `checklistItems` to TickTick API `items` array: `{ title, status: 0, sortOrder }` per item
+- [x] T033 Add per-item field validation in adapter: title required, status defaults to 0, sortOrder from item or assigned
+- [x] T034 Log adapter payload mapping: extracted items, normalized items, final `items` array sent to API
+- [x] T035 Add adapter unit test for task creation with checklist items (mock the TickTick client)
+- [x] T036 Preserve backwards compatibility: tasks without `checklistItems` create normally without `items` array
 
 ### Implementation Notes
 - The TickTick API accepts `items` array on task creation. Confirmed format:
@@ -226,12 +226,12 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-003, FR-006
 
 ### Included Subtasks
-- [ ] T041 Extend `services/pipeline-context.js` to carry checklist metadata in request context (optional: `hasChecklist`, `clarificationQuestion`)
-- [ ] T042 Extend `services/pipeline.js` normalizer step to pass checklist items through from normalized actions to adapter
-- [ ] T043 Handle `clarification` flag from AX: return `clarification` result type with question text instead of executing
-- [ ] T044 Add explicit `clarification` pipeline result type with `clarificationQuestion` and `fallbackAction` fields
-- [ ] T045 Add logging for checklist flow: extracted items count, normalized items count, adapter payload mapping
-- [ ] T046 Add pipeline regression tests for checklist intent, multi-task intent, and ambiguous intent scenarios
+- [x] T041 Extend `services/pipeline-context.js` to carry checklist metadata in request context (optional: `hasChecklist`, `clarificationQuestion`)
+- [x] T042 Extend `services/pipeline.js` normalizer step to pass checklist items through from normalized actions to adapter
+- [x] T043 Handle `clarification` flag from AX: return `clarification` result type with question text instead of executing
+- [x] T044 Add explicit `clarification` pipeline result type with `clarificationQuestion` and `fallbackAction` fields
+- [x] T045 Add logging for checklist flow: extracted items count, normalized items count, adapter payload mapping
+- [x] T046 Add pipeline regression tests for checklist intent, multi-task intent, and ambiguous intent scenarios
 
 ### Implementation Notes
 - The pipeline should not change its core orchestration pattern. Checklist items flow through the existing AX → Normalizer → Adapter path.
@@ -262,12 +262,12 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-003, FR-005, FR-006
 
 ### Included Subtasks
-- [ ] T051 Extend `bot/commands.js` to handle `clarification` pipeline results and send the question via Telegram reply
-- [ ] T052 Add pending clarification state to `services/store.js`: store the original message, clarification question, and fallback action
-- [ ] T053 Implement user reply handler that resumes the pipeline with the clarified intent (re-runs AX → Normalizer → Adapter)
-- [ ] T054 Implement fallback behavior: if user sends a new unrelated message instead of clarifying, execute the fallback action (AI's best judgment)
-- [ ] T055 Add inline button support for clarification responses (optional: "Create as checklist", "Create as separate tasks", "Skip")
-- [ ] T056 Add logging for clarification flow: question sent, user reply received, fallback executed
+- [x] T051 Extend `bot/commands.js` to handle `clarification` pipeline results and send the question via Telegram reply
+- [x] T052 Add pending clarification state to `services/store.js`: store the original message, clarification question, and fallback action
+- [x] T053 Implement user reply handler that resumes the pipeline with the clarified intent (re-runs AX → Normalizer → Adapter)
+- [x] T054 Implement fallback behavior: if user sends a new unrelated message instead of clarifying, execute the fallback action (AI's best judgment)
+- [x] T055 Add inline button support for clarification responses (optional: "Create as checklist", "Create as separate tasks", "Skip")
+- [x] T056 Add logging for clarification flow: question sent, user reply received, fallback executed
 
 ### Implementation Notes
 - Clarification state must be persisted in `services/store.js`, not in ephemeral in-memory maps.

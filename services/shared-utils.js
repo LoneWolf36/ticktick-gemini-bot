@@ -461,6 +461,9 @@ export function formatBriefingHeader({ kind }) {
     if (kind === 'daily') {
         return `**🌅 MORNING BRIEFING**\n${userTodayFormatted()}\n${'─'.repeat(24)}\n\n`;
     }
+    if (kind === 'daily_close') {
+        return `**🌙 END-OF-DAY REFLECTION**\n${userTodayFormatted()}\n${'─'.repeat(28)}\n\n`;
+    }
     if (kind === 'weekly') {
         return `**📊 WEEKLY ACCOUNTABILITY REVIEW**\n${'─'.repeat(28)}\n\n`;
     }

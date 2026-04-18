@@ -2,7 +2,7 @@
 
 ## Purpose
 
-Use this guide after implementation to verify the shared summary surface, deterministic formatter, and manual/scheduler parity for `/briefing` and `/weekly`.
+Use this guide after implementation to verify the shared summary surface, deterministic formatter, manual/scheduler parity for `/briefing` and `/weekly`, and the manual end-of-day reflection surface for `/daily_close`.
 
 ## Prerequisites
 
@@ -20,6 +20,7 @@ node tests/run-regression-tests.mjs
 
 Expected:
 - Daily and weekly summary contract tests pass.
+- Daily-close reflection contract tests pass.
 - Sparse-task and sparse-history fallbacks pass without fabricated output.
 - Manual command wiring and scheduler wiring use the shared summary surface.
 
@@ -33,6 +34,7 @@ Expected:
 - Structured summary objects are asserted before formatting.
 - Formatter-specific tests confirm Telegram-safe output and stable section order.
 - Command and scheduler parity tests pass for both `/briefing` and `/weekly`.
+- `/daily_close` command coverage passes with non-punitive sparse-day handling.
 
 ### 3. Validate the daily briefing contract
 
@@ -55,21 +57,30 @@ Check:
 - Output stays Telegram-safe and does not introduce `#`, `##`, or `###` headings.
 - Wording changes are limited to deterministic formatting or honest fallback notices.
 
-### 6. Validate manual and scheduler parity
+### 6. Validate the end-of-day reflection contract
+
+Check:
+- The structured daily-close summary exposes `stats`, `reflection`, `reset_cue`, and `notices`.
+- Meaningful-progress days produce a gentle, factual reflection instead of cheerleading.
+- Mixed or avoidance-shaped days produce direct but non-punitive wording grounded in evidence.
+- Sparse or disrupted days degrade to minimal stats plus a small reset cue without fabricated insight.
+
+### 7. Validate manual and scheduler parity
 
 Check:
 - Given the same task set and state, manual and scheduled daily summaries use the same shared summary module.
 - Given the same task set and processed-history snapshot, manual and scheduled weekly summaries use the same shared summary module.
 - Scheduler-only delivery wrappers, such as pending-review reminders, remain outside the shared summary contract.
+- `/daily_close` remains a manual surface unless a future accepted spec explicitly adds a scheduled evening delivery path.
 
-### 7. Validate logging and diagnostics
+### 8. Validate logging and diagnostics
 
 Check:
 - Source counts, degraded reasons, structured summary output, and formatting decisions are logged before delivery.
 - Delivery failures for manual and scheduled runs are logged with enough context to compare behavior.
 - Structured logs do not require reading the final rendered string to understand why a fallback occurred.
 
-### 8. Optional live smoke validation
+### 9. Optional live smoke validation
 
 Optional commands:
 
@@ -82,5 +93,6 @@ Use these only when you intentionally want live confidence checks.
 
 Manual smoke ideas:
 - Trigger `/briefing` with a normal active-task set and confirm the output remains compact.
+- Trigger `/daily_close` after a sparse or mixed day and confirm the reflection stays brief, factual, and non-punitive.
 - Trigger `/weekly` with missing or thin processed history and confirm the explicit missing-history notice appears.
 - Turn urgent mode on and confirm the reminder remains visible on both daily and weekly surfaces.

@@ -65,8 +65,17 @@ export const WEEKLY_SUMMARY_SECTION_KEYS = Object.freeze([
     'notices',
 ]);
 
+export const DAILY_CLOSE_SUMMARY_SECTION_KEYS = Object.freeze([
+    'stats',
+    'reflection',
+    'reset_cue',
+    'notices',
+]);
+
 export const SUMMARY_NOTICE_CODES = Object.freeze([
     'sparse_tasks',
+    'sparse_day',
+    'irregular_use',
     'missing_history',
     'degraded_ranking',
     'urgent_mode_active',
@@ -177,4 +186,15 @@ export const weeklySummarySchema = {
         notices: { type: SchemaType.ARRAY, items: summaryNoticeSchema },
     },
     required: WEEKLY_SUMMARY_SECTION_KEYS,
+};
+
+export const dailyCloseSummarySchema = {
+    type: SchemaType.OBJECT,
+    properties: {
+        stats: { type: SchemaType.ARRAY, items: { type: SchemaType.STRING } },
+        reflection: { type: SchemaType.STRING },
+        reset_cue: { type: SchemaType.STRING },
+        notices: { type: SchemaType.ARRAY, items: summaryNoticeSchema },
+    },
+    required: DAILY_CLOSE_SUMMARY_SECTION_KEYS,
 };

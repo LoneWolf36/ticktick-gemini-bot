@@ -61,6 +61,21 @@ test('T001: context builder derives availableProjectNames from availableProjects
     assert.deepEqual(context.availableProjectNames, ['Inbox', 'Career', 'Personal']);
 });
 
+test('T001: context builder accepts optional checklist metadata without changing default path', async () => {
+    const adapter = createMockAdapter(DEFAULT_PROJECTS);
+    const builder = createPipelineContextBuilder({ adapter, timezone: 'UTC' });
+    const context = await builder.buildRequestContext('Test', {
+        currentDate: '2026-04-13',
+        hasChecklist: true,
+        clarificationQuestion: 'One task with steps or separate tasks?',
+    });
+
+    assert.deepEqual(context.checklistContext, {
+        hasChecklist: true,
+        clarificationQuestion: 'One task with steps or separate tasks?',
+    });
+});
+
 test('T001: context builder accepts injected requestId for deterministic tests', async () => {
     const adapter = createMockAdapter(DEFAULT_PROJECTS);
     const builder = createPipelineContextBuilder({ adapter, timezone: 'UTC' });
@@ -214,6 +229,47 @@ test('T004: validatePipelineContext accepts valid context', () => {
     const result = validatePipelineContext(context);
     assert.equal(result.ok, true);
     assert.deepEqual(result.errors, []);
+});
+
+test('T004: validatePipelineContext accepts valid optional checklist context', () => {
+    const context = {
+        requestId: 'test-id',
+        entryPoint: 'telegram',
+        mode: 'default',
+        userMessage: 'Test message',
+        currentDate: '2026-04-13',
+        timezone: 'Europe/Dublin',
+        availableProjects: DEFAULT_PROJECTS,
+        existingTask: null,
+        checklistContext: {
+            hasChecklist: true,
+            clarificationQuestion: 'One task with steps or separate tasks?',
+        },
+    };
+    const result = validatePipelineContext(context);
+    assert.equal(result.ok, true);
+    assert.deepEqual(result.errors, []);
+});
+
+test('T004: validatePipelineContext rejects malformed checklist context fields', () => {
+    const context = {
+        requestId: 'test-id',
+        entryPoint: 'telegram',
+        mode: 'default',
+        userMessage: 'Test message',
+        currentDate: '2026-04-13',
+        timezone: 'Europe/Dublin',
+        availableProjects: DEFAULT_PROJECTS,
+        existingTask: null,
+        checklistContext: {
+            hasChecklist: 'yes',
+            clarificationQuestion: 123,
+        },
+    };
+    const result = validatePipelineContext(context);
+    assert.equal(result.ok, false);
+    assert.ok(result.errors.some(e => e.includes('checklistContext.hasChecklist')));
+    assert.ok(result.errors.some(e => e.includes('checklistContext.clarificationQuestion')));
 });
 
 test('T004: validatePipelineContext accepts existingTask as object', () => {

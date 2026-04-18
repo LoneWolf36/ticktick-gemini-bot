@@ -98,6 +98,8 @@ When this mission is marked done, the claim is not merely that its files changed
 
 Replace the legacy free-form `/briefing` and `/weekly` generation path with a lean shared summary surface that produces inspectable structured summary objects and deterministic Telegram formatting for both manual and scheduled runs. The implementation must preserve current tone as closely as possible, keep behavioral interpretation out of `006`, and create explicit coordination contracts so later work packages can run in parallel without schema drift or duplicated logic.
 
+This mission also includes a spec-level obligation that the original work-package breakdown missed: a brief end-of-day reflection surface (`/daily_close` or equivalent) required by User Story 4 plus FR-009 and FR-012 in `spec.md`. The delivered WP01-WP07 work modernizes briefing and weekly flows only; a follow-up work package is required before the mission can be treated as spec-complete.
+
 ## Engineering Alignment
 
 - Use one shared summary core, not separate command-local or scheduler-local logic.
@@ -105,6 +107,7 @@ Replace the legacy free-form `/briefing` and `/weekly` generation path with a le
 - Keep tests embedded with each implementation stream to support TDD.
 - Treat wording changes as regression-sensitive; preserve current headers, urgency reminder behavior, and overall tone unless the spec requires a clearer fallback.
 - Do not add a new public API, storage layer, plugin system, or behavioral-memory logic.
+- Do not treat briefing/weekly completion as mission completion while the end-of-day reflection surface required by `spec.md` remains unplanned or unimplemented.
 
 ## Technical Context
 
@@ -164,6 +167,7 @@ services/
 |-- summary-surfaces/
 |   |-- index.js
 |   |-- briefing-summary.js
+|   |-- daily-close-summary.js
 |   |-- weekly-summary.js
 |   `-- summary-formatter.js
 `-- schemas.js
@@ -175,7 +179,7 @@ tests/
 `-- e2e-live-ticktick.mjs
 ```
 
-**Structure Decision**: Introduce one small `services/summary-surfaces/` feature folder so daily summary logic, weekly summary logic, and deterministic formatting can be edited independently by parallel agents. Keep the rest of the integration in existing files. Do not create additional layers beyond this folder unless implementation proves a smaller extraction is insufficient.
+**Structure Decision**: Introduce one small `services/summary-surfaces/` feature folder so daily summary logic, weekly summary logic, end-of-day reflection logic, and deterministic formatting can be edited independently by parallel agents. Keep the rest of the integration in existing files. Do not create additional layers beyond this folder unless implementation proves a smaller extraction is insufficient.
 
 ## Implementation Strategy
 
@@ -197,6 +201,13 @@ tests/
 - Build `progress`, `carry_forward`, `next_focus`, and `watchouts` from current tasks plus processed-task history.
 - When processed history is sparse or missing, produce a reduced digest and a missing-history notice.
 - Keep `watchouts` limited to evidence-backed execution risks or missing-data notices only.
+
+### End-of-day reflection path
+
+- Add `services/summary-surfaces/daily-close-summary.js` to build a compact reflection object with lightweight stats, a context-aware reflection line, and minimal notices.
+- Expose `/daily_close` or an explicitly equivalent end-of-day surface through the bot without introducing punitive copy or behavioral-memory claims that belong to later missions.
+- Keep irregular-use handling deliberately non-punitive: when the day is sparse, skipped, or disrupted, the reflection should degrade to facts and a small reset cue instead of manufacturing insight.
+- Reuse the deterministic formatter so end-of-day output remains Telegram-safe and inspectable before rendering.
 
 ### Deterministic formatter
 
@@ -221,7 +232,9 @@ Phase A: Contract freeze and scaffolding
     +-- Stream 2: Weekly summary builder + embedded tests
     +-- Stream 3: Formatter and entry-point adapters + embedded tests
     |
-    `-- Phase B: Integration parity, observability, and final regression sweep
+    +-- Phase B: Integration parity, observability, and final regression sweep
+    |
+    `-- Phase C: End-of-day reflection contract, integration, and regression closure
 ```
 
 ### Sequential foundation before parallel work
@@ -250,6 +263,10 @@ This is the only intentionally sequential portion. Everything after it should br
   - resolves shared import wiring
   - completes observability parity
   - runs the full regression and smoke pass
+- Phase C - End-of-day reflection closure:
+  - owns the missing end-of-day reflection surface required by `spec.md`
+  - extends the shared summary contract and formatter only as far as needed for brief reflection output
+  - adds manual-command and/or equivalent delivery wiring plus sparse-day regressions
 
 ### Coordination contracts for parallel agents
 
@@ -264,6 +281,7 @@ This is the only intentionally sequential portion. Everything after it should br
 - `services/gemini.js` is the main merge hotspot today. The first implementation step should move briefing and weekly shaping out of it so later streams stop colliding there.
 - `bot/commands.js` and `services/scheduler.js` should be touched only by the adapter stream until the final integration pass.
 - `tests/regression.test.js` and `tests/run-regression-tests.mjs` should receive grouped, labeled sections per stream to minimize patch overlap.
+- `services/summary-surfaces/summary-formatter.js` becomes a new hotspot once end-of-day reflection is added; reflection-specific formatting should land in one grouped patch with tests.
 
 ## Phase Outputs
 
@@ -279,6 +297,12 @@ This is the only intentionally sequential portion. Everything after it should br
 - Publish an internal contract file for briefing and weekly summary composition so implementers share one shape.
 - Write a quickstart that validates manual/scheduler parity, sparse-data honesty, and tone preservation.
 - Update agent context from the final `plan.md` so future work packages inherit the same tech assumptions.
+
+### Phase 2: Spec-gap closure for end-of-day reflection
+
+- Define the minimum structured reflection contract needed to satisfy User Story 4 plus FR-009 and FR-012 without reopening the already-delivered briefing/weekly surfaces.
+- Add a focused work package for `/daily_close` (or equivalent) so the mission can satisfy the spec's end-of-day reflection promise explicitly instead of relying on briefing/weekly work alone.
+- Keep the reflection surface context-aware, sparse-data honest, and non-punitive for irregular use.
 
 ## Complexity Tracking
 

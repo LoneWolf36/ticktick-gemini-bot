@@ -17,9 +17,11 @@ import { AUTHORIZED_CHAT_ID } from '../services/shared-utils.js';
 import { runDailyBriefingJob, runWeeklyDigestJob } from '../services/scheduler.js';
 import {
   BRIEFING_SUMMARY_SECTION_KEYS,
+  DAILY_CLOSE_SUMMARY_SECTION_KEYS,
   WEEKLY_SUMMARY_SECTION_KEYS,
   buildSummaryLogPayload,
   composeBriefingSummary,
+  composeDailyCloseSummary,
   composeWeeklySummary,
   formatSummary,
   normalizeWeeklyWatchouts,
@@ -126,9 +128,9 @@ function buildSummaryProcessedHistoryFixture({ variant = 'normal' } = {}) {
   return base;
 }
 
-function buildSummaryResolvedStateFixture({ urgentMode = false, entryPoint = 'manual_command' } = {}) {
+function buildSummaryResolvedStateFixture({ kind = 'briefing', urgentMode = false, entryPoint = 'manual_command' } = {}) {
   return {
-    kind: 'briefing',
+    kind,
     entryPoint,
     userId: 'summary-fixture-user',
     generatedAtIso: '2026-03-13T08:30:00Z',
@@ -225,6 +227,117 @@ function buildWeeklySummaryFixture({ variant = 'normal' } = {}) {
     ],
     notices: [
       { severity: 'info', message: 'Active task set is sparse, so weekly recommendations are compact.' },
+    ],
+  };
+}
+
+function buildDailyCloseProcessedHistoryFixture({ variant = 'meaningful' } = {}) {
+  if (variant === 'irregular') {
+    return [
+      {
+        taskId: 'hist-irregular-1',
+        originalTitle: 'Old review artifact',
+        approved: true,
+        skipped: false,
+        dropped: false,
+        reviewedAt: '2026-03-09T19:00:00Z',
+      },
+    ];
+  }
+
+  if (variant === 'mixed') {
+    return [
+      {
+        taskId: 'hist-mixed-1',
+        originalTitle: 'Completed daily anchor',
+        approved: true,
+        skipped: false,
+        dropped: false,
+        reviewedAt: '2026-03-13T18:10:00Z',
+      },
+      {
+        taskId: 'hist-mixed-2',
+        originalTitle: 'Skipped admin cleanup',
+        approved: false,
+        skipped: true,
+        dropped: false,
+        reviewedAt: '2026-03-13T19:10:00Z',
+      },
+    ];
+  }
+
+  if (variant === 'avoidance') {
+    return [
+      {
+        taskId: 'hist-avoid-1',
+        originalTitle: 'Skipped architecture work',
+        approved: false,
+        skipped: true,
+        dropped: false,
+        reviewedAt: '2026-03-13T18:00:00Z',
+      },
+      {
+        taskId: 'hist-avoid-2',
+        originalTitle: 'Dropped interview prep',
+        approved: false,
+        skipped: false,
+        dropped: true,
+        reviewedAt: '2026-03-13T19:00:00Z',
+      },
+    ];
+  }
+
+  if (variant === 'sparse') {
+    return [
+      {
+        taskId: 'hist-sparse-1',
+        originalTitle: 'Light check-in only',
+        approved: false,
+        skipped: true,
+        dropped: false,
+        reviewedAt: '2026-03-13T20:00:00Z',
+      },
+    ];
+  }
+
+  return [
+    {
+      taskId: 'hist-day-1',
+      originalTitle: 'Shipped architecture PR',
+      approved: true,
+      skipped: false,
+      dropped: false,
+      reviewedAt: '2026-03-13T18:00:00Z',
+    },
+    {
+      taskId: 'hist-day-2',
+      originalTitle: 'Closed design follow-up',
+      approved: true,
+      skipped: false,
+      dropped: false,
+      reviewedAt: '2026-03-13T19:00:00Z',
+    },
+  ];
+}
+
+function buildDailyCloseSummaryFixture({ variant = 'normal' } = {}) {
+  if (variant === 'sparse') {
+    return {
+      stats: ['Completed: 0', 'Skipped: 1', 'Dropped: 0', 'Still open: 1'],
+      reflection: '',
+      reset_cue: 'If today was disrupted or offline, restart tomorrow with one concrete task.',
+      notices: [
+        { severity: 'info', message: 'The day has thin evidence, so this reflection stays minimal.' },
+      ],
+    };
+  }
+
+  return {
+    stats: ['Completed: 2', 'Skipped: 0', 'Dropped: 0', 'Still open: 3'],
+    reflection: 'You moved meaningful work today. Keep the close-out factual and light.',
+    reset_cue: 'Tomorrow’s restart: begin with “Ship weekly architecture PR” and finish the first executable step.',
+    notices: [
+      { severity: 'info', message: 'The day has thin evidence, so this reflection stays minimal.' },
     ],
   };
 }
@@ -568,6 +681,81 @@ test('formatSummary keeps empty sections compact and Telegram-safe', () => {
   assert.match(weeklyHtml, /<b>Progress<\/b>/);
 });
 
+test('composeDailyCloseSummary always returns fixed daily-close top-level sections', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildDailyCloseProcessedHistoryFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture({ kind: 'daily_close' });
+
+  const result = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory,
+    rankingResult,
+  });
+
+  assert.deepEqual(Object.keys(result.summary), DAILY_CLOSE_SUMMARY_SECTION_KEYS);
+  assert.equal(Array.isArray(result.summary.stats), true);
+  assert.equal(Array.isArray(result.summary.notices), true);
+});
+
+test('composeDailyCloseSummary acknowledges meaningful progress without cheerleading', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildDailyCloseProcessedHistoryFixture({ variant: 'meaningful' });
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture({ kind: 'daily_close' });
+
+  const result = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory,
+    rankingResult,
+  });
+
+  assert.ok(result.summary.stats.includes('Completed: 2'));
+  assert.match(result.summary.reflection, /meaningful work/i);
+  assert.match(result.summary.reset_cue, /Tomorrow’s restart/i);
+});
+
+test('composeDailyCloseSummary stays minimal and non-punitive for irregular use', () => {
+  const activeTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+  const processedHistory = buildDailyCloseProcessedHistoryFixture({ variant: 'irregular' });
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture({ kind: 'daily_close' }),
+    generatedAtIso: '2026-03-13T21:00:00Z',
+  };
+
+  const result = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory,
+    rankingResult,
+  });
+
+  assert.equal(result.summary.reflection, '');
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'irregular_use'));
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'sparse_day'));
+  assert.equal(/punish|failure|lazy/i.test(result.formattedText), false);
+});
+
+test('formatSummary renders daily-close sections in fixed order and keeps output Telegram-safe', () => {
+  const summary = buildDailyCloseSummaryFixture();
+  const { text, telegramSafe } = formatSummary({
+    kind: 'daily_close',
+    summary,
+    context: { urgentMode: false },
+  });
+
+  const sectionOrder = ['**Stats**', '**Reflection**', '**Reset cue**', '**Notices**'];
+  const positions = sectionOrder.map((label) => text.indexOf(label));
+
+  assert.ok(text.includes('END-OF-DAY REFLECTION'));
+  assert.ok(positions.every((pos) => pos >= 0));
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions);
+  assert.equal(telegramSafe, true);
+});
+
 test('default timezone remains Europe/Dublin when USER_TIMEZONE is unset', () => {
   const source = readFileSync('services/shared-utils.js', 'utf8');
   assert.match(source, /USER_TZ\s*=\s*process\.env\.USER_TIMEZONE\s*\|\|\s*'Europe\/Dublin'/);
@@ -904,7 +1092,103 @@ test('registerCommands uses shared weekly surface and sends formatted output', a
   assert.ok(replies.some((message) => typeof message === 'string' && message.includes('WEEKLY ACCOUNTABILITY REVIEW')));
 });
 
-test('registerCommands short-circuits briefing and weekly when quota is exhausted', async () => {
+test('registerCommands uses shared daily-close surface and passes processed history', async () => {
+  resetRateLimits();
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) {
+      handlers.commands.set(name, handler);
+      return this;
+    },
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return this;
+    },
+    on(eventName, handler) {
+      handlers.events.push({ eventName, handler });
+      return this;
+    },
+  };
+
+  const dailyCloseCalls = [];
+  await store.resetAll();
+  await store.markTaskProcessed('daily-close-hist-1', {
+    originalTitle: 'Completed anchor task',
+    approved: true,
+    reviewedAt: '2026-03-13T19:00:00Z',
+  });
+
+  registerCommands(
+    bot,
+    {
+      isAuthenticated: () => true,
+      getCacheAgeSeconds: () => null,
+      getAuthUrl: () => 'https://example.test/auth',
+      getAllTasks: async () => [],
+      getAllTasksCached: async () => [],
+      getLastFetchedProjects: () => [],
+    },
+    {
+      isQuotaExhausted: () => false,
+      quotaResumeTime: () => null,
+      activeKeyInfo: () => null,
+      generateDailyCloseSummary: async (_tasks, processedTasks, options) => {
+        dailyCloseCalls.push({ processedTasks, options });
+        return {
+          summary: {
+            stats: ['Completed: 1'],
+            reflection: 'Meaningful work moved today.',
+            reset_cue: 'Restart with one concrete step tomorrow.',
+            notices: [],
+          },
+          formattedText: '**🌙 END-OF-DAY REFLECTION**\n\n**Stats**:\n- Completed: 1',
+          diagnostics: {
+            kind: 'daily_close',
+            entryPoint: options.entryPoint,
+            sourceCounts: {
+              activeTasks: 0,
+              processedHistory: Object.keys(processedTasks).length,
+            },
+            degraded: false,
+            degradedReason: null,
+            formatterVersion: 'summary-formatter.v1',
+            formattingDecisions: {
+              telegramSafe: true,
+              tonePreserved: true,
+              urgentReminderApplied: false,
+              truncated: false,
+            },
+            deliveryStatus: 'composed',
+          },
+        };
+      },
+      generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
+    },
+    {},
+    {},
+  );
+
+  const dailyCloseHandler = handlers.commands.get('daily_close');
+  assert.equal(typeof dailyCloseHandler, 'function');
+
+  const replies = [];
+  const userId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.setUrgentMode(userId, false);
+  await dailyCloseHandler({
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => {
+      replies.push(message);
+    },
+  });
+
+  assert.equal(dailyCloseCalls.length, 1);
+  assert.equal(dailyCloseCalls[0].options.entryPoint, 'manual_command');
+  assert.equal(Object.keys(dailyCloseCalls[0].processedTasks).length > 0, true);
+  assert.ok(replies.some((message) => typeof message === 'string' && message.includes('END-OF-DAY REFLECTION')));
+});
+
+test('registerCommands short-circuits briefing daily_close and weekly when quota is exhausted', async () => {
   resetRateLimits();
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
@@ -939,6 +1223,9 @@ test('registerCommands short-circuits briefing and weekly when quota is exhauste
       generateDailyBriefingSummary: async () => {
         throw new Error('generateDailyBriefingSummary should not be called when quota is exhausted');
       },
+      generateDailyCloseSummary: async () => {
+        throw new Error('generateDailyCloseSummary should not be called when quota is exhausted');
+      },
       generateWeeklyDigestSummary: async () => {
         throw new Error('generateWeeklyDigestSummary should not be called when quota is exhausted');
       },
@@ -959,6 +1246,7 @@ test('registerCommands short-circuits briefing and weekly when quota is exhauste
   };
 
   await handlers.commands.get('briefing')(ctx);
+  await handlers.commands.get('daily_close')(ctx);
   await handlers.commands.get('weekly')(ctx);
 
   assert.ok(replies.some((message) => /quota exhausted/i.test(message)));
@@ -3512,6 +3800,10 @@ test('WP04 T046: checklist create creates one parent task with items', async () 
   const result = await processMessage('Onboard new client: send welcome email, create project folder, schedule kickoff');
 
   assert.equal(result.type, 'task', 'should return task type');
+  assert.deepEqual(result.checklistContext, {
+    hasChecklist: true,
+    clarificationQuestion: null,
+  });
   assert.equal(adapterCalls.create.length, 1, 'should create exactly one parent task');
   const createdAction = adapterCalls.create[0];
   // Title gets normalized with verb-led prefix
@@ -3566,6 +3858,10 @@ test('WP04 T046: ambiguous checklist vs multi-task returns clarification', async
   assert.equal(result.type, 'clarification', 'should return clarification type');
   assert.ok(result.confirmationText, 'should have a clarification question');
   assert.ok(result.clarification, 'should have clarification metadata');
+  assert.deepEqual(result.checklistContext, {
+    hasChecklist: true,
+    clarificationQuestion: 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?',
+  });
   assert.equal(result.clarification.reason, 'ambiguous_checklist_vs_multi_task');
   assert.equal(adapterCalls.create.length, 0, 'should not create any tasks');
 });

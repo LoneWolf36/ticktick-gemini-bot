@@ -6,7 +6,7 @@ import path from 'path';
 import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from './shared-utils.js';
 import { briefingSummarySchema, reorgSchema, weeklySummarySchema } from './schemas.js';
 import * as store from './store.js';
-import { composeBriefingSummary, composeWeeklySummary } from './summary-surfaces/index.js';
+import { composeBriefingSummary, composeDailyCloseSummary, composeWeeklySummary } from './summary-surfaces/index.js';
 import {
     createGoalThemeProfile,
     inferPriorityValueFromTask,
@@ -555,6 +555,34 @@ export class GeminiAnalyzer {
             historyAvailable: options.historyAvailable !== false,
             rankingResult: ranking,
             modelSummary: summaryPayload,
+        });
+    }
+
+    async generateDailyCloseSummary(allTasks, processedTasks, options = {}) {
+        const recommendationState = await this._resolveRecommendationState(options);
+        const { ranking, orderedTasks } = this._prepareBriefingTasks(allTasks, {
+            ...options,
+            ...recommendationState,
+        });
+
+        const processedEntries = Array.isArray(processedTasks)
+            ? processedTasks.filter(Boolean)
+            : Object.entries(processedTasks || {}).map(([taskId, data]) => ({ taskId, ...data }));
+
+        return composeDailyCloseSummary({
+            context: {
+                kind: 'daily_close',
+                entryPoint: options.entryPoint || 'manual_command',
+                userId: options.userId ?? options.chatId ?? store.getChatId(),
+                generatedAtIso: options.generatedAtIso || new Date().toISOString(),
+                timezone: options.timezone || null,
+                urgentMode: recommendationState.urgentMode,
+                tonePolicy: options.tonePolicy || 'preserve_existing',
+            },
+            activeTasks: orderedTasks,
+            processedHistory: processedEntries,
+            rankingResult: ranking,
+            modelSummary: {},
         });
     }
 

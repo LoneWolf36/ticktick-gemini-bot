@@ -1,5 +1,6 @@
 import {
     BRIEFING_SUMMARY_SECTION_KEYS,
+    DAILY_CLOSE_SUMMARY_SECTION_KEYS,
     SUMMARY_NOTICE_CODES,
     SUMMARY_NOTICE_EVIDENCE_SOURCES,
     SUMMARY_NOTICE_SEVERITIES,
@@ -7,10 +8,12 @@ import {
     WEEKLY_WATCHOUT_EVIDENCE_SOURCES,
 } from '../schemas.js';
 import { composeBriefingSummarySections } from './briefing-summary.js';
+import { composeDailyCloseSummarySections } from './daily-close-summary.js';
 import { composeWeeklySummarySections } from './weekly-summary.js';
 import { formatSummary, SUMMARY_FORMATTER_VERSION } from './summary-formatter.js';
 
 const BRIEFING_KIND = 'briefing';
+const DAILY_CLOSE_KIND = 'daily_close';
 const WEEKLY_KIND = 'weekly';
 const ENTRY_POINT_VALUES = new Set(['manual_command', 'scheduler']);
 const TONE_POLICY_VALUES = new Set(['preserve_existing']);
@@ -33,7 +36,11 @@ function normalizeSummaryRequestContext(kind, rawContext = {}) {
     const tonePolicy = rawContext.tonePolicy || rawContext.tone_policy;
 
     return {
-        kind: kind === WEEKLY_KIND ? WEEKLY_KIND : BRIEFING_KIND,
+        kind: kind === WEEKLY_KIND
+            ? WEEKLY_KIND
+            : kind === DAILY_CLOSE_KIND
+                ? DAILY_CLOSE_KIND
+                : BRIEFING_KIND,
         entryPoint: ENTRY_POINT_VALUES.has(entryPoint) ? entryPoint : 'manual_command',
         userId: rawContext.userId ?? rawContext.user_id ?? null,
         generatedAtIso: rawContext.generatedAtIso || rawContext.generated_at_iso || new Date().toISOString(),
@@ -120,6 +127,15 @@ export function normalizeWeeklySummary(summary = {}) {
     };
 }
 
+export function normalizeDailyCloseSummary(summary = {}) {
+    return {
+        stats: toArray(summary.stats).map((item) => toString(item)).filter(Boolean),
+        reflection: toString(summary.reflection, ''),
+        reset_cue: toString(summary.reset_cue, ''),
+        notices: toArray(summary.notices).map((notice) => normalizeSummaryNotice(notice)),
+    };
+}
+
 function hasAllSections(summary = {}, requiredSections = []) {
     return requiredSections.every((section) => Object.hasOwn(summary, section));
 }
@@ -150,6 +166,20 @@ function ensureWeeklySections(summary = {}) {
         carry_forward: normalized.carry_forward || [],
         next_focus: normalized.next_focus || [],
         watchouts: normalized.watchouts || [],
+        notices: normalized.notices || [],
+    };
+}
+
+function ensureDailyCloseSections(summary = {}) {
+    const normalized = normalizeDailyCloseSummary(summary);
+    if (hasAllSections(normalized, DAILY_CLOSE_SUMMARY_SECTION_KEYS)) {
+        return normalized;
+    }
+
+    return {
+        stats: normalized.stats || [],
+        reflection: normalized.reflection || '',
+        reset_cue: normalized.reset_cue || '',
         notices: normalized.notices || [],
     };
 }
@@ -323,8 +353,47 @@ export function composeWeeklySummary({
     };
 }
 
+/**
+ * Stable summary-surface contract for end-of-day reflection composition.
+ */
+export function composeDailyCloseSummary({
+    context = {},
+    activeTasks = [],
+    processedHistory = [],
+    rankingResult = null,
+    modelSummary = null,
+} = {}) {
+    const normalizedContext = normalizeSummaryRequestContext(DAILY_CLOSE_KIND, context);
+    const summary = ensureDailyCloseSections(
+        composeDailyCloseSummarySections({
+            context: normalizedContext,
+            activeTasks: toArray(activeTasks),
+            processedHistory: toArray(processedHistory),
+            rankingResult,
+            modelSummary,
+        }),
+    );
+    const formattedResult = formatSummary({ kind: DAILY_CLOSE_KIND, summary, context: normalizedContext });
+    const formattedText = formattedResult.text;
+    const diagnostics = createSummaryDiagnostics({
+        context: normalizedContext,
+        activeTasks,
+        processedHistory,
+        rankingResult,
+        formattedText,
+        formattedResult,
+    });
+
+    return {
+        summary,
+        formattedText,
+        diagnostics,
+    };
+}
+
 export {
     BRIEFING_SUMMARY_SECTION_KEYS,
+    DAILY_CLOSE_SUMMARY_SECTION_KEYS,
     WEEKLY_SUMMARY_SECTION_KEYS,
     formatSummary,
 };

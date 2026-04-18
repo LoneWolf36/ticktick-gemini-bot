@@ -17,13 +17,13 @@ import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueF
 import { detectUrgentModeIntent } from '../services/ax-intent.js';
 
 // ─── Simple per-user rate limiter ───────────────────────────
-// Heavy commands (/scan, /briefing, /weekly, /review, /reorg) are rate-limited
+// Heavy commands (/scan, /briefing, /daily_close, /weekly, /review, /reorg) are rate-limited
 // to prevent accidental spam that burns TickTick/Gemini API quotas.
 // Light commands (/start, /menu, /status, /urgent, /pending, /undo, /reset) are not limited.
 
 const RATE_LIMIT_WINDOW_MS = 30_000;  // 30-second window
 const RATE_LIMIT_MAX = 1;              // 1 heavy command per window
-const HEAVY_COMMANDS = new Set(['scan', 'briefing', 'weekly', 'review', 'reorg']);
+const HEAVY_COMMANDS = new Set(['scan', 'briefing', 'daily_close', 'weekly', 'review', 'reorg']);
 
 const rateLimitWindows = new Map(); // `${userId}:${command}` -> { count, resetAt }
 
@@ -75,6 +75,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         .text('⏳ Pending', 'menu:pending')
         .row()
         .text('🌅 Briefing', 'menu:briefing')
+        .text('🌙 Daily Close', 'menu:daily_close')
+        .row()
         .text('📊 Weekly', 'menu:weekly')
         .row()
         .text('🧭 Reorg', 'menu:reorg')
@@ -133,6 +135,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             `/scan — Analyze new tasks (batched, 5 at a time)\n` +
             `/pending — Re-surface tasks awaiting review\n` +
             `/briefing — Today's prioritized morning plan\n` +
+            `/daily_close — Brief end-of-day reflection\n` +
             `/weekly — Weekly accountability digest\n` +
             `/review — Walk through all unreviewed tasks\n` +
             `/undo — Revert last auto-applied change\n` +
@@ -599,6 +602,53 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 return;
             }
             await ctx.reply(`❌ Weekly digest error: ${err.message}`);
+        }
+    });
+
+    // ─── /daily_close ─────────────────────────────────────────
+    bot.command('daily_close', async (ctx) => {
+        if (!await guardAccess(ctx)) return;
+        if (guardRateLimit(ctx, 'daily_close')) return;
+        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
+        if (gemini.isQuotaExhausted()) {
+            await ctx.reply(buildQuotaExhaustedMessage(gemini));
+            return;
+        }
+        await ctx.reply('🌙 Generating your end-of-day reflection...');
+        const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
+        const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
+        const context = buildSummaryContext({ kind: 'daily_close', userId, urgentMode });
+        try {
+            const tasks = await ticktick.getAllTasks();
+            const processed = store.getProcessedTasks();
+            const historyAvailable = typeof processed === 'object' && processed !== null && !Array.isArray(processed);
+            const dailyCloseResult = await gemini.generateDailyCloseSummary(tasks, processed || {}, {
+                entryPoint: context.entryPoint,
+                userId,
+                urgentMode,
+                generatedAtIso: context.generatedAtIso,
+                historyAvailable,
+            });
+            logSummarySurfaceEvent({
+                context,
+                result: dailyCloseResult,
+                deliveryStatus: 'ready',
+                extra: { historyAvailable },
+            });
+            await replyWithMarkdown(ctx, dailyCloseResult.formattedText);
+            logSummarySurfaceEvent({
+                context,
+                result: dailyCloseResult,
+                deliveryStatus: 'sent',
+                extra: { historyAvailable },
+            });
+        } catch (err) {
+            logSummarySurfaceEvent({ context, deliveryStatus: 'failed', error: err });
+            if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
+                await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
+                return;
+            }
+            await ctx.reply(`❌ Daily close error: ${err.message}`);
         }
     });
 

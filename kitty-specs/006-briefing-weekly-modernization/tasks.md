@@ -327,11 +327,46 @@ When this mission is marked done, the claim is not merely that its files changed
 
 ---
 
+## Work Package WP08: End-of-Day Reflection Surface Closure (Priority: P1)
+
+**Goal**: Close the spec-defined gap for User Story 4 by adding a brief end-of-day reflection surface (`/daily_close` or equivalent) that is context-aware, lightweight, and non-punitive for irregular use.
+**Independent Test**: The end-of-day reflection surface returns brief reflection output with lightweight stats, degrades to facts-only on sparse days, and remains non-punitive when the user was irregular or unavailable.
+**Prompt**: `kitty-specs/006-briefing-weekly-modernization/tasks/WP08-end-of-day-reflection-surface-closure.md`
+**Estimated Prompt Size**: ~360 lines
+
+**Requirements Refs**: FR-004, FR-007, FR-009, FR-012
+
+### Included Subtasks
+- [ ] T037 Freeze the minimum end-of-day reflection contract in `plan.md`, `quickstart.md`, and shared summary helpers before wiring delivery code
+- [ ] T038 Add an end-of-day reflection composer in `services/summary-surfaces/` plus supporting schema helpers in `services/schemas.js`
+- [ ] T039 Wire `/daily_close` (or explicitly equivalent) through `bot/commands.js` using the shared summary surface rather than a legacy prompt-only path
+- [ ] T040 Preserve sparse-day, disrupted-day, and irregular-use handling so reflection stays brief, factual, and non-punitive
+- [ ] T041 Extend deterministic formatting for the end-of-day reflection surface without introducing motivational filler or unsupported behavioral claims
+- [ ] T042 Add regression coverage for meaningful-progress, mixed-results, avoidance-pattern, irregular-use, and sparse-data end-of-day scenarios
+
+### Implementation Notes
+- This WP is a gap-reconciliation package added after audit. WP01-WP07 modernized briefing and weekly surfaces, but they did not satisfy User Story 4 / FR-009 / FR-012 from `spec.md`.
+- Keep the reflection surface as small as possible: lightweight stats, one short reflection line when evidence supports it, and a minimal reset cue.
+- Do not introduce new behavioral-memory or punitive coaching logic here; stay inside the evidence and tone boundaries already defined for mission `006`.
+
+### Parallel Opportunities
+- None. This package should build on the already-stabilized shared summary surface after WP07.
+
+**Dependencies**: WP07.
+
+### Risks & Mitigations
+- Risk: Reflection becomes verbose or moralizing.
+- Mitigation: Keep deterministic formatting compact and require sparse-day/facts-only regressions.
+- Risk: The new surface quietly forks from the shared summary architecture.
+- Mitigation: Require the same shared summary module and formatter boundary used by briefing and weekly.
+
+---
+
 ## Dependency & Execution Summary
 
-- **Sequence**: WP01 -> (WP02, WP03, WP04 in parallel) -> (WP05, WP06 in parallel) -> WP07.
+- **Sequence**: WP01 -> (WP02, WP03, WP04 in parallel) -> (WP05, WP06 in parallel) -> WP07 -> WP08.
 - **Parallelization**: The feature is intentionally split so three core streams can branch after WP01, then two adapter streams can proceed in parallel once the core contracts are in place.
-- **MVP Scope**: WP01 through WP06. WP07 is the stabilization and cleanup gate before final review.
+- **MVP Scope**: WP01 through WP07 delivered the briefing/weekly modernization track. WP08 is required for full spec-level mission acceptance because the end-of-day reflection surface remained outside the original breakdown.
 
 ---
 
@@ -375,6 +410,12 @@ When this mission is marked done, the claim is not merely that its files changed
 | T034 | Add cross-path parity regressions | WP07 | P2 | No |
 | T035 | Validate quickstart scenarios and stale notes | WP07 | P2 | No |
 | T036 | Remove obsolete legacy daily/weekly helpers | WP07 | P2 | No |
+| T037 | Freeze end-of-day reflection contract and quickstart expectations | WP08 | P1 | No |
+| T038 | Add end-of-day reflection composer and schema helpers | WP08 | P1 | No |
+| T039 | Wire `/daily_close` or equivalent manual surface | WP08 | P1 | No |
+| T040 | Preserve sparse-day and irregular-use non-punitive handling | WP08 | P1 | No |
+| T041 | Extend deterministic formatting for end-of-day reflection | WP08 | P1 | No |
+| T042 | Add end-of-day reflection regressions | WP08 | P1 | No |
 
 <!-- status-model:start -->
 ## Canonical Status (Generated)
@@ -385,4 +426,5 @@ When this mission is marked done, the claim is not merely that its files changed
 - WP05: done
 - WP06: done
 - WP07: done
+- WP08: planned
 <!-- status-model:end -->

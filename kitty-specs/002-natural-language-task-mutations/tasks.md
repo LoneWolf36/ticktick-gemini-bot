@@ -112,11 +112,11 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-002, FR-003, FR-008, FR-009
 
 ### Included Subtasks
-- [ ] T011 Create `services/task-resolver.js` with task-title normalization and reusable candidate-shaping helpers
-- [ ] T012 Implement exact, prefix, contains, and conservative fuzzy scoring over active task titles
-- [ ] T013 Implement resolver decision rules that return `resolved`, `clarification`, or `not_found`
-- [ ] T014 Add focused resolver unit coverage in `tests/task-resolver.test.js`
-- [ ] T015 Freeze resolver output contracts and edge-case fixtures used by downstream pipeline tests
+- [x] T011 Create `services/task-resolver.js` with task-title normalization and reusable candidate-shaping helpers
+- [x] T012 Implement exact, prefix, contains, and conservative fuzzy scoring over active task titles
+- [x] T013 Implement resolver decision rules that return `resolved`, `clarification`, or `not_found`
+- [x] T014 Add focused resolver unit coverage in `tests/task-resolver.test.js`
+- [x] T015 Freeze resolver output contracts and edge-case fixtures used by downstream pipeline tests
 
 ### Implementation Notes
 - This is the only truly new service module in the feature.
@@ -144,11 +144,11 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-001, FR-006, FR-009
 
 ### Included Subtasks
-- [ ] T021 Extend `services/ax-intent.js` instructions so mutation actions emit `targetQuery` instead of overloading `title` as the lookup key
-- [ ] T022 Update runtime validation so required fields differ correctly for create vs update/complete/delete actions
-- [ ] T023 Add mutation-focused AX examples for rename, due-date change, priority update, completion, deletion, and mixed-intent rejection cues
-- [ ] T024 Add mutation extraction coverage in `tests/ax-intent.test.js`
-- [ ] T025 Preserve backwards compatibility for current create-path tests and existing update/complete/delete harness scenarios
+- [x] T021 Extend `services/ax-intent.js` instructions so mutation actions emit `targetQuery` instead of overloading `title` as the lookup key
+- [x] T022 Update runtime validation so required fields differ correctly for create vs update/complete/delete actions
+- [x] T023 Add mutation-focused AX examples for rename, due-date change, priority update, completion, deletion, and mixed-intent rejection cues
+- [x] T024 Add mutation extraction coverage in `tests/ax-intent.test.js`
+- [x] T025 Preserve backwards compatibility for current create-path tests and existing update/complete/delete harness scenarios
 
 ### Implementation Notes
 - Do not introduce a separate `extractMutationIntents()` service unless the existing `extractIntents()` surface cannot be extended safely.
@@ -176,10 +176,10 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-001, FR-005, FR-009
 
 ### Included Subtasks
-- [ ] T031 Extend `services/normalizer.js` so resolved mutation intents normalize through the existing action pipeline without a second normalizer stack
-- [ ] T032 Require mutation actions to carry resolved `taskId` and project context before they can become valid write actions
-- [ ] T033 Preserve existing content on update unless the user explicitly requests replacement, staying aligned with current adapter merge semantics
-- [ ] T034 Reject unsupported mutation shapes such as mixed create+mutation, multiple mutation actions, or unresolved pronoun-only references
+- [x] T031 Extend `services/normalizer.js` so resolved mutation intents normalize through the existing action pipeline without a second normalizer stack
+- [x] T032 Require mutation actions to carry resolved `taskId` and project context before they can become valid write actions
+- [x] T033 Preserve existing content on update unless the user explicitly requests replacement, staying aligned with current adapter merge semantics
+- [x] T034 Reject unsupported mutation shapes such as mixed create+mutation, multiple mutation actions, or unresolved pronoun-only references
 
 ### Implementation Notes
 - Do not create `services/mutation-normalizer.js`.
@@ -207,11 +207,11 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-002, FR-003, FR-004, FR-006, FR-007, FR-008, FR-009
 
 ### Included Subtasks
-- [ ] T041 Add a thin read seam to `services/ticktick-adapter.js` for listing active tasks used by resolution
-- [ ] T042 Extend `services/pipeline-context.js` and `tests/pipeline-harness.js` to carry available-task inputs and mutation-resolution metadata
-- [ ] T043 Extend `services/pipeline.js` to identify single mutation requests, reject out-of-scope mixed requests, resolve the target, and execute the resolved action
-- [ ] T044 Add explicit `clarification` and `not-found` pipeline result types with terse confirmation text and diagnostics
-- [ ] T045 Add pipeline regression coverage for exact-match success, ambiguity fail-closed, not-found, and mixed-intent rejection
+- [x] T041 Add a thin read seam to `services/ticktick-adapter.js` for listing active tasks used by resolution
+- [x] T042 Extend `services/pipeline-context.js` and `tests/pipeline-harness.js` to carry available-task inputs and mutation-resolution metadata
+- [x] T043 Extend `services/pipeline.js` to identify single mutation requests, reject out-of-scope mixed requests, resolve the target, and execute the resolved action
+- [x] T044 Add explicit `clarification` and `not-found` pipeline result types with terse confirmation text and diagnostics
+- [x] T045 Add pipeline regression coverage for exact-match success, ambiguity fail-closed, not-found, and mixed-intent rejection
 
 ### Implementation Notes
 - Successful writes must still go through the existing `_executeActions()` and rollback machinery.
@@ -239,10 +239,10 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-003, FR-006, FR-007, FR-008
 
 ### Included Subtasks
-- [ ] T051 Extend the free-form handler in `bot/commands.js` to render mutation `clarification` and `not-found` results
-- [ ] T052 Add a minimal mutation-candidate keyboard helper using existing grammY patterns and current callback conventions
-- [ ] T053 Extend `services/store.js` with pending mutation clarification state so request context survives between message and callback
-- [ ] T054 Add regression coverage for handler behavior, including ambiguous queries, missing tasks, and terse confirmations
+- [x] T051 Extend the free-form handler in `bot/commands.js` to render mutation `clarification` and `not-found` results
+- [x] T052 Add a minimal mutation-candidate keyboard helper using existing grammY patterns and current callback conventions
+- [x] T053 Extend `services/store.js` with pending mutation clarification state so request context survives between message and callback
+- [x] T054 Add regression coverage for handler behavior, including ambiguous queries, missing tasks, and terse confirmations
 
 ### Implementation Notes
 - No new `/done`, `/delete`, or `/undo` commands.
@@ -270,10 +270,10 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-003, FR-006, FR-008, FR-009
 
 ### Included Subtasks
-- [ ] T061 Add `mutate:` callback handling in `bot/callbacks.js` using the stored pending clarification state
-- [ ] T062 Resume the chosen mutation through the pipeline with resolved task context instead of mutating directly in the callback layer
-- [ ] T063 Implement safe cancel, stale-selection, and expired-state handling with terse user feedback
-- [ ] T064 Add callback/resume regression coverage in the existing regression surfaces
+- [x] T061 Add `mutate:` callback handling in `bot/callbacks.js` using the stored pending clarification state
+- [x] T062 Resume the chosen mutation through the pipeline with resolved task context instead of mutating directly in the callback layer
+- [x] T063 Implement safe cancel, stale-selection, and expired-state handling with terse user feedback
+- [x] T064 Add callback/resume regression coverage in the existing regression surfaces
 
 ### Implementation Notes
 - The callback layer should choose or cancel; the pipeline should still own normalization and execution.
@@ -301,10 +301,10 @@ When this mission is marked done, the claim is not merely that its files changed
 **Requirements Refs**: FR-005, FR-006, FR-007, FR-008
 
 ### Included Subtasks
-- [ ] T071 Add end-to-end mutation regressions in `tests/regression.test.js` and `tests/run-regression-tests.mjs`
-- [ ] T072 Add coverage for mixed create+mutation rejection and underspecified references such as pronoun-only target queries
-- [ ] T073 Assert that logs and diagnostics capture mutation intent, candidate sets, chosen target, and skipped reasons
-- [ ] T074 Clean up stale comments, fixtures, and harness assumptions so `001` and `002` share one coherent mutation path
+- [x] T071 Add end-to-end mutation regressions in `tests/regression.test.js` and `tests/run-regression-tests.mjs`
+- [x] T072 Add coverage for mixed create+mutation rejection and underspecified references such as pronoun-only target queries
+- [x] T073 Assert that logs and diagnostics capture mutation intent, candidate sets, chosen target, and skipped reasons
+- [x] T074 Clean up stale comments, fixtures, and harness assumptions so `001` and `002` share one coherent mutation path
 
 ### Implementation Notes
 - Prefer extending the current regression surfaces over adding large new test packages.
