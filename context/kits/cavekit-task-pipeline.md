@@ -131,12 +131,14 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 **Dependencies:** R10
 
 ### R15: Command Surfaces
-**Description:** User-facing Telegram commands provide manual intake, review, and rollback surfaces that complement the free-form pipeline.
+**Description:** User-facing Telegram commands provide manual intake, review, rollback, and operational surfaces that complement the free-form pipeline.
 **Acceptance Criteria:**
 - [ ] `/scan` manually polls TickTick for new tasks and processes them through the pipeline in batches
 - [ ] `/pending` re-surfaces tasks that were parked during scan or review for user decision
 - [ ] `/undo` reverts the last auto-applied task mutation (title, project, priority, or schedule)
 - [ ] `/menu` provides an inline keyboard for quick access to primary commands
+- [ ] `/status` reports bot connection, quota, cache, and review-state health without mutating TickTick
+- [ ] `/reset` wipes bot-local state only after explicit confirmation and never mutates TickTick tasks
 **Dependencies:** R4, R9, R10
 
 ### R16: Guided Reorg
@@ -169,10 +171,10 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 
 - [x] R1 (Structured Intent Extraction): all 4 ACs implemented and verified. AX field validation enforced via `R1_INTENT_ACTION_FIELDS`, dentist/groceries/hello regression tests pass in both full and lightweight suites.
 - [x] R4 (Single TickTick Adapter): all 3 ACs implemented and verified. All production writes route through adapter, read-only display flows remain allowed per repo guidance, live harnesses were updated, and adapter failure preserves parsed intent with `intents` + `normalizedActions` in failure result.
-- [x] Drift `/menu`, `/scan`, `/pending`, `/undo`: mapped under R15 Command Surfaces.
+- [x] Drift `/menu`, `/scan`, `/pending`, `/undo`, `/status`, `/reset`: mapped under R15 Command Surfaces.
 - [x] Drift rate limiter: removed 2026-04-19 (YAGNI for 1-user MVP; listed as out-of-scope here).
 - [x] Drift `/reorg`: mapped under R16 Guided Reorg.
-- [ ] After auditing code, update any completed checkboxes here before the next `archon workflow run cavekit-validate` pass.
+- [x] Validation-facing comments in live harnesses and reorg services were updated to reflect their final Cavekit ownership/exclusion status.
 
 ## Changelog
 - 2026-04-19: R1 and R4 completed — AX field validation, regression coverage, adapter boundary enforcement, intent preservation on failure.

@@ -1,8 +1,7 @@
 // Opt-in live TickTick E2E validation harness.
-// Direct TickTickClient and TickTickAdapter usage here is intentional for
-// manual verification only; this file is not a production execution path.
-// TODO(cavekit-validate 2026-04-19): Map this live harness to an explicit Cavekit hardening requirement
-// or document why it remains outside product-kit validation.
+// Cavekit ownership: Pipeline Hardening validation support. This file is kept
+// as an optional manual live smoke test for production-parity verification and
+// is not a production execution path.
 //
 // This file is intentionally executable only when run directly via Node.
 // Importing it for syntax/module checks must not hit TickTick or perform writes.
