@@ -84,6 +84,24 @@ describe('AX Intent Extraction', () => {
             const axIntent = createAxIntent(keyManagerWithoutCount);
             assert.equal(typeof axIntent.extractIntents, 'function');
         });
+
+        it('instructs AX to return an empty array for conversational non-task input', () => {
+            const originalSetInstruction = AxGen.prototype.setInstruction;
+            let capturedInstruction = null;
+
+            AxGen.prototype.setInstruction = function captureInstruction(instruction) {
+                capturedInstruction = instruction;
+                return originalSetInstruction.call(this, instruction);
+            };
+
+            try {
+                createAxIntent(mockKeyManager);
+                assert.match(capturedInstruction, /return an empty array \[\]/i);
+                assert.match(capturedInstruction, /Example output for non-task conversational input:\s*\[\]/i);
+            } finally {
+                AxGen.prototype.setInstruction = originalSetInstruction;
+            }
+        });
     });
 
     describe('detectUrgentModeIntent', () => {

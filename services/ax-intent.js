@@ -305,6 +305,7 @@ Instructions:
 - Keep titles short, verb-first, without dates or project names.
 - Set confidence low when intent is ambiguous.
 - The output must be a JSON array of action objects.
+- For conversational or non-task messages (e.g. "hello", "thanks", "how are you"), return an empty array []. Do not invent a task.
 
 CHECKLIST vs MULTI-TASK DISCRIMINATION:
 - When the user describes ONE outcome with multiple sub-steps (e.g., "plan party: buy decorations, send invites, bake cake"), emit a SINGLE "create" action with "checklistItems" array.
@@ -536,6 +537,9 @@ Example output for mutation (delete):
     "confidence": 0.88
   }
 ]
+
+Example output for non-task conversational input:
+[]
 
 OUT-OF-SCOPE EXAMPLES (should return low confidence or unsupported):
 - Mixed create+mutation: "add buy milk and move groceries to tomorrow" — do not split into create + mutation
