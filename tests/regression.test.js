@@ -4870,3 +4870,56 @@ test('getSignalRegistry returns all 7 signal types', () => {
   assert.ok(types.includes(SignalType.CREATION));
   assert.ok(types.includes(SignalType.DELETION));
 });
+
+test('adapter failure preserves parsed intent and normalized action for retry', async () => {
+  const adapter = {
+    listProjects: async () => [],
+    listActiveTasks: async () => [],
+    createTask: async () => {
+      throw new Error('TickTick API unavailable');
+    },
+    updateTask: async () => {
+      throw new Error('TickTick API unavailable');
+    },
+    completeTask: async () => {
+      throw new Error('TickTick API unavailable');
+    },
+    deleteTask: async () => {
+      throw new Error('TickTick API unavailable');
+    },
+    restoreTask: async () => {
+      throw new Error('Rollback unsupported');
+    },
+  };
+
+  const pipeline = createPipeline({
+    axIntent: {
+      extractIntents: async () => [
+        { type: 'create', title: 'Test task', content: 'test content', priority: 3 },
+      ],
+    },
+    normalizer: {
+      normalizeActions: () => ([
+        { type: 'create', title: 'Test task', content: 'test content', priority: 3, projectId: 'inbox', valid: true, validationErrors: [] },
+      ]),
+    },
+    adapter,
+  });
+
+  const result = await pipeline.processMessage('create a test task', {
+    requestId: 'req-adapter-failure',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  assert.equal(result.type, 'error', 'Result type should be error');
+  assert.equal(result.failure.failureClass, 'adapter', 'Failure class should be adapter');
+  assert.equal(result.failure.retryable, true, 'Adapter failure should be retryable');
+  assert.ok(Array.isArray(result.intents), 'Intents should be preserved in result');
+  assert.equal(result.intents.length, 1, 'Should have one intent');
+  assert.equal(result.intents[0].type, 'create', 'Intent type should be create');
+  assert.equal(result.intents[0].title, 'Test task', 'Intent title should be preserved');
+  assert.ok(Array.isArray(result.normalizedActions), 'Normalized actions should be preserved in result');
+  assert.equal(result.normalizedActions.length, 1, 'Should have one normalized action');
+  assert.equal(result.normalizedActions[0].title, 'Test task', 'Normalized action title should be preserved');
+});
