@@ -129,10 +129,29 @@ function buildFailureResult(context, {
 }
 
 function buildNonTaskResult(context, reason, details = null) {
+    const userMessage = (context?.userMessage || '').trim().toLowerCase();
+    const confirmationText = userMessage === 'hello'
+        ? 'Hi. No task created.'
+        : 'Got it — no actionable tasks detected.';
+
     return {
         type: 'non-task',
         results: [],
         errors: [],
+        confirmationText,
+        nonTaskReason: reason,
+        nonTaskDetails: details,
+        requestId: context?.requestId || null,
+        entryPoint: context?.entryPoint || null,
+        mode: context?.mode || null,
+        checklistContext: context?.checklistContext || null,
+    };
+}
+    return {
+        type: 'non-task',
+        results: [],
+        errors: [],
+<<<<<<< HEAD
         confirmationText: 'Got it — no actionable tasks detected.',
         nonTaskReason: reason,
         nonTaskDetails: details,
@@ -142,6 +161,16 @@ function buildNonTaskResult(context, reason, details = null) {
         checklistContext: context?.checklistContext || null,
     };
 }
+=======
+        confirmationText,
+        nonTaskReason: reason,
+        nonTaskDetails: details,
+        requestId: context?.requestId || null,
+        entryPoint: context?.entryPoint || null,
+        mode: context?.mode || null,
+    };
+}
+>>>>>>> ca77aa5 (feat: R1 - handle hello non-task routing)
 
 function buildClarificationResult(context, resolverResult) {
     const clarificationPrompt = buildClarificationPrompt(resolverResult);

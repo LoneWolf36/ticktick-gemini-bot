@@ -2636,6 +2636,24 @@ test('pipeline returns non-task for empty intent lists', async () => {
   assert.equal(result.results.length, 0);
 });
 
+test('pipeline treats hello as conversational non-task without writes', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({ intents: [] });
+
+  const result = await processMessage('hello', {
+    requestId: 'req-r1-hello',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  assert.equal(result.type, 'non-task');
+  assert.match(result.confirmationText, /^Hi\./);
+  assert.equal(result.results.length, 0);
+  assert.equal(adapterCalls.create.length, 0);
+  assert.equal(adapterCalls.update.length, 0);
+  assert.equal(adapterCalls.complete.length, 0);
+  assert.equal(adapterCalls.delete.length, 0);
+});
+
 test('pipeline returns validation failure when all normalized actions are invalid', async () => {
   const { processMessage, adapterCalls } = createPipelineHarness({
     intents: [{ type: 'create', title: 'Incomplete task' }],
