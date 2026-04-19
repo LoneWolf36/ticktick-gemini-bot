@@ -146,5 +146,5 @@ See `context/kits/cavekit-overview.md` for the full cross-reference map and depe
 ### Migration History
 
 - **2026-04-18**: Migrated from Spec Kitty (kitty-specs/) to Cavekit (context/kits/). Original specs archived in `kitty-specs.archived/`.
-- 111 FRs consolidated into 93 R-requirements with 325 testable acceptance criteria.
+- 111 FRs consolidated into 95 R-requirements with 335+ testable acceptance criteria.
 - 18 reference materials preserved in `context/refs/`.

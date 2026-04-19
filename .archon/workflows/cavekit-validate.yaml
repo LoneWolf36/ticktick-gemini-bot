@@ -4,7 +4,8 @@ description: |
   Input: Optional kit name to focus on (default: all kits)
   Output: Gap analysis report showing which requirements are done, pending, and blocked
 
-  Lightweight, read-only workflow — no code changes.
+  Read-only analysis of source code — no source files are modified.
+  Writing the report to `$ARTIFACTS_DIR/gap-analysis.md` is expected.
   Equivalent to /ck:check but with Archon's structured output.
 
 nodes:
@@ -14,26 +15,48 @@ nodes:
 
   - id: scan-kits
     context: fresh
-    denied_tools: [Write, Edit]
     prompt: |
       # Cavekit Validate — Scan Domain Kits
+
+      **CONSTRAINT: Do NOT modify any source code files. Writing the report to `$ARTIFACTS_DIR/gap-analysis.md` IS expected.**
 
       **Focus**: $ARGUMENTS (empty = all kits)
 
       ---
 
+      ## Step 0: Locate the Kits Directory
+
+      The Archon worktree may not contain `context/kits/`. Find the kits:
+
+      ```bash
+      # Try worktree first
+      if [ -d context/kits ]; then
+        KITS_DIR="context/kits"
+      else
+        # Fall back to the main checkout (parent of worktree or known path)
+        KITS_DIR=$(git rev-parse --show-toplevel 2>/dev/null)/context/kits
+        if [ ! -d "$KITS_DIR" ]; then
+          # Last resort: search upward from cwd
+          KITS_DIR=$(find "$(pwd)" -maxdepth 4 -type d -name kits 2>/dev/null | head -1)
+        fi
+      fi
+      echo "KITS_DIR=$KITS_DIR"
+      ```
+
+      Use `$KITS_DIR` for all subsequent kit file paths.
+
       ## Step 1: Read Overview
 
       ```bash
-      cat context/kits/cavekit-overview.md
+      cat "$KITS_DIR/cavekit-overview.md"
       ```
 
       ## Step 2: Scan Each Kit
 
-      For each kit file in `context/kits/cavekit-*.md`:
+      For each kit file in `$KITS_DIR/cavekit-*.md`:
 
       ```bash
-      ls context/kits/cavekit-*.md
+      ls "$KITS_DIR"/cavekit-*.md
       ```
 
       Read each kit and count:
@@ -84,9 +107,10 @@ nodes:
   - id: verify-impl
     depends_on: [scan-kits]
     context: fresh
-    denied_tools: [Write, Edit]
     prompt: |
       # Cavekit Validate — Verify Implementation
+
+      **CONSTRAINT: Do NOT modify any source code files. Appending to `$ARTIFACTS_DIR/gap-analysis.md` IS expected.**
 
       Read `$ARTIFACTS_DIR/gap-analysis.md` for the status matrix.
 

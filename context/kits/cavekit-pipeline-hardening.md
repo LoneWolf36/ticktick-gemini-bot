@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-18T22:30:00Z"
+last_edited: "2026-04-19T01:00:00Z"
 source_specs: ["003-pipeline-hardening-and-regression"]
 complexity: "complex"
 ---
@@ -126,6 +126,11 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 
 - See also: cavekit-task-pipeline.md (the pipeline this domain hardens)
 - See also: cavekit-behavioral-memory.md (telemetry boundary)
+
+## Validation Action Items — 2026-04-19
+
+- [x] `tests/e2e-live-ticktick.mjs` mapped as optional live smoke-test harness for production-parity verification (complements R6's offline harness).
+- [x] Drift notes for live TickTick E2E harness resolved by mapping above.
 
 ## Changelog
 - 2026-04-18: Migrated from kitty-specs 003-pipeline-hardening-and-regression

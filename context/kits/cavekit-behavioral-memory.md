@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-18T22:30:00Z"
+last_edited: "2026-04-19T00:00:00Z"
 source_specs: ["009-behavioral-signals-and-memory"]
 complexity: "complex"
 ---
@@ -161,6 +161,12 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 - See also: cavekit-work-style.md (intervention graduation rules, weak inference protection)
 - See also: cavekit-prioritization.md (optional behavioral signal input for ranking)
 - See also: cavekit-task-pipeline.md (pipeline logging boundary)
+
+## Validation Action Items — 2026-04-19
+
+- [ ] Reconcile this file's R1 dependency status with `context/kits/cavekit-overview.md`, which currently places Behavioral Memory behind Tier 0 pipeline/work-style foundations.
+- [ ] If R1 truly has upstream dependencies, encode them here so future validation blocked counts reflect reality.
+- [ ] If R1 is intentionally independent, update the overview dependency graph to remove the conflict.
 
 ## Changelog
 - 2026-04-18: Migrated from kitty-specs 009-behavioral-signals-and-memory

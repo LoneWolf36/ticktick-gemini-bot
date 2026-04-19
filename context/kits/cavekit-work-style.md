@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-18T22:30:00Z"
+last_edited: "2026-04-19T00:30:00Z"
 source_specs: ["008-work-style-and-urgent-mode"]
 complexity: "complex"
 ---
@@ -17,10 +17,10 @@ Tone state management (standard, focus, urgent), Telegram bot interface for mode
 **Description:** A persistent state object tracks the current work-style mode with transition rules.
 **Acceptance Criteria:**
 - [ ] State has three modes: `standard` (default), `focus`, `urgent`
-- [ ] State persists across bot restarts (stored in Redis or file-backed config)
+- [x] State persists across bot restarts (stored in Redis or file-backed config)
 - [ ] Mode transitions are explicit — mode never changes without user action or auto-expiry
 - [ ] Urgent mode has a configurable auto-expiry (default 2 hours)
-- [ ] Mode state is queryable by all other domains via a shared interface
+- [x] Mode state is queryable by all other domains via a shared interface
 **Dependencies:** none
 
 ### R2: Telegram Bot Interface
@@ -147,6 +147,11 @@ Tone state management (standard, focus, urgent), Telegram bot interface for mode
 - See also: cavekit-briefings.md (summary adaptation by mode)
 - See also: cavekit-behavioral-memory.md (mode is operational, not behavioral)
 - See also: cavekit-prioritization.md (urgent mode may affect ranking presentation)
+
+## Validation Action Items — 2026-04-19
+
+- [x] Audit R1 (State Management Contract): store-backed urgent-mode persistence and shared getters exist, but the three-mode contract (`standard`/`focus`/`urgent`) and urgent auto-expiry are not implemented yet.
+- [ ] Re-check downstream dependencies after R1 is audited so R2-R13 are not blocked by stale status markers.
 
 ## Changelog
 - 2026-04-18: Migrated from kitty-specs 008-work-style-and-urgent-mode

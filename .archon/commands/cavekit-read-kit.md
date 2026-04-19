@@ -3,6 +3,8 @@ description: Read a Cavekit domain kit and extract the next actionable R-require
 argument-hint: <kit name or R-number>
 ---
 
+<!-- ACTION ITEM (cavekit-validate 2026-04-19): this Archon command was flagged as unmapped tooling drift. Decide whether tooling commands belong in a dedicated kit or should be excluded from product drift checks. -->
+
 # Read Cavekit Domain Kit
 
 **Input**: $ARGUMENTS

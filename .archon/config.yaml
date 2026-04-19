@@ -1,9 +1,11 @@
 worktree:
   baseBranch: master
 
-ai:
-  provider: codex
-  model: gpt-5.4-mini
+assistant: codex
+
+assistants:
+  codex:
+    model: gpt-5.4
 
 docs:
   path: docs/

@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-18T22:30:00Z"
+last_edited: "2026-04-19T00:00:00Z"
 source_specs: ["004-post-migration-cleanup"]
 complexity: "quick"
 ---
@@ -66,6 +66,15 @@ Post-migration cleanup: dead code removal, documentation alignment, env-var stan
 
 - See also: cavekit-task-pipeline.md (the pipeline that replaced legacy paths)
 - See also: cavekit-pipeline-hardening.md (regression suite this cleanup must not break)
+
+## Validation Action Items — 2026-04-19
+
+- [x] `/reorg` drift resolved: mapped to R16 Guided Reorg in `cavekit-task-pipeline.md`.
+- [x] `reorgSchema` in `services/schemas.js` + `generateReorgProposal` in `services/gemini.js` — both belong to R16 Guided Reorg; no longer drift.
+- [x] Tooling exclusion rule decided: `.archon/` workflows/commands are dev tooling, excluded from product drift checks. See `context/kits/cavekit-overview.md` for the rule.
+- [x] Checkpoint tooling (`commands/save-checkpoint.js`, `commands/README.md`) removed — `docs/ARCHITECTURE.md` already stated these were intentionally removed.
+- [x] Orphaned `tasks/WP*.md` prompt copies removed — canonical versions live under `kitty-specs.archived/`.
+- [x] Rate limiter removed from `bot/commands.js` (YAGNI for 1-user MVP).
 
 ## Changelog
 - 2026-04-18: Migrated from kitty-specs 004-post-migration-cleanup

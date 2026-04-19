@@ -3,6 +3,8 @@ description: Enforce Karpathy guardrails before and after implementation
 argument-hint: <phase: pre-code | post-code>
 ---
 
+<!-- ACTION ITEM (cavekit-validate 2026-04-19): this Archon command was flagged as unmapped tooling drift. Decide whether tooling commands belong in a dedicated kit or should be excluded from product drift checks. -->
+
 # Karpathy Guardrail Check
 
 **Phase**: $ARGUMENTS (default: pre-code)

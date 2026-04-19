@@ -15,6 +15,9 @@ description: |
 
   NOT for: Creating new kits (use /ck:sketch), planning (use /ck:map), quick fixes.
 
+# ACTION ITEM (cavekit-validate 2026-04-19): this tooling file was flagged as product-code drift.
+# Decide whether Archon workflows belong in a dedicated tooling kit or should be excluded from drift checks.
+
 nodes:
   # ═══════════════════════════════════════════════════════════════
   # PHASE 1: READ KIT — Extract the next R-requirement to build

@@ -1,6 +1,8 @@
 // Opt-in E2E validation harness for checklist/review flows.
 // This is not a production bot path and must not be treated as an approved
 // write surface outside manual validation work.
+// TODO(cavekit-validate 2026-04-19): Map this live checklist harness to an explicit Cavekit checklist/hardening
+// requirement or document why it remains outside product-kit drift checks.
 //
 // This file is intentionally executable only when run directly via Node.
 // Importing it for syntax/module checks must not hit TickTick or perform writes.

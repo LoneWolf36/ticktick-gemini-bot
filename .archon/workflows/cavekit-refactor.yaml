@@ -14,6 +14,9 @@ description: |
 
   NOT for: New features (use cavekit-build), gap analysis (use cavekit-validate).
 
+# ACTION ITEM (cavekit-validate 2026-04-19): this tooling file was flagged as product-code drift.
+# Decide whether Archon workflows belong in a dedicated tooling kit or should be excluded from drift checks.
+
 nodes:
   # ═══════════════════════════════════════════════════════════════
   # PHASE 1: READ KIT — Identify affected requirements

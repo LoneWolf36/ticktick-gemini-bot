@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-18T22:30:00Z"
+last_edited: "2026-04-19T00:45:00Z"
 source_specs: ["005-checklist-subtask-support"]
 complexity: "medium"
 ---
@@ -80,6 +80,10 @@ Checklist/subtask extraction, creation, and clarification for create-time task o
 
 - See also: cavekit-task-pipeline.md (checklist extends the create path defined here)
 - See also: cavekit-pipeline-hardening.md (regression coverage)
+
+## Validation Action Items — 2026-04-19
+
+- [x] `tests/e2e-live-checklist.mjs` excluded from drift checks — it is a mocked logic validator redundant with `regression.test.js`, kept only for interactive debugging.
 
 ## Changelog
 - 2026-04-18: Migrated from kitty-specs 005-checklist-subtask-support
