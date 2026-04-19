@@ -122,7 +122,7 @@ This project uses **Cavekit** for spec-driven development. Domain kits live in `
 
 | Kit | Requirements | Description |
 |-----|-------------|-------------|
-| `cavekit-task-pipeline.md` | 14 | Core task capture, mutation, intent extraction, normalization, adapter |
+| `cavekit-task-pipeline.md` | 16 | Core task capture, mutation, intent extraction, normalization, adapter, command surfaces, guided reorg |
 | `cavekit-pipeline-hardening.md` | 12 | Testing harness, failure classification, retry/rollback, observability |
 | `cavekit-cleanup.md` | 5 | Dead code removal, docs alignment, env standardization |
 | `cavekit-checklists.md` | 7 | Checklist extraction, subtask creation, disambiguation |

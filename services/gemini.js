@@ -586,8 +586,7 @@ export class GeminiAnalyzer {
         });
     }
 
-    // TODO(cavekit-validate 2026-04-19): Reorg proposal generation is live but unmapped in current Cavekit kits.
-    // Map this method to a dedicated requirement or remove the legacy reorg surface.
+    // Cavekit ownership: Task Pipeline R16 (Guided Reorg).
     async generateReorgProposal(tasks = [], projects = [], refinement = null, existingActions = [], options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
         const compactTasks = this._compactReorgTasks(tasks, recommendationState);

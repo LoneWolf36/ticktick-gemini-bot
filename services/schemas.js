@@ -13,8 +13,7 @@
 import { SchemaType } from '@google/generative-ai';
 
 
-// TODO(cavekit-validate 2026-04-19): `reorgSchema` belongs to a live `/reorg` path that is not covered by current Cavekit kits.
-// Keep only if a dedicated requirement is added; otherwise retire with the legacy reorg flow.
+// Cavekit ownership: Task Pipeline R16 (Guided Reorg).
 export const reorgSchema = {
     type: SchemaType.OBJECT,
     properties: {

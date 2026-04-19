@@ -2,7 +2,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { AxGen } from '@ax-llm/ax';
 import { appendUrgentModeReminder, parseTelegramMarkdownToHTML, containsSensitiveContent, buildTickTickUpdate, scheduleToDateTime, AUTHORIZED_CHAT_ID } from '../services/shared-utils.js';
-import { executeActions, registerCommands, resetRateLimits } from '../bot/commands.js';
+import { executeActions, registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer, buildUrgentModePromptNote } from '../services/gemini.js';
 import { createAxIntent, detectUrgentModeIntent, QuotaExhaustedError } from '../services/ax-intent.js';
 import { createPipeline } from '../services/pipeline.js';
@@ -1236,7 +1236,6 @@ async function run() {
   }
 
   try {
-    resetRateLimits();
     const handlers = { commands: new Map(), callbacks: [], events: [] };
     const bot = {
       command(name, handler) {

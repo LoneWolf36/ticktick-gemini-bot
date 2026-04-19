@@ -44,7 +44,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 **Description:** All TickTick operations (create, update, complete, delete) flow through a single adapter module backed by the direct REST API.
 **Acceptance Criteria:**
 - [x] Adapter exposes: `createTask`, `updateTask`, `completeTask`, `deleteTask`, `listProjects`, `findProjectByName`, optionally `createTasksBatch`
-- [x] No direct TickTick API calls exist outside the adapter in the codebase
+- [x] No direct TickTick API write calls exist outside the adapter in the codebase; read-only display flows may call the low-level client directly
 - [x] Adapter handles API unavailability gracefully without losing parsed intent
 **Dependencies:** none
 
@@ -168,7 +168,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 ## Validation Action Items — 2026-04-19
 
 - [x] R1 (Structured Intent Extraction): all 4 ACs implemented and verified. AX field validation enforced via `R1_INTENT_ACTION_FIELDS`, dentist/groceries/hello regression tests pass in both full and lightweight suites.
-- [x] R4 (Single TickTick Adapter): all 3 ACs implemented and verified. All production writes route through adapter, live harnesses updated, adapter failure preserves parsed intent with `intents` + `normalizedActions` in failure result.
+- [x] R4 (Single TickTick Adapter): all 3 ACs implemented and verified. All production writes route through adapter, read-only display flows remain allowed per repo guidance, live harnesses were updated, and adapter failure preserves parsed intent with `intents` + `normalizedActions` in failure result.
 - [x] Drift `/menu`, `/scan`, `/pending`, `/undo`: mapped under R15 Command Surfaces.
 - [x] Drift rate limiter: removed 2026-04-19 (YAGNI for 1-user MVP; listed as out-of-scope here).
 - [x] Drift `/reorg`: mapped under R16 Guided Reorg.
