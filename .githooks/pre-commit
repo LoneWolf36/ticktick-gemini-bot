@@ -10,14 +10,7 @@ npx jscpd --threshold 10 --min-lines 10 || {
   exit 1
 }
 
-# Run Python similarity check
-pylint --disable=all --enable=similarities,R0801 \
-  .kittify/overrides/scripts/**/*.py 2>&1 | grep -q "duplicate-code" && {
-  echo ""
-  echo "⚠️  Python code duplication detected."
-  echo "   Consider refactoring the similar code blocks."
-  # Warning only, don't block commit
-}
+
 
 echo "✅ Duplicate checks passed"
 exit 0

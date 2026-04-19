@@ -1,1 +1,0 @@
-/home/lonewolf09/.agents/skills/spec-kitty-orchestrator-api-operator/references/orchestrator-api-contract.md

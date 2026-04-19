@@ -49,7 +49,7 @@ The following directories are excluded from duplicate detection:
 
 - `kitty-specs/` - Spec files (intentionally similar)
 - `.agent/`, `.agents/`, `.claude/`, `.codex/`, `.opencode/` - Agent skill files (intentionally mirrored)
-- `.kittify/` - Tooling scripts
+- `kitty-specs.archived/` - Archived spec-kitty artifacts (read-only)
 - `node_modules/`, `coverage/`, `dist/`, `build/` - Generated/built files
 
 ## Configuration

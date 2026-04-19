@@ -48,7 +48,7 @@ send_notification() {
 
     # Call the archon notification command
     cd "$PROJECT_DIR"
-    archon run spec-kitty-notify "${severity}: ${message}" 2>/dev/null || {
+    echo "[archon-notify] # spec-kitty removed" "${severity}: ${message}" 2>/dev/null || {
         # Fallback: direct curl to Telegram API
         local token="${TELEGRAM_BOT_TOKEN:-}"
         local chat_id="${TELEGRAM_CHAT_ID:-}"

@@ -1,1 +1,0 @@
-/home/lonewolf09/.agents/skills/spec-kitty-git-workflow/references/git-operations-matrix.md

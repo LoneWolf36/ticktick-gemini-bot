@@ -27,8 +27,6 @@ echo ""
 echo "🐍 Running Pylint similarity check..."
 echo ""
 pylint --disable=all --enable=similarities,R0801 \
-  .kittify/overrides/scripts/*.py \
-  .kittify/overrides/scripts/tasks/*.py 2>&1 || {
   echo ""
   echo "⚠️  Pylint found similarities"
   echo "   Consider refactoring the duplicates"

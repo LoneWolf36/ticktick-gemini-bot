@@ -173,8 +173,8 @@ export function registerCallbacks(bot, ticktick, gemini, adapter, pipeline) {
         // Resume through the pipeline with resolved task context.
         // Reconstruct the original message and inject the resolved task.
         try {
-            const allTasks = await ticktick.getAllTasksCached(30000);
-            const availableProjects = ticktick.getLastFetchedProjects();
+            const allTasks = await adapter.listActiveTasks();
+            const availableProjects = await adapter.listProjects();
 
             // Find the full task object from TickTick cache
             const resolvedTask = allTasks.find(t => t.id === selectedTaskId);
@@ -265,7 +265,7 @@ export function registerCallbacks(bot, ticktick, gemini, adapter, pipeline) {
         const pipelineOptions = {
             entryPoint: 'telegram:checklist-clarification-button',
             mode: 'interactive',
-            availableProjects: ticktick?.getLastFetchedProjects?.() || [],
+            availableProjects: await adapter.listProjects(),
         };
 
         if (skipChecklist) {

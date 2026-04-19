@@ -1,6 +1,8 @@
 // Opt-in live TickTick E2E validation harness.
 // Direct TickTickClient and TickTickAdapter usage here is intentional for
 // manual verification only; this file is not a production execution path.
+// TODO(cavekit-validate 2026-04-19): Map this live harness to an explicit Cavekit hardening requirement
+// or document why it remains outside product-kit validation.
 //
 // This file is intentionally executable only when run directly via Node.
 // Importing it for syntax/module checks must not hit TickTick or perform writes.
@@ -277,6 +279,9 @@ async function main() {
       detail: `Connected to TickTick. Projects=${projects.length}, inbox=${inbox.name}`,
     });
 
+    const gemini = createDeterministicGemini();
+    const adapter = new TickTickAdapter(ticktick);
+
     const seedPayloads = [
       { title: `${PREFIX} Netflix System Design`, content: '', projectId: inbox.id, priority: 0 },
       { title: `${PREFIX} get chicken`, content: '', projectId: inbox.id, priority: 0 },
@@ -287,7 +292,7 @@ async function main() {
 
     const seeded = [];
     for (const payload of seedPayloads) {
-      const created = await ticktick.createTask(payload);
+      const created = await adapter.createTask(payload);
       seeded.push(created);
       createdTaskIds.add(created.id);
     }
@@ -297,9 +302,6 @@ async function main() {
       status: 'pass',
       detail: `Created ${seeded.length} isolated live TickTick tasks with prefix ${PREFIX}.`,
     });
-
-    const gemini = createDeterministicGemini();
-    const adapter = new TickTickAdapter(ticktick);
     const pipeline = createPipelineDouble(ticktick, adapter);
 
     await withMockTelegramServer(19082, apiCalls, async () => {
@@ -383,7 +385,7 @@ async function main() {
       // Freeform update (date move)
       await bot.handleUpdate(mk.message(`Move ${PREFIX} Netflix System Design to today`));
       await sleep(800);
-      const afterMove = await ticktick.getTask(seededNetflix.projectId, seededNetflix.id);
+      const afterMove = await adapter.getTaskSnapshot(seededNetflix.id, seededNetflix.projectId);
       assert.ok(afterMove?.dueDate, 'Expected dueDate after move-to-today');
       touchedTaskIds.add(afterMove.id);
       if (String(afterMove.dueDate).includes('T23:59:00.000')) {
@@ -590,7 +592,7 @@ async function main() {
         const testTasks = all.filter((t) => (t.title || '').startsWith(PREFIX));
         for (const t of testTasks) {
           try {
-            await ticktick.deleteTask(t.projectId, t.id);
+            await adapter.deleteTask(t.id, t.projectId);
           } catch {
             // best-effort cleanup
           }

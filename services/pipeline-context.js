@@ -15,6 +15,25 @@ const REQUIRED_FIELDS = [
 const DEFAULT_ENTRY_POINT = 'unknown';
 const DEFAULT_MODE = 'default';
 
+function normalizeChecklistContext(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
+
+    const hasChecklist = typeof value.hasChecklist === 'boolean' ? value.hasChecklist : null;
+    const clarificationQuestion = typeof value.clarificationQuestion === 'string'
+        && value.clarificationQuestion.trim()
+        ? value.clarificationQuestion.trim()
+        : null;
+
+    if (hasChecklist === null && clarificationQuestion === null) {
+        return null;
+    }
+
+    return {
+        hasChecklist,
+        clarificationQuestion,
+    };
+}
+
 function coerceDate(value, fallback) {
     if (value instanceof Date) return value;
     if (typeof value === 'string' || typeof value === 'number') {
@@ -96,6 +115,22 @@ export function validatePipelineContext(context) {
         errors.push('existingTask must be an object or null');
     }
 
+    const checklistContext = context.checklistContext;
+    if (checklistContext !== undefined && checklistContext !== null) {
+        if (typeof checklistContext !== 'object' || Array.isArray(checklistContext)) {
+            errors.push('checklistContext must be an object or null');
+        } else {
+            if ('hasChecklist' in checklistContext && checklistContext.hasChecklist !== null && typeof checklistContext.hasChecklist !== 'boolean') {
+                errors.push('checklistContext.hasChecklist must be a boolean or null');
+            }
+            if ('clarificationQuestion' in checklistContext
+                && checklistContext.clarificationQuestion !== null
+                && typeof checklistContext.clarificationQuestion !== 'string') {
+                errors.push('checklistContext.clarificationQuestion must be a string or null');
+            }
+        }
+    }
+
     return { ok: errors.length === 0, errors };
 }
 
@@ -126,6 +161,12 @@ export function createPipelineContextBuilder({
             ? options.activeTasks
             : null;
         const activeTasks = providedActiveTasks ?? await adapter.listActiveTasks();
+        const checklistContext = normalizeChecklistContext(
+            options.checklistContext ?? {
+                hasChecklist: options.hasChecklist,
+                clarificationQuestion: options.clarificationQuestion,
+            }
+        );
 
         const context = {
             requestId: options.requestId || requestIdFactory(),
@@ -138,6 +179,7 @@ export function createPipelineContextBuilder({
             availableProjectNames: deriveProjectNames(availableProjects),
             existingTask: options.existingTask || null,
             activeTasks,
+            checklistContext,
         };
 
         const strict = options.strictContext ?? (process.env.NODE_ENV !== 'production');

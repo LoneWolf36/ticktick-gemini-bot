@@ -1,6 +1,18 @@
 import { AxAI, AxGen } from '@ax-llm/ax';
 import { MAX_CHECKLIST_ITEMS, CHECKLIST_ITEM_SHAPE } from './schemas.js';
 
+const R1_INTENT_ACTION_FIELDS = Object.freeze([
+    'type',
+    'title',
+    'content',
+    'priority',
+    'projectHint',
+    'dueDate',
+    'repeatHint',
+    'splitStrategy',
+    'confidence',
+]);
+
 const URGENT_MODE_ON_PATTERNS = [
     /\b(?:turn|switch|set)\s+(?:on|into)\s+urgent mode\b/i,
     /\b(?:enable|activate|start)\s+urgent mode\b/i,
@@ -112,14 +124,24 @@ export function validateChecklistItems(items) {
  * Exported for testing purposes.
  * @param {object} action - The action object to validate
  * @param {number} index - The index of the action in the array
+ * @param {object} [options] - Validation options
+ * @param {boolean} [options.requireR1Fields] - Whether to require the R1 action field set
  * @returns {{valid: boolean, errors: string[]}} Validation result with error messages
  */
-export function validateIntentAction(action, index) {
+export function validateIntentAction(action, index, { requireR1Fields = false } = {}) {
     const errors = [];
 
     if (!action || typeof action !== 'object') {
         errors.push(`Action ${index} is not an object`);
         return { valid: false, errors };
+    }
+
+    if (requireR1Fields) {
+        for (const field of R1_INTENT_ACTION_FIELDS) {
+            if (!Object.hasOwn(action, field)) {
+                errors.push(`Action ${index}: Missing required field "${field}"`);
+            }
+        }
     }
 
     // Validate action type
@@ -283,6 +305,7 @@ Instructions:
 - Keep titles short, verb-first, without dates or project names.
 - Set confidence low when intent is ambiguous.
 - The output must be a JSON array of action objects.
+- For conversational or non-task messages (e.g. "hello", "thanks", "how are you"), return an empty array []. Do not invent a task.
 
 CHECKLIST vs MULTI-TASK DISCRIMINATION:
 - When the user describes ONE outcome with multiple sub-steps (e.g., "plan party: buy decorations, send invites, bake cake"), emit a SINGLE "create" action with "checklistItems" array.
@@ -292,6 +315,9 @@ CHECKLIST vs MULTI-TASK DISCRIMINATION:
 - Do NOT turn brainstorm dumps into checklists. If the input looks like raw brainstorming, ask for clarification.
 
 ACTION TYPES AND REQUIRED FIELDS:
+
+Every action object MUST include these R1 fields, using null when a value does not apply:
+${R1_INTENT_ACTION_FIELDS.map((field) => `- "${field}"`).join('\n')}
 
 For type "create":
 - "title" is REQUIRED (non-empty string describing the new task)
@@ -512,6 +538,9 @@ Example output for mutation (delete):
   }
 ]
 
+Example output for non-task conversational input:
+[]
+
 OUT-OF-SCOPE EXAMPLES (should return low confidence or unsupported):
 - Mixed create+mutation: "add buy milk and move groceries to tomorrow" — do not split into create + mutation
 - Underspecified pronouns: "move that one to Friday" — should have low confidence (<0.5)
@@ -544,7 +573,7 @@ OUT-OF-SCOPE EXAMPLES (should return low confidence or unsupported):
             // Runtime validation (defense in depth)
             const validationErrors = [];
             for (let i = 0; i < actions.length; i++) {
-                const validation = validateIntentAction(actions[i], i);
+                const validation = validateIntentAction(actions[i], i, { requireR1Fields: true });
                 if (!validation.valid) {
                     validationErrors.push(...validation.errors);
                 }

@@ -54,6 +54,8 @@ function buildFailureResult(context, {
     retryable = true,
     rolledBack = false,
     results = [],
+    intents = null,
+    normalizedActions = null,
 }) {
     const isDevMode = resolveDevMode(context);
     const diagnostics = [];
@@ -123,21 +125,31 @@ function buildFailureResult(context, {
         requestId: context?.requestId || null,
         entryPoint: context?.entryPoint || null,
         mode: context?.mode || null,
+        checklistContext: context?.checklistContext || null,
         isDevMode,
+        intents,
+        normalizedActions,
     };
 }
 
 function buildNonTaskResult(context, reason, details = null) {
+    const userMessage = (context?.userMessage || '').trim().toLowerCase();
+    const isGreeting = /^(hi|hey|hello|howdy|greetings|good\s*(morning|afternoon|evening|night)|how are you|what'?s up)\b/.test(userMessage);
+    const confirmationText = isGreeting
+        ? 'Hi. No task created.'
+        : 'Got it — no actionable tasks detected.';
+
     return {
         type: 'non-task',
         results: [],
         errors: [],
-        confirmationText: 'Got it — no actionable tasks detected.',
+        confirmationText,
         nonTaskReason: reason,
         nonTaskDetails: details,
         requestId: context?.requestId || null,
         entryPoint: context?.entryPoint || null,
         mode: context?.mode || null,
+        checklistContext: context?.checklistContext || null,
     };
 }
 
@@ -155,6 +167,7 @@ function buildClarificationResult(context, resolverResult) {
         requestId: context?.requestId || null,
         entryPoint: context?.entryPoint || null,
         mode: context?.mode || null,
+        checklistContext: context?.checklistContext || null,
     };
 }
 
@@ -170,7 +183,34 @@ function buildNotFoundResult(context, reason) {
         requestId: context?.requestId || null,
         entryPoint: context?.entryPoint || null,
         mode: context?.mode || null,
+        checklistContext: context?.checklistContext || null,
     };
+}
+
+function updateChecklistContext(context, metadata = {}) {
+    if (!context || typeof context !== 'object') return null;
+
+    const existing = context.checklistContext && typeof context.checklistContext === 'object'
+        ? context.checklistContext
+        : {};
+
+    const next = {
+        hasChecklist: typeof metadata.hasChecklist === 'boolean'
+            ? metadata.hasChecklist
+            : (typeof existing.hasChecklist === 'boolean' ? existing.hasChecklist : null),
+        clarificationQuestion: typeof metadata.clarificationQuestion === 'string'
+            && metadata.clarificationQuestion.trim()
+            ? metadata.clarificationQuestion.trim()
+            : (typeof existing.clarificationQuestion === 'string' && existing.clarificationQuestion.trim()
+                ? existing.clarificationQuestion.trim()
+                : null),
+    };
+
+    context.checklistContext = next.hasChecklist === null && next.clarificationQuestion === null
+        ? null
+        : next;
+
+    return context.checklistContext;
 }
 
 function isQuotaFailure(error) {
@@ -477,6 +517,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
             // Checklist/multi-task classification (WP04): detect ambiguous structure requests
             const hasChecklist = intents.some(i => Array.isArray(i.checklistItems) && i.checklistItems.length > 0);
             const hasMultipleCreates = intents.filter(i => i.type === 'create').length > 1;
+            updateChecklistContext(context, { hasChecklist });
 
             if (hasChecklist && hasMultipleCreates) {
                 // Check if user already provided a preference (clarification resume path)
@@ -520,11 +561,13 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 } else {
                     // No preference provided — ask for clarification
                     console.warn(`[Pipeline:${context.requestId}] Ambiguous checklist/multi-task request — asking for clarification.`);
+                    const clarificationQuestion = 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?';
+                    updateChecklistContext(context, { clarificationQuestion });
                     const clarificationResult = {
                         type: 'clarification',
                         results: [],
                         errors: [],
-                        confirmationText: 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?',
+                        confirmationText: clarificationQuestion,
                         clarification: {
                             candidates: intents,
                             reason: 'ambiguous_checklist_vs_multi_task',
@@ -532,6 +575,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         requestId: context.requestId || null,
                         entryPoint: context.entryPoint || null,
                         mode: context.mode || null,
+                        checklistContext: context.checklistContext || null,
                     };
 
                     await telemetry.emit(context, {
@@ -762,6 +806,8 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     retryable: executionResult.terminalFailure.retryable,
                     rolledBack: executionResult.terminalFailure.rolledBack,
                     results: executionResult.results,
+                    intents,
+                    normalizedActions: validActions,
                 });
             }
 
@@ -793,6 +839,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 requestId: context.requestId,
                 entryPoint: context.entryPoint,
                 mode: context.mode,
+                checklistContext: context.checklistContext || null,
                 warnings: invalidActions.map(a => a.validationErrors).flat(),
                 checklistMetadata: validActions
                     .filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0)

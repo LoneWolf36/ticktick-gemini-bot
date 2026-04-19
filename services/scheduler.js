@@ -4,7 +4,7 @@ import * as store from './store.js';
 import { buildAutoApplyNotification, userTimeString, filterProcessedThisWeek, sendWithMarkdown } from './shared-utils.js';
 import { logSummarySurfaceEvent } from './summary-surfaces/index.js';
 
-export async function runDailyBriefingJob({ bot, ticktick, gemini }) {
+export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter }) {
     if (!ticktick.isAuthenticated()) return false;
     const chatId = store.getChatId();
     if (!chatId) return false;
@@ -25,7 +25,7 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini }) {
             return false;
         }
 
-        const tasks = await ticktick.getAllTasks();
+        const tasks = await adapter.listActiveTasks(true);
         briefing = await gemini.generateDailyBriefingSummary(tasks, context);
         logSummarySurfaceEvent({ context, result: briefing, deliveryStatus: 'ready' });
 
@@ -51,7 +51,7 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini }) {
     }
 }
 
-export async function runWeeklyDigestJob({ bot, ticktick, gemini, processedTasks = store.getProcessedTasks() }) {
+export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, processedTasks = store.getProcessedTasks() }) {
     if (!ticktick.isAuthenticated()) return false;
     const chatId = store.getChatId();
     if (!chatId) return false;
@@ -72,7 +72,7 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, processedTasks
             return false;
         }
 
-        const tasks = await ticktick.getAllTasks();
+        const tasks = await adapter.listActiveTasks(true);
         const historyAvailable = typeof processedTasks === 'object' && processedTasks !== null && !Array.isArray(processedTasks);
         const processed = historyAvailable ? processedTasks : {};
         const thisWeek = filterProcessedThisWeek(processed, ['sentAt']);
@@ -181,8 +181,8 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                 return;
             }
 
-            const allTasks = await ticktick.getAllTasks();
-            const projects = ticktick.getLastFetchedProjects();
+            const allTasks = await adapter.listActiveTasks(true);
+            const projects = await adapter.listProjects();
             const newTasks = allTasks.filter((t) => !store.isTaskKnown(t.id));
 
             if (newTasks.length === 0) return;
@@ -275,11 +275,11 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
     }, { timezone });
 
     cron.schedule(`0 ${dailyHour} * * *`, async () => {
-        await runDailyBriefingJob({ bot, ticktick, gemini });
+        await runDailyBriefingJob({ bot, ticktick, gemini, adapter });
     }, { timezone });
 
     cron.schedule(`0 20 * * ${weeklyDay}`, async () => {
-        await runWeeklyDigestJob({ bot, ticktick, gemini });
+        await runWeeklyDigestJob({ bot, ticktick, gemini, adapter });
     }, { timezone });
 
     await store.pruneOldEntries(14);

@@ -1,117 +1,42 @@
-# Archon Usage Guide
+# Development Workflow Guide
 
-This repository keeps a minimal Archon surface focused on one reusable workflow:
+This project uses **Cavekit** for spec-driven development. The legacy Archon + Spec Kitty quality gate workflow has been retired and replaced with Cavekit's built-in validation.
 
-- [spec-kitty-quality-gate.yaml](</home/lonewolf09/Documents/Projects/ticktick-gemini/.archon/workflows/spec-kitty-quality-gate.yaml>)
-- [spec-kitty-quality-gate-check.md](</home/lonewolf09/Documents/Projects/ticktick-gemini/.archon/commands/spec-kitty-quality-gate-check.md>)
-- [spec-kitty-reconcile-untrusted.md](</home/lonewolf09/Documents/Projects/ticktick-gemini/.archon/commands/spec-kitty-reconcile-untrusted.md>)
-- [spec-kitty-002-009.json](</home/lonewolf09/Documents/Projects/ticktick-gemini/.archon/reconciliation/spec-kitty-002-009.json>)
+## Cavekit Workflow
 
-The older multi-mission universal DAG, recovery helpers, review-loop commands, and template artifacts were removed after the quality-gate workflow became the only supported Archon entry point.
+### Commands
 
-## Purpose
+| Command | Purpose |
+|---------|---------|
+| `/ck:sketch` | Decompose into domains with R-numbered requirements |
+| `/ck:map` | Generate tiered build plan |
+| `/ck:make` | Autonomous build loop |
+| `/ck:check` | Gap analysis and peer review |
+| `/ck:ship "feature"` | All 4 steps in one shot (small features) |
 
-The workflow answers one question: can Archon safely start Spec Kitty execution for the selected missions?
+### Domain Kits
 
-It does not implement work packages.
-It does not mutate `status.events.jsonl`.
-It does not replace Spec Kitty lifecycle commands.
+All requirements live in `context/kits/`. See `context/kits/cavekit-overview.md` for:
+- Domain index (8 kits, 93 requirements, 325 acceptance criteria)
+- Cross-reference map
+- Dependency graph
 
-## Prerequisites
+### Reference Materials
 
-- `archon`
-- `spec-kitty`
-- `node`
-- repository checkout at the project root
-
-## Run The Workflow
-
-Dry run:
-
-```bash
-archon run -f .archon/workflows/spec-kitty-quality-gate.yaml
-```
-
-Audit mode:
-
-```bash
-archon run -f .archon/workflows/spec-kitty-quality-gate.yaml \
-  mode=audit
-```
-
-Execute mode:
-
-```bash
-archon run -f .archon/workflows/spec-kitty-quality-gate.yaml \
-  mode=execute
-```
-
-Optional inputs:
-
-- `project_root`
-- `kitty_specs_dir`
-- `product_vision_path`
-- `mission_selector`
-- `mode`
-- `validation_command`
-- `reconciliation_status_path`
-
-Example:
-
-```bash
-archon run -f .archon/workflows/spec-kitty-quality-gate.yaml \
-  mission_selector=007-execution-prioritization-foundations \
-  mode=audit
-```
-
-## Run The Commands
-
-Quality-gate command:
-
-```bash
-archon validate commands spec-kitty-quality-gate-check
-```
-
-Reconciliation audit:
-
-```bash
-archon run spec-kitty-reconcile-untrusted 002-natural-language-task-mutations
-```
-
-## What The Workflow Checks
-
-1. Mission discovery under `kitty-specs/`
-2. `status.events.jsonl` integrity
-3. Spec Kitty API probes
-4. Risk classification
-5. Product vision drift
-6. Final execution decision
-
-For missions `002-009`, trust is also gated by the reconciliation file in `.archon/reconciliation/`.
-
-## Operating Rules
-
-- `dry-run` never allows execution.
-- `audit` never allows execution.
-- `execute` may allow execution only when state integrity, reconciliation, Spec Kitty probes, and product-vision checks all pass.
-- Archon remains a gatekeeper only. Spec Kitty remains the authority for implementation, review, merge, and mission state.
+Research briefs, data models, OpenAPI specs, and schemas are in `context/refs/`.
 
 ## Verification
 
-Workflow validation:
-
 ```bash
-archon validate workflows spec-kitty-quality-gate
-```
-
-Command validation:
-
-```bash
-archon validate commands spec-kitty-quality-gate-check
-```
-
-Repository regression check:
-
-```bash
+# Run regression tests
 node tests/run-regression-tests.mjs
+
+# Review kits
+cat context/kits/cavekit-overview.md
 ```
+
+## Migration History
+
+- **2026-04-18**: Migrated from Spec Kitty (kitty-specs/) to Cavekit (context/kits/).
+- Original specs archived in `kitty-specs.archived/` for reference.
+- Legacy Archon workflows (`spec-kitty-quality-gate.yaml`) were removed.

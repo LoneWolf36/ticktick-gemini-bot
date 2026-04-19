@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import { AxGen } from '@ax-llm/ax';
 
 import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../services/shared-utils.js';
-import { executeActions, registerCommands, resetRateLimits } from '../bot/commands.js';
+import { executeActions, registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer, buildUrgentModePromptNote } from '../services/gemini.js';
 import { createAxIntent, detectUrgentModeIntent, QuotaExhaustedError } from '../services/ax-intent.js';
 import { createPipeline } from '../services/pipeline.js';
@@ -17,9 +17,11 @@ import { AUTHORIZED_CHAT_ID } from '../services/shared-utils.js';
 import { runDailyBriefingJob, runWeeklyDigestJob } from '../services/scheduler.js';
 import {
   BRIEFING_SUMMARY_SECTION_KEYS,
+  DAILY_CLOSE_SUMMARY_SECTION_KEYS,
   WEEKLY_SUMMARY_SECTION_KEYS,
   buildSummaryLogPayload,
   composeBriefingSummary,
+  composeDailyCloseSummary,
   composeWeeklySummary,
   formatSummary,
   normalizeWeeklyWatchouts,
@@ -126,9 +128,9 @@ function buildSummaryProcessedHistoryFixture({ variant = 'normal' } = {}) {
   return base;
 }
 
-function buildSummaryResolvedStateFixture({ urgentMode = false, entryPoint = 'manual_command' } = {}) {
+function buildSummaryResolvedStateFixture({ kind = 'briefing', urgentMode = false, entryPoint = 'manual_command' } = {}) {
   return {
-    kind: 'briefing',
+    kind,
     entryPoint,
     userId: 'summary-fixture-user',
     generatedAtIso: '2026-03-13T08:30:00Z',
@@ -225,6 +227,117 @@ function buildWeeklySummaryFixture({ variant = 'normal' } = {}) {
     ],
     notices: [
       { severity: 'info', message: 'Active task set is sparse, so weekly recommendations are compact.' },
+    ],
+  };
+}
+
+function buildDailyCloseProcessedHistoryFixture({ variant = 'meaningful' } = {}) {
+  if (variant === 'irregular') {
+    return [
+      {
+        taskId: 'hist-irregular-1',
+        originalTitle: 'Old review artifact',
+        approved: true,
+        skipped: false,
+        dropped: false,
+        reviewedAt: '2026-03-09T19:00:00Z',
+      },
+    ];
+  }
+
+  if (variant === 'mixed') {
+    return [
+      {
+        taskId: 'hist-mixed-1',
+        originalTitle: 'Completed daily anchor',
+        approved: true,
+        skipped: false,
+        dropped: false,
+        reviewedAt: '2026-03-13T18:10:00Z',
+      },
+      {
+        taskId: 'hist-mixed-2',
+        originalTitle: 'Skipped admin cleanup',
+        approved: false,
+        skipped: true,
+        dropped: false,
+        reviewedAt: '2026-03-13T19:10:00Z',
+      },
+    ];
+  }
+
+  if (variant === 'avoidance') {
+    return [
+      {
+        taskId: 'hist-avoid-1',
+        originalTitle: 'Skipped architecture work',
+        approved: false,
+        skipped: true,
+        dropped: false,
+        reviewedAt: '2026-03-13T18:00:00Z',
+      },
+      {
+        taskId: 'hist-avoid-2',
+        originalTitle: 'Dropped interview prep',
+        approved: false,
+        skipped: false,
+        dropped: true,
+        reviewedAt: '2026-03-13T19:00:00Z',
+      },
+    ];
+  }
+
+  if (variant === 'sparse') {
+    return [
+      {
+        taskId: 'hist-sparse-1',
+        originalTitle: 'Light check-in only',
+        approved: false,
+        skipped: true,
+        dropped: false,
+        reviewedAt: '2026-03-13T20:00:00Z',
+      },
+    ];
+  }
+
+  return [
+    {
+      taskId: 'hist-day-1',
+      originalTitle: 'Shipped architecture PR',
+      approved: true,
+      skipped: false,
+      dropped: false,
+      reviewedAt: '2026-03-13T18:00:00Z',
+    },
+    {
+      taskId: 'hist-day-2',
+      originalTitle: 'Closed design follow-up',
+      approved: true,
+      skipped: false,
+      dropped: false,
+      reviewedAt: '2026-03-13T19:00:00Z',
+    },
+  ];
+}
+
+function buildDailyCloseSummaryFixture({ variant = 'normal' } = {}) {
+  if (variant === 'sparse') {
+    return {
+      stats: ['Completed: 0', 'Skipped: 1', 'Dropped: 0', 'Still open: 1'],
+      reflection: '',
+      reset_cue: 'If today was disrupted or offline, restart tomorrow with one concrete task.',
+      notices: [
+        { severity: 'info', message: 'The day has thin evidence, so this reflection stays minimal.' },
+      ],
+    };
+  }
+
+  return {
+    stats: ['Completed: 2', 'Skipped: 0', 'Dropped: 0', 'Still open: 3'],
+    reflection: 'You moved meaningful work today. Keep the close-out factual and light.',
+    reset_cue: 'Tomorrow’s restart: begin with “Ship weekly architecture PR” and finish the first executable step.',
+    notices: [
+      { severity: 'info', message: 'The day has thin evidence, so this reflection stays minimal.' },
     ],
   };
 }
@@ -568,6 +681,81 @@ test('formatSummary keeps empty sections compact and Telegram-safe', () => {
   assert.match(weeklyHtml, /<b>Progress<\/b>/);
 });
 
+test('composeDailyCloseSummary always returns fixed daily-close top-level sections', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildDailyCloseProcessedHistoryFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture({ kind: 'daily_close' });
+
+  const result = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory,
+    rankingResult,
+  });
+
+  assert.deepEqual(Object.keys(result.summary), DAILY_CLOSE_SUMMARY_SECTION_KEYS);
+  assert.equal(Array.isArray(result.summary.stats), true);
+  assert.equal(Array.isArray(result.summary.notices), true);
+});
+
+test('composeDailyCloseSummary acknowledges meaningful progress without cheerleading', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildDailyCloseProcessedHistoryFixture({ variant: 'meaningful' });
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture({ kind: 'daily_close' });
+
+  const result = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory,
+    rankingResult,
+  });
+
+  assert.ok(result.summary.stats.includes('Completed: 2'));
+  assert.match(result.summary.reflection, /meaningful work/i);
+  assert.match(result.summary.reset_cue, /Tomorrow’s restart/i);
+});
+
+test('composeDailyCloseSummary stays minimal and non-punitive for irregular use', () => {
+  const activeTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+  const processedHistory = buildDailyCloseProcessedHistoryFixture({ variant: 'irregular' });
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture({ kind: 'daily_close' }),
+    generatedAtIso: '2026-03-13T21:00:00Z',
+  };
+
+  const result = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory,
+    rankingResult,
+  });
+
+  assert.equal(result.summary.reflection, '');
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'irregular_use'));
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'sparse_day'));
+  assert.equal(/punish|failure|lazy/i.test(result.formattedText), false);
+});
+
+test('formatSummary renders daily-close sections in fixed order and keeps output Telegram-safe', () => {
+  const summary = buildDailyCloseSummaryFixture();
+  const { text, telegramSafe } = formatSummary({
+    kind: 'daily_close',
+    summary,
+    context: { urgentMode: false },
+  });
+
+  const sectionOrder = ['**Stats**', '**Reflection**', '**Reset cue**', '**Notices**'];
+  const positions = sectionOrder.map((label) => text.indexOf(label));
+
+  assert.ok(text.includes('END-OF-DAY REFLECTION'));
+  assert.ok(positions.every((pos) => pos >= 0));
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions);
+  assert.equal(telegramSafe, true);
+});
+
 test('default timezone remains Europe/Dublin when USER_TIMEZONE is unset', () => {
   const source = readFileSync('services/shared-utils.js', 'utf8');
   assert.match(source, /USER_TZ\s*=\s*process\.env\.USER_TIMEZONE\s*\|\|\s*'Europe\/Dublin'/);
@@ -639,7 +827,10 @@ test('registerCommands wires /urgent to the urgent mode store contract', async (
       quotaResumeTime: () => null,
       activeKeyInfo: () => null,
     },
-    {},
+    {
+      listActiveTasks: async () => [],
+      listProjects: async () => [],
+    },
     {},
   );
 
@@ -726,7 +917,6 @@ test('registerCommands allows free-form urgent toggles before TickTick auth', as
 });
 
 test('registerCommands uses shared briefing surface and preserves urgent reminder', async () => {
-  resetRateLimits();
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
     command(name, handler) {
@@ -789,7 +979,10 @@ test('registerCommands uses shared briefing surface and preserves urgent reminde
       },
       generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
     },
-    {},
+    {
+      listActiveTasks: async () => [],
+      listProjects: async () => [],
+    },
     {},
   );
 
@@ -814,7 +1007,6 @@ test('registerCommands uses shared briefing surface and preserves urgent reminde
 });
 
 test('registerCommands uses shared weekly surface and sends formatted output', async () => {
-  resetRateLimits();
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
     command(name, handler) {
@@ -880,7 +1072,10 @@ test('registerCommands uses shared weekly surface and sends formatted output', a
       },
       generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
     },
-    {},
+    {
+      listActiveTasks: async () => [],
+      listProjects: async () => [],
+    },
     {},
   );
 
@@ -904,8 +1099,102 @@ test('registerCommands uses shared weekly surface and sends formatted output', a
   assert.ok(replies.some((message) => typeof message === 'string' && message.includes('WEEKLY ACCOUNTABILITY REVIEW')));
 });
 
-test('registerCommands short-circuits briefing and weekly when quota is exhausted', async () => {
-  resetRateLimits();
+test('registerCommands uses shared daily-close surface and passes processed history', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) {
+      handlers.commands.set(name, handler);
+      return this;
+    },
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return this;
+    },
+    on(eventName, handler) {
+      handlers.events.push({ eventName, handler });
+      return this;
+    },
+  };
+
+  const dailyCloseCalls = [];
+  await store.resetAll();
+  await store.markTaskProcessed('daily-close-hist-1', {
+    originalTitle: 'Completed anchor task',
+    approved: true,
+    reviewedAt: '2026-03-13T19:00:00Z',
+  });
+
+  registerCommands(
+    bot,
+    {
+      isAuthenticated: () => true,
+      getCacheAgeSeconds: () => null,
+      getAuthUrl: () => 'https://example.test/auth',
+      getAllTasks: async () => [],
+      getAllTasksCached: async () => [],
+      getLastFetchedProjects: () => [],
+    },
+    {
+      isQuotaExhausted: () => false,
+      quotaResumeTime: () => null,
+      activeKeyInfo: () => null,
+      generateDailyCloseSummary: async (_tasks, processedTasks, options) => {
+        dailyCloseCalls.push({ processedTasks, options });
+        return {
+          summary: {
+            stats: ['Completed: 1'],
+            reflection: 'Meaningful work moved today.',
+            reset_cue: 'Restart with one concrete step tomorrow.',
+            notices: [],
+          },
+          formattedText: '**🌙 END-OF-DAY REFLECTION**\n\n**Stats**:\n- Completed: 1',
+          diagnostics: {
+            kind: 'daily_close',
+            entryPoint: options.entryPoint,
+            sourceCounts: {
+              activeTasks: 0,
+              processedHistory: Object.keys(processedTasks).length,
+            },
+            degraded: false,
+            degradedReason: null,
+            formatterVersion: 'summary-formatter.v1',
+            formattingDecisions: {
+              telegramSafe: true,
+              tonePreserved: true,
+              urgentReminderApplied: false,
+              truncated: false,
+            },
+            deliveryStatus: 'composed',
+          },
+        };
+      },
+      generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
+    },
+    {},
+    {},
+  );
+
+  const dailyCloseHandler = handlers.commands.get('daily_close');
+  assert.equal(typeof dailyCloseHandler, 'function');
+
+  const replies = [];
+  const userId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.setUrgentMode(userId, false);
+  await dailyCloseHandler({
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => {
+      replies.push(message);
+    },
+  });
+
+  assert.equal(dailyCloseCalls.length, 1);
+  assert.equal(dailyCloseCalls[0].options.entryPoint, 'manual_command');
+  assert.equal(Object.keys(dailyCloseCalls[0].processedTasks).length > 0, true);
+  assert.ok(replies.some((message) => typeof message === 'string' && message.includes('END-OF-DAY REFLECTION')));
+});
+
+test('registerCommands short-circuits briefing daily_close and weekly when quota is exhausted', async () => {
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
     command(name, handler) {
@@ -939,6 +1228,9 @@ test('registerCommands short-circuits briefing and weekly when quota is exhauste
       generateDailyBriefingSummary: async () => {
         throw new Error('generateDailyBriefingSummary should not be called when quota is exhausted');
       },
+      generateDailyCloseSummary: async () => {
+        throw new Error('generateDailyCloseSummary should not be called when quota is exhausted');
+      },
       generateWeeklyDigestSummary: async () => {
         throw new Error('generateWeeklyDigestSummary should not be called when quota is exhausted');
       },
@@ -959,6 +1251,7 @@ test('registerCommands short-circuits briefing and weekly when quota is exhauste
   };
 
   await handlers.commands.get('briefing')(ctx);
+  await handlers.commands.get('daily_close')(ctx);
   await handlers.commands.get('weekly')(ctx);
 
   assert.ok(replies.some((message) => /quota exhausted/i.test(message)));
@@ -983,7 +1276,9 @@ test('runDailyBriefingJob uses the shared briefing summary surface and keeps pen
     },
     ticktick: {
       isAuthenticated: () => true,
-      getAllTasks: async () => buildSummaryActiveTasksFixture(),
+    },
+    adapter: {
+      listActiveTasks: async () => buildSummaryActiveTasksFixture(),
     },
     gemini: {
       isQuotaExhausted: () => false,
@@ -1035,7 +1330,9 @@ test('runWeeklyDigestJob uses the shared weekly summary surface and preserves pr
     },
     ticktick: {
       isAuthenticated: () => true,
-      getAllTasks: async () => buildSummaryActiveTasksFixture(),
+    },
+    adapter: {
+      listActiveTasks: async () => buildSummaryActiveTasksFixture(),
     },
     gemini: {
       isQuotaExhausted: () => false,
@@ -1079,7 +1376,9 @@ test('runWeeklyDigestJob passes historyAvailable false when processed-task histo
     },
     ticktick: {
       isAuthenticated: () => true,
-      getAllTasks: async () => buildSummaryActiveTasksFixture(),
+    },
+    adapter: {
+      listActiveTasks: async () => buildSummaryActiveTasksFixture(),
     },
     gemini: {
       isQuotaExhausted: () => false,
@@ -1098,6 +1397,25 @@ test('runWeeklyDigestJob passes historyAvailable false when processed-task histo
   assert.equal(ran, true);
   assert.equal(summaryCalls, 1);
 
+});
+
+test('TickTickAdapter exposes the required task operation surface', () => {
+  const requiredMethods = [
+    'createTask',
+    'updateTask',
+    'completeTask',
+    'deleteTask',
+    'listProjects',
+    'findProjectByName',
+  ];
+
+  for (const methodName of requiredMethods) {
+    assert.equal(typeof TickTickAdapter.prototype[methodName], 'function', `${methodName} should be exposed`);
+  }
+
+  if (Object.hasOwn(TickTickAdapter.prototype, 'createTasksBatch')) {
+    assert.equal(typeof TickTickAdapter.prototype.createTasksBatch, 'function');
+  }
 });
 
 test('TickTickAdapter includes the existing projectId when updating only a due date', async () => {
@@ -2203,32 +2521,72 @@ test('execution prioritization elevates recovery work when it protects execution
   assert.equal(result.topRecommendation.rationaleCode, 'capacity_protection');
 });
 
-test('pipeline context resolves relative dates through the normalizer path', async () => {
+test('pipeline context resolves dentist Thursday through the normalizer path', async () => {
   process.env.USER_TIMEZONE = 'Europe/Dublin';
   const { processMessage, adapterCalls, axCalls } = createPipelineHarness({
     intents: [
       {
         type: 'create',
-        title: 'Book dentist',
+        title: 'Book dentist appointment',
+        content: null,
+        priority: null,
+        projectHint: null,
         dueDate: 'thursday',
+        repeatHint: null,
+        splitStrategy: 'single',
         confidence: 0.9,
       },
     ],
   });
 
-  const result = await processMessage('book dentist thursday', {
+  const result = await processMessage('Book dentist appointment Thursday', {
     currentDate: '2026-03-10T10:00:00Z',
     entryPoint: 'regression',
-    requestId: 'req-story-1',
+    requestId: 'req-r1-dentist-thursday',
   });
 
   assert.equal(result.type, 'task');
   assert.equal(result.actions.length, 1);
   assert.equal(result.results.length, 1);
+  assert.equal(axCalls[0].userMessage, 'Book dentist appointment Thursday');
   assert.equal(axCalls[0].options.currentDate, '2026-03-10');
   assert.deepEqual(axCalls[0].options.availableProjects, DEFAULT_PROJECTS.map((project) => project.name));
   assert.equal(adapterCalls.create.length, 1);
+  assert.equal(adapterCalls.create[0].title, 'Book dentist appointment');
   assert.match(adapterCalls.create[0].dueDate, /^2026-03-12T23:59:00\.000[+-]\d{4}$/);
+});
+
+test('pipeline context keeps undated groceries in default project', async () => {
+  process.env.USER_TIMEZONE = 'Europe/Dublin';
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Buy groceries',
+        content: null,
+        priority: null,
+        projectHint: null,
+        dueDate: null,
+        repeatHint: null,
+        splitStrategy: 'single',
+        confidence: 0.9,
+      },
+    ],
+  });
+
+  const result = await processMessage('Buy groceries', {
+    currentDate: '2026-03-10T10:00:00Z',
+    entryPoint: 'regression',
+    requestId: 'req-r1-buy-groceries',
+  });
+
+  assert.equal(result.type, 'task');
+  assert.equal(result.actions.length, 1);
+  assert.equal(result.results.length, 1);
+  assert.equal(adapterCalls.create.length, 1);
+  assert.equal(adapterCalls.create[0].title, 'Buy groceries');
+  assert.equal(adapterCalls.create[0].projectId, DEFAULT_PROJECTS[0].id);
+  assert.equal(adapterCalls.create[0].dueDate, null);
 });
 
 test('pipeline context keeps date-only currentDate stable in negative-offset timezones', async () => {
@@ -2306,6 +2664,24 @@ test('pipeline returns non-task for empty intent lists', async () => {
   assert.equal(result.type, 'non-task');
   assert.equal(result.nonTaskReason, 'empty_intents');
   assert.equal(result.results.length, 0);
+});
+
+test('pipeline treats hello as conversational non-task without writes', async () => {
+  const { processMessage, adapterCalls } = createPipelineHarness({ intents: [] });
+
+  const result = await processMessage('hello', {
+    requestId: 'req-r1-hello',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  assert.equal(result.type, 'non-task');
+  assert.match(result.confirmationText, /^Hi\./);
+  assert.equal(result.results.length, 0);
+  assert.equal(adapterCalls.create.length, 0);
+  assert.equal(adapterCalls.update.length, 0);
+  assert.equal(adapterCalls.complete.length, 0);
+  assert.equal(adapterCalls.delete.length, 0);
 });
 
 test('pipeline returns validation failure when all normalized actions are invalid', async () => {
@@ -2634,11 +3010,13 @@ test('mut:pick resumes through pipeline with resolved task context', async () =>
 
   const ticktick = {
     isAuthenticated: () => true,
-    getAllTasksCached: async () => [
+  };
+  const adapter = {
+    listActiveTasks: async () => [
       { id: 'task-weekly-1', title: 'Write weekly report', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
       { id: 'task-weekly-2', title: 'Review weekly metrics', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
     ],
-    getLastFetchedProjects: () => [{ id: 'inbox', name: 'Inbox' }],
+    listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
   };
 
   const pipeline = {
@@ -2648,7 +3026,7 @@ test('mut:pick resumes through pipeline with resolved task context', async () =>
     },
   };
 
-  registerCallbacks(bot, ticktick, { isQuotaExhausted: () => false }, {}, pipeline);
+  registerCallbacks(bot, ticktick, { isQuotaExhausted: () => false }, adapter, pipeline);
 
   // Find the mut:pick handler
   const pickHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:pick'))?.handler;
@@ -3512,6 +3890,10 @@ test('WP04 T046: checklist create creates one parent task with items', async () 
   const result = await processMessage('Onboard new client: send welcome email, create project folder, schedule kickoff');
 
   assert.equal(result.type, 'task', 'should return task type');
+  assert.deepEqual(result.checklistContext, {
+    hasChecklist: true,
+    clarificationQuestion: null,
+  });
   assert.equal(adapterCalls.create.length, 1, 'should create exactly one parent task');
   const createdAction = adapterCalls.create[0];
   // Title gets normalized with verb-led prefix
@@ -3566,6 +3948,10 @@ test('WP04 T046: ambiguous checklist vs multi-task returns clarification', async
   assert.equal(result.type, 'clarification', 'should return clarification type');
   assert.ok(result.confirmationText, 'should have a clarification question');
   assert.ok(result.clarification, 'should have clarification metadata');
+  assert.deepEqual(result.checklistContext, {
+    hasChecklist: true,
+    clarificationQuestion: 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?',
+  });
   assert.equal(result.clarification.reason, 'ambiguous_checklist_vs_multi_task');
   assert.equal(adapterCalls.create.length, 0, 'should not create any tasks');
 });
@@ -4053,7 +4439,7 @@ test('WP05 P0#2: free-form reply "checklist" resumes with checklistPreference', 
     bot,
     mockTicktick,
     { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
-    {},
+    { listProjects: async () => [] },
     {
       processMessage: async (msg, opts) => {
         pipelineCalls.push({ message: msg, options: opts });
@@ -4108,7 +4494,7 @@ test('WP05 P0#2: free-form reply "separate tasks" resumes with separate preferen
     bot,
     mockTicktick,
     { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
-    {},
+    { listProjects: async () => [] },
     {
       processMessage: async (msg, opts) => {
         pipelineCalls.push({ message: msg, options: opts });
@@ -4161,7 +4547,7 @@ test('WP05 P0#2: free-form reply "skip" resumes with skipChecklist=true', async 
     bot,
     mockTicktick,
     { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
-    {},
+    { listProjects: async () => [] },
     {
       processMessage: async (msg, opts) => {
         pipelineCalls.push({ message: msg, options: opts });
@@ -4243,7 +4629,11 @@ test('WP05 P0#2: free-form reply with no pending clarification falls through to 
 // ─── Helper: registerCallbacks without TickTick client ───────
 async function registerCallbacksForTest(bot, ticktickMock, pipeline) {
   const { registerCallbacks } = await import('../bot/callbacks.js');
-  registerCallbacks(bot, ticktickMock, {}, ticktickMock, pipeline);
+  registerCallbacks(bot, ticktickMock, {}, {
+    ...ticktickMock,
+    listProjects: ticktickMock.listProjects || (async () => []),
+    listActiveTasks: ticktickMock.listActiveTasks || (async () => []),
+  }, pipeline);
 }
 
 // ─── Behavioral Signal Classifier Tests (WP01, T007) ───────
@@ -4475,4 +4865,57 @@ test('getSignalRegistry returns all 7 signal types', () => {
   assert.ok(types.includes(SignalType.COMPLETION));
   assert.ok(types.includes(SignalType.CREATION));
   assert.ok(types.includes(SignalType.DELETION));
+});
+
+test('adapter failure preserves parsed intent and normalized action for retry', async () => {
+  const adapter = {
+    listProjects: async () => [],
+    listActiveTasks: async () => [],
+    createTask: async () => {
+      throw new Error('TickTick API unavailable');
+    },
+    updateTask: async () => {
+      throw new Error('TickTick API unavailable');
+    },
+    completeTask: async () => {
+      throw new Error('TickTick API unavailable');
+    },
+    deleteTask: async () => {
+      throw new Error('TickTick API unavailable');
+    },
+    restoreTask: async () => {
+      throw new Error('Rollback unsupported');
+    },
+  };
+
+  const pipeline = createPipeline({
+    axIntent: {
+      extractIntents: async () => [
+        { type: 'create', title: 'Test task', content: 'test content', priority: 3 },
+      ],
+    },
+    normalizer: {
+      normalizeActions: () => ([
+        { type: 'create', title: 'Test task', content: 'test content', priority: 3, projectId: 'inbox', valid: true, validationErrors: [] },
+      ]),
+    },
+    adapter,
+  });
+
+  const result = await pipeline.processMessage('create a test task', {
+    requestId: 'req-adapter-failure',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  assert.equal(result.type, 'error', 'Result type should be error');
+  assert.equal(result.failure.failureClass, 'adapter', 'Failure class should be adapter');
+  assert.equal(result.failure.retryable, true, 'Adapter failure should be retryable');
+  assert.ok(Array.isArray(result.intents), 'Intents should be preserved in result');
+  assert.equal(result.intents.length, 1, 'Should have one intent');
+  assert.equal(result.intents[0].type, 'create', 'Intent type should be create');
+  assert.equal(result.intents[0].title, 'Test task', 'Intent title should be preserved');
+  assert.ok(Array.isArray(result.normalizedActions), 'Normalized actions should be preserved in result');
+  assert.equal(result.normalizedActions.length, 1, 'Should have one normalized action');
+  assert.equal(result.normalizedActions[0].title, 'Test task', 'Normalized action title should be preserved');
 });

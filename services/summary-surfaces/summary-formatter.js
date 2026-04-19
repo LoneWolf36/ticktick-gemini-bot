@@ -103,6 +103,18 @@ function formatWeekly(summary = {}) {
     ].join('\n\n').trim();
 }
 
+function formatDailyClose(summary = {}) {
+    const reflection = normalizeInline(summary.reflection) || EMPTY_LABEL;
+    const resetCue = normalizeInline(summary.reset_cue) || EMPTY_LABEL;
+
+    return [
+        `**Stats**:\n${renderList(summary.stats)}`,
+        `**Reflection**: ${reflection}`,
+        `**Reset cue**: ${resetCue}`,
+        `**Notices**:\n${formatNotices(summary.notices)}`,
+    ].join('\n\n').trim();
+}
+
 function isTelegramSafe(text = '') {
     return !/(^|\n)\s*#{1,6}\s+/m.test(text);
 }
@@ -110,6 +122,9 @@ function isTelegramSafe(text = '') {
 function applyBriefingHeader({ kind }) {
     if (kind === 'weekly') {
         return formatBriefingHeader({ kind: 'weekly' });
+    }
+    if (kind === 'daily_close') {
+        return formatBriefingHeader({ kind: 'daily_close' });
     }
     return formatBriefingHeader({ kind: 'daily' });
 }
@@ -142,6 +157,11 @@ export function formatSummary({ kind, summary = {}, context = {} } = {}) {
     if (kind === 'weekly') {
         const body = formatWeekly(summary);
         return buildRenderResult({ kind: 'weekly', body, context });
+    }
+
+    if (kind === 'daily_close') {
+        const body = formatDailyClose(summary);
+        return buildRenderResult({ kind: 'daily_close', body, context });
     }
 
     const body = formatBriefing(summary);

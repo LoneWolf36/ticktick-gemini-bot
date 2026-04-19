@@ -16,52 +16,8 @@ import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
 import { detectUrgentModeIntent } from '../services/ax-intent.js';
 
-// ─── Simple per-user rate limiter ───────────────────────────
-// Heavy commands (/scan, /briefing, /weekly, /review, /reorg) are rate-limited
-// to prevent accidental spam that burns TickTick/Gemini API quotas.
-// Light commands (/start, /menu, /status, /urgent, /pending, /undo, /reset) are not limited.
-
-const RATE_LIMIT_WINDOW_MS = 30_000;  // 30-second window
-const RATE_LIMIT_MAX = 1;              // 1 heavy command per window
-const HEAVY_COMMANDS = new Set(['scan', 'briefing', 'weekly', 'review', 'reorg']);
-
-const rateLimitWindows = new Map(); // `${userId}:${command}` -> { count, resetAt }
-
-function isRateLimited(userId, command) {
-    if (!HEAVY_COMMANDS.has(command)) return false;
-    const key = `${userId}:${command}`;
-    const now = Date.now();
-    const entry = rateLimitWindows.get(key);
-    if (!entry || now >= entry.resetAt) {
-        rateLimitWindows.set(key, { count: 1, resetAt: now + RATE_LIMIT_WINDOW_MS });
-        return false;
-    }
-    entry.count += 1;
-    if (entry.count > RATE_LIMIT_MAX) return true;
-    return false;
-}
-
-function rateLimitRemaining(userId, command) {
-    const key = `${userId}:${command}`;
-    const entry = rateLimitWindows.get(key);
-    if (!entry || Date.now() >= entry.resetAt) return RATE_LIMIT_MAX;
-    return Math.max(0, RATE_LIMIT_MAX - entry.count);
-}
-
-/** Reset rate limit state — useful for test isolation */
-export function resetRateLimits() {
-    rateLimitWindows.clear();
-}
-
-/** Middleware-style guard — returns true if request should be rejected */
-export function guardRateLimit(ctx, command) {
-    const userId = ctx.from?.id ?? ctx.chat?.id;
-    if (!userId || !isRateLimited(userId, command)) return false;
-    const remaining = rateLimitRemaining(userId, command);
-    const waitSec = Math.ceil((rateLimitWindows.get(`${userId}:${command}`)?.resetAt - Date.now()) / 1000);
-    ctx.reply(`⏳ Slow down — ${command} can be run once every ${RATE_LIMIT_WINDOW_MS / 1000}s. Try again in ~${waitSec}s.`);
-    return true;
-}
+// Rate limiter removed 2026-04-19 (cavekit-validate Phase 3): YAGNI for 1-user MVP.
+// Heavy-command rate limiting listed as out-of-scope in cavekit-task-pipeline.md.
 
 export function registerCommands(bot, ticktick, gemini, adapter, pipeline, config = {}) {
     const {
@@ -75,6 +31,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         .text('⏳ Pending', 'menu:pending')
         .row()
         .text('🌅 Briefing', 'menu:briefing')
+        .text('🌙 Daily Close', 'menu:daily_close')
+        .row()
         .text('📊 Weekly', 'menu:weekly')
         .row()
         .text('🧭 Reorg', 'menu:reorg')
@@ -133,6 +91,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             `/scan — Analyze new tasks (batched, 5 at a time)\n` +
             `/pending — Re-surface tasks awaiting review\n` +
             `/briefing — Today's prioritized morning plan\n` +
+            `/daily_close — Brief end-of-day reflection\n` +
             `/weekly — Weekly accountability digest\n` +
             `/review — Walk through all unreviewed tasks\n` +
             `/undo — Revert last auto-applied change\n` +
@@ -153,7 +112,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
     bot.command('reorg', async (ctx) => {
         if (!await guardAccess(ctx)) return;
-        if (guardRateLimit(ctx, 'reorg')) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
             await ctx.reply(buildQuotaExhaustedMessage(gemini));
@@ -161,8 +119,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
         await ctx.reply('🧭 Building reorganization proposal...');
         try {
-            const tasks = await ticktick.getAllTasksCached(60000);
-            const projects = ticktick.getLastFetchedProjects();
+            const tasks = await adapter.listActiveTasks();
+            const projects = await adapter.listProjects();
             const proposal = await gemini.generateReorgProposal(tasks, projects);
             await store.setPendingReorg({
                 ...proposal,
@@ -329,8 +287,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         if (action === 'apply') {
             await ctx.answerCallbackQuery({ text: 'Applying proposal...' });
             try {
-                const tasks = await ticktick.getAllTasksCached(60000);
-                const projects = ticktick.getLastFetchedProjects();
+                const tasks = await adapter.listActiveTasks();
+                const projects = await adapter.listProjects();
                 const { outcomes, hasUndoableActions } = await executeActions(
                     pending.actions || [],
                     adapter,
@@ -356,7 +314,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     // ─── /scan — manual poll, BATCHED (5 at a time) ───────────
     bot.command('scan', async (ctx) => {
         if (!await guardAccess(ctx)) return;
-        if (guardRateLimit(ctx, 'scan')) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected. Run the OAuth flow first.'); return; }
 
         const pendingCount = store.getPendingCount();
@@ -369,8 +326,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
         try {
             await ctx.reply('🔍 Scanning for new tasks...');
-            const allTasks = await ticktick.getAllTasks();
-            const availableProjects = ticktick.getLastFetchedProjects();
+            const allTasks = await adapter.listActiveTasks(true);
+            const availableProjects = await adapter.listProjects();
             const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
@@ -521,7 +478,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     // ─── /briefing ────────────────────────────────────────────
     bot.command('briefing', async (ctx) => {
         if (!await guardAccess(ctx)) return;
-        if (guardRateLimit(ctx, 'briefing')) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
             await ctx.reply(buildQuotaExhaustedMessage(gemini));
@@ -532,7 +488,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
         const context = buildSummaryContext({ kind: 'briefing', userId, urgentMode });
         try {
-            const tasks = await ticktick.getAllTasks();
+            const tasks = await adapter.listActiveTasks(true);
             const briefingResult = await gemini.generateDailyBriefingSummary(tasks, {
                 entryPoint: context.entryPoint,
                 userId,
@@ -556,7 +512,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     // ─── /weekly ──────────────────────────────────────────────
     bot.command('weekly', async (ctx) => {
         if (!await guardAccess(ctx)) return;
-        if (guardRateLimit(ctx, 'weekly')) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
             await ctx.reply(buildQuotaExhaustedMessage(gemini));
@@ -567,7 +522,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
         const context = buildSummaryContext({ kind: 'weekly', userId, urgentMode });
         try {
-            const tasks = await ticktick.getAllTasks();
+            const tasks = await adapter.listActiveTasks(true);
             const processed = store.getProcessedTasks();
             const historyAvailable = typeof processed === 'object' && processed !== null && !Array.isArray(processed);
             const thisWeek = filterProcessedThisWeek(processed || {}, ['processedAt']);
@@ -602,10 +557,55 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
     });
 
+    // ─── /daily_close ─────────────────────────────────────────
+    bot.command('daily_close', async (ctx) => {
+        if (!await guardAccess(ctx)) return;
+        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
+        if (gemini.isQuotaExhausted()) {
+            await ctx.reply(buildQuotaExhaustedMessage(gemini));
+            return;
+        }
+        await ctx.reply('🌙 Generating your end-of-day reflection...');
+        const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
+        const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
+        const context = buildSummaryContext({ kind: 'daily_close', userId, urgentMode });
+        try {
+            const tasks = await ticktick.getAllTasks();
+            const processed = store.getProcessedTasks();
+            const historyAvailable = typeof processed === 'object' && processed !== null && !Array.isArray(processed);
+            const dailyCloseResult = await gemini.generateDailyCloseSummary(tasks, processed || {}, {
+                entryPoint: context.entryPoint,
+                userId,
+                urgentMode,
+                generatedAtIso: context.generatedAtIso,
+                historyAvailable,
+            });
+            logSummarySurfaceEvent({
+                context,
+                result: dailyCloseResult,
+                deliveryStatus: 'ready',
+                extra: { historyAvailable },
+            });
+            await replyWithMarkdown(ctx, dailyCloseResult.formattedText);
+            logSummarySurfaceEvent({
+                context,
+                result: dailyCloseResult,
+                deliveryStatus: 'sent',
+                extra: { historyAvailable },
+            });
+        } catch (err) {
+            logSummarySurfaceEvent({ context, deliveryStatus: 'failed', error: err });
+            if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
+                await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
+                return;
+            }
+            await ctx.reply(`❌ Daily close error: ${err.message}`);
+        }
+    });
+
     // ─── /review ──────────────────────────────────────────────
     bot.command('review', async (ctx) => {
         if (!await guardAccess(ctx)) return;
-        if (guardRateLimit(ctx, 'review')) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
 
         const pendingCount = store.getPendingCount();
@@ -618,8 +618,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
         try {
             await ctx.reply('📋 Checking for unreviewed tasks...');
-            const allTasks = await ticktick.getAllTasks();
-            const availableProjects = ticktick.getLastFetchedProjects();
+            const allTasks = await adapter.listActiveTasks(true);
+            const availableProjects = await adapter.listProjects();
             const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
@@ -720,8 +720,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
             await ctx.reply('🛠️ Refining reorg proposal...');
             try {
-                const tasks = await ticktick.getAllTasksCached(60000);
-                const projects = ticktick.getLastFetchedProjects();
+                const tasks = await adapter.listActiveTasks();
+                const projects = await adapter.listProjects();
                 const refined = await gemini.generateReorgProposal(tasks, projects, userMessage, pendingReorg.actions || []);
                 await store.setPendingReorg({
                     ...refined,
@@ -753,6 +753,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         : answer === 'skip' || answer === 'cancel' || answer === 'nevermind'
                             ? 'skip'
                             : null; // ambiguous reply — treat as fallback
+                const availableProjects = await adapter.listProjects();
 
                 if (resolvedMode === 'skip') {
                     console.log('[ChecklistClarification] User skipped — creating plain parent task only');
@@ -760,7 +761,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         entryPoint: 'telegram:checklist-clarification-skip',
                         mode: 'interactive',
                         skipChecklist: true,
-                        availableProjects: ticktick.getLastFetchedProjects(),
+                        availableProjects,
                     });
                     if (result.type === 'task') {
                         await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
@@ -778,7 +779,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         entryPoint: 'telegram:checklist-clarification-resume',
                         mode: 'interactive',
                         checklistPreference: resolvedMode,
-                        availableProjects: ticktick.getLastFetchedProjects(),
+                        availableProjects,
                     });
                     if (result.type === 'task') {
                         await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
@@ -796,7 +797,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     entryPoint: 'telegram:checklist-clarification-fallback',
                     mode: 'interactive',
                     skipChecklist: true, // Never create inferred checklist after ignored clarification
-                    availableProjects: ticktick.getLastFetchedProjects(),
+                    availableProjects,
                 });
                 if (result.type === 'task') {
                     await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
@@ -821,7 +822,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     await ctx.reply(buildQuotaExhaustedMessage(gemini));
                     return;
                 }
-                const tasks = await ticktick.getAllTasksCached(60000);
                 await ctx.reply(result.confirmationText || 'Got it — no actionable tasks detected.');
             } else if (result.type === 'clarification') {
                 // Determine clarification type: checklist vs mutation

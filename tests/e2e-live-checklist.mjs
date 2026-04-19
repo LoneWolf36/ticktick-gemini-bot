@@ -1,6 +1,8 @@
 // Opt-in E2E validation harness for checklist/review flows.
 // This is not a production bot path and must not be treated as an approved
 // write surface outside manual validation work.
+// TODO(cavekit-validate 2026-04-19): Map this live checklist harness to an explicit Cavekit checklist/hardening
+// requirement or document why it remains outside product-kit drift checks.
 //
 // This file is intentionally executable only when run directly via Node.
 // Importing it for syntax/module checks must not hit TickTick or perform writes.
@@ -138,16 +140,16 @@ function createPipelineDouble(ticktick, adapter) {
   };
 }
 
-function createAdapterDouble(ticktick) {
+function createAdapterDouble(testDouble) {
   return {
     async createTask(taskData) {
-      return ticktick.createTask(taskData);
+      return testDouble.createTask(taskData);
     },
     async updateTask(taskId, changes) {
-      return ticktick.updateTask(taskId, changes);
+      return testDouble.updateTask(taskId, changes);
     },
     async completeTask(taskId, projectId) {
-      return ticktick.completeTask(projectId, taskId);
+      return testDouble.completeTask(projectId, taskId);
     },
     async deleteTask(taskId, projectId) {
       const idx = ticktick.tasks.findIndex((task) => task.id === taskId && task.projectId === projectId);

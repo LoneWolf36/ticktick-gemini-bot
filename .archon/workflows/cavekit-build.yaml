@@ -1,0 +1,344 @@
+name: cavekit-build
+description: |
+  Use when: You have a cavekit domain kit with R-numbered requirements to implement.
+  Input: Kit filename (e.g. cavekit-task-pipeline) or specific R-requirement ID
+  Output: Implementation with all acceptance criteria verified, committed to a feature branch
+
+  Full workflow:
+  1. Read the domain kit and extract the next unchecked R-requirement
+  2. Plan implementation against codebase patterns
+  3. Implement in a loop until all acceptance criteria pass
+  4. Validate with project test suite
+  5. Code review against the kit's acceptance criteria
+  6. Human approval gate
+  7. Finalize and push
+
+  NOT for: Creating new kits (use /ck:sketch), planning (use /ck:map), quick fixes.
+
+# ACTION ITEM (cavekit-validate 2026-04-19): this tooling file was flagged as product-code drift.
+# Decide whether Archon workflows belong in a dedicated tooling kit or should be excluded from drift checks.
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: READ KIT — Extract the next R-requirement to build
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: read-kit
+    context: fresh
+    prompt: |
+      # Cavekit Build — Read Domain Kit
+
+      **Input**: $ARGUMENTS
+
+      ---
+
+      ## Step 1: Read AGENTS.md and the Karpathy Guardrails
+
+      Read `AGENTS.md` and `.codex/skills/karpathy-guardrails/SKILL.md`.
+
+      ## Step 2: Find the Domain Kit
+
+      ```bash
+      ls context/kits/cavekit-*.md
+      ```
+
+      If $ARGUMENTS contains a kit name, read that kit.
+      If $ARGUMENTS contains an R-number (e.g. R03), find which kit contains it.
+      If $ARGUMENTS is empty, read `context/kits/cavekit-overview.md` and pick the highest-priority unchecked requirement.
+
+      ## Step 3: Extract the Next Requirement
+
+      Scan the kit for requirements marked `[ ]` (unchecked). Select the first one
+      whose dependencies (if any) are already checked `[x]`.
+
+      ## Step 4: Output Plan Seed
+
+      Write to `$ARTIFACTS_DIR/kit-requirement.md`:
+
+      ```markdown
+      # Target Requirement
+
+      **Kit**: {kit filename}
+      **Requirement**: {R-number} - {title}
+      **Acceptance Criteria**:
+      - AC1: {criterion}
+      - AC2: {criterion}
+      ...
+
+      **Dependencies**: {list of R-requirements that must be done first, or "None"}
+      **Complexity**: {quick/medium/complex from the kit}
+      **Files likely involved**: {based on codebase grep}
+      ```
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: PLAN — Create implementation plan for this requirement
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: plan
+    depends_on: [read-kit]
+    context: fresh
+    prompt: |
+      # Cavekit Build — Implementation Plan
+
+      Read `$ARTIFACTS_DIR/kit-requirement.md` for the target requirement.
+      Read `AGENTS.md` and `.codex/skills/karpathy-guardrails/SKILL.md`.
+
+      ---
+
+      ## Karpathy Check: Think Before Coding
+
+      Answer these before planning:
+      1. **What am I actually building?** One sentence.
+      2. **What am I assuming?** List every assumption.
+      3. **What does success look like?** Map each AC to a concrete verification step.
+
+      ## Step 1: Explore Codebase
+
+      Find existing patterns that relate to this requirement:
+      ```bash
+      grep -rn "{relevant terms}" --include="*.{js,ts,py,md}" --exclude-dir=node_modules --exclude-dir=.git | head -30
+      ```
+
+      ## Step 2: Write the Plan
+
+      Write to `$ARTIFACTS_DIR/plan.md`:
+
+      ```markdown
+      # Implementation Plan: {R-number}
+
+      ## Goal
+      {one sentence}
+
+      ## Assumptions
+      - {assumption 1}
+      - {assumption 2}
+
+      ## Tasks
+      1. {task} -> verify: {check}
+      2. {task} -> verify: {check}
+      3. {task} -> verify: {check}
+
+      ## Files to Change
+      - {file}: {what changes}
+
+      ## Verification Plan
+      - {exact command or assertion for each AC}
+      ```
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: IMPLEMENT — Build in a loop until ACs pass
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: implement
+    depends_on: [plan]
+    context: fresh
+    loop:
+      prompt: |
+        # Cavekit Build — Implement
+
+        Read `$ARTIFACTS_DIR/plan.md` for the implementation plan.
+        Read `$ARTIFACTS_DIR/kit-requirement.md` for acceptance criteria.
+        Read `AGENTS.md` for project conventions.
+
+        ---
+
+        ## Karpathy Check: Surgical Changes
+
+        Every line in your diff must trace back to an acceptance criterion.
+        Do not fix unrelated code. Do not refactor adjacent modules.
+
+        ## Step 1: Check Progress
+
+        ```bash
+        cat $ARTIFACTS_DIR/progress.txt 2>/dev/null || echo "No progress yet"
+        ```
+
+        ## Step 2: Implement Next Task
+
+        Read the plan, find the next incomplete task, implement it.
+        After each change, verify it works:
+        ```bash
+        # Run relevant project checks
+        npm test 2>&1 || python -m pytest 2>&1 || echo "No test runner found"
+        ```
+
+        ## Step 3: Commit
+
+        ```bash
+        git add -A
+        git commit -m "feat: {R-number} - {task description}"
+        ```
+
+        ## Step 4: Track Progress
+
+        Append to `$ARTIFACTS_DIR/progress.txt`:
+        ```
+        Task {N}: {title} — COMPLETED
+        Files: {list}
+        ```
+
+        ## Step 5: Check Completion
+
+        Are ALL acceptance criteria from the kit met?
+        If yes: `<promise>COMPLETE</promise>`
+        If no: report which ACs remain and end normally (loop continues).
+      until: COMPLETE
+      max_iterations: 10
+      fresh_context: true
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: VALIDATE — Run full test suite
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: validate
+    depends_on: [implement]
+    context: fresh
+    prompt: |
+      # Cavekit Build — Validate
+
+      Run the full project validation suite.
+
+      ```bash
+      npm test 2>&1 || python -m pytest 2>&1 || echo "Tests complete"
+      ```
+
+      Read `$ARTIFACTS_DIR/kit-requirement.md` and verify each AC:
+
+      ```markdown
+      ## Validation Report
+
+      | AC | Description | Status | Evidence |
+      |----|-------------|--------|----------|
+      | AC1 | {desc} | PASS/FAIL | {output} |
+      | AC2 | {desc} | PASS/FAIL | {output} |
+      ```
+
+      If any AC fails, fix it and re-run. Commit fixes:
+      ```bash
+      git add -A && git commit -m "fix: address validation failures for {R-number}"
+      ```
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: REVIEW — Verify against kit acceptance criteria
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: review
+    depends_on: [validate]
+    context: fresh
+    denied_tools: [Write, Edit, Bash]
+    prompt: |
+      # Cavekit Build — Code Review
+
+      You are a reviewer. You can ONLY read files — no changes allowed.
+
+      Read:
+      - `$ARTIFACTS_DIR/kit-requirement.md` (acceptance criteria)
+      - `$ARTIFACTS_DIR/plan.md` (original plan)
+      - `.codex/skills/karpathy-guardrails/SKILL.md` (review rules)
+
+      ## Karpathy Review Pass 1: Guardrail Check
+
+      Reject if ANY of:
+      - Undeclared assumptions
+      - Diff lines not justified by an AC
+      - Out-of-scope edits
+      - Unreachable verification steps
+
+      ## Pass 2: Code Quality
+
+      Check each changed file for:
+      - Matches existing project style
+      - No unnecessary complexity
+      - No speculative features
+      - Error handling appropriate
+
+      ## Output
+
+      ```markdown
+      ## Review: {R-number}
+
+      ### Pass 1: Guardrail Check
+      - Undeclared assumptions: {yes/no}
+      - Out-of-scope changes: {yes/no}
+      - All ACs covered: {yes/no}
+
+      ### Pass 2: Code Quality
+      | File | Status | Notes |
+      |------|--------|-------|
+      | {file} | OK/ISSUE | {notes} |
+
+      ### Verdict: APPROVE / REQUEST_CHANGES
+      {summary}
+      ```
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6: APPROVE — Human approval gate
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: approve
+    depends_on: [review]
+    loop:
+      prompt: |
+        # Cavekit Build — Human Approval
+
+        Present the implementation summary to the user.
+
+        **Human feedback**: $LOOP_USER_INPUT
+
+        If the user says "approved", "looks good", "ship it":
+        - `<promise>APPROVED</promise>`
+
+        If the user provides feedback:
+        1. Read the relevant files
+        2. Make the fixes
+        3. Commit: `git add -A && git commit -m "fix: address review feedback"`
+        4. Present updated summary
+
+        **CRITICAL**: Never emit APPROVED unless the user explicitly approves.
+      until: APPROVED
+      max_iterations: 5
+      interactive: true
+      gate_message: |
+        Review the changes and test them. Say "approved" to finalize, or provide feedback.
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 7: FINALIZE — Mark kit requirement done, push
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: finalize
+    depends_on: [approve]
+    context: fresh
+    prompt: |
+      # Cavekit Build — Finalize
+
+      ## Step 1: Mark Requirement Done in Kit
+
+      Read the original kit file from `$ARTIFACTS_DIR/kit-requirement.md`.
+      Open the kit file and change the requirement from `[ ]` to `[x]`.
+
+      ```bash
+      git add -A && git commit -m "docs: mark {R-number} as complete in domain kit"
+      ```
+
+      ## Step 2: Push
+
+      ```bash
+      git push -u origin HEAD
+      ```
+
+      ## Step 3: Summary
+
+      ```
+      ═══════════════════════════════════════════
+      CAVEKIT BUILD — COMPLETE
+      ═══════════════════════════════════════════
+
+      Requirement: {R-number} - {title}
+      Kit: {kit filename}
+      Branch: {branch}
+      Commits: {count}
+      Files changed: {count}
+
+      Acceptance Criteria: ALL PASS
+      ═══════════════════════════════════════════
+      ```

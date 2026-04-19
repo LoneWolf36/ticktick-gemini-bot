@@ -6,7 +6,7 @@ import path from 'path';
 import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from './shared-utils.js';
 import { briefingSummarySchema, reorgSchema, weeklySummarySchema } from './schemas.js';
 import * as store from './store.js';
-import { composeBriefingSummary, composeWeeklySummary } from './summary-surfaces/index.js';
+import { composeBriefingSummary, composeDailyCloseSummary, composeWeeklySummary } from './summary-surfaces/index.js';
 import {
     createGoalThemeProfile,
     inferPriorityValueFromTask,
@@ -558,6 +558,36 @@ export class GeminiAnalyzer {
         });
     }
 
+    async generateDailyCloseSummary(allTasks, processedTasks, options = {}) {
+        const recommendationState = await this._resolveRecommendationState(options);
+        const { ranking, orderedTasks } = this._prepareBriefingTasks(allTasks, {
+            ...options,
+            ...recommendationState,
+        });
+
+        const processedEntries = Array.isArray(processedTasks)
+            ? processedTasks.filter(Boolean)
+            : Object.entries(processedTasks || {}).map(([taskId, data]) => ({ taskId, ...data }));
+
+        return composeDailyCloseSummary({
+            context: {
+                kind: 'daily_close',
+                entryPoint: options.entryPoint || 'manual_command',
+                userId: options.userId ?? options.chatId ?? store.getChatId(),
+                generatedAtIso: options.generatedAtIso || new Date().toISOString(),
+                timezone: options.timezone || null,
+                urgentMode: recommendationState.urgentMode,
+                tonePolicy: options.tonePolicy || 'preserve_existing',
+            },
+            activeTasks: orderedTasks,
+            processedHistory: processedEntries,
+            rankingResult: ranking,
+            modelSummary: {},
+        });
+    }
+
+    // TODO(cavekit-validate 2026-04-19): Reorg proposal generation is live but unmapped in current Cavekit kits.
+    // Map this method to a dedicated requirement or remove the legacy reorg surface.
     async generateReorgProposal(tasks = [], projects = [], refinement = null, existingActions = [], options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
         const compactTasks = this._compactReorgTasks(tasks, recommendationState);

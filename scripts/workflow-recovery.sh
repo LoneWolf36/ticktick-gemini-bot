@@ -6,7 +6,7 @@ set -euo pipefail
 PROJECT_DIR="/home/lonewolf09/Documents/Projects/ticktick-gemini"
 cd "$PROJECT_DIR"
 
-WORKFLOW_NAME="${1:-spec-kitty-missions-complete}"
+WORKFLOW_NAME="${1:-cavekit-build}"
 CHECKPOINT_FILE=".archon/checkpoints/current-state.json"
 WORKFLOW_FILE=".archon/workflows/${WORKFLOW_NAME}.yaml"
 

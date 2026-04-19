@@ -4,14 +4,12 @@
   "ignore": [
     "**/node_modules/**",
     "**/.git/**",
-    "**/kitty-specs/**",
+    "**/kitty-specs.archived/**",
+    "**/context/**",
     "**/.agent/**",
-    "**/.agents/**",
-    "**/.claude/**",
     "**/.codex/**",
     "**/.opencode/**",
-    "**/.kittify/**",
-    "**/.worktrees/**",
+    "**/.cavekit/**",
     "**/coverage/**",
     "**/dist/**",
     "**/build/**"
