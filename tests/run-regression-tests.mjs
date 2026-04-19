@@ -1005,7 +1005,10 @@ async function run() {
         },
         generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
       },
-      {},
+      {
+        listActiveTasks: async () => [],
+        listProjects: async () => [],
+      },
       {},
     );
 
@@ -1100,7 +1103,10 @@ async function run() {
         },
         generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
       },
-      {},
+      {
+        listActiveTasks: async () => [],
+        listProjects: async () => [],
+      },
       {},
     );
 
@@ -1317,7 +1323,9 @@ async function run() {
       },
       ticktick: {
         isAuthenticated: () => true,
-        getAllTasks: async () => buildSummaryActiveTasksFixture(),
+      },
+      adapter: {
+        listActiveTasks: async () => buildSummaryActiveTasksFixture(),
       },
       gemini: {
         isQuotaExhausted: () => false,
@@ -1371,7 +1379,9 @@ async function run() {
       },
       ticktick: {
         isAuthenticated: () => true,
-        getAllTasks: async () => buildSummaryActiveTasksFixture(),
+      },
+      adapter: {
+        listActiveTasks: async () => buildSummaryActiveTasksFixture(),
       },
       gemini: {
         isQuotaExhausted: () => false,
@@ -1417,7 +1427,9 @@ async function run() {
       },
       ticktick: {
         isAuthenticated: () => true,
-        getAllTasks: async () => buildSummaryActiveTasksFixture(),
+      },
+      adapter: {
+        listActiveTasks: async () => buildSummaryActiveTasksFixture(),
       },
       gemini: {
         isQuotaExhausted: () => false,

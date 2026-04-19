@@ -164,8 +164,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
         await ctx.reply('🧭 Building reorganization proposal...');
         try {
-            const tasks = await ticktick.getAllTasksCached(60000);
-            const projects = ticktick.getLastFetchedProjects();
+            const tasks = await adapter.listActiveTasks();
+            const projects = await adapter.listProjects();
             const proposal = await gemini.generateReorgProposal(tasks, projects);
             await store.setPendingReorg({
                 ...proposal,
@@ -332,8 +332,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         if (action === 'apply') {
             await ctx.answerCallbackQuery({ text: 'Applying proposal...' });
             try {
-                const tasks = await ticktick.getAllTasksCached(60000);
-                const projects = ticktick.getLastFetchedProjects();
+                const tasks = await adapter.listActiveTasks();
+                const projects = await adapter.listProjects();
                 const { outcomes, hasUndoableActions } = await executeActions(
                     pending.actions || [],
                     adapter,
@@ -372,8 +372,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
         try {
             await ctx.reply('🔍 Scanning for new tasks...');
-            const allTasks = await ticktick.getAllTasks();
-            const availableProjects = ticktick.getLastFetchedProjects();
+            const allTasks = await adapter.listActiveTasks(true);
+            const availableProjects = await adapter.listProjects();
             const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
@@ -535,7 +535,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
         const context = buildSummaryContext({ kind: 'briefing', userId, urgentMode });
         try {
-            const tasks = await ticktick.getAllTasks();
+            const tasks = await adapter.listActiveTasks(true);
             const briefingResult = await gemini.generateDailyBriefingSummary(tasks, {
                 entryPoint: context.entryPoint,
                 userId,
@@ -570,7 +570,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
         const context = buildSummaryContext({ kind: 'weekly', userId, urgentMode });
         try {
-            const tasks = await ticktick.getAllTasks();
+            const tasks = await adapter.listActiveTasks(true);
             const processed = store.getProcessedTasks();
             const historyAvailable = typeof processed === 'object' && processed !== null && !Array.isArray(processed);
             const thisWeek = filterProcessedThisWeek(processed || {}, ['processedAt']);
@@ -668,8 +668,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
         try {
             await ctx.reply('📋 Checking for unreviewed tasks...');
-            const allTasks = await ticktick.getAllTasks();
-            const availableProjects = ticktick.getLastFetchedProjects();
+            const allTasks = await adapter.listActiveTasks(true);
+            const availableProjects = await adapter.listProjects();
             const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
@@ -770,8 +770,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
             await ctx.reply('🛠️ Refining reorg proposal...');
             try {
-                const tasks = await ticktick.getAllTasksCached(60000);
-                const projects = ticktick.getLastFetchedProjects();
+                const tasks = await adapter.listActiveTasks();
+                const projects = await adapter.listProjects();
                 const refined = await gemini.generateReorgProposal(tasks, projects, userMessage, pendingReorg.actions || []);
                 await store.setPendingReorg({
                     ...refined,
@@ -803,6 +803,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         : answer === 'skip' || answer === 'cancel' || answer === 'nevermind'
                             ? 'skip'
                             : null; // ambiguous reply — treat as fallback
+                const availableProjects = await adapter.listProjects();
 
                 if (resolvedMode === 'skip') {
                     console.log('[ChecklistClarification] User skipped — creating plain parent task only');
@@ -810,7 +811,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         entryPoint: 'telegram:checklist-clarification-skip',
                         mode: 'interactive',
                         skipChecklist: true,
-                        availableProjects: ticktick.getLastFetchedProjects(),
+                        availableProjects,
                     });
                     if (result.type === 'task') {
                         await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
@@ -828,7 +829,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         entryPoint: 'telegram:checklist-clarification-resume',
                         mode: 'interactive',
                         checklistPreference: resolvedMode,
-                        availableProjects: ticktick.getLastFetchedProjects(),
+                        availableProjects,
                     });
                     if (result.type === 'task') {
                         await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
@@ -846,7 +847,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     entryPoint: 'telegram:checklist-clarification-fallback',
                     mode: 'interactive',
                     skipChecklist: true, // Never create inferred checklist after ignored clarification
-                    availableProjects: ticktick.getLastFetchedProjects(),
+                    availableProjects,
                 });
                 if (result.type === 'task') {
                     await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
@@ -871,7 +872,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     await ctx.reply(buildQuotaExhaustedMessage(gemini));
                     return;
                 }
-                const tasks = await ticktick.getAllTasksCached(60000);
                 await ctx.reply(result.confirmationText || 'Got it — no actionable tasks detected.');
             } else if (result.type === 'clarification') {
                 // Determine clarification type: checklist vs mutation

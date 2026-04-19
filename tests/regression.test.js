@@ -827,7 +827,10 @@ test('registerCommands wires /urgent to the urgent mode store contract', async (
       quotaResumeTime: () => null,
       activeKeyInfo: () => null,
     },
-    {},
+    {
+      listActiveTasks: async () => [],
+      listProjects: async () => [],
+    },
     {},
   );
 
@@ -977,7 +980,10 @@ test('registerCommands uses shared briefing surface and preserves urgent reminde
       },
       generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
     },
-    {},
+    {
+      listActiveTasks: async () => [],
+      listProjects: async () => [],
+    },
     {},
   );
 
@@ -1068,7 +1074,10 @@ test('registerCommands uses shared weekly surface and sends formatted output', a
       },
       generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
     },
-    {},
+    {
+      listActiveTasks: async () => [],
+      listProjects: async () => [],
+    },
     {},
   );
 
@@ -1271,7 +1280,9 @@ test('runDailyBriefingJob uses the shared briefing summary surface and keeps pen
     },
     ticktick: {
       isAuthenticated: () => true,
-      getAllTasks: async () => buildSummaryActiveTasksFixture(),
+    },
+    adapter: {
+      listActiveTasks: async () => buildSummaryActiveTasksFixture(),
     },
     gemini: {
       isQuotaExhausted: () => false,
@@ -1323,7 +1334,9 @@ test('runWeeklyDigestJob uses the shared weekly summary surface and preserves pr
     },
     ticktick: {
       isAuthenticated: () => true,
-      getAllTasks: async () => buildSummaryActiveTasksFixture(),
+    },
+    adapter: {
+      listActiveTasks: async () => buildSummaryActiveTasksFixture(),
     },
     gemini: {
       isQuotaExhausted: () => false,
@@ -1367,7 +1380,9 @@ test('runWeeklyDigestJob passes historyAvailable false when processed-task histo
     },
     ticktick: {
       isAuthenticated: () => true,
-      getAllTasks: async () => buildSummaryActiveTasksFixture(),
+    },
+    adapter: {
+      listActiveTasks: async () => buildSummaryActiveTasksFixture(),
     },
     gemini: {
       isQuotaExhausted: () => false,
@@ -2999,11 +3014,13 @@ test('mut:pick resumes through pipeline with resolved task context', async () =>
 
   const ticktick = {
     isAuthenticated: () => true,
-    getAllTasksCached: async () => [
+  };
+  const adapter = {
+    listActiveTasks: async () => [
       { id: 'task-weekly-1', title: 'Write weekly report', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
       { id: 'task-weekly-2', title: 'Review weekly metrics', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
     ],
-    getLastFetchedProjects: () => [{ id: 'inbox', name: 'Inbox' }],
+    listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
   };
 
   const pipeline = {
@@ -3013,7 +3030,7 @@ test('mut:pick resumes through pipeline with resolved task context', async () =>
     },
   };
 
-  registerCallbacks(bot, ticktick, { isQuotaExhausted: () => false }, {}, pipeline);
+  registerCallbacks(bot, ticktick, { isQuotaExhausted: () => false }, adapter, pipeline);
 
   // Find the mut:pick handler
   const pickHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:pick'))?.handler;
@@ -4426,7 +4443,7 @@ test('WP05 P0#2: free-form reply "checklist" resumes with checklistPreference', 
     bot,
     mockTicktick,
     { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
-    {},
+    { listProjects: async () => [] },
     {
       processMessage: async (msg, opts) => {
         pipelineCalls.push({ message: msg, options: opts });
@@ -4481,7 +4498,7 @@ test('WP05 P0#2: free-form reply "separate tasks" resumes with separate preferen
     bot,
     mockTicktick,
     { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
-    {},
+    { listProjects: async () => [] },
     {
       processMessage: async (msg, opts) => {
         pipelineCalls.push({ message: msg, options: opts });
@@ -4534,7 +4551,7 @@ test('WP05 P0#2: free-form reply "skip" resumes with skipChecklist=true', async 
     bot,
     mockTicktick,
     { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
-    {},
+    { listProjects: async () => [] },
     {
       processMessage: async (msg, opts) => {
         pipelineCalls.push({ message: msg, options: opts });
@@ -4616,7 +4633,11 @@ test('WP05 P0#2: free-form reply with no pending clarification falls through to 
 // ─── Helper: registerCallbacks without TickTick client ───────
 async function registerCallbacksForTest(bot, ticktickMock, pipeline) {
   const { registerCallbacks } = await import('../bot/callbacks.js');
-  registerCallbacks(bot, ticktickMock, {}, ticktickMock, pipeline);
+  registerCallbacks(bot, ticktickMock, {}, {
+    ...ticktickMock,
+    listProjects: ticktickMock.listProjects || (async () => []),
+    listActiveTasks: ticktickMock.listActiveTasks || (async () => []),
+  }, pipeline);
 }
 
 // ─── Behavioral Signal Classifier Tests (WP01, T007) ───────
