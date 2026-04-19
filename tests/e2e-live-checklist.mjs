@@ -138,16 +138,16 @@ function createPipelineDouble(ticktick, adapter) {
   };
 }
 
-function createAdapterDouble(ticktick) {
+function createAdapterDouble(testDouble) {
   return {
     async createTask(taskData) {
-      return ticktick.createTask(taskData);
+      return testDouble.createTask(taskData);
     },
     async updateTask(taskId, changes) {
-      return ticktick.updateTask(taskId, changes);
+      return testDouble.updateTask(taskId, changes);
     },
     async completeTask(taskId, projectId) {
-      return ticktick.completeTask(projectId, taskId);
+      return testDouble.completeTask(projectId, taskId);
     },
     async deleteTask(taskId, projectId) {
       const idx = ticktick.tasks.findIndex((task) => task.id === taskId && task.projectId === projectId);
