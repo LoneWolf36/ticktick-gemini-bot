@@ -1443,6 +1443,31 @@ async function run() {
   }
 
   try {
+    const requiredMethods = [
+      'createTask',
+      'updateTask',
+      'completeTask',
+      'deleteTask',
+      'listProjects',
+      'findProjectByName',
+    ];
+
+    for (const methodName of requiredMethods) {
+      assert.equal(typeof TickTickAdapter.prototype[methodName], 'function', `${methodName} should be exposed`);
+    }
+
+    if (Object.hasOwn(TickTickAdapter.prototype, 'createTasksBatch')) {
+      assert.equal(typeof TickTickAdapter.prototype.createTasksBatch, 'function');
+    }
+
+    console.log('PASS TickTickAdapter exposes the required task operation surface');
+  } catch (err) {
+    failures++;
+    console.error('FAIL TickTickAdapter exposes the required task operation surface');
+    console.error(err.message);
+  }
+
+  try {
     let updatePayload = null;
     const client = Object.create(TickTickClient.prototype);
     client.getTask = async () => ({

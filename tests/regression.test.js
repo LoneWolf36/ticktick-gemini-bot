@@ -1388,6 +1388,25 @@ test('runWeeklyDigestJob passes historyAvailable false when processed-task histo
 
 });
 
+test('TickTickAdapter exposes the required task operation surface', () => {
+  const requiredMethods = [
+    'createTask',
+    'updateTask',
+    'completeTask',
+    'deleteTask',
+    'listProjects',
+    'findProjectByName',
+  ];
+
+  for (const methodName of requiredMethods) {
+    assert.equal(typeof TickTickAdapter.prototype[methodName], 'function', `${methodName} should be exposed`);
+  }
+
+  if (Object.hasOwn(TickTickAdapter.prototype, 'createTasksBatch')) {
+    assert.equal(typeof TickTickAdapter.prototype.createTasksBatch, 'function');
+  }
+});
+
 test('TickTickAdapter includes the existing projectId when updating only a due date', async () => {
   let updatePayload = null;
   const client = Object.create(TickTickClient.prototype);
