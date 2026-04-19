@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-18T22:30:00Z"
+last_edited: "2026-04-19T01:30:00Z"
 source_specs: ["001-task-operations-pipeline", "002-natural-language-task-mutations"]
 complexity: "complex"
 ---
@@ -18,10 +18,10 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 ### R1: Structured Intent Extraction
 **Description:** System extracts structured intent from free-form Telegram messages using AX, producing typed action objects.
 **Acceptance Criteria:**
-- [ ] AX produces action objects with: `type`, `title`, `content`, `priority`, `projectHint`, `dueDate`, `repeatHint`, `splitStrategy`, `confidence`
-- [ ] Given "Book dentist appointment Thursday", AX outputs a create action with title "Book dentist appointment" and dueDate for next Thursday
-- [ ] Given "Buy groceries", AX outputs a create action with no due date and default project
-- [ ] Given "hello" (non-task content), the system does not create a task and responds conversationally
+- [x] AX produces action objects with: `type`, `title`, `content`, `priority`, `projectHint`, `dueDate`, `repeatHint`, `splitStrategy`, `confidence`
+- [x] Given "Book dentist appointment Thursday", AX outputs a create action with title "Book dentist appointment" and dueDate for next Thursday
+- [x] Given "Buy groceries", AX outputs a create action with no due date and default project
+- [x] Given "hello" (non-task content), the system does not create a task and responds conversationally
 **Dependencies:** none
 
 ### R2: Multi-Task Parsing
@@ -43,9 +43,9 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 ### R4: Single TickTick Adapter
 **Description:** All TickTick operations (create, update, complete, delete) flow through a single adapter module backed by the direct REST API.
 **Acceptance Criteria:**
-- [ ] Adapter exposes: `createTask`, `updateTask`, `completeTask`, `deleteTask`, `listProjects`, `findProjectByName`, optionally `createTasksBatch`
-- [ ] No direct TickTick API calls exist outside the adapter in the codebase
-- [ ] Adapter handles API unavailability gracefully without losing parsed intent
+- [x] Adapter exposes: `createTask`, `updateTask`, `completeTask`, `deleteTask`, `listProjects`, `findProjectByName`, optionally `createTasksBatch`
+- [x] No direct TickTick API calls exist outside the adapter in the codebase
+- [x] Adapter handles API unavailability gracefully without losing parsed intent
 **Dependencies:** none
 
 ### R5: Recurring Task Creation
@@ -130,6 +130,25 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - [ ] Mixed create+mutate in one message is rejected; system asks for simpler instruction
 **Dependencies:** R10
 
+### R15: Command Surfaces
+**Description:** User-facing Telegram commands provide manual intake, review, and rollback surfaces that complement the free-form pipeline.
+**Acceptance Criteria:**
+- [ ] `/scan` manually polls TickTick for new tasks and processes them through the pipeline in batches
+- [ ] `/pending` re-surfaces tasks that were parked during scan or review for user decision
+- [ ] `/undo` reverts the last auto-applied task mutation (title, project, priority, or schedule)
+- [ ] `/menu` provides an inline keyboard for quick access to primary commands
+**Dependencies:** R4, R9, R10
+
+### R16: Guided Reorg
+**Description:** System generates AI-driven task restructuring proposals (project moves, priority changes, inbox cleanup) and lets the user apply, refine, or cancel them.
+**Acceptance Criteria:**
+- [ ] `/reorg` fetches all tasks and projects, then produces a structured proposal with summary, actions, and clarification questions
+- [ ] Proposal actions support create, update, complete, and drop types against existing TickTick tasks
+- [ ] User can apply the proposal (executes actions via adapter), refine it (sends refinement to AI), or cancel it
+- [ ] Reorg refinement state persists across messages and resumes correctly
+- [ ] Policy sweep appends inferred priority/project fixes to reorg actions when `enforcePolicySweep` is enabled
+**Dependencies:** R4
+
 ## Out of Scope
 
 - Batch mutations ("move all gym tasks to next week")
@@ -146,5 +165,15 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - See also: cavekit-prioritization.md (project resolution priority follows ranking policy)
 - See also: cavekit-behavioral-memory.md (logs feed derived metadata only, not raw text)
 
+## Validation Action Items — 2026-04-19
+
+- [x] R1 (Structured Intent Extraction): all 4 ACs implemented and verified. AX field validation enforced via `R1_INTENT_ACTION_FIELDS`, dentist/groceries/hello regression tests pass in both full and lightweight suites.
+- [x] R4 (Single TickTick Adapter): all 3 ACs implemented and verified. All production writes route through adapter, live harnesses updated, adapter failure preserves parsed intent with `intents` + `normalizedActions` in failure result.
+- [x] Drift `/menu`, `/scan`, `/pending`, `/undo`: mapped under R15 Command Surfaces.
+- [x] Drift rate limiter: removed 2026-04-19 (YAGNI for 1-user MVP; listed as out-of-scope here).
+- [x] Drift `/reorg`: mapped under R16 Guided Reorg.
+- [ ] After auditing code, update any completed checkboxes here before the next `archon workflow run cavekit-validate` pass.
+
 ## Changelog
+- 2026-04-19: R1 and R4 completed — AX field validation, regression coverage, adapter boundary enforcement, intent preservation on failure.
 - 2026-04-18: Migrated from kitty-specs 001-task-operations-pipeline and 002-natural-language-task-mutations

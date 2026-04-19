@@ -134,7 +134,8 @@ function buildFailureResult(context, {
 
 function buildNonTaskResult(context, reason, details = null) {
     const userMessage = (context?.userMessage || '').trim().toLowerCase();
-    const confirmationText = userMessage === 'hello'
+    const isGreeting = /^(hi|hey|hello|howdy|greetings|good\s*(morning|afternoon|evening|night)|how are you|what'?s up)\b/.test(userMessage);
+    const confirmationText = isGreeting
         ? 'Hi. No task created.'
         : 'Got it — no actionable tasks detected.';
 
