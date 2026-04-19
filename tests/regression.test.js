@@ -2526,6 +2526,39 @@ test('pipeline context resolves dentist Thursday through the normalizer path', a
   assert.match(adapterCalls.create[0].dueDate, /^2026-03-12T23:59:00\.000[+-]\d{4}$/);
 });
 
+test('pipeline context keeps undated groceries in default project', async () => {
+  process.env.USER_TIMEZONE = 'Europe/Dublin';
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Buy groceries',
+        content: null,
+        priority: null,
+        projectHint: null,
+        dueDate: null,
+        repeatHint: null,
+        splitStrategy: 'single',
+        confidence: 0.9,
+      },
+    ],
+  });
+
+  const result = await processMessage('Buy groceries', {
+    currentDate: '2026-03-10T10:00:00Z',
+    entryPoint: 'regression',
+    requestId: 'req-r1-buy-groceries',
+  });
+
+  assert.equal(result.type, 'task');
+  assert.equal(result.actions.length, 1);
+  assert.equal(result.results.length, 1);
+  assert.equal(adapterCalls.create.length, 1);
+  assert.equal(adapterCalls.create[0].title, 'Buy groceries');
+  assert.equal(adapterCalls.create[0].projectId, DEFAULT_PROJECTS[0].id);
+  assert.equal(adapterCalls.create[0].dueDate, null);
+});
+
 test('pipeline context keeps date-only currentDate stable in negative-offset timezones', async () => {
   process.env.USER_TIMEZONE = 'America/Los_Angeles';
   const { processMessage, adapterCalls } = createPipelineHarness({
