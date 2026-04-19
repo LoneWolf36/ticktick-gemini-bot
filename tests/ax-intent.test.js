@@ -4,6 +4,25 @@ import { AxGen } from '@ax-llm/ax';
 import { createAxIntent, detectUrgentModeIntent, QuotaExhaustedError, validateIntentAction, validateChecklistItems } from '../services/ax-intent.js';
 import { MAX_CHECKLIST_ITEMS } from '../services/schemas.js';
 
+function createCompleteR1Action(overrides = {}) {
+    return {
+        type: 'create',
+        targetQuery: null,
+        title: 'Book dentist appointment',
+        content: null,
+        priority: null,
+        projectHint: null,
+        dueDate: 'Thursday',
+        repeatHint: null,
+        splitStrategy: 'single',
+        checklistItems: null,
+        clarification: null,
+        clarificationQuestion: null,
+        confidence: 0.93,
+        ...overrides,
+    };
+}
+
 describe('AX Intent Extraction', () => {
     let mockKeyManager;
 
@@ -258,6 +277,55 @@ describe('AX Intent Extraction', () => {
                         confidence: 0.88,
                     },
                 ]);
+            } finally {
+                AxGen.prototype.forward = originalForward;
+            }
+        });
+
+        it('accepts a complete R1 create action shape from AX', async () => {
+            const completeR1Action = createCompleteR1Action();
+            const originalForward = AxGen.prototype.forward;
+            AxGen.prototype.forward = async function forwardR1CreateIntent() {
+                return {
+                    actions: [completeR1Action],
+                };
+            };
+
+            try {
+                const axIntent = createAxIntent(mockKeyManager);
+                const actions = await axIntent.extractIntents('Book dentist appointment Thursday', {
+                    currentDate: '2026-04-19',
+                    availableProjects: ['Inbox'],
+                    requestId: 'req-r1-create',
+                });
+
+                assert.deepEqual(actions, [completeR1Action]);
+            } finally {
+                AxGen.prototype.forward = originalForward;
+            }
+        });
+
+        it('rejects an accepted action missing an R1 field', async () => {
+            const missingRepeatHintAction = createCompleteR1Action();
+            delete missingRepeatHintAction.repeatHint;
+
+            const originalForward = AxGen.prototype.forward;
+            AxGen.prototype.forward = async function forwardMissingR1Field() {
+                return {
+                    actions: [missingRepeatHintAction],
+                };
+            };
+
+            try {
+                const axIntent = createAxIntent(mockKeyManager);
+                await assert.rejects(
+                    () => axIntent.extractIntents('Book dentist appointment Thursday', {
+                        currentDate: '2026-04-19',
+                        availableProjects: ['Inbox'],
+                        requestId: 'req-r1-missing',
+                    }),
+                    /Missing required field "repeatHint"/
+                );
             } finally {
                 AxGen.prototype.forward = originalForward;
             }
