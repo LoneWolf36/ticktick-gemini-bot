@@ -3860,6 +3860,53 @@ ACCOUNTABILITY STYLE:
     console.error(err.message);
   }
 
+  // R4 AC3: adapter failure preserves parsed intent for retry
+  try {
+    const failingAdapter = {
+      listProjects: async () => [],
+      listActiveTasks: async () => [],
+      createTask: async () => { throw new Error('TickTick API unavailable'); },
+      updateTask: async () => { throw new Error('TickTick API unavailable'); },
+      completeTask: async () => { throw new Error('TickTick API unavailable'); },
+      deleteTask: async () => { throw new Error('TickTick API unavailable'); },
+      restoreTask: async () => { throw new Error('Rollback unsupported'); },
+    };
+
+    const pipeline = createPipeline({
+      axIntent: {
+        extractIntents: async () => [
+          { type: 'create', title: 'Test task', content: 'test', priority: 3 },
+        ],
+      },
+      normalizer: {
+        normalizeActions: () => ([
+          { type: 'create', title: 'Test task', content: 'test', priority: 3, projectId: 'inbox', valid: true, validationErrors: [] },
+        ]),
+      },
+      adapter: failingAdapter,
+      observability: createPipelineObservability({ logger: null }),
+    });
+
+    const result = await pipeline.processMessage('create a test task', {
+      requestId: 'req-adapter-failure',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+    });
+
+    assert.equal(result.type, 'error');
+    assert.equal(result.failure.failureClass, 'adapter');
+    assert.equal(result.failure.retryable, true);
+    assert.ok(Array.isArray(result.intents) && result.intents.length === 1);
+    assert.equal(result.intents[0].title, 'Test task');
+    assert.ok(Array.isArray(result.normalizedActions) && result.normalizedActions.length === 1);
+    assert.equal(result.normalizedActions[0].title, 'Test task');
+    console.log('PASS R4 AC3: adapter failure preserves parsed intent and normalized action');
+  } catch (err) {
+    failures++;
+    console.error('FAIL R4 AC3: adapter failure preserves parsed intent and normalized action');
+    console.error(err.message);
+  }
+
   if (failures > 0) {
     process.exitCode = 1;
   }
