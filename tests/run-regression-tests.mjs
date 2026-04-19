@@ -2648,30 +2648,37 @@ ACCOUNTABILITY STYLE:
       intents: [
         {
           type: 'create',
-          title: 'Book dentist',
+          title: 'Book dentist appointment',
+          content: null,
+          priority: null,
+          projectHint: null,
           dueDate: 'thursday',
+          repeatHint: null,
+          splitStrategy: 'single',
           confidence: 0.9,
         },
       ],
     });
 
-    const result = await processMessage('book dentist thursday', {
+    const result = await processMessage('Book dentist appointment Thursday', {
       currentDate: '2026-03-10T10:00:00Z',
       entryPoint: 'regression',
-      requestId: 'req-story-1',
+      requestId: 'req-r1-dentist-thursday',
     });
 
     assert.equal(result.type, 'task');
     assert.equal(result.actions.length, 1);
     assert.equal(result.results.length, 1);
+    assert.equal(axCalls[0].userMessage, 'Book dentist appointment Thursday');
     assert.equal(axCalls[0].options.currentDate, '2026-03-10');
     assert.deepEqual(axCalls[0].options.availableProjects, DEFAULT_PROJECTS.map((project) => project.name));
     assert.equal(adapterCalls.create.length, 1);
+    assert.equal(adapterCalls.create[0].title, 'Book dentist appointment');
     assert.match(adapterCalls.create[0].dueDate, /^2026-03-12T23:59:00\.000[+-]\d{4}$/);
-    console.log('PASS pipeline context resolves relative dates through normalizer path');
+    console.log('PASS pipeline context resolves dentist Thursday through the normalizer path');
   } catch (err) {
     failures++;
-    console.error('FAIL pipeline context resolves relative dates through normalizer path');
+    console.error('FAIL pipeline context resolves dentist Thursday through the normalizer path');
     console.error(err.message);
   }
 
@@ -2807,6 +2814,29 @@ ACCOUNTABILITY STYLE:
   } catch (err) {
     failures++;
     console.error('FAIL pipeline returns non-task for empty intent lists');
+    console.error(err.message);
+  }
+
+  try {
+    const { processMessage, adapterCalls } = createPipelineHarness({ intents: [] });
+
+    const result = await processMessage('hello', {
+      requestId: 'req-r1-hello',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+    });
+
+    assert.equal(result.type, 'non-task');
+    assert.match(result.confirmationText, /^Hi\./);
+    assert.equal(result.results.length, 0);
+    assert.equal(adapterCalls.create.length, 0);
+    assert.equal(adapterCalls.update.length, 0);
+    assert.equal(adapterCalls.complete.length, 0);
+    assert.equal(adapterCalls.delete.length, 0);
+    console.log('PASS pipeline treats hello as conversational non-task without writes');
+  } catch (err) {
+    failures++;
+    console.error('FAIL pipeline treats hello as conversational non-task without writes');
     console.error(err.message);
   }
 
