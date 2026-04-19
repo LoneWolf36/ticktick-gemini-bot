@@ -1,0 +1,380 @@
+name: cavekit-refactor
+description: |
+  Use when: You need to refactor code while preserving behavior and staying aligned with domain kits.
+  Input: Refactoring goal description (e.g. "extract auth logic from api.ts")
+  Output: Behavior-preserving refactoring committed to a branch with PR
+
+  Full workflow:
+  1. Identify which R-requirements and kits are affected
+  2. Impact analysis on files, callers, and tests
+  3. Plan refactoring with before/after structure
+  4. Execute in atomic commits with test loop
+  5. Read-only behavior verification
+  6. Push and create PR
+
+  NOT for: New features (use cavekit-build), gap analysis (use cavekit-validate).
+
+nodes:
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 1: READ KIT — Identify affected requirements
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: read-kit
+    context: fresh
+    denied_tools: [Write, Edit]
+    prompt: |
+      # Cavekit Refactor — Identify Affected Requirements
+
+      **Refactoring goal**: $ARGUMENTS
+
+      ---
+
+      ## Step 1: Read Project Context
+
+      Read `AGENTS.md` and `.codex/skills/karpathy-guardrails/SKILL.md` if it exists.
+
+      ## Step 2: Find Affected Files
+
+      ```bash
+      grep -rn "{relevant terms from refactoring goal}" --include="*.{js,ts,py,jsx,tsx}" --exclude-dir=node_modules --exclude-dir=.git | head -30
+      ```
+
+      ## Step 3: Map to Domain Kits
+
+      ```bash
+      ls context/kits/cavekit-*.md 2>/dev/null
+      ```
+
+      For each kit, check if any R-requirement references the affected files or features.
+
+      ## Step 4: Output
+
+      Write to `$ARTIFACTS_DIR/refactor-scope.md`:
+
+      ```markdown
+      # Refactor Scope
+
+      **Goal**: {refactoring goal}
+
+      ## Affected Files
+      - {file}: {what it contains}
+
+      ## Affected Requirements
+      | R-Number | Kit | Title | Status |
+      |----------|-----|-------|--------|
+      | {R-num} | {kit} | {title} | [x]/[ ] |
+
+      ## Risk Assessment
+      - Behavior change risk: LOW / MEDIUM / HIGH
+      - Test coverage: {existing tests found? yes/no}
+      ```
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 2: ANALYZE — Impact analysis
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: analyze
+    depends_on: [read-kit]
+    context: fresh
+    denied_tools: [Write, Edit]
+    prompt: |
+      # Cavekit Refactor — Impact Analysis
+
+      Read `$ARTIFACTS_DIR/refactor-scope.md` for context.
+
+      ---
+
+      ## Step 1: Trace All Callers
+
+      For each affected file, find everything that imports or calls it:
+
+      ```bash
+      grep -rn "import.*from.*{filename}" --include="*.{js,ts,py,jsx,tsx}" --exclude-dir=node_modules | head -20
+      grep -rn "require.*{filename}" --include="*.{js,ts,py,jsx,tsx}" --exclude-dir=node_modules | head -20
+      ```
+
+      ## Step 2: Find Tests
+
+      ```bash
+      find . -path "*/test*" -name "*{relevant}*" -o -path "*/__tests__/*" -name "*{relevant}*" 2>/dev/null | head -10
+      grep -rn "{function/class name}" --include="*.test.*" --include="*.spec.*" | head -10
+      ```
+
+      ## Step 3: Write Impact Report
+
+      Write to `$ARTIFACTS_DIR/impact-analysis.md`:
+
+      ```markdown
+      # Impact Analysis
+
+      ## Call Graph
+      | Caller | Calls | Via |
+      |--------|-------|-----|
+      | {file} | {function} | import / require |
+
+      ## Test Coverage
+      | File | Test File | Covers |
+      |------|-----------|--------|
+      | {file} | {test} | {functions} |
+
+      ## Public API Surface
+      - Exports that must be preserved: {list}
+      - Internal functions safe to restructure: {list}
+
+      ## Danger Zones
+      - {anything risky}
+      ```
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 3: PLAN — Refactoring plan with before/after
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: plan
+    depends_on: [analyze]
+    context: fresh
+    denied_tools: [Write, Edit]
+    prompt: |
+      # Cavekit Refactor — Create Plan
+
+      Read:
+      - `$ARTIFACTS_DIR/refactor-scope.md`
+      - `$ARTIFACTS_DIR/impact-analysis.md`
+      - `AGENTS.md`
+
+      ---
+
+      ## Karpathy Check
+
+      1. Is this refactoring actually needed? Or is it premature?
+      2. What is the simplest restructuring that achieves the goal?
+      3. Can any step be skipped without sacrificing the goal?
+
+      ## Write the Plan
+
+      Write to `$ARTIFACTS_DIR/refactor-plan.md`:
+
+      ```markdown
+      # Refactoring Plan
+
+      ## Goal
+      {one sentence}
+
+      ## Before
+      ```
+      {current file structure with line counts}
+      ```
+
+      ## After
+      ```
+      {proposed file structure with line counts}
+      ```
+
+      ## Steps (Atomic Commits)
+      1. {step} -> commit: "{message}"
+         - Move: {what}
+         - Preserve: {re-exports}
+         - Verify: {check}
+      2. {step} -> commit: "{message}"
+         ...
+
+      ## Re-exports Required
+      - {original file} must re-export {symbols} for backward compatibility
+
+      ## Verification
+      - [ ] All existing tests pass
+      - [ ] All imports resolve
+      - [ ] Public API unchanged
+      - [ ] No behavior changes
+      ```
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 4: REFACTOR — Execute in atomic commits with test loop
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: refactor
+    depends_on: [plan]
+    context: fresh
+    loop:
+      prompt: |
+        # Cavekit Refactor — Execute
+
+        Read `$ARTIFACTS_DIR/refactor-plan.md` for the plan.
+        Read `AGENTS.md` for project conventions.
+
+        ---
+
+        ## Karpathy Check: Behavior-Preserving Only
+
+        Every change must be a structural move, NOT a logic change.
+        If you find yourself editing function bodies, STOP.
+
+        ## Step 1: Check Progress
+
+        ```bash
+        cat $ARTIFACTS_DIR/refactor-progress.txt 2>/dev/null || echo "Starting"
+        ```
+
+        ## Step 2: Execute Next Step
+
+        Follow the plan's steps in order. After each step:
+
+        ```bash
+        # Run tests
+        npm test 2>&1 || python -m pytest 2>&1 || bun run test 2>&1 || echo "Tests complete"
+        ```
+
+        ## Step 3: Commit
+
+        ```bash
+        git add -A
+        git commit -m "refactor: {step description}"
+        ```
+
+        ## Step 4: Track
+
+        Append to `$ARTIFACTS_DIR/refactor-progress.txt`:
+        ```
+        Step {N}: {description} — DONE
+        Tests: PASS
+        ```
+
+        ## Step 5: Check Completion
+
+        All steps from the plan done?
+        If yes: `<promise>COMPLETE</promise>`
+        If no: end normally (loop continues).
+
+        If tests FAIL:
+        - Fix ONLY what broke (no scope creep)
+        - Commit: `git add -A && git commit -m "fix: resolve test failure from refactoring step {N}"`
+        - Continue
+      until: COMPLETE
+      max_iterations: 12
+      fresh_context: true
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 5: VERIFY — Read-only behavior verification
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: verify
+    depends_on: [refactor]
+    context: fresh
+    denied_tools: [Write, Edit, Bash]
+    prompt: |
+      # Cavekit Refactor — Behavior Verification
+
+      You are a reviewer. You can ONLY read files — no changes allowed.
+
+      Read:
+      - `$ARTIFACTS_DIR/refactor-plan.md` (original plan)
+      - `$ARTIFACTS_DIR/impact-analysis.md` (callers and API surface)
+      - `$ARTIFACTS_DIR/refactor-scope.md` (affected requirements)
+
+      ---
+
+      ## Verification Checklist
+
+      For each file that was moved or restructured:
+
+      1. **Function bodies unchanged** — Read the new file and compare with
+         the original location. Were any function bodies modified?
+      2. **Re-exports present** — Read the original file. Does it re-export
+         all symbols that were moved?
+      3. **Imports updated** — For each caller from the impact analysis,
+         read the file and check that imports resolve correctly.
+      4. **Types preserved** — Any TypeScript interfaces or Python type hints
+         must be identical in the new location.
+
+      ## Output
+
+      Write to `$ARTIFACTS_DIR/behavior-verification.md`:
+
+      ```markdown
+      # Behavior Verification
+
+      ## Verdict: PASS / FAIL
+
+      ## Functions Verified
+      | Function | From | To | Body Changed? |
+      |----------|------|----|---------------|
+      | {name} | {old} | {new} | No / YES |
+
+      ## Public API Check
+      - [ ] All original exports still accessible
+      - [ ] Re-exports configured correctly
+
+      ## Import Sites
+      - [ ] All {N} import sites verified
+
+      ## Issues Found
+      {list or "None — refactoring is behavior-preserving"}
+      ```
+
+  # ═══════════════════════════════════════════════════════════════
+  # PHASE 6: CREATE PR — Push and create PR
+  # ═══════════════════════════════════════════════════════════════
+
+  - id: create-pr
+    depends_on: [verify]
+    context: fresh
+    prompt: |
+      # Cavekit Refactor — Create PR
+
+      Read:
+      - `$ARTIFACTS_DIR/refactor-plan.md`
+      - `$ARTIFACTS_DIR/behavior-verification.md`
+
+      ---
+
+      ## Step 1: Push
+
+      ```bash
+      git push -u origin HEAD
+      ```
+
+      ## Step 2: Check for Existing PR
+
+      ```bash
+      gh pr view HEAD --json url 2>/dev/null || echo "NO_PR"
+      ```
+
+      ## Step 3: Create PR
+
+      If no PR exists, create one:
+
+      ```bash
+      gh pr create --draft --title "refactor: {goal}" --body "$(cat <<'BODY'
+      ## Refactoring: {goal}
+
+      ### Before
+      {from plan}
+
+      ### After
+      {from plan}
+
+      ### Safety
+      - [x] All tests pass
+      - [x] Public API preserved (re-exports maintain backward compatibility)
+      - [x] Behavior verification passed (read-only audit)
+      - [x] Each step committed separately for easy review/revert
+
+      ### Affected Requirements
+      {from refactor-scope.md}
+      BODY
+      )"
+      ```
+
+      ## Step 4: Summary
+
+      ```
+      ═══════════════════════════════════════════
+      CAVEKIT REFACTOR — COMPLETE
+      ═══════════════════════════════════════════
+
+      Goal: {goal}
+      Branch: {branch}
+      PR: {url}
+      Commits: {count}
+      Verification: PASS
+      ═══════════════════════════════════════════
+      ```
