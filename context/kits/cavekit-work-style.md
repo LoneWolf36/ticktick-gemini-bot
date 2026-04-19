@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-19T00:30:00Z"
+last_edited: "2026-04-19T02:00:00Z"
 source_specs: ["008-work-style-and-urgent-mode"]
 complexity: "complex"
 ---
@@ -16,10 +16,10 @@ Tone state management (standard, focus, urgent), Telegram bot interface for mode
 ### R1: State Management Contract
 **Description:** A persistent state object tracks the current work-style mode with transition rules.
 **Acceptance Criteria:**
-- [ ] State has three modes: `standard` (default), `focus`, `urgent`
+- [x] State has three modes: `standard` (default), `focus`, `urgent`
 - [x] State persists across bot restarts (stored in Redis or file-backed config)
-- [ ] Mode transitions are explicit — mode never changes without user action or auto-expiry
-- [ ] Urgent mode has a configurable auto-expiry (default 2 hours)
+- [x] Mode transitions are explicit — mode never changes without user action or auto-expiry
+- [x] Urgent mode has a configurable auto-expiry (default 2 hours)
 - [x] Mode state is queryable by all other domains via a shared interface
 **Dependencies:** none
 
@@ -150,8 +150,9 @@ Tone state management (standard, focus, urgent), Telegram bot interface for mode
 
 ## Validation Action Items — 2026-04-19
 
-- [x] Audit R1 (State Management Contract): store-backed urgent-mode persistence and shared getters exist, but the three-mode contract (`standard`/`focus`/`urgent`) and urgent auto-expiry are not implemented yet.
-- [ ] Re-check downstream dependencies after R1 is audited so R2-R13 are not blocked by stale status markers.
+- [x] Audit R1 (State Management Contract): all 5 ACs implemented. Three-mode enum (`MODE_STANDARD`, `MODE_FOCUS`, `MODE_URGENT`) in `services/store.js`, explicit transitions via `setWorkStyleMode()`, configurable auto-expiry for urgent mode (default 2h via `DEFAULT_URGENT_EXPIRY_MS`), backward-compatible `getUrgentMode`/`setUrgentMode` delegates to new system, Redis and file persistence both supported.
+- [x] Downstream dependencies R2-R13 now unblocked by R1 completion.
 
 ## Changelog
+- 2026-04-19: R1 completed — three-mode state contract, explicit transitions, configurable urgent auto-expiry, shared getter/setter interface.
 - 2026-04-18: Migrated from kitty-specs 008-work-style-and-urgent-mode
