@@ -65,7 +65,19 @@ nodes:
       - Unchecked `[ ]` requirements
       - Requirements with unmet dependencies
 
+      **Important counting rules:**
+      - Count only true R-blocks that start with `### R<number>:`.
+      - For each R-block, only checkbox lines between `**Acceptance Criteria:**` and `**Dependencies:**` determine done vs pending.
+      - A requirement is **done** iff every acceptance-criteria checkbox in that R-block is checked.
+      - Dependencies affect **blocked** status for pending requirements only; they never turn a fully checked requirement back into pending.
+      - Ignore all checkboxes outside R-blocks, especially `## Validation Action Items`, changelog bullets, and migration notes.
+      - Treat dependency ranges like `R1 through R12` as expanded references for blocked-status analysis.
+
+      Prefer a deterministic parser over eyeballing. Use a small Python script or equivalent to enumerate each R-block and its acceptance checkboxes before writing the matrix.
+
       ## Step 3: Build Status Matrix
+
+      Before writing the report, sanity-check the parser output against known kit files. For example, if `cavekit-work-style.md` has all acceptance criteria checked in every R-block, its `Done` count must equal 13.
 
       Write to `$ARTIFACTS_DIR/gap-analysis.md`:
 
@@ -130,6 +142,8 @@ nodes:
       Look for code that doesn't map to any R-requirement:
       - New files not mentioned in any kit
       - Features that exist in code but not in specs
+      - Distinguish **true drift** from **stale comments**. If code comments say a surface is unmapped but the current kits explicitly map it, report that as stale-comment drift rather than feature drift.
+      - Distinguish **implemented but unchecked** requirements from truly unmapped features. If a feature is explicitly listed in an R-block and the code clearly satisfies it, that is a completion-state issue, not an unmapped drift item.
 
       ## Step 3: Append to Report
 
