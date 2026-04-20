@@ -197,7 +197,7 @@ function buildSummaryRankingFixture(activeTasks, { degraded = false } = {}) {
     degradedReason: degraded ? 'ranking inputs incomplete' : null,
     context: {
       urgentMode: false,
-      workStyleMode: 'humane',
+      workStyleMode: 'standard',
       stateSource: 'fixture',
     },
   };
@@ -1155,7 +1155,7 @@ async function run() {
       type: 'set_work_style_mode',
       mode: store.MODE_FOCUS,
     });
-    assert.deepEqual(detectWorkStyleModeIntent('switch back to humane mode'), {
+    assert.deepEqual(detectWorkStyleModeIntent('switch back to standard mode'), {
       type: 'set_work_style_mode',
       mode: store.MODE_STANDARD,
     });
@@ -3602,7 +3602,7 @@ ACCOUNTABILITY STYLE:
 1. Land a senior backend role`, { source: 'user_context' }),
       nowIso: '2026-03-10T10:00:00Z',
       urgentMode: true,
-      workStyleMode: 'humane',
+      workStyleMode: 'standard',
       stateSource: 'store',
     });
 
@@ -3610,7 +3610,7 @@ ACCOUNTABILITY STYLE:
 
     assert.equal(result.topRecommendation.taskId, 'task-urgent-admin');
     assert.equal(result.context.urgentMode, true);
-    assert.equal(result.context.workStyleMode, 'humane');
+    assert.equal(result.context.workStyleMode, 'standard');
     console.log('PASS execution prioritization boosts urgent tasks when urgent mode is active');
   } catch (err) {
     failures++;
@@ -3622,7 +3622,7 @@ ACCOUNTABILITY STYLE:
     const context = buildRankingContext({
       goalThemeProfile: createGoalThemeProfile(`GOALS:
 1. Land a senior backend role`, { source: 'user_context' }),
-      workStyleMode: 'gentle',
+      workStyleMode: 'focus',
     });
     const candidates = [
       normalizePriorityCandidate({

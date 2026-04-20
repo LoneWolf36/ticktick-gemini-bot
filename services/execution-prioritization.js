@@ -212,7 +212,7 @@ function isBlockerRemoval(candidate) {
 }
 
 function isCapacityProtection(candidate, context) {
-    if (context.workStyleMode !== 'gentle') {
+    if (context.workStyleMode !== 'focus') {
         return false;
     }
 

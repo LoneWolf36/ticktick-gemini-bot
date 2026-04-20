@@ -55,7 +55,7 @@ function createDeterministicGemini() {
       const urgentMode = /URGENT MODE is active/i.test(prompt);
       const text = urgentMode
         ? '**Urgent Briefing**\n1. Handle the nearest deadline first.'
-        : '**Humane Briefing**\n1. Start with the highest-value task.';
+        : '**Standard Briefing**\n1. Start with the highest-value task.';
       return { response: { usageMetadata: null, text: () => text } };
     }
 
@@ -365,20 +365,20 @@ async function main() {
         .at(-1);
       assert.match(urgentOffMessage?.payload?.text || '', /Urgent mode deactivated/i);
 
-      const beforeHumaneBriefing = apiCalls.length;
+      const beforeStandardBriefing = apiCalls.length;
       await bot.handleUpdate(mk.message('/briefing'));
       await sleep(250);
-      const humaneBriefingMessage = apiCalls
-        .slice(beforeHumaneBriefing)
+      const standardBriefingMessage = apiCalls
+        .slice(beforeStandardBriefing)
         .filter((c) => c.method === 'sendMessage')
         .at(-1);
-      assert.match(humaneBriefingMessage?.payload?.text || '', /Humane Briefing/i);
-      assert.doesNotMatch(humaneBriefingMessage?.payload?.text || '', /Urgent mode is currently active/i);
+      assert.match(standardBriefingMessage?.payload?.text || '', /Standard Briefing/i);
+      assert.doesNotMatch(standardBriefingMessage?.payload?.text || '', /Urgent mode is currently active/i);
       assert.doesNotMatch(gemini.capturedPrompts.daily.at(-1) || '', /URGENT MODE is active/i);
       checkpoints.push({
         id: 'urgent-toggle-off',
         status: 'pass',
-        detail: 'Urgent mode deactivation restored the humane daily briefing prompt and output.',
+        detail: 'Urgent mode deactivation restored the standard daily briefing prompt and output.',
       });
 
       // Freeform update (date move)

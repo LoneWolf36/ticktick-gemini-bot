@@ -27,7 +27,6 @@ const URGENT_MODE_OFF_PATTERNS = [
     /\b(?:turn|switch|set)\s+(?:off|out of)\s+urgent mode\b/i,
     /\b(?:disable|deactivate|stop)\s+urgent mode\b/i,
     /\burgent mode\s+(?:off|disabled|inactive)\b/i,
-    /\b(?:back to|switch to|use)\s+humane mode\b/i,
     /\b(?:back to|switch to|use)\s+(?:normal|standard) mode\b/i,
 ];
 
@@ -46,7 +45,6 @@ const STANDARD_MODE_PATTERNS = [
     /\b(?:normal|standard) mode\s+(?:on|enabled|active)\b/i,
     /\bback to normal\b/i,
     /\bback to standard\b/i,
-    /\bback to humane\b/i,
 ];
 
 const MODE_QUERY_PATTERNS = [

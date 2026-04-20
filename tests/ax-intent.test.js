@@ -148,8 +148,8 @@ describe('AX Intent Extraction', () => {
             });
         });
 
-        it('detects urgent mode OFF - switch to humane mode', () => {
-            assert.deepEqual(detectWorkStyleModeIntent('switch back to humane mode'), {
+        it('detects urgent mode OFF - switch to standard mode', () => {
+            assert.deepEqual(detectWorkStyleModeIntent('switch back to standard mode'), {
                 type: 'set_work_style_mode',
                 mode: MODE_STANDARD,
             });

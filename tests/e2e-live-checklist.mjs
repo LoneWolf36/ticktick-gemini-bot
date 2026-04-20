@@ -57,7 +57,7 @@ function createDeterministicGemini() {
       const urgentMode = /URGENT MODE is active/i.test(prompt);
       const text = urgentMode
         ? '**Urgent Briefing**\n1. Handle the nearest deadline first.'
-        : '**Humane Briefing**\n1. Start with the highest-value task.';
+        : '**Standard Briefing**\n1. Start with the highest-value task.';
       return { response: { usageMetadata: null, text: () => text } };
     }
 
@@ -460,17 +460,17 @@ async function main() {
     }
     checkpoints.push({ id: 'start', status: 'pass', detail: 'Bot start command returned keyboard and persisted chat ID.' });
 
-    const beforeHumaneBriefing = apiCalls.length;
+    const beforeStandardBriefing = apiCalls.length;
     await bot.handleUpdate(mk.message('/briefing'));
     await sleep(200);
-    const humaneBriefing = apiCalls.slice(beforeHumaneBriefing).filter((c) => c.method === 'sendMessage').at(-1);
-    assert.match(humaneBriefing?.payload?.text || '', /Humane Briefing/i);
-    assert.doesNotMatch(humaneBriefing?.payload?.text || '', /Urgent mode is currently active/i);
+    const standardBriefing = apiCalls.slice(beforeStandardBriefing).filter((c) => c.method === 'sendMessage').at(-1);
+    assert.match(standardBriefing?.payload?.text || '', /Standard Briefing/i);
+    assert.doesNotMatch(standardBriefing?.payload?.text || '', /Urgent mode is currently active/i);
     assert.doesNotMatch(gemini.capturedPrompts.daily.at(-1) || '', /URGENT MODE is active/i);
     checkpoints.push({
-      id: 'humane-default',
+      id: 'standard-default',
       status: 'pass',
-      detail: 'Without stored urgent mode, the briefing stays on the humane default path.',
+      detail: 'Without stored urgent mode, the briefing stays on the standard default path.',
     });
 
     const beforeUrgentBriefing = apiCalls.length;

@@ -13,7 +13,7 @@ An AI-powered Telegram bot that connects to your TickTick task manager and acts 
 - **Free-form instructions** — send natural language messages like *"move all gym tasks to next week"* or *"what should I focus on today?"*
 - **Quick command menu** — use `/menu` to access inline shortcuts and avoid command discovery friction
 - **Guided full-system reorg** — use `/reorg` to generate a proposal, refine it, and apply it safely
-- **Urgent mode** — `/urgent on` switches to sharper tone with deadline-first prioritization; `/urgent off` returns to humane baseline
+- **Urgent mode** — `/urgent on` switches to sharper tone with deadline-first prioritization; `/urgent off` returns to standard baseline
 - **Daily morning briefing** — 3-4 prioritized focus items, leading with what you've been avoiding
 - **Weekly accountability digest** — honest review of wins, avoidance patterns, and next week's top 3
 - **Proactive polling** — detects new tasks every 5 minutes and notifies you
