@@ -14,6 +14,7 @@ const REQUIRED_FIELDS = [
 
 const DEFAULT_ENTRY_POINT = 'unknown';
 const DEFAULT_MODE = 'default';
+const DEFAULT_WORK_STYLE_MODE = 'standard';
 
 function normalizeChecklistContext(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
@@ -172,6 +173,9 @@ export function createPipelineContextBuilder({
             requestId: options.requestId || requestIdFactory(),
             entryPoint: options.entryPoint || DEFAULT_ENTRY_POINT,
             mode: options.mode || DEFAULT_MODE,
+            workStyleMode: typeof options.workStyleMode === 'string' && options.workStyleMode.trim()
+                ? options.workStyleMode.trim().toLowerCase()
+                : DEFAULT_WORK_STYLE_MODE,
             userMessage,
             currentDate,
             timezone,

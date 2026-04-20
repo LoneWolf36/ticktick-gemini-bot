@@ -1,3 +1,5 @@
+import { buildEngagementPatternNotice, deriveInterventionProfile } from './intervention-profile.js';
+
 function toArray(value) {
     return Array.isArray(value) ? value : [];
 }
@@ -63,11 +65,21 @@ function buildStats({ todayHistory = [], activeTasks = [] } = {}) {
     ];
 }
 
-function buildReflection({ todayHistory = [], activeTasks = [] } = {}) {
+function buildReflection({ todayHistory = [], activeTasks = [], interventionProfile = null, context = {} } = {}) {
     const approvedCount = todayHistory.filter((entry) => entry.approved === true).length;
     const skippedCount = todayHistory.filter((entry) => entry.skipped === true).length;
     const droppedCount = todayHistory.filter((entry) => entry.dropped === true).length;
     const highPriorityOpenCount = activeTasks.filter((task) => (task.priority || 0) >= 3).length;
+
+    if (interventionProfile?.shouldBackOff === true) {
+        return context.workStyleMode === 'urgent'
+            ? 'Recent suggestions were ignored repeatedly. Cut scope and choose one restart step instead of pushing harder.'
+            : 'Recent suggestions were skipped or dropped repeatedly. Keep tomorrow smaller or pause instead of escalating.';
+    }
+
+    if (interventionProfile?.directCalloutAllowed === true) {
+        return 'A few suggested tasks were skipped or dropped repeatedly. Name the friction once and choose one smaller restart step.';
+    }
 
     if (todayHistory.length === 0) {
         return '';
@@ -105,6 +117,9 @@ function buildResetCue({ activeTasks = [], rankingResult = null, todayHistory = 
 
 function buildNotices({ processedHistory = [], todayHistory = [], context = {} } = {}) {
     const notices = [];
+    const interventionProfile = deriveInterventionProfile(processedHistory, {
+        generatedAtIso: context.generatedAtIso,
+    });
 
     if (todayHistory.length <= 1) {
         notices.push({
@@ -129,6 +144,13 @@ function buildNotices({ processedHistory = [], todayHistory = [], context = {} }
             severity: 'info',
             evidence_source: 'processed_history',
         });
+    }
+
+    const engagementNotice = buildEngagementPatternNotice(interventionProfile, {
+        workStyleMode: context.workStyleMode,
+    });
+    if (engagementNotice) {
+        notices.push(engagementNotice);
     }
 
     return notices;
@@ -171,11 +193,19 @@ export function composeDailyCloseSummarySections({
     const normalizedActiveTasks = asActiveTasks(activeTasks);
     const normalizedProcessedHistory = asProcessedHistory(processedHistory);
     const todayHistory = filterEntriesForDay(normalizedProcessedHistory, context);
+    const interventionProfile = deriveInterventionProfile(normalizedProcessedHistory, {
+        generatedAtIso: context.generatedAtIso,
+    });
     const model = normalizeModelSummary(modelSummary || {});
 
     return {
         stats: model.stats.length > 0 ? model.stats : buildStats({ todayHistory, activeTasks: normalizedActiveTasks }),
-        reflection: model.reflection || buildReflection({ todayHistory, activeTasks: normalizedActiveTasks }),
+        reflection: model.reflection || buildReflection({
+            todayHistory,
+            activeTasks: normalizedActiveTasks,
+            interventionProfile,
+            context,
+        }),
         reset_cue: model.reset_cue || buildResetCue({
             activeTasks: normalizedActiveTasks,
             rankingResult,

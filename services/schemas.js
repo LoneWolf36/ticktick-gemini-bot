@@ -80,6 +80,7 @@ export const SUMMARY_NOTICE_CODES = Object.freeze([
     'missing_history',
     'degraded_ranking',
     'urgent_mode_active',
+    'engagement_pattern',
     'delivery_context',
 ]);
 

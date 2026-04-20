@@ -117,9 +117,16 @@ Output constraints:
 - Return compact plain JSON only (no markdown, no code fences, no prose).
 `;
 
-export function buildUrgentModePromptNote(urgentMode = false) {
-    if (urgentMode !== true) return '';
-    return 'URGENT MODE is active. Use direct, sharp language. Prioritize immediate, high-impact tasks. Do not soften your tone.';
+export function buildWorkStylePromptNote(workStyleMode = store.MODE_STANDARD) {
+    if (workStyleMode === store.MODE_FOCUS) {
+        return 'FOCUS MODE is active. Minimize interruptions. Keep responses short. Surface only critical items. Frame guidance as crisp next steps without extra commentary. Do not imply urgency unless the user explicitly activated urgent mode. When confidence is low, label uncertainty, ask, or stay quiet; never present weak behavioral or priority inference as fact. Use silent signals first. Direct call-outs only when repeated evidence justifies them. If guidance is ignored repeatedly, adapt or back off instead of escalating.';
+    }
+
+    if (workStyleMode === store.MODE_URGENT) {
+        return 'URGENT MODE is active. Use direct, assertive, action-oriented language only when task evidence, deadlines, or explicit user context justify it. Keep responses as short as possible. No pleasantries. Be non-judgmental: no shame, blame, or moralizing. If a task mutation is ambiguous, ask for clarification instead of guessing. Reflect urgency only because the user explicitly activated urgent mode; never invent urgency. When confidence is low, label uncertainty, ask, or stay quiet; never present weak behavioral or priority inference as fact. Urgent mode does not lower the confidence threshold for behavioral claims. Use silent signals first. Direct call-outs only when repeated evidence justifies them. Strict commands are allowed only because urgent mode was explicitly activated. If guidance is ignored repeatedly, adapt or back off instead of escalating. Do not skip validation or safety checks. Strip only formatting niceties; preserve substantive content. This changes tone only: do not mutate TickTick state unless the user explicitly asks for a task operation. Urgent mode is temporary and will revert automatically.';
+    }
+
+    return 'STANDARD MODE is active. Use a balanced tone, normal verbosity, and frame suggestions as options. Do not imply urgency unless the user explicitly activated urgent mode. When confidence is low, label uncertainty, ask, or stay quiet; never present weak behavioral or priority inference as fact. Use silent signals first. Direct call-outs only when repeated evidence justifies them. If guidance is ignored repeatedly, adapt or back off instead of escalating.';
 }
 
 export class GeminiAnalyzer {
@@ -165,7 +172,7 @@ export class GeminiAnalyzer {
     }
 
     async _resolveRecommendationState(options = {}) {
-        const workStyleMode = options.workStyleMode || 'humane';
+        const workStyleMode = options.workStyleMode || store.MODE_STANDARD;
         if (options.urgentMode === true || options.urgentMode === false) {
             return {
                 workStyleMode,
@@ -180,10 +187,14 @@ export class GeminiAnalyzer {
         }
 
         try {
-            const urgentMode = await store.getUrgentMode(userId);
-            return { workStyleMode, urgentMode, stateSource: 'store' };
+            const resolvedMode = await store.getWorkStyleMode(userId);
+            return {
+                workStyleMode: resolvedMode,
+                urgentMode: resolvedMode === store.MODE_URGENT,
+                stateSource: 'store',
+            };
         } catch {
-            return { workStyleMode, urgentMode: false, stateSource: 'default' };
+            return { workStyleMode: store.MODE_STANDARD, urgentMode: false, stateSource: 'default' };
         }
     }
 
@@ -462,9 +473,9 @@ export class GeminiAnalyzer {
             .join('\n');
 
         const today = userTodayFormatted();
-        const urgentModePromptNote = buildUrgentModePromptNote(recommendationState.urgentMode);
+        const workStylePromptNote = buildWorkStylePromptNote(recommendationState.workStyleMode);
 
-        const prompt = `${urgentModePromptNote ? `${urgentModePromptNote}\n\n` : ''}Today is ${today}.\n\nShared priority guidance:\n${rankedPreview || 'No ranked guidance available.'}\n\nActive tasks (${orderedTasks.length} total):\n${taskList}`;
+        const prompt = `${workStylePromptNote ? `${workStylePromptNote}\n\n` : ''}Today is ${today}.\n\nShared priority guidance:\n${rankedPreview || 'No ranked guidance available.'}\n\nActive tasks (${orderedTasks.length} total):\n${taskList}`;
         const result = await this._generateWithFailover(() => this.briefingModel, prompt, { transientBaseMs: 15 });
         const raw = result.response.text().trim();
         const parsed = this._safeParseJson(raw);
@@ -534,8 +545,8 @@ export class GeminiAnalyzer {
             .map((entry) => formatProcessedTask(entry))
             .join('\n');
 
-        const urgentModePromptNote = buildUrgentModePromptNote(recommendationState.urgentMode);
-        const prompt = `${urgentModePromptNote ? `${urgentModePromptNote}\n\n` : ''}Current active tasks (${orderedTasks.length}):\n${taskList || 'None'}\n\nProcessed tasks this week (${processedEntries.length}):\n${processed || 'None'}`;
+        const workStylePromptNote = buildWorkStylePromptNote(recommendationState.workStyleMode);
+        const prompt = `${workStylePromptNote ? `${workStylePromptNote}\n\n` : ''}Current active tasks (${orderedTasks.length}):\n${taskList || 'None'}\n\nProcessed tasks this week (${processedEntries.length}):\n${processed || 'None'}`;
         const result = await this._generateWithFailover(() => this.weeklyModel, prompt, { transientBaseMs: 15 });
         const raw = result.response.text().trim();
         const parsed = this._safeParseJson(raw);
@@ -600,8 +611,8 @@ export class GeminiAnalyzer {
             return parts.join(' | ');
         }).join('\n');
 
-        const urgentModePromptNote = buildUrgentModePromptNote(recommendationState.urgentMode);
-        let prompt = `${urgentModePromptNote ? `${urgentModePromptNote}\n\n` : ''}Current tasks (${tasks.length} total, ${compactTasks.length} included in context):\n${taskList}\n\nProjects:\n${projectList}\n`;
+        const workStylePromptNote = buildWorkStylePromptNote(recommendationState.workStyleMode);
+        let prompt = `${workStylePromptNote ? `${workStylePromptNote}\n\n` : ''}Current tasks (${tasks.length} total, ${compactTasks.length} included in context):\n${taskList}\n\nProjects:\n${projectList}\n`;
         if (existingActions?.length > 0) {
             const existingSummary = existingActions
                 .slice(0, 30)

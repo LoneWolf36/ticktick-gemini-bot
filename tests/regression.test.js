@@ -5,8 +5,8 @@ import { AxGen } from '@ax-llm/ax';
 
 import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../services/shared-utils.js';
 import { executeActions, registerCommands } from '../bot/commands.js';
-import { GeminiAnalyzer, buildUrgentModePromptNote } from '../services/gemini.js';
-import { createAxIntent, detectUrgentModeIntent, QuotaExhaustedError } from '../services/ax-intent.js';
+import { GeminiAnalyzer, buildWorkStylePromptNote } from '../services/gemini.js';
+import { createAxIntent, detectWorkStyleModeIntent, QuotaExhaustedError } from '../services/ax-intent.js';
 import { createPipeline } from '../services/pipeline.js';
 import { createPipelineObservability } from '../services/pipeline-observability.js';
 import { TickTickAdapter } from '../services/ticktick-adapter.js';
@@ -14,7 +14,12 @@ import { TickTickClient } from '../services/ticktick.js';
 import * as store from '../services/store.js';
 import * as executionPrioritization from '../services/execution-prioritization.js';
 import { AUTHORIZED_CHAT_ID } from '../services/shared-utils.js';
-import { runDailyBriefingJob, runWeeklyDigestJob } from '../services/scheduler.js';
+import {
+  runDailyBriefingJob,
+  runWeeklyDigestJob,
+  SCHEDULER_NOTIFICATION_TYPES,
+  shouldSuppressScheduledNotification,
+} from '../services/scheduler.js';
 import {
   BRIEFING_SUMMARY_SECTION_KEYS,
   DAILY_CLOSE_SUMMARY_SECTION_KEYS,
@@ -125,16 +130,54 @@ function buildSummaryProcessedHistoryFixture({ variant = 'normal' } = {}) {
     return [];
   }
 
+  if (variant === 'repeated_ignored') {
+    return [
+      {
+        taskId: 'hist-repeat-1',
+        originalTitle: 'Skipped architecture draft',
+        approved: false,
+        skipped: true,
+        dropped: false,
+        reviewedAt: '2026-03-11T09:00:00Z',
+        sentAt: '2026-03-11T09:05:00Z',
+      },
+      {
+        taskId: 'hist-repeat-2',
+        originalTitle: 'Dropped interview practice',
+        approved: false,
+        skipped: false,
+        dropped: true,
+        reviewedAt: '2026-03-12T09:10:00Z',
+        sentAt: '2026-03-12T09:15:00Z',
+      },
+      {
+        taskId: 'hist-repeat-3',
+        originalTitle: 'Skipped design follow-up',
+        approved: false,
+        skipped: true,
+        dropped: false,
+        reviewedAt: '2026-03-13T09:20:00Z',
+        sentAt: '2026-03-13T09:25:00Z',
+      },
+    ];
+  }
+
   return base;
 }
 
-function buildSummaryResolvedStateFixture({ kind = 'briefing', urgentMode = false, entryPoint = 'manual_command' } = {}) {
+function buildSummaryResolvedStateFixture({
+  kind = 'briefing',
+  workStyleMode = store.MODE_STANDARD,
+  urgentMode = workStyleMode === store.MODE_URGENT,
+  entryPoint = 'manual_command',
+} = {}) {
   return {
     kind,
     entryPoint,
     userId: 'summary-fixture-user',
     generatedAtIso: '2026-03-13T08:30:00Z',
     timezone: 'Europe/Dublin',
+    workStyleMode,
     urgentMode,
     tonePolicy: 'preserve_existing',
   };
@@ -283,6 +326,35 @@ function buildDailyCloseProcessedHistoryFixture({ variant = 'meaningful' } = {})
         skipped: false,
         dropped: true,
         reviewedAt: '2026-03-13T19:00:00Z',
+      },
+    ];
+  }
+
+  if (variant === 'backoff') {
+    return [
+      {
+        taskId: 'hist-backoff-1',
+        originalTitle: 'Skipped architecture work',
+        approved: false,
+        skipped: true,
+        dropped: false,
+        reviewedAt: '2026-03-13T18:00:00Z',
+      },
+      {
+        taskId: 'hist-backoff-2',
+        originalTitle: 'Dropped interview prep',
+        approved: false,
+        skipped: false,
+        dropped: true,
+        reviewedAt: '2026-03-13T19:00:00Z',
+      },
+      {
+        taskId: 'hist-backoff-3',
+        originalTitle: 'Skipped portfolio revision',
+        approved: false,
+        skipped: true,
+        dropped: false,
+        reviewedAt: '2026-03-13T20:00:00Z',
       },
     ];
   }
@@ -622,22 +694,20 @@ test('weekly watchout normalization rejects behavioral labels and strips prompt-
   assert.equal(Object.hasOwn(watchouts[0], 'callout'), false);
 });
 
-test('formatSummary renders daily sections with header and urgent reminder in fixed order', () => {
+test('formatSummary renders standard briefing sections in fixed order', () => {
   const summary = buildDailySummaryFixture();
   const { text, telegramSafe, tonePreserved } = formatSummary({
     kind: 'briefing',
     summary,
-    context: { urgentMode: true },
+    context: { workStyleMode: store.MODE_STANDARD, urgentMode: false },
   });
 
   const sectionOrder = ['**Focus**', '**Priorities**', '**Why now**', '**Start now**', '**Notices**'];
   const positions = sectionOrder.map((label) => text.indexOf(label));
-  const reminderMatches = text.match(/Urgent mode is currently active/gi) || [];
 
   assert.ok(text.includes('MORNING BRIEFING'));
   assert.ok(positions.every((pos) => pos >= 0));
   assert.deepEqual([...positions].sort((a, b) => a - b), positions);
-  assert.equal(reminderMatches.length, 1);
   assert.equal(telegramSafe, true);
   assert.equal(tonePreserved, true);
 });
@@ -761,32 +831,186 @@ test('default timezone remains Europe/Dublin when USER_TIMEZONE is unset', () =>
   assert.match(source, /USER_TZ\s*=\s*process\.env\.USER_TIMEZONE\s*\|\|\s*'Europe\/Dublin'/);
 });
 
-test('store documents the urgent mode Redis key schema', () => {
+test('store documents the work-style mode Redis key schema', () => {
   const source = readFileSync('services/store.js', 'utf8');
-  assert.match(source, /user:\{userId\}:urgent_mode/);
+  assert.match(source, /user:\{userId\}:work_style_mode/);
 });
 
-test('store urgent mode defaults to false and persists boolean toggles', async () => {
+test('store work style defaults to standard and persists explicit mode transitions', async () => {
   const store = await import('../services/store.js');
-  const userId = `node-test-urgent-mode-${Date.now()}`;
+  const userId = `node-test-work-style-${Date.now()}`;
 
-  assert.equal(await store.getUrgentMode(userId), false);
-  assert.equal(await store.setUrgentMode(userId, true), true);
-  assert.equal(await store.getUrgentMode(userId), true);
-  assert.equal(await store.setUrgentMode(userId, false), false);
-  assert.equal(await store.getUrgentMode(userId), false);
+  assert.equal(await store.getWorkStyleMode(userId), store.MODE_STANDARD);
+  await store.setWorkStyleMode(userId, store.MODE_URGENT);
+  assert.equal(await store.getWorkStyleMode(userId), store.MODE_URGENT);
+  await store.setWorkStyleMode(userId, store.MODE_FOCUS);
+  assert.equal(await store.getWorkStyleMode(userId), store.MODE_FOCUS);
+  await store.setWorkStyleMode(userId, store.MODE_STANDARD);
+  assert.equal(await store.getWorkStyleMode(userId), store.MODE_STANDARD);
 });
 
-test('ax intent detects urgent mode toggle phrases', () => {
-  assert.deepEqual(detectUrgentModeIntent('turn on urgent mode'), {
-    type: 'set_urgent_mode',
-    value: true,
+test('store resets urgent expiry when urgent mode is activated again', async () => {
+  const userId = `node-test-urgent-reset-${Date.now()}`;
+
+  const first = await store.setWorkStyleMode(userId, store.MODE_URGENT, { expiryMs: 1000 });
+  const second = await store.setWorkStyleMode(userId, store.MODE_URGENT, { expiryMs: 5000 });
+
+  assert.ok(first.expiresAt);
+  assert.ok(second.expiresAt);
+  assert.ok(new Date(second.expiresAt).getTime() > new Date(first.expiresAt).getTime());
+});
+
+test('store silently reverts expired urgent mode to standard', async () => {
+  const userId = `node-test-urgent-expiry-${Date.now()}`;
+
+  await store.setWorkStyleMode(userId, store.MODE_URGENT, { expiresAt: Date.now() - 1000 });
+  const state = await store.getWorkStyleState(userId);
+
+  assert.deepEqual(state, { mode: store.MODE_STANDARD, expiresAt: null });
+  assert.equal(await store.getWorkStyleMode(userId), store.MODE_STANDARD);
+});
+
+test('focus mode defaults to manual deactivation but supports optional auto-expiry', async () => {
+  const userId = `node-test-focus-expiry-${Date.now()}`;
+
+  const persistent = await store.setWorkStyleMode(userId, store.MODE_FOCUS);
+  assert.equal(persistent.mode, store.MODE_FOCUS);
+  assert.equal(persistent.expiresAt || null, null);
+
+  await store.setWorkStyleMode(userId, store.MODE_FOCUS, { expiresAt: Date.now() - 1000 });
+  const expired = await store.getWorkStyleState(userId);
+
+  assert.deepEqual(expired, { mode: store.MODE_STANDARD, expiresAt: null });
+  assert.equal(await store.getWorkStyleMode(userId), store.MODE_STANDARD);
+});
+
+test('focus mode suppresses non-critical scheduler notifications but allows critical alerts', () => {
+  assert.equal(shouldSuppressScheduledNotification(store.MODE_FOCUS, SCHEDULER_NOTIFICATION_TYPES.DAILY_BRIEFING), true);
+  assert.equal(shouldSuppressScheduledNotification(store.MODE_FOCUS, SCHEDULER_NOTIFICATION_TYPES.WEEKLY_DIGEST), true);
+  assert.equal(shouldSuppressScheduledNotification(store.MODE_FOCUS, SCHEDULER_NOTIFICATION_TYPES.PENDING_SUPPRESSION), true);
+  assert.equal(shouldSuppressScheduledNotification(store.MODE_FOCUS, SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY), true);
+  assert.equal(shouldSuppressScheduledNotification(store.MODE_FOCUS, SCHEDULER_NOTIFICATION_TYPES.TOKEN_EXPIRED), false);
+  assert.equal(shouldSuppressScheduledNotification(store.MODE_FOCUS, SCHEDULER_NOTIFICATION_TYPES.QUOTA_EXHAUSTED), false);
+  assert.equal(shouldSuppressScheduledNotification(store.MODE_STANDARD, SCHEDULER_NOTIFICATION_TYPES.DAILY_BRIEFING), false);
+});
+
+test('work-style integration persists mode state in restart-recoverable storage', async () => {
+  await store.resetAll();
+  const userId = `node-test-mode-restart-${Date.now()}`;
+
+  await store.setWorkStyleMode(userId, store.MODE_FOCUS);
+  const persisted = JSON.parse(readFileSync(new URL('../data/store.json', import.meta.url), 'utf8'));
+
+  assert.equal(persisted.workStyleModes[userId].mode, store.MODE_FOCUS);
+  assert.equal(persisted.workStyleModes[userId].expiresAt ?? null, null);
+});
+
+test('work-style integration switches to urgent mode and shortens briefing plus task confirmations', async () => {
+  const briefingSummary = {
+    focus: 'Ship the architecture PR before anything else.',
+    priorities: [
+      { title: 'Ship weekly architecture PR', rationale_text: 'Directly moves the highest-priority goal.' },
+      { title: 'Prepare system design notes', rationale_text: 'Keeps the interview loop moving.' },
+      { title: 'Pay rent', rationale_text: 'Avoids admin spillover.' },
+    ],
+    why_now: ['Deadline is close.', 'Unblocks review feedback.'],
+    start_now: 'Open the PR checklist and draft the next commit.',
+    notices: [{ severity: 'info', message: 'Keep the task list tight.' }],
+  };
+
+  const standardBriefing = formatSummary({
+    kind: 'briefing',
+    summary: briefingSummary,
+    context: { workStyleMode: store.MODE_STANDARD, urgentMode: false },
+  }).text;
+  const urgentBriefing = formatSummary({
+    kind: 'briefing',
+    summary: briefingSummary,
+    context: { workStyleMode: store.MODE_URGENT, urgentMode: true },
+  }).text;
+
+  assert.match(standardBriefing, /\*\*Why now\*\*/);
+  assert.match(standardBriefing, /Pay rent/);
+  assert.doesNotMatch(urgentBriefing, /\*\*Why now\*\*/);
+  assert.doesNotMatch(urgentBriefing, /Pay rent/);
+  assert.match(urgentBriefing, /Ship weekly architecture PR/);
+  assert.match(urgentBriefing, /Prepare system design notes/);
+
+  const { processMessage } = createPipelineHarness({
+    intents: [{
+      type: 'create',
+      title: 'Buy groceries',
+      content: '',
+      priority: 1,
+      projectHint: 'Inbox',
+      dueDate: null,
+      repeatHint: null,
+      splitStrategy: null,
+      confidence: 0.9,
+    }],
   });
-  assert.deepEqual(detectUrgentModeIntent('switch back to humane mode'), {
-    type: 'set_urgent_mode',
-    value: false,
+
+  const standardResult = await processMessage('buy groceries', { workStyleMode: store.MODE_STANDARD });
+  const urgentResult = await processMessage('buy groceries', { workStyleMode: store.MODE_URGENT });
+
+  assert.equal(standardResult.confirmationText, '✅ Created: Buy groceries');
+  assert.equal(urgentResult.confirmationText, '✅ Buy groceries');
+});
+
+test('store logs work-style transitions as operational telemetry, not behavioral memory', async () => {
+  const userId = `node-test-work-style-telemetry-${Date.now()}`;
+  const originalLog = console.log;
+  const payloads = [];
+
+  console.log = (...args) => {
+    const line = args.join(' ');
+    if (line.startsWith('[WorkStyleTelemetry] ')) {
+      payloads.push(JSON.parse(line.slice('[WorkStyleTelemetry] '.length)));
+    }
+  };
+
+  try {
+    await store.setWorkStyleMode(userId, store.MODE_URGENT, { expiryMs: 1000 });
+    await store.setWorkStyleMode(userId, store.MODE_STANDARD, { reason: 'test_cleanup' });
+  } finally {
+    console.log = originalLog;
+  }
+
+  assert.equal(payloads.length, 2);
+  assert.equal(payloads[0].telemetryScope, 'operational');
+  assert.equal(payloads[0].behavioralSignal, false);
+  assert.equal(payloads[0].eventType, 'mode_activated');
+  assert.equal(payloads[0].previousMode, store.MODE_STANDARD);
+  assert.equal(payloads[0].nextMode, store.MODE_URGENT);
+  assert.equal(payloads[1].telemetryScope, 'operational');
+  assert.equal(payloads[1].behavioralSignal, false);
+  assert.equal(payloads[1].eventType, 'mode_deactivated');
+  assert.equal(payloads[1].previousMode, store.MODE_URGENT);
+  assert.equal(payloads[1].nextMode, store.MODE_STANDARD);
+});
+
+test('ax intent detects work-style mode phrases', () => {
+  assert.deepEqual(detectWorkStyleModeIntent('turn on urgent mode'), {
+    type: 'set_work_style_mode',
+    mode: store.MODE_URGENT,
   });
-  assert.equal(detectUrgentModeIntent('buy groceries tonight'), null);
+  assert.deepEqual(detectWorkStyleModeIntent('focus time'), {
+    type: 'set_work_style_mode',
+    mode: store.MODE_FOCUS,
+  });
+  assert.deepEqual(detectWorkStyleModeIntent('switch back to humane mode'), {
+    type: 'set_work_style_mode',
+    mode: store.MODE_STANDARD,
+  });
+  assert.deepEqual(detectWorkStyleModeIntent('what mode am I in'), {
+    type: 'query_work_style_mode',
+  });
+  assert.deepEqual(detectWorkStyleModeIntent("I'm in a rush but let's plan carefully"), {
+    type: 'clarify_work_style_mode',
+    mode: store.MODE_STANDARD,
+    reason: 'mixed_signal',
+  });
+  assert.equal(detectWorkStyleModeIntent('buy groceries tonight'), null);
 });
 
 test('appendUrgentModeReminder only appends reminder text when urgent mode is active', () => {
@@ -794,7 +1018,7 @@ test('appendUrgentModeReminder only appends reminder text when urgent mode is ac
   assert.match(appendUrgentModeReminder('Base briefing', true), /Urgent mode is currently active/i);
 });
 
-test('registerCommands wires /urgent to the urgent mode store contract', async () => {
+test('registerCommands wires /urgent to the work-style store contract', async () => {
   const authChatId = await (async () => { const m = await import('../services/shared-utils.js'); return m.AUTHORIZED_CHAT_ID; })();
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
@@ -848,14 +1072,15 @@ test('registerCommands wires /urgent to the urgent mode store contract', async (
     },
   };
 
-  await store.setUrgentMode(userId, false);
+  await store.setWorkStyleMode(userId, store.MODE_STANDARD);
   await urgentHandler(ctx);
 
-  assert.equal(await store.getUrgentMode(userId), true);
+  assert.equal(await store.getWorkStyleMode(userId), store.MODE_URGENT);
   assert.match(replies.at(-1), /Urgent mode activated/i);
+  assert.match(replies.at(-1), /Expires:/i);
 });
 
-test('registerCommands allows free-form urgent toggles before TickTick auth', async () => {
+test('registerCommands allows free-form work-style changes before TickTick auth', async () => {
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
     command(name, handler) {
@@ -900,10 +1125,10 @@ test('registerCommands allows free-form urgent toggles before TickTick auth', as
 
   const replies = [];
   const userId = AUTHORIZED_CHAT_ID || `node-test-freeform-urgent-${Date.now()}`;
-  await store.setUrgentMode(userId, false);
+  await store.setWorkStyleMode(userId, store.MODE_STANDARD);
 
   await messageHandler({
-    message: { text: 'turn on urgent mode' },
+    message: { text: 'focus time' },
     chat: { id: userId },
     from: { id: userId },
     reply: async (message) => {
@@ -911,9 +1136,330 @@ test('registerCommands allows free-form urgent toggles before TickTick auth', as
     },
   });
 
-  assert.equal(await store.getUrgentMode(userId), true);
-  assert.match(replies.at(-1), /Urgent mode activated/i);
+  assert.equal(await store.getWorkStyleMode(userId), store.MODE_FOCUS);
+  assert.match(replies.at(-1), /Focus mode activated/i);
   assert.equal(replies.some((message) => /TickTick not connected yet/i.test(message)), false);
+});
+
+test('registerCommands wires /focus, /normal, and /mode to the work-style contract', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) {
+      handlers.commands.set(name, handler);
+      return this;
+    },
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return this;
+    },
+    on(eventName, handler) {
+      handlers.events.push({ eventName, handler });
+      return this;
+    },
+  };
+
+  registerCommands(
+    bot,
+    {
+      isAuthenticated: () => true,
+      getCacheAgeSeconds: () => null,
+      getAuthUrl: () => 'https://example.test/auth',
+      getAllTasks: async () => [],
+      getAllTasksCached: async () => [],
+      getLastFetchedProjects: () => [],
+    },
+    {
+      isQuotaExhausted: () => false,
+      quotaResumeTime: () => null,
+      activeKeyInfo: () => null,
+    },
+    {
+      listActiveTasks: async () => [],
+      listProjects: async () => [],
+    },
+    {},
+  );
+
+  const focusHandler = handlers.commands.get('focus');
+  const normalHandler = handlers.commands.get('normal');
+  const modeHandler = handlers.commands.get('mode');
+  assert.equal(typeof focusHandler, 'function');
+  assert.equal(typeof normalHandler, 'function');
+  assert.equal(typeof modeHandler, 'function');
+
+  const replies = [];
+  const userId = AUTHORIZED_CHAT_ID || Date.now();
+  const ctx = {
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => {
+      replies.push(message);
+    },
+  };
+
+  await store.setWorkStyleMode(userId, store.MODE_STANDARD);
+  await focusHandler(ctx);
+  assert.equal(await store.getWorkStyleMode(userId), store.MODE_FOCUS);
+  assert.match(replies.at(-1), /Focus mode activated/i);
+
+  await modeHandler(ctx);
+  assert.match(replies.at(-1), /Current mode: FOCUS/i);
+
+  await normalHandler(ctx);
+  assert.equal(await store.getWorkStyleMode(userId), store.MODE_STANDARD);
+  assert.match(replies.at(-1), /Standard mode active/i);
+});
+
+test('registerCommands answers natural-language mode queries before TickTick auth', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) {
+      handlers.commands.set(name, handler);
+      return this;
+    },
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return this;
+    },
+    on(eventName, handler) {
+      handlers.events.push({ eventName, handler });
+      return this;
+    },
+  };
+
+  registerCommands(
+    bot,
+    {
+      isAuthenticated: () => false,
+      getCacheAgeSeconds: () => null,
+      getAuthUrl: () => 'https://example.test/auth',
+      getAllTasks: async () => [],
+      getAllTasksCached: async () => [],
+      getLastFetchedProjects: () => [],
+    },
+    {
+      isQuotaExhausted: () => false,
+      quotaResumeTime: () => null,
+      activeKeyInfo: () => null,
+    },
+    {},
+    {
+      processMessage: async () => {
+        throw new Error('pipeline should not run for mode queries');
+      },
+    },
+  );
+
+  const messageHandler = handlers.events.find(({ eventName }) => eventName === 'message:text')?.handler;
+  const replies = [];
+  const userId = AUTHORIZED_CHAT_ID || `node-test-mode-query-${Date.now()}`;
+  await store.setWorkStyleMode(userId, store.MODE_URGENT);
+
+  await messageHandler({
+    message: { text: 'what mode am I in' },
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => {
+      replies.push(message);
+    },
+  });
+
+  assert.match(replies.at(-1), /Current mode: URGENT/i);
+  assert.equal(replies.some((message) => /TickTick not connected yet/i.test(message)), false);
+});
+
+test('registerCommands forwards current work-style mode into freeform pipeline requests', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) {
+      handlers.commands.set(name, handler);
+      return this;
+    },
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return this;
+    },
+    on(eventName, handler) {
+      handlers.events.push({ eventName, handler });
+      return this;
+    },
+  };
+
+  const pipelineCalls = [];
+  registerCommands(
+    bot,
+    {
+      isAuthenticated: () => true,
+      getCacheAgeSeconds: () => null,
+      getAuthUrl: () => 'https://example.test/auth',
+      getAllTasks: async () => [],
+      getAllTasksCached: async () => [],
+      getLastFetchedProjects: () => [],
+    },
+    {
+      isQuotaExhausted: () => false,
+      quotaResumeTime: () => null,
+      activeKeyInfo: () => null,
+    },
+    {
+      listProjects: async () => [],
+      listActiveTasks: async () => [],
+    },
+    {
+      processMessage: async (message, options) => {
+        pipelineCalls.push({ message, options });
+        return { type: 'task', confirmationText: '✅ Done.' };
+      },
+    },
+  );
+
+  const messageHandler = handlers.events.find(({ eventName }) => eventName === 'message:text')?.handler;
+  const replies = [];
+  const userId = AUTHORIZED_CHAT_ID || `node-test-r10-mode-${Date.now()}`;
+  await store.setWorkStyleMode(userId, store.MODE_URGENT, { expiryMs: store.DEFAULT_URGENT_EXPIRY_MS });
+
+  await messageHandler({
+    message: { text: 'buy groceries' },
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => {
+      replies.push(message);
+    },
+  });
+
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].options.workStyleMode, store.MODE_URGENT);
+  assert.match(replies.at(-1), /✅ Done\./);
+});
+
+test('registerCommands compresses mutation clarification copy in urgent mode', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) {
+      handlers.commands.set(name, handler);
+      return this;
+    },
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return this;
+    },
+    on(eventName, handler) {
+      handlers.events.push({ eventName, handler });
+      return this;
+    },
+  };
+
+  registerCommands(
+    bot,
+    {
+      isAuthenticated: () => true,
+      getCacheAgeSeconds: () => null,
+      getAuthUrl: () => 'https://example.test/auth',
+      getAllTasks: async () => [],
+      getAllTasksCached: async () => [],
+      getLastFetchedProjects: () => [],
+    },
+    {
+      isQuotaExhausted: () => false,
+      quotaResumeTime: () => null,
+      activeKeyInfo: () => null,
+    },
+    {
+      listProjects: async () => [],
+      listActiveTasks: async () => [],
+    },
+    {
+      processMessage: async () => ({
+        type: 'clarification',
+        confirmationText: 'Which task?\n1. Write weekly report\n2. Review weekly metrics',
+        workStyleMode: store.MODE_URGENT,
+        clarification: {
+          reason: 'ambiguous_target',
+          candidates: [
+            { id: 'task-1', title: 'Write weekly report' },
+            { id: 'task-2', title: 'Review weekly metrics' },
+          ],
+        },
+      }),
+    },
+  );
+
+  const messageHandler = handlers.events.find(({ eventName }) => eventName === 'message:text')?.handler;
+  const replies = [];
+  const userId = AUTHORIZED_CHAT_ID || `node-test-r10-clarify-${Date.now()}`;
+  await store.setWorkStyleMode(userId, store.MODE_URGENT, { expiryMs: store.DEFAULT_URGENT_EXPIRY_MS });
+
+  await messageHandler({
+    message: { text: 'update weekly' },
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => {
+      replies.push(message);
+    },
+  });
+
+  assert.match(replies.at(-1), /Which task\?/i);
+  assert.match(replies.at(-1), /Pick below or rephrase\./);
+  assert.doesNotMatch(replies.at(-1), /Did you mean one of these\?/i);
+});
+
+test('registerCommands defaults mixed mode signals to standard with clarification', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) {
+      handlers.commands.set(name, handler);
+      return this;
+    },
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return this;
+    },
+    on(eventName, handler) {
+      handlers.events.push({ eventName, handler });
+      return this;
+    },
+  };
+
+  registerCommands(
+    bot,
+    {
+      isAuthenticated: () => false,
+      getCacheAgeSeconds: () => null,
+      getAuthUrl: () => 'https://example.test/auth',
+      getAllTasks: async () => [],
+      getAllTasksCached: async () => [],
+      getLastFetchedProjects: () => [],
+    },
+    {
+      isQuotaExhausted: () => false,
+      quotaResumeTime: () => null,
+      activeKeyInfo: () => null,
+    },
+    {},
+    {
+      processMessage: async () => {
+        throw new Error('pipeline should not run for mixed mode clarification');
+      },
+    },
+  );
+
+  const messageHandler = handlers.events.find(({ eventName }) => eventName === 'message:text')?.handler;
+  const replies = [];
+  const userId = AUTHORIZED_CHAT_ID || `node-test-mixed-mode-${Date.now()}`;
+  await store.setWorkStyleMode(userId, store.MODE_URGENT);
+
+  await messageHandler({
+    message: { text: "I'm in a rush but let's plan carefully" },
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => {
+      replies.push(message);
+    },
+  });
+
+  assert.equal(await store.getWorkStyleMode(userId), store.MODE_STANDARD);
+  assert.match(replies[0], /Current mode: STANDARD/i);
+  assert.match(replies.at(-1), /Heard mixed mode signals/i);
 });
 
 test('registerCommands uses shared briefing surface and preserves urgent reminder', async () => {
@@ -991,7 +1537,7 @@ test('registerCommands uses shared briefing surface and preserves urgent reminde
 
   const replies = [];
   const userId = AUTHORIZED_CHAT_ID || Date.now();
-  await store.setUrgentMode(userId, true);
+  await store.setWorkStyleMode(userId, store.MODE_URGENT);
   await briefingHandler({
     chat: { id: userId },
     from: { id: userId },
@@ -1004,6 +1550,96 @@ test('registerCommands uses shared briefing surface and preserves urgent reminde
   assert.equal(summaryCalls[0].entryPoint, 'manual_command');
   assert.equal(summaryCalls[0].urgentMode, true);
   assert.ok(replies.some((message) => typeof message === 'string' && message.includes('Urgent mode is currently active.')));
+});
+
+test('registerCommands still answers manual briefing requests in focus mode', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) {
+      handlers.commands.set(name, handler);
+      return this;
+    },
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return this;
+    },
+    on(eventName, handler) {
+      handlers.events.push({ eventName, handler });
+      return this;
+    },
+  };
+
+  const summaryCalls = [];
+
+  registerCommands(
+    bot,
+    {
+      isAuthenticated: () => true,
+      getCacheAgeSeconds: () => null,
+      getAuthUrl: () => 'https://example.test/auth',
+      getAllTasks: async () => [],
+      getAllTasksCached: async () => [],
+      getLastFetchedProjects: () => [],
+    },
+    {
+      isQuotaExhausted: () => false,
+      quotaResumeTime: () => null,
+      activeKeyInfo: () => null,
+      generateDailyBriefingSummary: async (_tasks, options) => {
+        summaryCalls.push(options);
+        return {
+          summary: {
+            focus: 'Protect focus block',
+            priorities: [],
+            why_now: [],
+            start_now: '',
+            notices: [],
+          },
+          formattedText: '**🌅 MORNING BRIEFING**\n\n**Focus**: Protect focus block',
+          diagnostics: {
+            kind: 'briefing',
+            entryPoint: options.entryPoint,
+            sourceCounts: { activeTasks: 0, processedHistory: 0 },
+            degraded: false,
+            degradedReason: null,
+            formatterVersion: 'summary-formatter.v1',
+            formattingDecisions: {
+              telegramSafe: true,
+              tonePreserved: true,
+              urgentReminderApplied: false,
+              truncated: false,
+            },
+            deliveryStatus: 'composed',
+          },
+        };
+      },
+      generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
+    },
+    {
+      listActiveTasks: async () => [],
+      listProjects: async () => [],
+    },
+    {},
+  );
+
+  const briefingHandler = handlers.commands.get('briefing');
+  assert.equal(typeof briefingHandler, 'function');
+
+  const replies = [];
+  const userId = AUTHORIZED_CHAT_ID || `node-test-focus-briefing-${Date.now()}`;
+  await store.setWorkStyleMode(userId, store.MODE_FOCUS);
+  await briefingHandler({
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => {
+      replies.push(message);
+    },
+  });
+
+  assert.equal(summaryCalls.length, 1);
+  assert.equal(summaryCalls[0].entryPoint, 'manual_command');
+  assert.equal(summaryCalls[0].workStyleMode, store.MODE_FOCUS);
+  assert.ok(replies.some((message) => typeof message === 'string' && message.includes('MORNING BRIEFING')));
 });
 
 test('registerCommands uses shared weekly surface and sends formatted output', async () => {
@@ -1084,7 +1720,7 @@ test('registerCommands uses shared weekly surface and sends formatted output', a
 
   const replies = [];
   const userId = AUTHORIZED_CHAT_ID || Date.now();
-  await store.setUrgentMode(userId, false);
+  await store.setWorkStyleMode(userId, store.MODE_STANDARD);
   await weeklyHandler({
     chat: { id: userId },
     from: { id: userId },
@@ -1179,7 +1815,7 @@ test('registerCommands uses shared daily-close surface and passes processed hist
 
   const replies = [];
   const userId = AUTHORIZED_CHAT_ID || Date.now();
-  await store.setUrgentMode(userId, false);
+  await store.setWorkStyleMode(userId, store.MODE_STANDARD);
   await dailyCloseHandler({
     chat: { id: userId },
     from: { id: userId },
@@ -1261,7 +1897,7 @@ test('runDailyBriefingJob uses the shared briefing summary surface and keeps pen
   await store.resetAll();
   const userId = `scheduler-daily-${Date.now()}`;
   await store.setChatId(userId);
-  await store.setUrgentMode(userId, true);
+  await store.setWorkStyleMode(userId, store.MODE_URGENT);
   await store.markTaskPending('pending-1', { originalTitle: 'Review inbox capture' });
 
   const sentMessages = [];
@@ -1311,7 +1947,7 @@ test('runWeeklyDigestJob uses the shared weekly summary surface and preserves pr
   await store.resetAll();
   const userId = `scheduler-weekly-${Date.now()}`;
   await store.setChatId(userId);
-  await store.setUrgentMode(userId, true);
+  await store.setWorkStyleMode(userId, store.MODE_URGENT);
   await store.markTaskProcessed('hist-1', {
     originalTitle: 'Completed architecture PR draft',
     approved: true,
@@ -1365,7 +2001,7 @@ test('runWeeklyDigestJob passes historyAvailable false when processed-task histo
   await store.resetAll();
   const userId = `scheduler-weekly-missing-${Date.now()}`;
   await store.setChatId(userId);
-  await store.setUrgentMode(userId, false);
+  await store.setWorkStyleMode(userId, store.MODE_STANDARD);
 
   let summaryCalls = 0;
   const ran = await runWeeklyDigestJob({
@@ -1892,6 +2528,81 @@ test('GeminiAnalyzer rotates to next key on invalid-key errors', async () => {
   assert.ok(result?.response);
 });
 
+test('runDailyBriefingJob suppresses scheduled briefings in focus mode', async () => {
+  await store.resetAll();
+  const userId = `scheduler-focus-daily-${Date.now()}`;
+  await store.setChatId(userId);
+  await store.setWorkStyleMode(userId, store.MODE_FOCUS);
+
+  let summaryCalls = 0;
+  const ran = await runDailyBriefingJob({
+    bot: {
+      api: {
+        sendMessage: async () => {
+          throw new Error('sendMessage should not run in focus mode');
+        },
+      },
+    },
+    ticktick: {
+      isAuthenticated: () => true,
+    },
+    adapter: {
+      listActiveTasks: async () => {
+        throw new Error('adapter should not be called in focus mode');
+      },
+    },
+    gemini: {
+      isQuotaExhausted: () => false,
+      generateDailyBriefingSummary: async () => {
+        summaryCalls += 1;
+        return { formattedText: 'should not happen' };
+      },
+    },
+  });
+
+  assert.equal(ran, false);
+  assert.equal(summaryCalls, 0);
+  assert.equal(store.getStats().lastDailyBriefing || null, null);
+});
+
+test('runWeeklyDigestJob suppresses scheduled weekly briefings in focus mode', async () => {
+  await store.resetAll();
+  const userId = `scheduler-focus-weekly-${Date.now()}`;
+  await store.setChatId(userId);
+  await store.setWorkStyleMode(userId, store.MODE_FOCUS);
+
+  let summaryCalls = 0;
+  const ran = await runWeeklyDigestJob({
+    bot: {
+      api: {
+        sendMessage: async () => {
+          throw new Error('sendMessage should not run in focus mode');
+        },
+      },
+    },
+    ticktick: {
+      isAuthenticated: () => true,
+    },
+    adapter: {
+      listActiveTasks: async () => {
+        throw new Error('adapter should not be called in focus mode');
+      },
+    },
+    gemini: {
+      isQuotaExhausted: () => false,
+      generateWeeklyDigestSummary: async () => {
+        summaryCalls += 1;
+        return { formattedText: 'should not happen' };
+      },
+    },
+    processedTasks: {},
+  });
+
+  assert.equal(ran, false);
+  assert.equal(summaryCalls, 0);
+  assert.equal(store.getStats().lastWeeklyDigest || null, null);
+});
+
 test('GeminiAnalyzer briefing preparation uses shared ranking outputs', () => {
   const analyzer = new GeminiAnalyzer(['dummy-key']);
   const tasks = [
@@ -1922,10 +2633,350 @@ test('GeminiAnalyzer briefing preparation uses shared ranking outputs', () => {
   assert.equal(prepared.ranking.ranked[0].rationaleCode, 'goal_alignment');
 });
 
-test('GeminiAnalyzer builds an urgent mode prompt note only when urgent mode is active', () => {
-  assert.match(buildUrgentModePromptNote(true), /URGENT MODE is active/i);
-  assert.match(buildUrgentModePromptNote(true), /direct, sharp language/i);
-  assert.equal(buildUrgentModePromptNote(false), '');
+test('GeminiAnalyzer builds work-style prompt notes for standard, focus, and urgent modes', () => {
+  assert.match(buildWorkStylePromptNote(store.MODE_STANDARD), /STANDARD MODE is active/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_STANDARD), /balanced tone/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_STANDARD), /Do not imply urgency unless the user explicitly activated urgent mode/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_STANDARD), /When confidence is low, label uncertainty, ask, or stay quiet/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_STANDARD), /Use silent signals first/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_STANDARD), /Direct call-outs only when repeated evidence justifies them/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_STANDARD), /adapt or back off instead of escalating/i);
+
+  assert.match(buildWorkStylePromptNote(store.MODE_FOCUS), /FOCUS MODE is active/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_FOCUS), /surface only critical items/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_FOCUS), /Do not imply urgency unless the user explicitly activated urgent mode/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_FOCUS), /When confidence is low, label uncertainty, ask, or stay quiet/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_FOCUS), /Use silent signals first/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_FOCUS), /Direct call-outs only when repeated evidence justifies them/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_FOCUS), /adapt or back off instead of escalating/i);
+
+  assert.match(buildWorkStylePromptNote(store.MODE_URGENT), /URGENT MODE is active/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_URGENT), /direct, assertive, action-oriented language only when task evidence, deadlines, or explicit user context justify it/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_URGENT), /Be non-judgmental: no shame, blame, or moralizing/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_URGENT), /If a task mutation is ambiguous, ask for clarification instead of guessing/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_URGENT), /Reflect urgency only because the user explicitly activated urgent mode; never invent urgency/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_URGENT), /When confidence is low, label uncertainty, ask, or stay quiet/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_URGENT), /Urgent mode does not lower the confidence threshold for behavioral claims/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_URGENT), /Use silent signals first/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_URGENT), /Direct call-outs only when repeated evidence justifies them/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_URGENT), /Strict commands are allowed only because urgent mode was explicitly activated/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_URGENT), /adapt or back off instead of escalating/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_URGENT), /Do not skip validation or safety checks/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_URGENT), /Strip only formatting niceties; preserve substantive content/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_URGENT), /do not mutate TickTick state unless the user explicitly asks/i);
+  assert.match(buildWorkStylePromptNote(store.MODE_URGENT), /revert automatically/i);
+});
+
+test('urgent mode trims niceties without skipping safety or substantive content', async () => {
+  const ambiguousHarness = createPipelineHarness({
+    intents: [
+      { type: 'update', title: 'Weekly update', confidence: 0.9, targetQuery: 'weekly' },
+    ],
+    activeTasks: [
+      { id: 't1', title: 'Write weekly report', projectId: 'p1', projectName: 'Career', priority: 5, status: 0 },
+      { id: 't2', title: 'Review weekly metrics', projectId: 'p1', projectName: 'Career', priority: 3, status: 0 },
+    ],
+  });
+
+  const urgentClarification = await ambiguousHarness.processMessage('update weekly', {
+    workStyleMode: store.MODE_URGENT,
+  });
+  const standardClarification = await ambiguousHarness.processMessage('update weekly', {
+    workStyleMode: store.MODE_STANDARD,
+  });
+
+  assert.equal(urgentClarification.type, 'clarification');
+  assert.equal(standardClarification.type, 'clarification');
+  assert.equal(urgentClarification.clarification.reason, 'ambiguous_target');
+  assert.equal(standardClarification.clarification.reason, 'ambiguous_target');
+  assert.match(urgentClarification.confirmationText, /^Which task\?/);
+  assert.match(standardClarification.confirmationText, /^Which task did you mean\?/);
+  assert.match(urgentClarification.confirmationText, /Write weekly report/);
+  assert.match(urgentClarification.confirmationText, /Review weekly metrics/);
+  assert.equal(ambiguousHarness.adapterCalls.update.length, 0);
+
+  const invalidHarness = createPipelineHarness({
+    intents: [{ type: 'create', title: '', confidence: 0.8 }],
+  });
+
+  const urgentFailure = await invalidHarness.processMessage('create broken task', {
+    workStyleMode: store.MODE_URGENT,
+  });
+  const standardFailure = await invalidHarness.processMessage('create broken task', {
+    workStyleMode: store.MODE_STANDARD,
+  });
+
+  assert.equal(urgentFailure.type, 'error');
+  assert.equal(standardFailure.type, 'error');
+  assert.equal(urgentFailure.confirmationText, '⚠️ I could not validate the task details. Please clarify and retry.');
+  assert.equal(standardFailure.confirmationText, '⚠️ I could not validate the task details. Please clarify and retry.');
+
+  const weeklySummary = {
+    progress: ['Closed architecture PR', 'Protected deep-work block', 'Paid rent'],
+    carry_forward: [
+      { title: 'Reschedule mock interview', reason: 'Needs a fresh slot' },
+      { title: 'Refine portfolio bullets', reason: 'Still worth doing soon' },
+    ],
+    next_focus: ['Finish interview prep pack', 'Protect backend study block', 'Clean inbox'],
+    watchouts: [
+      { label: 'Overdue tasks accumulating', evidence: '4 tasks slipped this week' },
+    ],
+    notices: [{ severity: 'info', message: 'History coverage is partial.' }],
+  };
+
+  const urgentWeekly = formatSummary({
+    kind: 'weekly',
+    summary: weeklySummary,
+    context: { workStyleMode: store.MODE_URGENT, urgentMode: true },
+  }).text;
+
+  assert.match(urgentWeekly, /Closed architecture PR/);
+  assert.match(urgentWeekly, /Protected deep-work block/);
+  assert.match(urgentWeekly, /Finish interview prep pack/);
+  assert.match(urgentWeekly, /Protect backend study block/);
+  assert.match(urgentWeekly, /Overdue tasks accumulating: 4 tasks slipped this week/);
+  assert.doesNotMatch(urgentWeekly, /Carry forward/i);
+  assert.doesNotMatch(urgentWeekly, /Notices/i);
+});
+
+test('composeWeeklySummary stays silent on a single ignored suggestion', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildSummaryProcessedHistoryFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+    workStyleMode: store.MODE_STANDARD,
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+  });
+
+  assert.equal(result.summary.notices.some((notice) => notice.code === 'engagement_pattern'), false);
+});
+
+test('composeWeeklySummary surfaces engagement notice only after repeated ignored guidance', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildSummaryProcessedHistoryFixture({ variant: 'repeated_ignored' });
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+    workStyleMode: store.MODE_STANDARD,
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+  });
+
+  const notice = result.summary.notices.find((item) => item.code === 'engagement_pattern');
+  assert.ok(notice);
+  assert.match(notice.message, /keep the next step smaller|pause instead of escalating/i);
+});
+
+test('composeDailyCloseSummary backs off after repeated ignored guidance instead of escalating', () => {
+  const activeTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+  const processedHistory = buildDailyCloseProcessedHistoryFixture({ variant: 'backoff' });
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture({
+    kind: 'daily_close',
+    workStyleMode: store.MODE_STANDARD,
+  });
+
+  const result = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory,
+    rankingResult,
+  });
+
+  assert.match(result.summary.reflection, /keep tomorrow smaller|pause instead of escalating/i);
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'engagement_pattern'));
+});
+
+test('urgent mode does not override clarification requirements for ambiguous task mutations', async () => {
+  await store.resetAll();
+  const userId = `urgent-clarification-${Date.now()}`;
+  await store.setWorkStyleMode(userId, store.MODE_URGENT, { expiryMs: store.DEFAULT_URGENT_EXPIRY_MS });
+
+  const { processMessage, adapterCalls } = createPipelineHarness({
+    intents: [
+      { type: 'update', title: 'Weekly update', confidence: 0.9, targetQuery: 'weekly' },
+    ],
+    activeTasks: [
+      { id: 't1', title: 'Write weekly report', projectId: 'p1', projectName: 'Career', priority: 5, status: 0 },
+      { id: 't2', title: 'Review weekly metrics', projectId: 'p1', projectName: 'Career', priority: 3, status: 0 },
+    ],
+  });
+
+  const result = await processMessage('update weekly');
+
+  assert.equal(await store.getWorkStyleMode(userId), store.MODE_URGENT);
+  assert.equal(result.type, 'clarification');
+  assert.equal(result.clarification.reason, 'ambiguous_target');
+  assert.equal(adapterCalls.update.length, 0);
+});
+
+test('formatSummary keeps standard briefing full and reduces urgent briefing to top priorities', () => {
+  const summary = {
+    focus: 'Ship the architecture PR before anything else.',
+    priorities: [
+      { title: 'Ship weekly architecture PR', rationale_text: 'Directly moves the highest-priority goal.' },
+      { title: 'Prepare system design notes', rationale_text: 'Keeps the interview loop moving.' },
+      { title: 'Pay rent', rationale_text: 'Avoids admin spillover.' },
+    ],
+    why_now: ['Goal leverage is highest here.', 'Deadline pressure is rising.'],
+    start_now: 'Open the PR and finish the next review round.',
+    notices: [{ code: 'delivery_context', message: 'Context note.', severity: 'info', evidence_source: 'system' }],
+  };
+
+  const standard = formatSummary({
+    kind: 'briefing',
+    summary,
+    context: buildSummaryResolvedStateFixture({ kind: 'briefing', workStyleMode: store.MODE_STANDARD }),
+  }).text;
+  const urgent = formatSummary({
+    kind: 'briefing',
+    summary,
+    context: buildSummaryResolvedStateFixture({ kind: 'briefing', workStyleMode: store.MODE_URGENT }),
+  }).text;
+
+  assert.match(standard, /\*\*Why now\*\*/);
+  assert.match(standard, /Directly moves the highest-priority goal\./);
+  assert.match(standard, /Pay rent/);
+
+  assert.doesNotMatch(urgent, /\*\*Why now\*\*/);
+  assert.doesNotMatch(urgent, /Directly moves the highest-priority goal\./);
+  assert.doesNotMatch(urgent, /Pay rent/);
+  assert.match(urgent, /Ship weekly architecture PR/);
+  assert.match(urgent, /Prepare system design notes/);
+});
+
+test('formatSummary adapts daily close verbosity by work-style mode', () => {
+  const summary = {
+    stats: ['Completed: 2', 'Skipped: 1', 'Dropped: 0', 'Still open: 3'],
+    reflection: 'Today was mixed: some progress landed, and some work stayed open.',
+    reset_cue: 'Tomorrow’s restart: begin with “Ship weekly architecture PR”.',
+    notices: [{ code: 'delivery_context', message: 'Keep it factual.', severity: 'info', evidence_source: 'system' }],
+  };
+
+  const standard = formatSummary({
+    kind: 'daily_close',
+    summary,
+    context: buildSummaryResolvedStateFixture({ kind: 'daily_close', workStyleMode: store.MODE_STANDARD }),
+  }).text;
+  const focus = formatSummary({
+    kind: 'daily_close',
+    summary,
+    context: buildSummaryResolvedStateFixture({ kind: 'daily_close', workStyleMode: store.MODE_FOCUS }),
+  }).text;
+  const urgent = formatSummary({
+    kind: 'daily_close',
+    summary,
+    context: buildSummaryResolvedStateFixture({ kind: 'daily_close', workStyleMode: store.MODE_URGENT }),
+  }).text;
+
+  assert.match(standard, /\*\*Stats\*\*/);
+  assert.match(standard, /\*\*Notices\*\*/);
+
+  assert.match(focus, /\*\*Stats\*\*/);
+  assert.doesNotMatch(focus, /\*\*Notices\*\*/);
+  assert.doesNotMatch(focus, /Still open: 3/);
+
+  assert.doesNotMatch(urgent, /\*\*Stats\*\*/);
+  assert.doesNotMatch(urgent, /\*\*Notices\*\*/);
+  assert.match(urgent, /\*\*Reflection\*\*/);
+  assert.match(urgent, /\*\*Reset cue\*\*/);
+});
+
+test('formatSummary keeps weekly default compact in standard mode and shortens in urgent mode', () => {
+  const summary = buildWeeklySummaryFixture();
+
+  const standard = formatSummary({
+    kind: 'weekly',
+    summary,
+    context: buildSummaryResolvedStateFixture({ kind: 'weekly', workStyleMode: store.MODE_STANDARD }),
+  }).text;
+  const urgent = formatSummary({
+    kind: 'weekly',
+    summary,
+    context: buildSummaryResolvedStateFixture({ kind: 'weekly', workStyleMode: store.MODE_URGENT }),
+  }).text;
+
+  assert.match(standard, /\*\*Carry forward\*\*/);
+  assert.match(standard, /\*\*Notices\*\*/);
+  assert.match(standard, /Finalize system design notes/);
+
+  assert.doesNotMatch(urgent, /\*\*Carry forward\*\*/);
+  assert.doesNotMatch(urgent, /\*\*Notices\*\*/);
+  assert.match(urgent, /\*\*Progress\*\*/);
+  assert.match(urgent, /\*\*Next focus\*\*/);
+  assert.match(urgent, /\*\*Watchouts\*\*/);
+});
+
+test('pipeline shortens urgent confirmations and clarification prompts while keeping errors clear', async () => {
+  const creationHarness = createPipelineHarness({
+    intents: [{ type: 'create', title: 'Buy groceries', confidence: 0.9 }],
+  });
+
+  const standardTask = await creationHarness.processMessage('buy groceries', {
+    workStyleMode: store.MODE_STANDARD,
+  });
+  const urgentTask = await creationHarness.processMessage('buy groceries', {
+    workStyleMode: store.MODE_URGENT,
+  });
+
+  assert.equal(standardTask.confirmationText, '✅ Created: Buy groceries');
+  assert.equal(urgentTask.confirmationText, '✅ Buy groceries');
+
+  const clarificationHarness = createPipelineHarness({
+    intents: [{ type: 'update', title: 'Weekly update', confidence: 0.9, targetQuery: 'weekly' }],
+    activeTasks: [
+      { id: 't1', title: 'Write weekly report', projectId: 'p1', projectName: 'Career', priority: 5, status: 0 },
+      { id: 't2', title: 'Review weekly metrics', projectId: 'p1', projectName: 'Career', priority: 3, status: 0 },
+    ],
+  });
+
+  const standardClarification = await clarificationHarness.processMessage('update weekly', {
+    workStyleMode: store.MODE_STANDARD,
+  });
+  const urgentClarification = await clarificationHarness.processMessage('update weekly', {
+    workStyleMode: store.MODE_URGENT,
+  });
+
+  assert.match(standardClarification.confirmationText, /^Which task did you mean\?/);
+  assert.match(standardClarification.confirmationText, /Write weekly report/);
+  assert.match(standardClarification.confirmationText, /Review weekly metrics/);
+  assert.match(urgentClarification.confirmationText, /^Which task\?/);
+  assert.match(urgentClarification.confirmationText, /Write weekly report/);
+  assert.match(urgentClarification.confirmationText, /Review weekly metrics/);
+
+  const failureHarness = createPipelineHarness({
+    intents: [{ type: 'create', title: 'Buy groceries', confidence: 0.9 }],
+    useRealNormalizer: false,
+    normalizedActions: [{ valid: false, validationErrors: ['missing title'] }],
+  });
+
+  const standardFailure = await failureHarness.processMessage('buy groceries', {
+    workStyleMode: store.MODE_STANDARD,
+  });
+  const urgentFailure = await failureHarness.processMessage('buy groceries', {
+    workStyleMode: store.MODE_URGENT,
+  });
+
+  assert.equal(standardFailure.type, 'error');
+  assert.equal(urgentFailure.type, 'error');
+  assert.equal(standardFailure.confirmationText, '⚠️ I could not validate the task details. Please clarify and retry.');
+  assert.equal(urgentFailure.confirmationText, standardFailure.confirmationText);
 });
 
 test('GeminiAnalyzer fallback reorg routes recovery inbox work into Health', () => {
@@ -2059,7 +3110,8 @@ test('execution prioritization returns structured degraded recommendation result
       rank: 1,
       scoreBand: 'top',
       rationaleCode: 'fallback',
-      rationaleText: 'Top remaining candidate under degraded goal context.',
+      rationaleText: 'Possible next candidate under degraded goal context.',
+      inferenceConfidence: 'weak',
       exceptionApplied: false,
       fallbackUsed: true,
     }),
@@ -2075,6 +3127,8 @@ test('execution prioritization returns structured degraded recommendation result
   assert.equal(result.degraded, true);
   assert.equal(result.degradedReason, 'unknown_goals');
   assert.equal(result.context.goalThemeProfile.confidence, 'weak');
+  assert.equal(result.topRecommendation.inferenceConfidence, 'weak');
+  assert.match(result.topRecommendation.rationaleText, /Possible next candidate/i);
 });
 
 test('execution prioritization ranks meaningful work above low-value admin when goals are explicit', () => {
@@ -2111,7 +3165,7 @@ test('execution prioritization degrades honestly when goals are weak or absent',
   const candidates = [
     normalizePriorityCandidate({
       id: 'task-bill',
-      title: 'Pay electricity bill today',
+      title: 'Review electricity bill',
       projectId: 'admin',
       projectName: 'Admin',
       status: 0,
@@ -2133,7 +3187,34 @@ test('execution prioritization degrades honestly when goals are weak or absent',
   assert.equal(result.topRecommendation.taskId, 'task-bill');
   assert.equal(result.degraded, true);
   assert.equal(result.degradedReason, 'unknown_goals');
-  assert.ok(['fallback', 'urgency'].includes(result.ranked[0].rationaleCode));
+  assert.equal(result.ranked[0].inferenceConfidence, 'weak');
+  assert.match(result.ranked[0].rationaleText, /(Possible next candidate|Potentially consequential admin)/i);
+});
+
+test('execution prioritization keeps the behavioral inference threshold strong in urgent mode', () => {
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('', { source: 'fallback' }),
+    nowIso: '2026-03-10T10:00:00Z',
+    workStyleMode: store.MODE_URGENT,
+    urgentMode: true,
+  });
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-medium-urgency',
+      title: 'Review rent reminder',
+      projectId: 'admin',
+      projectName: 'Admin',
+      dueDate: '2026-03-11',
+      status: 0,
+    }),
+  ];
+
+  const result = rankPriorityCandidatesForTest(candidates, context);
+
+  assert.equal(result.context.behavioralInferenceThreshold, 'strong');
+  assert.equal(result.topRecommendation.rationaleCode, 'fallback');
+  assert.equal(result.topRecommendation.inferenceConfidence, 'weak');
+  assert.match(result.topRecommendation.rationaleText, /(Possible next candidate under degraded goal context\.|Potentially consequential admin surfaced under degraded goal context\.)/i);
 });
 
 test('execution prioritization still returns output when work-style state is unknown', () => {
@@ -4851,6 +5932,28 @@ test('behavioral signals NEVER contain raw titles or message text', () => {
         );
       }
     }
+  }
+});
+
+test('behavioral signals ignore work-style metadata entirely', () => {
+  const event = {
+    eventType: 'update',
+    taskId: 't1',
+    dueDateBefore: '2026-04-15T10:00:00Z',
+    dueDateAfter: '2026-04-20T10:00:00Z',
+    workStyleMode: store.MODE_URGENT,
+    previousWorkStyleMode: store.MODE_FOCUS,
+    modeEventType: 'mode_activated',
+    timestamp: '2026-04-14T10:00:00Z',
+  };
+
+  const signals = classifyTaskEvent(event);
+  assert.ok(signals.length >= 1);
+
+  for (const signal of signals) {
+    assert.equal(signal.metadata.workStyleMode, undefined);
+    assert.equal(signal.metadata.previousWorkStyleMode, undefined);
+    assert.equal(signal.metadata.modeEventType, undefined);
   }
 });
 

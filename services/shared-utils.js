@@ -529,17 +529,18 @@ export function buildMutationCandidateKeyboard(candidates, { intentSummary = nul
     return keyboard;
 }
 
-export function buildMutationClarificationMessage(reason, candidates, intentSummary) {
+export function buildMutationClarificationMessage(reason, candidates, intentSummary, { workStyleMode = 'standard' } = {}) {
     const lines = [];
+    const urgentMode = workStyleMode === 'urgent';
     if (intentSummary) {
-        lines.push(`**Did you mean one of these?**`);
+        lines.push(urgentMode ? `**Which task?**` : `**Did you mean one of these?**`);
     } else {
-        lines.push(`**Not sure which task you mean.**`);
+        lines.push(urgentMode ? `**Which task?**` : `**Not sure which task you mean.**`);
     }
     if (reason) {
         lines.push(reason);
     }
-    lines.push(`\nTap a task below or rephrase your request.`);
+    lines.push(urgentMode ? `\nPick below or rephrase.` : `\nTap a task below or rephrase your request.`);
     return lines.join('\n');
 }
 

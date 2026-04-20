@@ -1,5 +1,6 @@
 import { AxAI, AxGen } from '@ax-llm/ax';
 import { MAX_CHECKLIST_ITEMS, CHECKLIST_ITEM_SHAPE } from './schemas.js';
+import { MODE_FOCUS, MODE_STANDARD, MODE_URGENT } from './store.js';
 
 const R1_INTENT_ACTION_FIELDS = Object.freeze([
     'type',
@@ -18,6 +19,8 @@ const URGENT_MODE_ON_PATTERNS = [
     /\b(?:enable|activate|start)\s+urgent mode\b/i,
     /\burgent mode\s+(?:on|enabled|active)\b/i,
     /\bgo urgent\b/i,
+    /\b(?:i'?m|i am)\s+in\s+a\s+rush\b/i,
+    /\bneed\s+urgent\s+mode\b/i,
 ];
 
 const URGENT_MODE_OFF_PATTERNS = [
@@ -25,23 +28,82 @@ const URGENT_MODE_OFF_PATTERNS = [
     /\b(?:disable|deactivate|stop)\s+urgent mode\b/i,
     /\burgent mode\s+(?:off|disabled|inactive)\b/i,
     /\b(?:back to|switch to|use)\s+humane mode\b/i,
+    /\b(?:back to|switch to|use)\s+(?:normal|standard) mode\b/i,
+];
+
+const FOCUS_MODE_PATTERNS = [
+    /\b(?:turn|switch|set)\s+(?:on|into)\s+focus mode\b/i,
+    /\b(?:enable|activate|start)\s+focus mode\b/i,
+    /\bfocus mode\s+(?:on|enabled|active)\b/i,
+    /\bfocus time\b/i,
+    /\btime to focus\b/i,
+    /\bdeep work mode\b/i,
+];
+
+const STANDARD_MODE_PATTERNS = [
+    /\b(?:turn|switch|set)\s+(?:on|into)\s+(?:normal|standard) mode\b/i,
+    /\b(?:enable|activate|start)\s+(?:normal|standard) mode\b/i,
+    /\b(?:normal|standard) mode\s+(?:on|enabled|active)\b/i,
+    /\bback to normal\b/i,
+    /\bback to standard\b/i,
+    /\bback to humane\b/i,
+];
+
+const MODE_QUERY_PATTERNS = [
+    /^what mode am i in\??$/i,
+    /^current mode\??$/i,
+    /^mode\??$/i,
+];
+
+const CAREFUL_PLANNING_PATTERNS = [
+    /\blet'?s\s+plan\s+carefully\b/i,
+    /\bplan\s+carefully\b/i,
+    /\bcarefully\b/i,
+    /\bslow\s+down\b/i,
+    /\bthink\s+it\s+through\b/i,
+    /\bstep\s+by\s+step\b/i,
 ];
 
 /**
- * Detects urgent mode toggle intents from user messages.
+ * Detects work-style mode intents from user messages.
  * @param {string} userMessage - The user's message text
- * @returns {{type: 'set_urgent_mode', value: boolean}|null} Intent object or null if not detected
+ * @returns {{type: 'set_work_style_mode', mode: string}|{type: 'query_work_style_mode'}|{type: 'clarify_work_style_mode', mode: string, reason: 'mixed_signal'}|null}
  */
-export function detectUrgentModeIntent(userMessage = '') {
+export function detectWorkStyleModeIntent(userMessage = '') {
     const text = typeof userMessage === 'string' ? userMessage.trim() : '';
     if (!text) return null;
 
-    if (URGENT_MODE_OFF_PATTERNS.some((pattern) => pattern.test(text))) {
-        return { type: 'set_urgent_mode', value: false };
+    const matchesUrgent = URGENT_MODE_ON_PATTERNS.some((pattern) => pattern.test(text));
+    const matchesFocus = FOCUS_MODE_PATTERNS.some((pattern) => pattern.test(text));
+    const matchesStandard = STANDARD_MODE_PATTERNS.some((pattern) => pattern.test(text));
+    const matchesCarefulPlanning = CAREFUL_PLANNING_PATTERNS.some((pattern) => pattern.test(text));
+
+    if (MODE_QUERY_PATTERNS.some((pattern) => pattern.test(text))) {
+        return { type: 'query_work_style_mode' };
     }
 
-    if (URGENT_MODE_ON_PATTERNS.some((pattern) => pattern.test(text))) {
-        return { type: 'set_urgent_mode', value: true };
+    if (matchesUrgent && (matchesFocus || matchesStandard || matchesCarefulPlanning)) {
+        return {
+            type: 'clarify_work_style_mode',
+            mode: MODE_STANDARD,
+            reason: 'mixed_signal',
+        };
+    }
+
+    if (URGENT_MODE_OFF_PATTERNS.some((pattern) => pattern.test(text))) {
+        return { type: 'set_work_style_mode', mode: MODE_STANDARD };
+    }
+
+    if (matchesUrgent) {
+        return { type: 'set_work_style_mode', mode: MODE_URGENT };
+    }
+
+    if (matchesFocus) {
+        return { type: 'set_work_style_mode', mode: MODE_FOCUS };
+    }
+
+    if (matchesStandard) {
+        return { type: 'set_work_style_mode', mode: MODE_STANDARD };
     }
 
     return null;

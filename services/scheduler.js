@@ -4,18 +4,44 @@ import * as store from './store.js';
 import { buildAutoApplyNotification, userTimeString, filterProcessedThisWeek, sendWithMarkdown } from './shared-utils.js';
 import { logSummarySurfaceEvent } from './summary-surfaces/index.js';
 
+export const SCHEDULER_NOTIFICATION_TYPES = Object.freeze({
+    DAILY_BRIEFING: 'daily_briefing',
+    WEEKLY_DIGEST: 'weekly_digest',
+    PENDING_SUPPRESSION: 'pending_suppression',
+    AUTO_APPLY: 'auto_apply',
+    TOKEN_EXPIRED: 'token_expired',
+    QUOTA_EXHAUSTED: 'quota_exhausted',
+});
+
+const FOCUS_SUPPRESSED_NOTIFICATION_TYPES = new Set([
+    SCHEDULER_NOTIFICATION_TYPES.DAILY_BRIEFING,
+    SCHEDULER_NOTIFICATION_TYPES.WEEKLY_DIGEST,
+    SCHEDULER_NOTIFICATION_TYPES.PENDING_SUPPRESSION,
+    SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY,
+]);
+
+export function shouldSuppressScheduledNotification(workStyleMode, notificationType) {
+    return workStyleMode === store.MODE_FOCUS && FOCUS_SUPPRESSED_NOTIFICATION_TYPES.has(notificationType);
+}
+
 export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter }) {
     if (!ticktick.isAuthenticated()) return false;
     const chatId = store.getChatId();
     if (!chatId) return false;
 
+    const workStyleMode = await store.getWorkStyleMode(chatId);
+    if (shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.DAILY_BRIEFING)) {
+        console.log('Skipping daily briefing - focus mode suppresses scheduled briefings.');
+        return false;
+    }
+
     console.log('Sending daily briefing...');
-    const urgentMode = await store.getUrgentMode(chatId);
     const context = {
         kind: 'briefing',
         entryPoint: 'scheduler',
         userId: chatId,
-        urgentMode,
+        workStyleMode,
+        urgentMode: workStyleMode === store.MODE_URGENT,
         generatedAtIso: new Date().toISOString(),
     };
     let briefing = null;
@@ -56,13 +82,19 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
     const chatId = store.getChatId();
     if (!chatId) return false;
 
+    const workStyleMode = await store.getWorkStyleMode(chatId);
+    if (shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.WEEKLY_DIGEST)) {
+        console.log('Skipping weekly digest - focus mode suppresses scheduled briefings.');
+        return false;
+    }
+
     console.log('Sending weekly digest...');
-    const urgentMode = await store.getUrgentMode(chatId);
     const context = {
         kind: 'weekly',
         entryPoint: 'scheduler',
         userId: chatId,
-        urgentMode,
+        workStyleMode,
+        urgentMode: workStyleMode === store.MODE_URGENT,
         generatedAtIso: new Date().toISOString(),
     };
     let digest = null;
@@ -152,6 +184,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
         tokenExpiredNotified = false;
         const chatId = store.getChatId();
         if (!chatId) return;
+        const workStyleMode = await store.getWorkStyleMode(chatId);
 
         console.log(`🔄 [${userTimeString()}] Polling for new tasks...`);
 
@@ -160,7 +193,9 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
             console.log(`⏸️  Skipping poll - ${pendingCount} tasks already pending review.`);
             if (!pendingSuppressionSent) {
                 try {
-                    await sendWithMarkdown(bot.api, chatId, `⏳ You have ${pendingCount} pending task(s). Run /pending to review; background scanning paused to save your API quota.`);
+                    if (!shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.PENDING_SUPPRESSION)) {
+                        await sendWithMarkdown(bot.api, chatId, `⏳ You have ${pendingCount} pending task(s). Run /pending to review; background scanning paused to save your API quota.`);
+                    }
                     pendingSuppressionSent = true;
                 } catch (err) {
                     console.error('Failed to send pending suppression notice:', err.message);
@@ -244,7 +279,9 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
 
             if (autoApplied.length > 0) {
                 const notification = buildAutoApplyNotification(autoApplied);
-                if (notification) await sendWithMarkdown(bot.api, chatId, notification);
+                if (notification && !shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY)) {
+                    await sendWithMarkdown(bot.api, chatId, notification);
+                }
             }
 
             if (quotaHit && !quotaNotificationSent) {

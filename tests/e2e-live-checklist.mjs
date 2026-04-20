@@ -474,7 +474,7 @@ async function main() {
     });
 
     const beforeUrgentBriefing = apiCalls.length;
-    await store.setUrgentMode(CHAT_ID, true);
+    await store.setWorkStyleMode(CHAT_ID, store.MODE_URGENT);
     await bot.handleUpdate(mk.message('/briefing'));
     await sleep(200);
     const urgentBriefing = apiCalls.slice(beforeUrgentBriefing).filter((c) => c.method === 'sendMessage').at(-1);
@@ -486,7 +486,7 @@ async function main() {
       status: 'pass',
       detail: 'Urgent mode adds both the prompt augmentation and the manual briefing reminder.',
     });
-    await store.setUrgentMode(CHAT_ID, false);
+    await store.setWorkStyleMode(CHAT_ID, store.MODE_STANDARD);
 
     // 2) Freeform update: move Netflix to today
     await bot.handleUpdate(mk.message(`Move the ${PREFIX} Netflix System Design task to today`));

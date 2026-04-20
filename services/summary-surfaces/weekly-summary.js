@@ -4,6 +4,7 @@ import {
     SUMMARY_NOTICE_SEVERITIES,
     WEEKLY_WATCHOUT_EVIDENCE_SOURCES,
 } from '../schemas.js';
+import { buildEngagementPatternNotice, deriveInterventionProfile } from './intervention-profile.js';
 
 const DISALLOWED_WATCHOUT_LABELS = new Set(['avoidance', 'callout']);
 
@@ -207,12 +208,16 @@ function buildWatchouts({ activeTasks = [], processedHistory = [], historyAvaila
 
 function buildNotices({
     activeTasks = [],
+    processedHistory = [],
     historyAvailable = true,
     historyIsSparse = false,
     context = {},
     rankingResult = null,
 } = {}) {
     const notices = [];
+    const interventionProfile = deriveInterventionProfile(processedHistory, {
+        generatedAtIso: context.generatedAtIso,
+    });
 
     if (activeTasks.length < 2) {
         notices.push({
@@ -250,6 +255,13 @@ function buildNotices({
             severity: 'info',
             evidence_source: 'state',
         });
+    }
+
+    const engagementNotice = buildEngagementPatternNotice(interventionProfile, {
+        workStyleMode: context.workStyleMode,
+    });
+    if (engagementNotice) {
+        notices.push(engagementNotice);
     }
 
     return notices;
@@ -303,6 +315,7 @@ export function composeWeeklySummarySections({
         normalizedModel.notices,
         buildNotices({
             activeTasks: normalizedTasks,
+            processedHistory: normalizedHistory,
             historyAvailable,
             historyIsSparse,
             context,

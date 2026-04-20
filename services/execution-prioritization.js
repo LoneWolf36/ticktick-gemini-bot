@@ -261,8 +261,27 @@ function urgentModeWeight(candidate, urgency, context) {
     return boost;
 }
 
-function buildRationaleText(rationaleCode, candidate, themeMatches) {
+function inferInferenceConfidence({ rationaleCode, urgency, degraded, themeMatches, exceptionApplied }) {
+    if (exceptionApplied === true) {
+        return 'strong';
+    }
+
+    if (rationaleCode === 'goal_alignment' && degraded !== true && themeMatches.length > 0) {
+        return 'strong';
+    }
+
+    if (rationaleCode === 'urgency' && urgency === 'high') {
+        return 'strong';
+    }
+
+    return 'weak';
+}
+
+function buildRationaleText(rationaleCode, candidate, themeMatches, inferenceConfidence = 'strong') {
     if (rationaleCode === 'goal_alignment') {
+        if (inferenceConfidence === 'weak') {
+            return 'Likely aligned with current goals, but confidence is limited.';
+        }
         const hasCareer = themeMatches.some((theme) => theme.kind === 'career');
         if (hasCareer) {
             return 'Strong career-signaling alignment with current user-owned goals.';
@@ -279,6 +298,9 @@ function buildRationaleText(rationaleCode, candidate, themeMatches) {
     }
 
     if (rationaleCode === 'urgency') {
+        if (inferenceConfidence === 'weak') {
+            return 'Possibly time-sensitive work; verify the deadline before treating it as urgent.';
+        }
         if (isConsequentialAdmin(candidate)) {
             return 'Consequential admin with real urgency.';
         }
@@ -286,10 +308,13 @@ function buildRationaleText(rationaleCode, candidate, themeMatches) {
     }
 
     if (isConsequentialAdmin(candidate)) {
+        if (inferenceConfidence === 'weak') {
+            return 'Potentially consequential admin surfaced under degraded goal context.';
+        }
         return 'Consequential admin surfaced under degraded goal context.';
     }
 
-    return 'Top remaining candidate under degraded goal context.';
+    return 'Possible next candidate under degraded goal context.';
 }
 
 function assessCandidate(candidate, context) {
@@ -337,16 +362,22 @@ function assessCandidate(candidate, context) {
         }
 
         score += urgentModeWeight(candidate, urgency, context);
-        if (context.urgentMode === true && rationaleCode === 'fallback' && urgency !== 'low') {
-            rationaleCode = 'urgency';
-        }
     }
+
+    const inferenceConfidence = inferInferenceConfidence({
+        rationaleCode,
+        urgency,
+        degraded,
+        themeMatches,
+        exceptionApplied,
+    });
 
     return {
         candidate,
         score,
         rationaleCode,
-        rationaleText: buildRationaleText(rationaleCode, candidate, themeMatches),
+        rationaleText: buildRationaleText(rationaleCode, candidate, themeMatches, inferenceConfidence),
+        inferenceConfidence,
         themeMatches,
         urgency,
         exceptionApplied,
@@ -394,6 +425,7 @@ export function buildRankingContext(options = {}) {
         nowIso: options.nowIso ?? null,
         workStyleMode: options.workStyleMode || 'unknown',
         urgentMode: options.urgentMode === true,
+        behavioralInferenceThreshold: options.behavioralInferenceThreshold || 'strong',
         stateSource: options.stateSource || 'none',
     };
 }
@@ -495,7 +527,8 @@ export function createRankingDecision(decision = {}) {
         rank: decision.rank || 1,
         scoreBand: decision.scoreBand || 'top',
         rationaleCode: decision.rationaleCode || 'fallback',
-        rationaleText: decision.rationaleText || 'Top remaining candidate under degraded goal context.',
+        rationaleText: decision.rationaleText || 'Possible next candidate under degraded goal context.',
+        inferenceConfidence: decision.inferenceConfidence || 'strong',
         exceptionApplied: decision.exceptionApplied === true,
         exceptionReason: decision.exceptionReason || 'none',
         fallbackUsed: decision.fallbackUsed === true,
@@ -558,6 +591,7 @@ export function rankPriorityCandidates(input, maybeContext) {
         scoreBand: clampScoreBand(index + 1),
         rationaleCode: assessment.rationaleCode,
         rationaleText: assessment.rationaleText,
+        inferenceConfidence: assessment.inferenceConfidence,
         exceptionApplied: assessment.exceptionApplied,
         exceptionReason: assessment.exceptionReason,
         fallbackUsed: assessment.fallbackUsed,

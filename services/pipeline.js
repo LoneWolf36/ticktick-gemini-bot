@@ -125,6 +125,7 @@ function buildFailureResult(context, {
         requestId: context?.requestId || null,
         entryPoint: context?.entryPoint || null,
         mode: context?.mode || null,
+        workStyleMode: context?.workStyleMode || null,
         checklistContext: context?.checklistContext || null,
         isDevMode,
         intents,
@@ -149,12 +150,13 @@ function buildNonTaskResult(context, reason, details = null) {
         requestId: context?.requestId || null,
         entryPoint: context?.entryPoint || null,
         mode: context?.mode || null,
+        workStyleMode: context?.workStyleMode || null,
         checklistContext: context?.checklistContext || null,
     };
 }
 
 function buildClarificationResult(context, resolverResult) {
-    const clarificationPrompt = buildClarificationPrompt(resolverResult);
+    const clarificationPrompt = buildClarificationPrompt(resolverResult, { workStyleMode: context?.workStyleMode });
     return {
         type: 'clarification',
         results: [],
@@ -167,6 +169,7 @@ function buildClarificationResult(context, resolverResult) {
         requestId: context?.requestId || null,
         entryPoint: context?.entryPoint || null,
         mode: context?.mode || null,
+        workStyleMode: context?.workStyleMode || null,
         checklistContext: context?.checklistContext || null,
     };
 }
@@ -183,8 +186,13 @@ function buildNotFoundResult(context, reason) {
         requestId: context?.requestId || null,
         entryPoint: context?.entryPoint || null,
         mode: context?.mode || null,
+        workStyleMode: context?.workStyleMode || null,
         checklistContext: context?.checklistContext || null,
     };
+}
+
+function isUrgentWorkStyle(context) {
+    return context?.workStyleMode === 'urgent';
 }
 
 function updateChecklistContext(context, metadata = {}) {
@@ -561,7 +569,9 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 } else {
                     // No preference provided — ask for clarification
                     console.warn(`[Pipeline:${context.requestId}] Ambiguous checklist/multi-task request — asking for clarification.`);
-                    const clarificationQuestion = 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?';
+                    const clarificationQuestion = isUrgentWorkStyle(context)
+                        ? 'Checklist or separate tasks?'
+                        : 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?';
                     updateChecklistContext(context, { clarificationQuestion });
                     const clarificationResult = {
                         type: 'clarification',
@@ -816,7 +826,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 ...executionResult.errors,
             ];
 
-            const confirmationText = _buildConfirmation(executionResult.results, executionResult.errors);
+            const confirmationText = _buildConfirmation(executionResult.results, executionResult.errors, context);
 
             await telemetry.emit(context, {
                 eventType: 'pipeline.request.completed',
@@ -839,6 +849,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 requestId: context.requestId,
                 entryPoint: context.entryPoint,
                 mode: context.mode,
+                workStyleMode: context.workStyleMode || null,
                 checklistContext: context.checklistContext || null,
                 warnings: invalidActions.map(a => a.validationErrors).flat(),
                 checklistMetadata: validActions
@@ -1125,9 +1136,10 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
         };
     }
 
-    function _buildConfirmation(results, errors) {
+    function _buildConfirmation(results, errors, context = null) {
         const successful = results.filter(r => r.status === 'succeeded');
         const failed = results.filter(r => r.status === 'failed' || r.status === 'rollback_failed');
+        const urgentMode = isUrgentWorkStyle(context);
 
         if (successful.length === 0 && failed.length > 0) {
             return `⚠️ All ${failed.length} action(s) failed.`;
@@ -1141,19 +1153,23 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
         const deleted = successful.filter(r => r.action.type === 'delete');
 
         if (successful.length === 1 && created.length === 1) {
-            text = `✅ Created: ${created[0].action.title}`;
+            text = urgentMode
+                ? `✅ ${created[0].action.title}`
+                : `✅ Created: ${created[0].action.title}`;
         } else {
             const parts = [];
-            if (created.length > 0) parts.push(`Created ${created.length} task(s)`);
-            if (updated.length > 0) parts.push(`Updated ${updated.length} task(s)`);
-            if (completed.length > 0) parts.push(`Completed ${completed.length} task(s)`);
-            if (deleted.length > 0) parts.push(`Deleted ${deleted.length} task(s)`);
+            if (created.length > 0) parts.push(urgentMode ? `Created ${created.length}` : `Created ${created.length} task(s)`);
+            if (updated.length > 0) parts.push(urgentMode ? `Updated ${updated.length}` : `Updated ${updated.length} task(s)`);
+            if (completed.length > 0) parts.push(urgentMode ? `Completed ${completed.length}` : `Completed ${completed.length} task(s)`);
+            if (deleted.length > 0) parts.push(urgentMode ? `Deleted ${deleted.length}` : `Deleted ${deleted.length} task(s)`);
 
-            text = `✅ ${parts.join(', ')}`;
+            text = urgentMode ? `✅ Done. ${parts.join(', ')}` : `✅ ${parts.join(', ')}`;
         }
 
         if (errors && errors.length > 0) {
-            text += `\n⚠️ ${failed.length} action(s) skipped or failed.`;
+            text += urgentMode
+                ? `\n⚠️ ${failed.length} skipped/failed.`
+                : `\n⚠️ ${failed.length} action(s) skipped or failed.`;
         }
 
         return text;

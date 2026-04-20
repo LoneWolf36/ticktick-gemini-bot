@@ -55,16 +55,26 @@ function formatNotices(notices = []) {
     return renderList(lines);
 }
 
-function formatBriefing(summary = {}) {
+function formatBriefing(summary = {}, context = {}) {
+    const urgentMode = context.workStyleMode === 'urgent' || context.urgentMode === true;
     const priorities = (Array.isArray(summary.priorities) ? summary.priorities : [])
         .map((item) => {
             const title = normalizeInline(item?.title) || 'Untitled task';
             const rationale = normalizeInline(item?.rationale_text);
+            if (urgentMode) return title;
             return rationale ? `${title} (${rationale})` : title;
         });
 
     const focus = normalizeInline(summary.focus) || EMPTY_LABEL;
     const startNow = normalizeInline(summary.start_now) || EMPTY_LABEL;
+
+    if (urgentMode) {
+        return [
+            `**Focus**: ${focus}`,
+            `**Priorities**:\n${renderNumberedList(priorities.slice(0, 2))}`,
+            `**Start now**: ${startNow}`,
+        ].join('\n\n').trim();
+    }
 
     return [
         `**Focus**: ${focus}`,
@@ -75,7 +85,8 @@ function formatBriefing(summary = {}) {
     ].join('\n\n').trim();
 }
 
-function formatWeekly(summary = {}) {
+function formatWeekly(summary = {}, context = {}) {
+    const urgentMode = context.workStyleMode === 'urgent' || context.urgentMode === true;
     const carryForward = (Array.isArray(summary.carry_forward) ? summary.carry_forward : [])
         .map((item) => {
             const title = normalizeInline(item?.title);
@@ -94,6 +105,14 @@ function formatWeekly(summary = {}) {
         })
         .filter(Boolean);
 
+    if (urgentMode) {
+        return [
+            `**Progress**:\n${renderList((Array.isArray(summary.progress) ? summary.progress : []).slice(0, 2))}`,
+            `**Next focus**:\n${renderNumberedList((Array.isArray(summary.next_focus) ? summary.next_focus : []).slice(0, 2))}`,
+            `**Watchouts**:\n${renderList(watchouts)}`,
+        ].join('\n\n').trim();
+    }
+
     return [
         `**Progress**:\n${renderList(summary.progress)}`,
         `**Carry forward**:\n${renderList(carryForward)}`,
@@ -103,9 +122,24 @@ function formatWeekly(summary = {}) {
     ].join('\n\n').trim();
 }
 
-function formatDailyClose(summary = {}) {
+function formatDailyClose(summary = {}, context = {}) {
     const reflection = normalizeInline(summary.reflection) || EMPTY_LABEL;
     const resetCue = normalizeInline(summary.reset_cue) || EMPTY_LABEL;
+
+    if (context.workStyleMode === 'urgent') {
+        return [
+            `**Reflection**: ${reflection}`,
+            `**Reset cue**: ${resetCue}`,
+        ].join('\n\n').trim();
+    }
+
+    if (context.workStyleMode === 'focus') {
+        return [
+            `**Stats**:\n${renderList((Array.isArray(summary.stats) ? summary.stats : []).slice(0, 2))}`,
+            `**Reflection**: ${reflection}`,
+            `**Reset cue**: ${resetCue}`,
+        ].join('\n\n').trim();
+    }
 
     return [
         `**Stats**:\n${renderList(summary.stats)}`,
@@ -155,15 +189,15 @@ function buildRenderResult({ kind, body, context = {} }) {
 
 export function formatSummary({ kind, summary = {}, context = {} } = {}) {
     if (kind === 'weekly') {
-        const body = formatWeekly(summary);
+        const body = formatWeekly(summary, context);
         return buildRenderResult({ kind: 'weekly', body, context });
     }
 
     if (kind === 'daily_close') {
-        const body = formatDailyClose(summary);
+        const body = formatDailyClose(summary, context);
         return buildRenderResult({ kind: 'daily_close', body, context });
     }
 
-    const body = formatBriefing(summary);
+    const body = formatBriefing(summary, context);
     return buildRenderResult({ kind: 'briefing', body, context });
 }

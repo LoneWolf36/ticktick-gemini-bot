@@ -1,7 +1,8 @@
 import { describe, it, beforeEach, mock } from 'node:test';
 import assert from 'node:assert/strict';
 import { AxGen } from '@ax-llm/ax';
-import { createAxIntent, detectUrgentModeIntent, QuotaExhaustedError, validateIntentAction, validateChecklistItems } from '../services/ax-intent.js';
+import { createAxIntent, detectWorkStyleModeIntent, QuotaExhaustedError, validateIntentAction, validateChecklistItems } from '../services/ax-intent.js';
+import { MODE_FOCUS, MODE_STANDARD, MODE_URGENT } from '../services/store.js';
 import { MAX_CHECKLIST_ITEMS } from '../services/schemas.js';
 
 function createCompleteR1Action(overrides = {}) {
@@ -104,82 +105,103 @@ describe('AX Intent Extraction', () => {
         });
     });
 
-    describe('detectUrgentModeIntent', () => {
+    describe('detectWorkStyleModeIntent', () => {
         it('detects urgent mode ON - turn on', () => {
-            assert.deepEqual(detectUrgentModeIntent('turn on urgent mode'), {
-                type: 'set_urgent_mode',
-                value: true,
+            assert.deepEqual(detectWorkStyleModeIntent('turn on urgent mode'), {
+                type: 'set_work_style_mode',
+                mode: MODE_URGENT,
             });
         });
 
         it('detects urgent mode ON - enable', () => {
-            assert.deepEqual(detectUrgentModeIntent('enable urgent mode'), {
-                type: 'set_urgent_mode',
-                value: true,
+            assert.deepEqual(detectWorkStyleModeIntent('enable urgent mode'), {
+                type: 'set_work_style_mode',
+                mode: MODE_URGENT,
             });
         });
 
         it('detects urgent mode ON - activate', () => {
-            assert.deepEqual(detectUrgentModeIntent('activate urgent mode'), {
-                type: 'set_urgent_mode',
-                value: true,
+            assert.deepEqual(detectWorkStyleModeIntent('activate urgent mode'), {
+                type: 'set_work_style_mode',
+                mode: MODE_URGENT,
             });
         });
 
         it('detects urgent mode ON - go urgent', () => {
-            assert.deepEqual(detectUrgentModeIntent('go urgent'), {
-                type: 'set_urgent_mode',
-                value: true,
+            assert.deepEqual(detectWorkStyleModeIntent('go urgent'), {
+                type: 'set_work_style_mode',
+                mode: MODE_URGENT,
             });
         });
 
         it('detects urgent mode OFF - turn off', () => {
-            assert.deepEqual(detectUrgentModeIntent('turn off urgent mode'), {
-                type: 'set_urgent_mode',
-                value: false,
+            assert.deepEqual(detectWorkStyleModeIntent('turn off urgent mode'), {
+                type: 'set_work_style_mode',
+                mode: MODE_STANDARD,
             });
         });
 
         it('detects urgent mode OFF - disable', () => {
-            assert.deepEqual(detectUrgentModeIntent('disable urgent mode'), {
-                type: 'set_urgent_mode',
-                value: false,
+            assert.deepEqual(detectWorkStyleModeIntent('disable urgent mode'), {
+                type: 'set_work_style_mode',
+                mode: MODE_STANDARD,
             });
         });
 
         it('detects urgent mode OFF - switch to humane mode', () => {
-            assert.deepEqual(detectUrgentModeIntent('switch back to humane mode'), {
-                type: 'set_urgent_mode',
-                value: false,
+            assert.deepEqual(detectWorkStyleModeIntent('switch back to humane mode'), {
+                type: 'set_work_style_mode',
+                mode: MODE_STANDARD,
+            });
+        });
+
+        it('detects focus mode phrases', () => {
+            assert.deepEqual(detectWorkStyleModeIntent('focus time'), {
+                type: 'set_work_style_mode',
+                mode: MODE_FOCUS,
+            });
+        });
+
+        it('detects mode query intent', () => {
+            assert.deepEqual(detectWorkStyleModeIntent('what mode am I in'), {
+                type: 'query_work_style_mode',
+            });
+        });
+
+        it('returns clarification intent for mixed urgent/planning signals', () => {
+            assert.deepEqual(detectWorkStyleModeIntent("I'm in a rush but let's plan carefully"), {
+                type: 'clarify_work_style_mode',
+                mode: MODE_STANDARD,
+                reason: 'mixed_signal',
             });
         });
 
         it('returns null for non-urgent messages', () => {
-            assert.equal(detectUrgentModeIntent('buy groceries tonight'), null);
+            assert.equal(detectWorkStyleModeIntent('buy groceries tonight'), null);
         });
 
         it('returns null for empty string', () => {
-            assert.equal(detectUrgentModeIntent(''), null);
+            assert.equal(detectWorkStyleModeIntent(''), null);
         });
 
         it('returns null for whitespace-only string', () => {
-            assert.equal(detectUrgentModeIntent('   '), null);
+            assert.equal(detectWorkStyleModeIntent('   '), null);
         });
 
         it('returns null for non-string input', () => {
-            assert.equal(detectUrgentModeIntent(null), null);
-            assert.equal(detectUrgentModeIntent(undefined), null);
-            assert.equal(detectUrgentModeIntent(123), null);
+            assert.equal(detectWorkStyleModeIntent(null), null);
+            assert.equal(detectWorkStyleModeIntent(undefined), null);
+            assert.equal(detectWorkStyleModeIntent(123), null);
         });
 
         it('handles case-insensitive matching', () => {
-            assert.deepEqual(detectUrgentModeIntent('TURN ON URGENT MODE'), {
-                type: 'set_urgent_mode',
-                value: true,
+            assert.deepEqual(detectWorkStyleModeIntent('TURN ON URGENT MODE'), {
+                type: 'set_work_style_mode',
+                mode: MODE_URGENT,
             });
-            assert.deepEqual(detectUrgentModeIntent('Turn Off Urgent Mode'), {
-                type: 'set_urgent_mode',
-                value: false,
+            assert.deepEqual(detectWorkStyleModeIntent('Turn Off Urgent Mode'), {
+                type: 'set_work_style_mode',
+                mode: MODE_STANDARD,
             });
         });
     });

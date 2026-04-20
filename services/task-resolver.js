@@ -265,11 +265,13 @@ export function resolveTarget({ targetQuery, activeTasks }) {
  * @param {object} result - A resolver result with status 'clarification'
  * @returns {string}
  */
-export function buildClarificationPrompt(result) {
+export function buildClarificationPrompt(result, { workStyleMode = 'standard' } = {}) {
     if (result.status !== 'clarification' || !result.candidates.length) {
-        return 'Which task did you mean?';
+        return workStyleMode === 'urgent' ? 'Which task?' : 'Which task did you mean?';
     }
 
     const options = result.candidates.map((c, i) => `${i + 1}. ${c.title}`).join('\n');
-    return `Which task did you mean?\n${options}`;
+    return workStyleMode === 'urgent'
+        ? `Which task?\n${options}`
+        : `Which task did you mean?\n${options}`;
 }

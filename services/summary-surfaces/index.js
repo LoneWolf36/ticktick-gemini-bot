@@ -18,6 +18,7 @@ const WEEKLY_KIND = 'weekly';
 const ENTRY_POINT_VALUES = new Set(['manual_command', 'scheduler']);
 const TONE_POLICY_VALUES = new Set(['preserve_existing']);
 const DISALLOWED_WATCHOUT_LABELS = new Set(['avoidance', 'callout']);
+const WORK_STYLE_MODE_VALUES = new Set(['standard', 'focus', 'urgent']);
 
 function toArray(value) {
     return Array.isArray(value) ? value : [];
@@ -34,6 +35,7 @@ function toString(value, fallback = '') {
 function normalizeSummaryRequestContext(kind, rawContext = {}) {
     const entryPoint = rawContext.entryPoint || rawContext.entry_point;
     const tonePolicy = rawContext.tonePolicy || rawContext.tone_policy;
+    const workStyleMode = rawContext.workStyleMode || rawContext.work_style_mode;
 
     return {
         kind: kind === WEEKLY_KIND
@@ -45,6 +47,7 @@ function normalizeSummaryRequestContext(kind, rawContext = {}) {
         userId: rawContext.userId ?? rawContext.user_id ?? null,
         generatedAtIso: rawContext.generatedAtIso || rawContext.generated_at_iso || new Date().toISOString(),
         timezone: rawContext.timezone || null,
+        workStyleMode: WORK_STYLE_MODE_VALUES.has(workStyleMode) ? workStyleMode : 'standard',
         urgentMode: rawContext.urgentMode === true || rawContext.urgent_mode === true,
         tonePolicy: TONE_POLICY_VALUES.has(tonePolicy) ? tonePolicy : 'preserve_existing',
     };

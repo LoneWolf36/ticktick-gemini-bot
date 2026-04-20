@@ -3,9 +3,9 @@
 // Backend: Redis if REDIS_URL is set (for cloud), file-based fallback (for local dev).
 // Redis schema:
 //   - ticktick-bot:state => JSON blob for shared bot/task state
-//   - user:{userId}:urgent_mode => JSON boolean ("true"/"false"), defaults to false when missing
+//   - user:{userId}:work_style_mode => JSON object { mode, expiresAt? }, defaults to standard when missing
 // File fallback schema:
-//   - data/store.json => JSON blob for shared bot/task state plus urgentModes[userId] booleans
+//   - data/store.json => JSON blob for shared bot/task state plus workStyleModes[userId]
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -25,9 +25,37 @@ export const MODE_URGENT = 'urgent';
 export const VALID_WORK_STYLE_MODES = [MODE_STANDARD, MODE_FOCUS, MODE_URGENT];
 export const DEFAULT_URGENT_EXPIRY_MS = 2 * 60 * 60 * 1000; // 2 hours
 
+function logWorkStyleTelemetry({ userId, previousMode, nextMode, expiresAt = null, reason = 'user_request' }) {
+    let eventType = 'mode_updated';
+
+    if (reason === 'auto_expiry') {
+        eventType = 'mode_auto_expired';
+    } else if (previousMode !== nextMode) {
+        if (previousMode === MODE_STANDARD && nextMode !== MODE_STANDARD) {
+            eventType = 'mode_activated';
+        } else if (nextMode === MODE_STANDARD && previousMode !== MODE_STANDARD) {
+            eventType = 'mode_deactivated';
+        } else {
+            eventType = 'mode_switched';
+        }
+    } else if (nextMode === MODE_URGENT && expiresAt) {
+        eventType = 'urgent_timer_reset';
+    }
+
+    console.log(`[WorkStyleTelemetry] ${JSON.stringify({
+        telemetryScope: 'operational',
+        behavioralSignal: false,
+        eventType,
+        userId,
+        previousMode,
+        nextMode,
+        expiresAt,
+        reason,
+    })}`);
+}
+
 const DEFAULT_STATE = {
     chatId: null,
-    urgentModes: {},          // Legacy boolean map — kept for backward compat
     workStyleModes: {},       // R1: { [userId]: { mode, expiresAt } }
     pendingTasks: {},    // Analyzed + sent to Telegram, awaiting user review
     pendingReorg: null,  // Proposed global reorg plan awaiting apply/refine/cancel
@@ -83,18 +111,18 @@ async function loadFromRedis() {
         const raw = await redis.get(REDIS_KEY);
         if (raw) {
             const parsed = JSON.parse(raw);
+            const { urgentModes: _legacyUrgentModes, ...rest } = parsed;
             return {
                 ...DEFAULT_STATE,
-                ...parsed,
-                stats: { ...DEFAULT_STATE.stats, ...parsed.stats },
-                urgentModes: parsed.urgentModes || {},
-                workStyleModes: parsed.workStyleModes || {},
-                pendingTasks: parsed.pendingTasks || {},
-                pendingReorg: parsed.pendingReorg || null,
-                pendingMutationClarification: parsed.pendingMutationClarification || null,
-                pendingChecklistClarification: parsed.pendingChecklistClarification || null,
-                processedTasks: parsed.processedTasks || {},
-                undoLog: parsed.undoLog || [],
+                ...rest,
+                stats: { ...DEFAULT_STATE.stats, ...rest.stats },
+                workStyleModes: rest.workStyleModes || {},
+                pendingTasks: rest.pendingTasks || {},
+                pendingReorg: rest.pendingReorg || null,
+                pendingMutationClarification: rest.pendingMutationClarification || null,
+                pendingChecklistClarification: rest.pendingChecklistClarification || null,
+                processedTasks: rest.processedTasks || {},
+                undoLog: rest.undoLog || [],
             };
         }
     } catch (err) {
@@ -153,18 +181,18 @@ function loadFromFile() {
     }
 
     if (parsed) {
+        const { urgentModes: _legacyUrgentModes, ...rest } = parsed;
         return {
             ...DEFAULT_STATE,
-            ...parsed,
-            stats: { ...DEFAULT_STATE.stats, ...parsed.stats },
-            urgentModes: parsed.urgentModes || {},
-            workStyleModes: parsed.workStyleModes || {},
-            pendingTasks: parsed.pendingTasks || {},
-            pendingReorg: parsed.pendingReorg || null,
-            pendingMutationClarification: parsed.pendingMutationClarification || null,
-            pendingChecklistClarification: parsed.pendingChecklistClarification || null,
-            processedTasks: parsed.processedTasks || {},
-            undoLog: parsed.undoLog || [],
+            ...rest,
+            stats: { ...DEFAULT_STATE.stats, ...rest.stats },
+            workStyleModes: rest.workStyleModes || {},
+            pendingTasks: rest.pendingTasks || {},
+            pendingReorg: rest.pendingReorg || null,
+            pendingMutationClarification: rest.pendingMutationClarification || null,
+            pendingChecklistClarification: rest.pendingChecklistClarification || null,
+            processedTasks: rest.processedTasks || {},
+            undoLog: rest.undoLog || [],
         };
     }
 
@@ -241,46 +269,10 @@ export async function setChatId(id) {
     await save();
 }
 
-function getUrgentModeRedisKey(userId) {
-    return `user:${userId}:urgent_mode`;
-}
-
-function normalizeStoredBoolean(value) {
-    if (typeof value === 'boolean') return value;
-    if (value === 'true' || value === '1') return true;
-    if (value === 'false' || value === '0' || value == null) return false;
-    return Boolean(value);
-}
-
 function assertUserId(userId) {
     if (userId === undefined || userId === null || userId === '') {
         throw new Error('userId is required');
     }
-}
-
-/**
- * Legacy getter — delegates to getWorkStyleMode for consistency.
- * Kept for backward compatibility with existing callers.
- */
-export async function getUrgentMode(userId) {
-    assertUserId(userId);
-    const mode = await getWorkStyleMode(userId);
-    return mode === MODE_URGENT;
-}
-
-/**
- * Legacy setter — delegates to setWorkStyleMode for consistency.
- * Kept for backward compatibility with existing callers.
- */
-export async function setUrgentMode(userId, value) {
-    assertUserId(userId);
-    const normalizedValue = value === true;
-    if (normalizedValue) {
-        await setWorkStyleMode(userId, MODE_URGENT);
-    } else {
-        await setWorkStyleMode(userId, MODE_STANDARD);
-    }
-    return normalizedValue;
 }
 
 // ─── Work-Style Mode (R1: State Management Contract) ─────────
@@ -289,17 +281,22 @@ function getWorkStyleModeRedisKey(userId) {
     return `user:${userId}:work_style_mode`;
 }
 
-/**
- * Get the current work-style mode for a user.
- * Returns the active mode, automatically reverting to standard if expired.
- * Falls back to legacy urgentModes for backward compatibility.
- */
-export async function getWorkStyleMode(userId) {
+function normalizeWorkStyleEntry(entry) {
+    if (!entry || typeof entry !== 'object' || Array.isArray(entry)) {
+        return { mode: MODE_STANDARD, expiresAt: null };
+    }
+
+    return {
+        mode: VALID_WORK_STYLE_MODES.includes(entry.mode) ? entry.mode : MODE_STANDARD,
+        expiresAt: entry.expiresAt || null,
+    };
+}
+
+export async function getWorkStyleState(userId) {
     assertUserId(userId);
     await load();
 
     let entry = null;
-
     if (useRedis) {
         try {
             const raw = await redis.get(getWorkStyleModeRedisKey(userId));
@@ -313,23 +310,21 @@ export async function getWorkStyleMode(userId) {
         entry = state.workStyleModes[userId];
     }
 
-    // Backward compat: if no work-style entry but legacy urgent mode is on, derive it
-    if (!entry) {
-        const legacyUrgent = state.urgentModes?.[userId] === true;
-        if (legacyUrgent) {
-            return MODE_URGENT;
-        }
-        return MODE_STANDARD;
+    const normalized = normalizeWorkStyleEntry(entry);
+    if (normalized.expiresAt && new Date(normalized.expiresAt) <= new Date()) {
+        await setWorkStyleMode(userId, MODE_STANDARD, { reason: 'auto_expiry' });
+        return { mode: MODE_STANDARD, expiresAt: null };
     }
 
-    // Check expiry
-    if (entry.expiresAt && new Date(entry.expiresAt) <= new Date()) {
-        // Expired — revert to standard
-        await setWorkStyleMode(userId, MODE_STANDARD);
-        return MODE_STANDARD;
-    }
+    return normalized;
+}
 
-    return entry.mode || MODE_STANDARD;
+/**
+ * Get the current work-style mode for a user.
+ * Returns the active mode, automatically reverting to standard if expired.
+ */
+export async function getWorkStyleMode(userId) {
+    return (await getWorkStyleState(userId)).mode;
 }
 
 /**
@@ -340,6 +335,7 @@ export async function getWorkStyleMode(userId) {
  * @param {object} options
  * @param {number} [options.expiresAt] - Optional absolute expiry timestamp (ms since epoch)
  * @param {number} [options.expiryMs] - Optional relative expiry duration (ms from now)
+ * @param {string} [options.reason] - Optional operational telemetry reason for the transition
  */
 export async function setWorkStyleMode(userId, mode, options = {}) {
     assertUserId(userId);
@@ -351,6 +347,8 @@ export async function setWorkStyleMode(userId, mode, options = {}) {
     if (!state.workStyleModes || typeof state.workStyleModes !== 'object' || Array.isArray(state.workStyleModes)) {
         state.workStyleModes = {};
     }
+
+    const previousEntry = normalizeWorkStyleEntry(state.workStyleModes[userId]);
 
     const entry = { mode };
 
@@ -366,16 +364,16 @@ export async function setWorkStyleMode(userId, mode, options = {}) {
 
     state.workStyleModes[userId] = entry;
 
-    // Keep legacy urgentModes in sync for backward compat
-    if (!state.urgentModes || typeof state.urgentModes !== 'object' || Array.isArray(state.urgentModes)) {
-        state.urgentModes = {};
-    }
-    state.urgentModes[userId] = mode === MODE_URGENT;
-
     if (useRedis) {
         try {
             await redis.set(getWorkStyleModeRedisKey(userId), JSON.stringify(entry));
-            await redis.set(getUrgentModeRedisKey(userId), JSON.stringify(mode === MODE_URGENT));
+            logWorkStyleTelemetry({
+                userId,
+                previousMode: previousEntry.mode,
+                nextMode: entry.mode,
+                expiresAt: entry.expiresAt || null,
+                reason: options.reason || 'user_request',
+            });
             return entry;
         } catch (err) {
             console.error('⚠️  Redis work-style mode save error:', err.message);
@@ -384,6 +382,13 @@ export async function setWorkStyleMode(userId, mode, options = {}) {
     }
 
     await save();
+    logWorkStyleTelemetry({
+        userId,
+        previousMode: previousEntry.mode,
+        nextMode: entry.mode,
+        expiresAt: entry.expiresAt || null,
+        reason: options.reason || 'user_request',
+    });
     return entry;
 }
 

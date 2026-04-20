@@ -14,7 +14,7 @@ import {
 } from './utils.js';
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
-import { detectUrgentModeIntent } from '../services/ax-intent.js';
+import { detectWorkStyleModeIntent } from '../services/ax-intent.js';
 
 // Rate limiter removed 2026-04-19 (cavekit-validate Phase 3): YAGNI for 1-user MVP.
 // Heavy-command rate limiting listed as out-of-scope in cavekit-task-pipeline.md.
@@ -70,14 +70,25 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         return '⚠️ AI is temporarily unavailable (keys expired/invalid/quota-limited). Update GEMINI_API_KEYS or retry shortly.';
     };
 
-    const buildSummaryContext = ({ kind, userId, urgentMode }) => ({
+    const buildSummaryContext = ({ kind, userId, workStyleMode }) => ({
         kind,
         entryPoint: 'manual_command',
         userId,
-        urgentMode,
+        workStyleMode,
+        urgentMode: workStyleMode === store.MODE_URGENT,
         tonePolicy: 'preserve_existing',
         generatedAtIso: new Date().toISOString(),
     });
+
+    const resolveCurrentWorkStyleMode = async (ctx) => {
+        const userId = resolveWorkStyleModeUserId(ctx);
+        if (userId == null) return store.MODE_STANDARD;
+        try {
+            return await store.getWorkStyleMode(userId);
+        } catch {
+            return store.MODE_STANDARD;
+        }
+    };
 
     // ─── /start ───────────────────────────────────────────────
     bot.command('start', async (ctx) => {
@@ -96,7 +107,11 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             `/review — Walk through all unreviewed tasks\n` +
             `/undo — Revert last auto-applied change\n` +
             `/reset — Wipe all bot data and start fresh\n` +
-            `/status — Bot status and stats`,
+            `/status — Bot status and stats\n` +
+            `/urgent — Activate urgent mode\n` +
+            `/focus — Activate focus mode\n` +
+            `/normal — Return to standard mode\n` +
+            `/mode — Show current work-style mode`,
             { reply_markup: menuKeyboard() }
         );
     });
@@ -192,53 +207,81 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         await ctx.reply(lines.join('\n'));
     });
 
-    const resolveUrgentModeUserId = (ctx) => ctx.from?.id ?? ctx.chat?.id ?? null;
+    const resolveWorkStyleModeUserId = (ctx) => ctx.from?.id ?? ctx.chat?.id ?? null;
 
-    const applyUrgentModeState = async (ctx, requestedValue, { source = 'command' } = {}) => {
-        const userId = resolveUrgentModeUserId(ctx);
+    const formatModeLabel = (mode) => mode.toUpperCase();
+
+    const formatModeReply = (state, confirmation) => {
+        const lines = [confirmation, `Current mode: ${formatModeLabel(state.mode)}`];
+        if (state.expiresAt) {
+            const expiry = new Date(state.expiresAt).toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' });
+            lines.push(`Expires: ${expiry}`);
+        }
+        return lines.join('\n');
+    };
+
+    const replyWithMixedModeClarification = async (ctx) => {
+        await applyWorkStyleMode(ctx, store.MODE_STANDARD);
+        await ctx.reply('Heard mixed mode signals. Staying in STANDARD mode for now. If you want urgency, say /urgent. If you want deliberate planning, say /focus.');
+    };
+
+    const applyWorkStyleMode = async (ctx, mode, { expiryMs } = {}) => {
+        const userId = resolveWorkStyleModeUserId(ctx);
         if (userId == null) {
-            await ctx.reply('Could not resolve your Telegram user ID, so urgent mode was not changed.');
+            await ctx.reply('Could not resolve your Telegram user ID, so work style was not changed.');
             return false;
         }
 
         try {
-            const currentValue = await store.getUrgentMode(userId);
-            const nextValue = requestedValue === 'toggle' ? !currentValue : requestedValue === true;
-            await store.setUrgentMode(userId, nextValue);
-
-            const confirmation = nextValue
-                ? 'Urgent mode activated. I will use a sharper tone and prioritize immediate deadlines.'
-                : 'Urgent mode deactivated. Humane mode remains your baseline recommendation posture.';
-            const statusLine = nextValue ? 'Current state: URGENT MODE ON' : 'Current state: Humane baseline active';
-
-            await ctx.reply(source === 'natural-language' ? confirmation : `${confirmation}\n${statusLine}`);
+            const state = await store.setWorkStyleMode(userId, mode, { expiryMs });
+            const confirmationMap = {
+                [store.MODE_URGENT]: 'Urgent mode activated.',
+                [store.MODE_FOCUS]: 'Focus mode activated.',
+                [store.MODE_STANDARD]: 'Standard mode active.',
+            };
+            await ctx.reply(formatModeReply(state, confirmationMap[mode] || 'Work style updated.'));
             return true;
         } catch (err) {
-            await ctx.reply(`Could not update urgent mode: ${err.message}`);
+            await ctx.reply(`Could not update work style: ${err.message}`);
+            return false;
+        }
+    };
+
+    const replyWithCurrentMode = async (ctx) => {
+        const userId = resolveWorkStyleModeUserId(ctx);
+        if (userId == null) {
+            await ctx.reply('Could not resolve your Telegram user ID, so current mode is unavailable.');
+            return false;
+        }
+
+        try {
+            const state = await store.getWorkStyleState(userId);
+            await ctx.reply(formatModeReply(state, 'Mode status.'));
+            return true;
+        } catch (err) {
+            await ctx.reply(`Could not read current mode: ${err.message}`);
             return false;
         }
     };
 
     bot.command('urgent', async (ctx) => {
         if (!await guardAccess(ctx)) return;
+        await applyWorkStyleMode(ctx, store.MODE_URGENT, { expiryMs: store.DEFAULT_URGENT_EXPIRY_MS });
+    });
 
-        const rawArg = typeof ctx.match === 'string' ? ctx.match.trim().toLowerCase() : '';
-        if (!rawArg) {
-            await applyUrgentModeState(ctx, 'toggle');
-            return;
-        }
+    bot.command('focus', async (ctx) => {
+        if (!await guardAccess(ctx)) return;
+        await applyWorkStyleMode(ctx, store.MODE_FOCUS);
+    });
 
-        if (['on', 'enable', 'enabled', 'true'].includes(rawArg)) {
-            await applyUrgentModeState(ctx, true);
-            return;
-        }
+    bot.command('normal', async (ctx) => {
+        if (!await guardAccess(ctx)) return;
+        await applyWorkStyleMode(ctx, store.MODE_STANDARD);
+    });
 
-        if (['off', 'disable', 'disabled', 'false'].includes(rawArg)) {
-            await applyUrgentModeState(ctx, false);
-            return;
-        }
-
-        await ctx.reply('Usage: /urgent on | /urgent off\nTip: /urgent with no argument toggles the current state.');
+    bot.command('mode', async (ctx) => {
+        if (!await guardAccess(ctx)) return;
+        await replyWithCurrentMode(ctx);
     });
 
     bot.callbackQuery(/^menu:(.+)$/, async (ctx) => {
@@ -328,6 +371,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             await ctx.reply('🔍 Scanning for new tasks...');
             const allTasks = await adapter.listActiveTasks(true);
             const availableProjects = await adapter.listProjects();
+            const workStyleMode = await resolveCurrentWorkStyleMode(ctx);
             const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
@@ -350,7 +394,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         existingTask: task,
                         entryPoint: 'telegram:scan',
                         mode: 'scan',
-                        availableProjects
+                        availableProjects,
+                        workStyleMode,
                     });
 
                     if (result.type === 'error') {
@@ -485,14 +530,15 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
         await ctx.reply('🌅 Generating your briefing...');
         const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
-        const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
-        const context = buildSummaryContext({ kind: 'briefing', userId, urgentMode });
+        const workStyleMode = userId == null ? store.MODE_STANDARD : await store.getWorkStyleMode(userId);
+        const context = buildSummaryContext({ kind: 'briefing', userId, workStyleMode });
         try {
             const tasks = await adapter.listActiveTasks(true);
             const briefingResult = await gemini.generateDailyBriefingSummary(tasks, {
                 entryPoint: context.entryPoint,
                 userId,
-                urgentMode,
+                workStyleMode,
+                urgentMode: context.urgentMode,
                 generatedAtIso: context.generatedAtIso,
             });
             logSummarySurfaceEvent({ context, result: briefingResult, deliveryStatus: 'ready' });
@@ -519,8 +565,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
         await ctx.reply('📊 Generating your weekly review...');
         const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
-        const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
-        const context = buildSummaryContext({ kind: 'weekly', userId, urgentMode });
+        const workStyleMode = userId == null ? store.MODE_STANDARD : await store.getWorkStyleMode(userId);
+        const context = buildSummaryContext({ kind: 'weekly', userId, workStyleMode });
         try {
             const tasks = await adapter.listActiveTasks(true);
             const processed = store.getProcessedTasks();
@@ -529,7 +575,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             const weeklyResult = await gemini.generateWeeklyDigestSummary(tasks, thisWeek, {
                 entryPoint: context.entryPoint,
                 userId,
-                urgentMode,
+                workStyleMode,
+                urgentMode: context.urgentMode,
                 generatedAtIso: context.generatedAtIso,
                 historyAvailable,
             });
@@ -567,8 +614,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
         await ctx.reply('🌙 Generating your end-of-day reflection...');
         const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
-        const urgentMode = userId == null ? false : await store.getUrgentMode(userId);
-        const context = buildSummaryContext({ kind: 'daily_close', userId, urgentMode });
+        const workStyleMode = userId == null ? store.MODE_STANDARD : await store.getWorkStyleMode(userId);
+        const context = buildSummaryContext({ kind: 'daily_close', userId, workStyleMode });
         try {
             const tasks = await ticktick.getAllTasks();
             const processed = store.getProcessedTasks();
@@ -576,7 +623,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             const dailyCloseResult = await gemini.generateDailyCloseSummary(tasks, processed || {}, {
                 entryPoint: context.entryPoint,
                 userId,
-                urgentMode,
+                workStyleMode,
+                urgentMode: context.urgentMode,
                 generatedAtIso: context.generatedAtIso,
                 historyAvailable,
             });
@@ -629,6 +677,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
             const batch = targetTasks.slice(0, 5);
             await ctx.reply(`📬 ${targetTasks.length} task(s) to review. Processing ${batch.length} through pipeline...`);
+            const workStyleMode = await resolveCurrentWorkStyleMode(ctx);
 
             let confirmations = [];
             let failed = 0;
@@ -640,7 +689,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         existingTask: task,
                         entryPoint: 'telegram:review',
                         mode: 'review',
-                        availableProjects
+                        availableProjects,
+                        workStyleMode,
                     });
 
                     if (result.type === 'error') {
@@ -700,9 +750,18 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const rawText = ctx.message.text.trim();
         if (!rawText) return;
 
-        const freeformUrgentIntent = detectUrgentModeIntent(rawText);
-        if (freeformUrgentIntent?.type === 'set_urgent_mode') {
-            await applyUrgentModeState(ctx, freeformUrgentIntent.value, { source: 'natural-language' });
+        const freeformModeIntent = detectWorkStyleModeIntent(rawText);
+        if (freeformModeIntent?.type === 'clarify_work_style_mode') {
+            await replyWithMixedModeClarification(ctx);
+            return;
+        }
+        if (freeformModeIntent?.type === 'set_work_style_mode') {
+            const expiryMs = freeformModeIntent.mode === store.MODE_URGENT ? store.DEFAULT_URGENT_EXPIRY_MS : undefined;
+            await applyWorkStyleMode(ctx, freeformModeIntent.mode, { expiryMs });
+            return;
+        }
+        if (freeformModeIntent?.type === 'query_work_style_mode') {
+            await replyWithCurrentMode(ctx);
             return;
         }
         if (!ticktick.isAuthenticated()) {
@@ -754,6 +813,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                             ? 'skip'
                             : null; // ambiguous reply — treat as fallback
                 const availableProjects = await adapter.listProjects();
+                const workStyleMode = await resolveCurrentWorkStyleMode(ctx);
 
                 if (resolvedMode === 'skip') {
                     console.log('[ChecklistClarification] User skipped — creating plain parent task only');
@@ -762,6 +822,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         mode: 'interactive',
                         skipChecklist: true,
                         availableProjects,
+                        workStyleMode,
                     });
                     if (result.type === 'task') {
                         await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
@@ -780,6 +841,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         mode: 'interactive',
                         checklistPreference: resolvedMode,
                         availableProjects,
+                        workStyleMode,
                     });
                     if (result.type === 'task') {
                         await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
@@ -798,6 +860,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     mode: 'interactive',
                     skipChecklist: true, // Never create inferred checklist after ignored clarification
                     availableProjects,
+                    workStyleMode,
                 });
                 if (result.type === 'task') {
                     await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
@@ -811,7 +874,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
             const result = await pipeline.processMessage(userMessage, {
                 entryPoint: 'telegram:freeform',
-                mode: 'interactive'
+                mode: 'interactive',
+                workStyleMode: await resolveCurrentWorkStyleMode(ctx),
             });
 
             if (result.type === 'task') {
@@ -867,7 +931,12 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                             entryPoint: 'telegram:freeform',
                             mode: 'interactive',
                         });
-                        const msg = buildMutationClarificationMessage(reason, candidates, result.confirmationText);
+                        const msg = buildMutationClarificationMessage(
+                            reason,
+                            candidates,
+                            result.confirmationText,
+                            { workStyleMode: result.workStyleMode || await resolveCurrentWorkStyleMode(ctx) }
+                        );
                         const keyboard = buildMutationCandidateKeyboard(candidates);
                         await replyWithMarkdown(ctx, msg, { reply_markup: keyboard });
                     }
