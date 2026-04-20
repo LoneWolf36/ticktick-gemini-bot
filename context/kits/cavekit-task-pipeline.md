@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-20T01:15:00Z"
+last_edited: "2026-04-20T01:45:00Z"
 source_specs: ["001-task-operations-pipeline", "002-natural-language-task-mutations"]
 complexity: "complex"
 ---
@@ -152,6 +152,15 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - [x] Policy sweep appends inferred priority/project fixes to reorg actions when `enforcePolicySweep` is enabled
 **Dependencies:** R4
 
+### R17: Autonomous Poll Auto-Apply
+**Description:** Scheduler-driven autonomous intake is an explicit product surface: newly discovered tasks are processed through the shared pipeline, surfaced operationally, and fail safely when auth or quota blocks execution.
+**Acceptance Criteria:**
+- [x] Scheduler polling sends newly discovered tasks through the shared pipeline in bounded batches instead of a separate write path
+- [x] Auto-applied batches produce a compact user notification and respect focus-mode suppression rules for non-critical scheduled notifications
+- [x] Operational surfaces and deployment/docs expose `AUTO_APPLY_LIFE_ADMIN`, `AUTO_APPLY_DROPS`, and `AUTO_APPLY_MODE` as the autonomous-intake policy settings
+- [x] Quota exhaustion or expired auth parks/suppresses autonomous intake with explicit user-facing notification instead of silent failure
+**Dependencies:** R4, R15
+
 ## Out of Scope
 
 - Batch mutations ("move all gym tasks to next week")
@@ -175,10 +184,11 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - [x] R15 (Command Surfaces): `/scan`, `/pending`, `/review`, `/undo`, `/menu`, `/status`, and `/reset` are implemented in `bot/commands.js` and now checked explicitly.
 - [x] Drift rate limiter: removed 2026-04-19 (YAGNI for 1-user MVP; listed as out-of-scope here).
 - [x] R16 (Guided Reorg): `/reorg` fetch/refine/apply/cancel flow, schema-backed actions, and policy sweep are implemented and now checked explicitly.
-- [ ] AUTO_APPLY policy remains real product behavior in scheduler/config, but it still needs an explicit owning R-requirement rather than inference from status/config references.
+- [x] R17 (Autonomous Poll Auto-Apply): scheduler polling, auto-apply notifications, status/docs/config exposure, and quota/auth parking behavior are now owned explicitly instead of inferred from status/config references.
 - [x] Validation-facing comments in live harnesses and reorg services were updated to reflect their final Cavekit ownership/exclusion status.
 
 ## Changelog
+- 2026-04-20: R17 completed — autonomous poll auto-apply policy is explicitly owned, documented, and mapped to scheduler/status behavior.
 - 2026-04-20: R15 and R16 completed — command surfaces are explicitly checked, reorg flow is fully mapped, and remaining auto-apply ownership is isolated as the next signal cleanup item.
 - 2026-04-19: R1 and R4 completed — AX field validation, regression coverage, adapter boundary enforcement, intent preservation on failure.
 - 2026-04-18: Migrated from kitty-specs 001-task-operations-pipeline and 002-natural-language-task-mutations

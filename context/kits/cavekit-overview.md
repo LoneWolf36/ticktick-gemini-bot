@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-19T00:30:00Z"
+last_edited: "2026-04-20T01:45:00Z"
 ---
 
 # Cavekit Overview
@@ -15,7 +15,7 @@ Governing document: `context/refs/product-vision.md`
 
 | Domain | Cavekit File | Requirements | Complexity | Description |
 |--------|-------------|-------------|------------|-------------|
-| Task Pipeline | cavekit-task-pipeline.md | 16 | complex | Core task capture, mutation, intent extraction, normalization, adapter, command surfaces, guided reorg |
+| Task Pipeline | cavekit-task-pipeline.md | 17 | complex | Core task capture, mutation, intent extraction, normalization, adapter, command surfaces, guided reorg, autonomous poll auto-apply |
 | Pipeline Hardening | cavekit-pipeline-hardening.md | 12 | complex | Testing harness, failure classification, retry/rollback, observability |
 | Cleanup | cavekit-cleanup.md | 5 | quick | Dead code removal, docs alignment, env standardization |
 | Checklists | cavekit-checklists.md | 7 | medium | Checklist extraction, subtask creation, disambiguation |
@@ -24,7 +24,7 @@ Governing document: `context/refs/product-vision.md`
 | Work Style | cavekit-work-style.md | 13 | complex | Tone modes (standard/focus/urgent), prompt augmentation, intervention rules |
 | Behavioral Memory | cavekit-behavioral-memory.md | 15 | complex | Signal classification, pattern detection, privacy, retention, user controls |
 
-**Totals: 8 domains, 95 requirements**
+**Totals: 8 domains, 96 requirements**
 
 ## Cross-Reference Map
 
@@ -102,5 +102,5 @@ Migrated from `kitty-specs/` (spec-kitty format) to `context/kits/` (cavekit for
 - [x] Tooling exclusion rule: `.archon/` workflows/commands are dev tooling, excluded from product drift checks.
 - [x] Checkpoint tooling removed (`commands/save-checkpoint.js`, `commands/README.md`) — `docs/ARCHITECTURE.md` stated these were intentionally removed.
 - [x] Orphaned `tasks/WP*.md` prompt copies removed — canonical versions live under `kitty-specs.archived/`.
-- [x] Requirement count corrected: 93 → 95 (R15 Command Surfaces + R16 Guided Reorg added to Task Pipeline).
+- [x] Requirement count corrected: 93 → 96 (R15 Command Surfaces + R16 Guided Reorg + R17 Autonomous Poll Auto-Apply added to Task Pipeline).
 - [x] See `context/plans/cavekit-validate-followups-2026-04-19.md` for sequencing and file ownership.

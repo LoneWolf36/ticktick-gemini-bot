@@ -122,7 +122,7 @@ This project uses **Cavekit** for spec-driven development. Domain kits live in `
 
 | Kit | Requirements | Description |
 |-----|-------------|-------------|
-| `cavekit-task-pipeline.md` | 16 | Core task capture, mutation, intent extraction, normalization, adapter, command surfaces, guided reorg |
+| `cavekit-task-pipeline.md` | 17 | Core task capture, mutation, intent extraction, normalization, adapter, command surfaces, guided reorg, autonomous poll auto-apply |
 | `cavekit-pipeline-hardening.md` | 12 | Testing harness, failure classification, retry/rollback, observability |
 | `cavekit-cleanup.md` | 5 | Dead code removal, docs alignment, env standardization |
 | `cavekit-checklists.md` | 7 | Checklist extraction, subtask creation, disambiguation |
@@ -146,5 +146,5 @@ See `context/kits/cavekit-overview.md` for the full cross-reference map and depe
 ### Migration History
 
 - **2026-04-18**: Migrated from Spec Kitty (kitty-specs/) to Cavekit (context/kits/). Original specs archived in `kitty-specs.archived/`.
-- 111 FRs consolidated into 95 R-requirements with 335+ testable acceptance criteria.
+- 111 FRs consolidated into 96 R-requirements with 339+ testable acceptance criteria.
 - 18 reference materials preserved in `context/refs/`.
