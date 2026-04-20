@@ -7,8 +7,11 @@
     "scripts": {
         "start": "node server.js",
         "dev": "node --watch server.js",
+        "test": "npm run test:regression",
+        "test:regression": "node --test --test-concurrency=1 tests/*.test.js",
         "checkpoint": "node commands/save-checkpoint.js",
         "check:duplicates": "./scripts/check-duplicates.sh",
+        "check:test-sizes": "node scripts/check-test-sizes.mjs",
         "check:jscpd": "jscpd --threshold 5",
         "lint:duplicates": "jscpd",
         "lint:duplicates:fix": "jscpd --mode strict",

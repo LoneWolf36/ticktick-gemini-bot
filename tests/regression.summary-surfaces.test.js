@@ -1,0 +1,556 @@
+import test from 'node:test';
+import assert from 'node:assert/strict';
+import { readFileSync } from 'node:fs';
+import { AxGen } from '@ax-llm/ax';
+
+import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../services/shared-utils.js';
+import { executeActions, registerCommands } from '../bot/commands.js';
+import { GeminiAnalyzer, buildWorkStylePromptNote } from '../services/gemini.js';
+import { createAxIntent, detectWorkStyleModeIntent, QuotaExhaustedError } from '../services/ax-intent.js';
+import { createPipeline } from '../services/pipeline.js';
+import { createPipelineObservability } from '../services/pipeline-observability.js';
+import { TickTickAdapter } from '../services/ticktick-adapter.js';
+import { TickTickClient } from '../services/ticktick.js';
+import * as store from '../services/store.js';
+import * as executionPrioritization from '../services/execution-prioritization.js';
+import { AUTHORIZED_CHAT_ID } from '../services/shared-utils.js';
+import {
+  runDailyBriefingJob,
+  runWeeklyDigestJob,
+  SCHEDULER_NOTIFICATION_TYPES,
+  shouldSuppressScheduledNotification,
+} from '../services/scheduler.js';
+import {
+  BRIEFING_SUMMARY_SECTION_KEYS,
+  DAILY_CLOSE_SUMMARY_SECTION_KEYS,
+  WEEKLY_SUMMARY_SECTION_KEYS,
+  buildSummaryLogPayload,
+  composeBriefingSummary,
+  composeDailyCloseSummary,
+  composeWeeklySummary,
+  formatSummary,
+  normalizeWeeklyWatchouts,
+} from '../services/summary-surfaces/index.js';
+import { createPipelineHarness, DEFAULT_PROJECTS, DEFAULT_ACTIVE_TASKS } from './pipeline-harness.js';
+import {
+  buildRankingContext,
+  buildRecommendationResult,
+  createGoalThemeProfile,
+  createRankingDecision,
+  normalizePriorityCandidate,
+} from '../services/execution-prioritization.js';
+
+
+import {
+    rankPriorityCandidatesForTest,
+    buildSummaryActiveTasksFixture,
+    buildSummaryProcessedHistoryFixture,
+    buildSummaryResolvedStateFixture,
+    buildSummaryRankingFixture,
+    buildDailySummaryFixture,
+    buildWeeklySummaryFixture,
+    buildDailyCloseProcessedHistoryFixture,
+    buildDailyCloseSummaryFixture,
+} from './helpers/regression-fixtures.js';
+
+test('summary fixtures expose deterministic normal sparse and degraded inputs', () => {
+  const normalTasks = buildSummaryActiveTasksFixture();
+  const sparseTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+  const degradedTasks = buildSummaryActiveTasksFixture({ variant: 'degraded-ranking' });
+  const normalHistory = buildSummaryProcessedHistoryFixture();
+  const sparseHistory = buildSummaryProcessedHistoryFixture({ variant: 'sparse' });
+  const missingHistory = buildSummaryProcessedHistoryFixture({ variant: 'missing' });
+  const urgentState = buildSummaryResolvedStateFixture({ urgentMode: true });
+  const ranking = buildSummaryRankingFixture(normalTasks, { degraded: true });
+
+  assert.equal(normalTasks.length, 3);
+  assert.equal(normalTasks[0].id, 'task-focus');
+  assert.equal(sparseTasks.length, 1);
+  assert.equal(degradedTasks.every((task) => task.priority === 0), true);
+  assert.equal(normalHistory.length, 2);
+  assert.equal(sparseHistory.length, 1);
+  assert.equal(missingHistory.length, 0);
+  assert.equal(urgentState.urgentMode, true);
+  assert.equal(ranking.degraded, true);
+  assert.equal(ranking.degradedReason, 'ranking inputs incomplete');
+});
+
+test('composeBriefingSummary always returns fixed briefing top-level sections', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture();
+  const result = composeBriefingSummary({ context, activeTasks, rankingResult });
+
+  assert.deepEqual(Object.keys(result.summary), BRIEFING_SUMMARY_SECTION_KEYS);
+  assert.equal(Array.isArray(result.summary.priorities), true);
+  assert.equal(Array.isArray(result.summary.why_now), true);
+  assert.equal(Array.isArray(result.summary.notices), true);
+});
+
+test('composeBriefingSummary prefers structured model focus and priorities', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture();
+  const modelSummary = {
+    focus: 'Ship the architecture PR before low-leverage work.',
+    priorities: [
+      {
+        task_id: activeTasks[0].id,
+        title: '',
+        project_name: null,
+        due_date: null,
+        priority_label: 'career-critical',
+        rationale_text: 'Directly moves the core goal.',
+      },
+    ],
+    why_now: ['Directly moves the core goal.'],
+    start_now: 'Open the PR checklist and draft the next commit.',
+    notices: [],
+  };
+
+  const result = composeBriefingSummary({
+    context,
+    activeTasks,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.equal(result.summary.focus, modelSummary.focus);
+  assert.equal(result.summary.priorities[0].task_id, activeTasks[0].id);
+  assert.equal(result.summary.priorities[0].title, activeTasks[0].title);
+  assert.equal(result.summary.start_now, modelSummary.start_now);
+});
+
+test('composeBriefingSummary adds sparse-task notices without filler', () => {
+  const activeTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture();
+  const modelSummary = {
+    focus: '',
+    priorities: [],
+    why_now: [],
+    start_now: '',
+    notices: [],
+  };
+
+  const result = composeBriefingSummary({
+    context,
+    activeTasks,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.equal(result.summary.priorities.length, 1);
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'sparse_tasks'));
+});
+
+test('composeBriefingSummary adds degraded-ranking notice when ranking is degraded', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks, { degraded: true });
+  const context = buildSummaryResolvedStateFixture();
+  const modelSummary = {
+    focus: 'Keep momentum on ranked work.',
+    priorities: [],
+    why_now: [],
+    start_now: 'Open the top task and take the first step.',
+    notices: [],
+  };
+
+  const result = composeBriefingSummary({
+    context,
+    activeTasks,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'degraded_ranking'));
+});
+
+test('composeWeeklySummary always returns fixed weekly top-level sections', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildSummaryProcessedHistoryFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+  });
+
+  assert.deepEqual(Object.keys(result.summary), WEEKLY_SUMMARY_SECTION_KEYS);
+  assert.equal(Array.isArray(result.summary.progress), true);
+  assert.equal(Array.isArray(result.summary.watchouts), true);
+  assert.equal(Array.isArray(result.summary.notices), true);
+});
+
+test('composeWeeklySummary uses structured model summary but keeps next_focus grounded', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildSummaryProcessedHistoryFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+  };
+  const modelSummary = {
+    progress: ['Completed: Shipped weekly architecture PR'],
+    carry_forward: [
+      {
+        task_id: 'task-support',
+        title: 'Prepare system design notes',
+        reason: 'Still open with planned follow-up.',
+      },
+    ],
+    next_focus: ['Random model suggestion'],
+    watchouts: [
+      {
+        label: 'Overdue tasks accumulating',
+        evidence: '1 active task is overdue right now.',
+        evidence_source: 'current_tasks',
+      },
+    ],
+    notices: [
+      {
+        code: 'delivery_context',
+        message: 'Model summary received.',
+        severity: 'info',
+        evidence_source: 'system',
+      },
+    ],
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.ok(result.summary.progress.includes('Completed: Shipped weekly architecture PR'));
+  assert.equal(result.summary.next_focus.includes('Random model suggestion'), false);
+  assert.equal(result.summary.next_focus[0], activeTasks[0].title);
+});
+
+test('composeWeeklySummary covers completed work deferred work and upcoming preview', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildSummaryProcessedHistoryFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+  });
+
+  assert.ok(result.summary.progress.some((line) => /Completed: Completed resume update/.test(line)));
+  assert.ok(result.summary.carry_forward.some((item) => /Deferred mock interview/.test(item.title)));
+  assert.ok(result.summary.carry_forward.some((item) => /Deferred or rescheduled this week/.test(item.reason)));
+  assert.ok(result.summary.next_focus.includes('Ship weekly architecture PR'));
+});
+
+test('composeWeeklySummary stays observational and scannable', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildSummaryProcessedHistoryFixture({ variant: 'repeated_ignored' });
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+  });
+  const formatted = formatSummary({ kind: 'weekly', summary: result.summary, context }).text;
+
+  assert.ok(result.summary.watchouts.every((item) => !/lazy|avoidance|character|diagnostic/i.test(`${item.label} ${item.evidence}`)));
+  assert.ok(result.summary.notices.every((notice) => !/lazy|avoidance|character|diagnostic/i.test(notice.message)));
+  assert.ok(formatted.includes('**Progress**'));
+  assert.ok(formatted.includes('**Carry forward**'));
+  assert.ok(formatted.includes('**Next focus**'));
+  assert.ok(formatted.includes('**Watchouts**'));
+  const sectionCount = (formatted.match(/^\*\*[^\n]+\*\*$/gm) || []).length;
+  assert.ok(sectionCount <= 5);
+});
+
+test('composeWeeklySummary reduces digest and adds missing history notice when history is missing', () => {
+  const activeTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+  const processedHistory = [];
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+  };
+  const modelSummary = {
+    progress: ['Completed: Placeholder progress'],
+    watchouts: [
+      {
+        label: 'Dropped tasks this week',
+        evidence: '1 processed item was dropped.',
+        evidence_source: 'processed_history',
+      },
+    ],
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: false,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.equal(result.summary.progress.length, 0);
+  assert.ok(result.summary.carry_forward.length > 0);
+  assert.ok(result.summary.next_focus.length > 0);
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'missing_history'));
+});
+
+test('composeWeeklySummary drops watchouts without evidence backing', () => {
+  const activeTasks = buildSummaryActiveTasksFixture().map((task) => ({
+    ...task,
+    dueDate: '2026-03-20',
+  }));
+  const processedHistory = [];
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+  };
+  const modelSummary = {
+    watchouts: [
+      {
+        label: 'Dropped tasks this week',
+        evidence: '1 processed item was dropped.',
+        evidence_source: 'processed_history',
+      },
+      {
+        label: 'History unavailable',
+        evidence: 'Processed-task history was unavailable.',
+        evidence_source: 'missing_data',
+      },
+    ],
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+    modelSummary,
+  });
+
+  assert.equal(result.summary.watchouts.length, 0);
+});
+
+test('weekly watchout normalization rejects behavioral labels and strips prompt-era fields', () => {
+  const watchouts = normalizeWeeklyWatchouts([
+    {
+      label: 'avoidance',
+      evidence: 'A delayed critical task appears in history.',
+      evidence_source: 'processed_history',
+      callout: 'legacy behavioral field',
+    },
+    {
+      label: 'Overdue tasks accumulating',
+      evidence: '3 active tasks are overdue.',
+      evidence_source: 'current_tasks',
+      avoidance: 'legacy field should be removed',
+      callout: 'legacy field should be removed',
+    },
+  ]);
+
+  assert.equal(watchouts.length, 1);
+  assert.equal(watchouts[0].label, 'Overdue tasks accumulating');
+  assert.equal(Object.hasOwn(watchouts[0], 'avoidance'), false);
+  assert.equal(Object.hasOwn(watchouts[0], 'callout'), false);
+});
+
+test('formatSummary renders fixed section order across briefing and weekly variants', () => {
+  const cases = [
+    {
+      kind: 'briefing',
+      summary: buildDailySummaryFixture(),
+      context: { workStyleMode: store.MODE_STANDARD, urgentMode: false },
+      header: 'MORNING BRIEFING',
+      sectionOrder: ['**Focus**', '**Priorities**', '**Why now**', '**Start now**', '**Notices**'],
+      mustContain: [],
+      assertExtra: (result) => {
+        assert.equal(result.tonePreserved, true);
+      },
+    },
+    {
+      kind: 'weekly',
+      summary: buildWeeklySummaryFixture(),
+      context: { urgentMode: false },
+      header: 'WEEKLY ACCOUNTABILITY REVIEW',
+      sectionOrder: ['**Progress**', '**Carry forward**', '**Next focus**', '**Watchouts**', '**Notices**'],
+      mustContain: ['Overdue tasks accumulating: 2 active tasks are overdue right now.'],
+      assertExtra: () => {},
+    },
+  ];
+
+  for (const scenario of cases) {
+    const result = formatSummary({
+      kind: scenario.kind,
+      summary: scenario.summary,
+      context: scenario.context,
+    });
+    const positions = scenario.sectionOrder.map((label) => result.text.indexOf(label));
+
+    assert.ok(result.text.includes(scenario.header));
+    for (const snippet of scenario.mustContain) {
+      assert.ok(result.text.includes(snippet));
+    }
+    assert.ok(positions.every((pos) => pos >= 0));
+    assert.deepEqual([...positions].sort((a, b) => a - b), positions);
+    assert.equal(result.telegramSafe, true);
+    scenario.assertExtra(result);
+  }
+});
+
+test('formatSummary keeps empty sections compact and Telegram-safe', () => {
+  const daily = buildDailySummaryFixture({ variant: 'empty' });
+  const weekly = buildWeeklySummaryFixture({ variant: 'reduced' });
+  const dailyResult = formatSummary({ kind: 'briefing', summary: daily, context: {} });
+  const weeklyResult = formatSummary({ kind: 'weekly', summary: weekly, context: {} });
+
+  assert.match(dailyResult.text, /\*\*Focus\*\*: None/);
+  assert.match(dailyResult.text, /\*\*Priorities\*\*:\n1\. None/);
+  assert.equal(dailyResult.text.includes('Keep momentum on your top task.'), false);
+  assert.match(weeklyResult.text, /\*\*Progress\*\*:\n- None/);
+  assert.match(weeklyResult.text, /\*\*Carry forward\*\*:\n- None/);
+  assert.match(weeklyResult.text, /\*\*Next focus\*\*:\n1\. None/);
+  assert.match(weeklyResult.text, /\*\*Watchouts\*\*:\n- None/);
+  assert.match(weeklyResult.text, /\[Warning\] Processed-task history was unavailable\./);
+
+  const dailyHtml = parseTelegramMarkdownToHTML(dailyResult.text);
+  const weeklyHtml = parseTelegramMarkdownToHTML(weeklyResult.text);
+  assert.match(dailyHtml, /<b>Focus<\/b>/);
+  assert.match(weeklyHtml, /<b>Progress<\/b>/);
+});
+
+test('composeDailyCloseSummary always returns fixed daily-close top-level sections', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildDailyCloseProcessedHistoryFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture({ kind: 'daily_close' });
+
+  const result = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory,
+    rankingResult,
+  });
+
+  assert.deepEqual(Object.keys(result.summary), DAILY_CLOSE_SUMMARY_SECTION_KEYS);
+  assert.equal(Array.isArray(result.summary.stats), true);
+  assert.equal(Array.isArray(result.summary.notices), true);
+});
+
+test('composeDailyCloseSummary acknowledges meaningful progress without cheerleading', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildDailyCloseProcessedHistoryFixture({ variant: 'meaningful' });
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture({ kind: 'daily_close' });
+
+  const result = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory,
+    rankingResult,
+  });
+
+  assert.ok(result.summary.stats.includes('Completed: 2'));
+  assert.match(result.summary.reflection, /meaningful work/i);
+  assert.match(result.summary.reset_cue, /Tomorrow’s restart/i);
+});
+
+test('composeDailyCloseSummary stays minimal and non-punitive for irregular use', () => {
+  const activeTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+  const processedHistory = buildDailyCloseProcessedHistoryFixture({ variant: 'irregular' });
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture({ kind: 'daily_close' }),
+    generatedAtIso: '2026-03-13T21:00:00Z',
+  };
+
+  const result = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory,
+    rankingResult,
+  });
+
+  assert.equal(result.summary.reflection, '');
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'irregular_use'));
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'sparse_day'));
+  assert.equal(/punish|failure|lazy/i.test(result.formattedText), false);
+});
+
+test('formatSummary renders daily-close sections in fixed order and keeps output Telegram-safe', () => {
+  const summary = buildDailyCloseSummaryFixture();
+  const { text, telegramSafe } = formatSummary({
+    kind: 'daily_close',
+    summary,
+    context: { urgentMode: false },
+  });
+
+  const sectionOrder = ['**Stats**', '**Reflection**', '**Reset cue**', '**Notices**'];
+  const positions = sectionOrder.map((label) => text.indexOf(label));
+
+  assert.ok(text.includes('END-OF-DAY REFLECTION'));
+  assert.ok(positions.every((pos) => pos >= 0));
+  assert.deepEqual([...positions].sort((a, b) => a - b), positions);
+  assert.equal(telegramSafe, true);
+});
+
+test('formatSummary is deterministic for identical daily-close input', () => {
+  const summary = buildDailyCloseSummaryFixture();
+  const context = { workStyleMode: store.MODE_STANDARD, urgentMode: false };
+
+  const first = formatSummary({ kind: 'daily_close', summary, context });
+  const second = formatSummary({ kind: 'daily_close', summary, context });
+
+  assert.deepEqual(second, first);
+});
+
+test('daily-close formatter uses compact concrete non-judgmental copy', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildDailyCloseProcessedHistoryFixture({ variant: 'backoff' });
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture({ kind: 'daily_close' });
+
+  const result = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory,
+    rankingResult,
+  });
+  const formatted = formatSummary({ kind: 'daily_close', summary: result.summary, context }).text;
+
+  assert.match(result.summary.reflection, /Keep tomorrow smaller|choose one smaller restart step|choose the first restart step/);
+  assert.equal(/ignored repeatedly|lazy|failure|punish|character/i.test(result.summary.reflection), false);
+  const sentenceCount = result.summary.reflection.split(/[.!?]+/).map((part) => part.trim()).filter(Boolean).length;
+  assert.ok(sentenceCount <= 2);
+  assert.ok(formatted.includes('**Reflection**'));
+  assert.ok(formatted.includes('**Reset cue**'));
+});

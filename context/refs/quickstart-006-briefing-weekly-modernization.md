@@ -12,10 +12,10 @@ Use this guide after implementation to verify the shared summary surface, determ
 
 ## Verification Flow
 
-### 1. Run the lightweight regression harness
+### 1. Run the serial regression suite
 
 ```bash
-node tests/run-regression-tests.mjs
+npm run test:regression
 ```
 
 Expected:
@@ -24,17 +24,15 @@ Expected:
 - Sparse-task and sparse-history fallbacks pass without fabricated output.
 - Manual command wiring and scheduler wiring use the shared summary surface.
 
-### 2. Run the Node test suite
+### 2. Enforce regression file size guard
 
 ```bash
-node --test tests/regression.test.js
+npm run check:test-sizes
 ```
 
 Expected:
-- Structured summary objects are asserted before formatting.
-- Formatter-specific tests confirm Telegram-safe output and stable section order.
-- Command and scheduler parity tests pass for both `/briefing` and `/weekly`.
-- `/daily_close` command coverage passes with non-punitive sparse-day handling.
+- Split domain suites remain below the max-lines threshold.
+- New summary coverage gets added to the relevant domain file instead of a monolith.
 
 ### 3. Validate the daily briefing contract
 

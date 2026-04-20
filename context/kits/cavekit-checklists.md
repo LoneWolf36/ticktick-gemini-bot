@@ -83,7 +83,7 @@ Checklist/subtask extraction, creation, and clarification for create-time task o
 
 ## Validation Action Items — 2026-04-19
 
-- [x] `tests/e2e-live-checklist.mjs` excluded from drift checks — it is a mocked logic validator redundant with `regression.test.js`, kept only for interactive debugging.
+- [x] `tests/e2e-live-checklist.mjs` excluded from drift checks — it is a mocked logic validator redundant with `tests/regression.checklist-clarification.test.js`, kept only for interactive debugging.
 
 ## Changelog
 - 2026-04-18: Migrated from kitty-specs 005-checklist-subtask-support

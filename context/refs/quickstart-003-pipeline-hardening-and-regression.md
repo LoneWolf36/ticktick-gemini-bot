@@ -12,25 +12,25 @@ Use this guide after implementation to verify that the hardened pipeline behaves
 
 ## Verification Flow
 
-### 1. Run the lightweight regression harness
+### 1. Run the serial regression suite
 
 ```bash
-node tests/run-regression-tests.mjs
+npm run test:regression
 ```
 
 Expected:
 - Direct pipeline regressions pass for create, update, complete, delete, non-task, validation failure, adapter failure, and quota rotation.
 - No live API credentials are required for the mocked cases.
 
-### 2. Run the Node test suite
+### 2. Enforce regression file size guard
 
 ```bash
-node --test tests/regression.test.js
+npm run check:test-sizes
 ```
 
 Expected:
-- Pipeline-focused tests pass with mocked AX and TickTick dependencies.
-- Failure-class assertions distinguish `quota`, `validation`, `adapter`, `rollback`, and `unexpected` cases.
+- Split domain suites remain below the max-lines threshold.
+- New coverage gets added to the relevant regression domain file instead of a single monolith.
 
 ### 3. Validate canonical context propagation
 

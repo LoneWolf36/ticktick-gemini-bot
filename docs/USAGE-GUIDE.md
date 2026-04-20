@@ -28,8 +28,11 @@ Research briefs, data models, OpenAPI specs, and schemas are in `context/refs/`.
 ## Verification
 
 ```bash
-# Run regression tests
-node tests/run-regression-tests.mjs
+# Run canonical regression suite (serial: shared store-backed tests)
+npm run test:regression
+
+# Enforce regression file size guard
+npm run check:test-sizes
 
 # Review kits
 cat context/kits/cavekit-overview.md

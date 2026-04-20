@@ -88,8 +88,9 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - `npm install` installs dependencies from `package-lock.json`.
 - `npm start` runs the production entrypoint with `node server.js`.
 - `npm run dev` starts watch mode for local iteration.
-- `node tests/run-regression-tests.mjs` runs the lightweight regression suite used in this repo today.
-- `node --test tests/regression.test.js` runs the Node test file when your environment allows spawned subprocesses.
+- `npm test` runs the canonical serial regression suite with `node --test --test-concurrency=1 tests/*.test.js`.
+- `npm run test:regression` runs the same serial regression suite directly.
+- `npm run check:test-sizes` enforces the max-lines guard for regression test files.
 - `docker build -t ticktick-gemini .` builds the same container shape used for Render.
 
 ## Coding Style & Naming Conventions
@@ -100,7 +101,9 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - New task-writing flows must stay on the existing path: `AX intent -> normalizer -> ticktick-adapter`. Do not call the low-level TickTick client directly from bot handlers.
 
 ## Testing Guidelines
-- Add or update regression coverage for behavior changes in `tests/regression.test.js` or `tests/run-regression-tests.mjs`.
+- Add or update regression coverage in the relevant domain suite under `tests/regression.*.test.js` (or the closest existing test file).
+- Search before add: extend an existing nearby test or table-driven case before creating a new standalone block.
+- Keep regression files below the size guard. If a file is nearing the limit, extract helpers or split the domain before appending more cases.
 - Name tests by behavior, for example: `executeActions accepts suggested_schedule update alias`.
 - Mock TickTick and Gemini integrations in automated tests; keep live API calls in opt-in scripts only.
 

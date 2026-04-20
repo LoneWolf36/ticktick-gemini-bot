@@ -351,7 +351,7 @@ Run:
 
 ```bash
 node --test tests/task-resolver.test.js tests/ax-intent.test.js tests/normalizer.test.js tests/pipeline-context.test.js
-node tests/run-regression-tests.mjs
+npm run test:regression
 ```
 
 Expected final acceptance:

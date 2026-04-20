@@ -78,7 +78,7 @@ Alternatives considered:
 
 Decision:
 - Keep testing embedded within each implementation stream, but require the foundation step to freeze section contracts and formatter invariants before parallel work begins.
-- Extend `tests/regression.test.js` and `tests/run-regression-tests.mjs` with stream-owned coverage, and use existing E2E harnesses only as optional confidence checks.
+- Extend the relevant `tests/regression.*.test.js` domain suite with stream-owned coverage, and use `npm run test:regression` plus existing E2E harnesses as confidence checks.
 
 Rationale:
 - The user explicitly preferred embedded testing for TDD.
@@ -87,7 +87,7 @@ Rationale:
 
 Alternatives considered:
 - Centralize all tests in a final QA stream: rejected because it encourages late integration surprises.
-- Add a new dedicated test harness for summaries: rejected because current regression entry points are sufficient.
+- Add a new dedicated test harness for summaries: rejected because the split serial regression suite is sufficient.
 
 ### 6. Observability should compare summary composition across command and scheduler paths
 

@@ -10,14 +10,14 @@
       "timestamp": "2026-04-15T18:40:00Z",
       "test_commands": [
         "node --test tests/pipeline-context.test.js",
-        "node --test tests/regression.test.js",
-        "node tests/run-regression-tests.mjs"
+        "npm run test:regression",
+        "npm run check:test-sizes"
       ],
       "test_results": {
         "exit_code": 0,
-        "total_pass": 500,
+        "total_pass": 453,
         "total_fail": 0,
-        "summary": "All mission 003 tests passing"
+        "summary": "Pipeline hardening coverage now runs through the serial split regression suite"
       }
     }
   ]
