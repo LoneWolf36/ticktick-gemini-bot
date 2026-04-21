@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-20T15:10:00Z"
+last_edited: "2026-04-21T17:05:00Z"
 source_specs: ["009-behavioral-signals-and-memory"]
 complexity: "complex"
 ---
@@ -26,40 +26,40 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 ### R2: Redis Storage Layer
 **Description:** Behavioral signals are stored in Redis with time-bounded retention.
 **Acceptance Criteria:**
-- [ ] Signals are stored with: timestamp, pattern type, confidence, derived metadata
-- [ ] Storage is tenant-scoped from day one (even with single user)
-- [ ] Storage interface supports write, read, delete, and time-range queries
-- [ ] Storage does NOT accept raw user messages, raw task titles, or free-form text
+- [x] Signals are stored with: timestamp, pattern type, confidence, derived metadata
+- [x] Storage is tenant-scoped from day one (even with single user)
+- [x] Storage interface supports write, read, delete, and time-range queries
+- [x] Storage does NOT accept raw user messages, raw task titles, or free-form text
 **Dependencies:** R1
 
 ### R3: Pattern Detection Engine
 **Description:** Engine aggregates signals over time to detect sustained behavioral patterns.
 **Acceptance Criteria:**
-- [ ] Patterns are detected from signal aggregates, not single events
-- [ ] Pattern 8 Type A detection: 3+ plans with detailed breakdowns (>5 sub-steps or >200 characters) and 0% completion within 7 days
-- [ ] Pattern 8 Type B detection: 10+ tasks created in a single day/week, spanning 3+ projects/categories, with <30% completion rate
-- [ ] Snooze Spiral detection: same task postponed 3+ times
-- [ ] Detected patterns have confidence levels: low, standard, high
-- [ ] Only standard- or high-confidence patterns are eligible for surfacing
+- [x] Patterns are detected from signal aggregates, not single events
+- [x] Pattern 8 Type A detection: 3+ plans with detailed breakdowns (>5 sub-steps or >200 characters) and 0% completion within 7 days
+- [x] Pattern 8 Type B detection: 10+ tasks created in a single day/week, spanning 3+ projects/categories, with <30% completion rate
+- [x] Snooze Spiral detection: same task postponed 3+ times
+- [x] Detected patterns have confidence levels: low, standard, high
+- [x] Only standard- or high-confidence patterns are eligible for surfacing
 **Dependencies:** R1, R2
 
 ### R4: Privacy Tier Manager
 **Description:** Strict privacy boundaries govern what is stored and surfaced.
 **Acceptance Criteria:**
-- [ ] Long-term memory stores ONLY: derived signals, pattern types, confidence scores, and the explicitly enumerated minimal semantic metadata
-- [ ] Allowed semantic metadata: planning-vs-execution label, wording-only edit vs scope change, decomposition change, domain/theme tags
-- [ ] Long-term memory MUST NOT store: raw user messages, raw task titles, free-form conversational archives, open-ended semantic summaries
-- [ ] Operational logs and behavioral memory are distinct concerns — debugging does not expand the privacy boundary
-- [ ] Behavioral memory model is tenant-scoped from day one
+- [x] Long-term memory stores ONLY: derived signals, pattern types, confidence scores, and the explicitly enumerated minimal semantic metadata
+- [x] Allowed semantic metadata: planning-vs-execution label, wording-only edit vs scope change, decomposition change, domain/theme tags
+- [x] Long-term memory MUST NOT store: raw user messages, raw task titles, free-form conversational archives, open-ended semantic summaries
+- [x] Operational logs and behavioral memory are distinct concerns — debugging does not expand the privacy boundary
+- [x] Behavioral memory model is tenant-scoped from day one
 **Dependencies:** R2
 
 ### R5: Retention Windows
 **Description:** Behavioral signals have a 30-day default retention window.
 **Acceptance Criteria:**
-- [ ] Signals are retained for 30 days by default, then excluded from future summaries
-- [ ] 30-day window is the default short-loop learning horizon, not a justification for deeper archival
-- [ ] Expired signals are not deleted immediately but are excluded from all query results and patterns
-- [ ] Retention window is configurable
+- [x] Signals are retained for 30 days by default, then excluded from future summaries
+- [x] 30-day window is the default short-loop learning horizon, not a justification for deeper archival
+- [x] Expired signals are not deleted immediately but are excluded from all query results and patterns
+- [x] Retention window is configurable
 **Dependencies:** R2
 
 ### R6: Summary Surface Integration
@@ -168,8 +168,16 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 - [x] Audit R1 (Signal Classifier Core): `services/behavioral-signals.js` now emits all 8 behavioral-memory pattern families with confidence scores using derived numeric/boolean metadata only; no raw titles or message text cross the classifier boundary.
 - [x] Downstream dependencies R2-R15 now unblock from an explicitly implemented R1 root.
 - [x] Audit R10 (Non-Blocking Architecture): `services/ticktick-adapter.js` routes create/update/complete/delete observation through `_observeSignals(...)`, catches classifier failures, logs them as `FAILED (non-blocking)`, and never blocks mutation completion on behavioral-signal observation.
+- [x] Audit R2 (Redis Storage Layer): `services/store.js` now persists tenant-scoped behavioral signals with write/read/delete/time-range query helpers, validates timestamps/confidence/privacy boundaries, and rejects raw task text fields before storage.
+- [x] Audit R3 (Pattern Detection Engine): `services/behavioral-patterns.js` now derives Snooze Spiral and Planning-Without-Execution aggregate patterns from retained signals, assigns low/standard/high confidence, and marks only standard/high confidence patterns as surfacing-eligible.
+- [x] Audit R4 (Privacy Tier Manager): `services/store.js` now strips retained behavioral metadata down to minimal semantic flags (`planningSubtypeA/B`, `scopeChange`, `wordingOnlyEdit`, `decompositionChange`), forbids raw task/user text plus raw task IDs, and keeps operational logging separate from long-term behavioral memory.
+- [x] Audit R5 (Retention Windows): `services/store.js` now uses a configurable 30-day default retention window for reads/queries while preserving a separate archive horizon; `services/behavioral-patterns.js` excludes expired signals from aggregate pattern output.
 
 ## Changelog
+- 2026-04-21: R5 completed — behavioral memory now uses a configurable 30-day default query window and excludes expired signals from queries and patterns without immediate hard deletion.
+- 2026-04-21: R4 completed — retained behavioral memory now stores only minimal semantic flags plus domain tags and rejects raw text or raw task identifiers.
+- 2026-04-21: R3 completed — aggregate pattern engine now detects snooze spirals and planning overload patterns with low/standard/high confidence and surfacing eligibility.
+- 2026-04-21: R2 completed — behavioral signals now persist tenant-scoped with privacy validation and time-range query/delete support.
 - 2026-04-20: R10 completed — behavioral signal observation is best-effort only and cannot block task mutations.
 - 2026-04-20: R1 completed — classifier now emits all 8 pattern families with confidence scores using derived metadata only.
 - 2026-04-18: Migrated from kitty-specs 009-behavioral-signals-and-memory

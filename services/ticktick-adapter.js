@@ -422,6 +422,7 @@ export class TickTickAdapter {
             // T006: Non-blocking behavioral signal observation
             this._observeSignals('create', {
                 userId: normalizedAction.userId,
+                taskId: createdTask.id,
                 category: normalizedAction.category || null,
                 projectId: validatedProjectId,
                 ...this._deriveBehavioralCreateMetadata(normalizedAction, mappedItems),
@@ -616,6 +617,7 @@ export class TickTickAdapter {
             // T006: Non-blocking behavioral signal observation
             this._observeSignals('update', {
                 userId: normalizedAction.userId,
+                taskId,
                 category: normalizedAction.category || null,
                 projectId: targetProjectId,
                 dueDateBefore: normalizedAction._dueDateBefore || null,

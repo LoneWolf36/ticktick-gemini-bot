@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-21T13:45:00Z"
+last_edited: "2026-04-21T17:05:00Z"
 source_specs: ["007-execution-prioritization-foundations"]
 complexity: "complex"
 ---
@@ -39,19 +39,19 @@ See `context/refs/evidence-log.csv` for evidence tracking.
 ### R3: Ranking Confidence and Uncertainty
 **Description:** Ranking engine expresses confidence levels and handles uncertainty honestly.
 **Acceptance Criteria:**
-- [ ] When confidence is high, ranking is presented without hedging
-- [ ] When confidence is low (insufficient data, conflicting signals), ranking either omits weak items or labels uncertainty
-- [ ] Weak behavioral or priority inference is never presented as fact
-- [ ] System asks directly or fails closed when confidence is low
+- [x] When confidence is high, ranking is presented without hedging
+- [x] When confidence is low (insufficient data, conflicting signals), ranking either omits weak items or labels uncertainty
+- [x] Weak behavioral or priority inference is never presented as fact
+- [x] System asks directly or fails closed when confidence is low
 **Dependencies:** R2
 
 ### R4: Exceptions and Rationale
 **Description:** Ranking supports exceptions (user-forced priority overrides) and provides rationale for rankings.
 **Acceptance Criteria:**
-- [ ] User can override ranking for a specific task ("make X top priority")
-- [ ] Overrides are time-bounded or explicit — they don't silently persist forever
-- [ ] Rationale is available for each ranked item explaining why it's ranked where it is
-- [ ] Rationale uses observational language, not diagnostic claims
+- [x] User can override ranking for a specific task ("make X top priority")
+- [x] Overrides are time-bounded or explicit — they don't silently persist forever
+- [x] Rationale is available for each ranked item explaining why it's ranked where it is
+- [x] Rationale uses observational language, not diagnostic claims
 **Dependencies:** R2
 
 ### R5: Integration Seam: Briefing Surfaces
@@ -138,9 +138,13 @@ See `context/refs/evidence-log.csv` for evidence tracking.
 - [x] Audit R11 (MVP Scope Boundary): ranking remains local heuristic code in `services/execution-prioritization.js` with no ML model calls, no cross-user comparison, and no external ranking API dependency.
 - [x] Audit R12 (User Goal Awareness): `createGoalThemeProfile(...)` parses declared goals from product context and `assessCandidate(...)` boosts matching tasks without penalizing degraded/no-goal cases.
 - [x] Audit R1 (Ranking Contract and Inputs): `context/refs/prioritization-ranking-contract.md` now defines the canonical ranking inputs/outputs and version history; `context/refs/source-register.csv` now catalogs current repo-relative evidence sources; `services/execution-prioritization.js` exposes recurrence (`repeatFlag`) and task-age (`taskAgeDays`) fields in the normalized candidate contract.
-- [ ] Keep R4, R5, R7, R8, R9, and R10 unchecked pending explicit override, trend, observability, behavioral-input, anti-planning-bias, and full regression evidence.
+- [x] Audit R3 (Ranking Confidence and Uncertainty): `services/execution-prioritization.js` now emits explicit `rankingConfidence`, uncertainty labels, and clarification flags while strong-confidence rationale remains direct and weak inference stays hedged rather than stated as fact.
+- [x] Audit R4 (Exceptions and Rationale): `services/execution-prioritization.js` now accepts explicit `priorityOverrides` in ranking context, applies non-expired overrides as top-priority exceptions, and preserves rationale text for each ranked item using observational language.
+- [ ] Keep R5, R7, R8, R9, and R10 unchecked pending briefing-trend integration, observability, behavioral-input, anti-planning-bias, and full regression evidence.
 
 ## Changelog
+- 2026-04-21: R4 completed — ranking now supports explicit time-bounded task overrides while preserving rationale for every ranked item.
+- 2026-04-21: R3 completed — ranking output now carries explicit confidence, uncertainty labels, and clarification flags for weak or degraded results.
 - 2026-04-20: R2, R6, R11, and R12 completed — ranking now has audited leverage scoring, project-resolution integration, explicit MVP boundaries, and declared-goal awareness.
 - 2026-04-21: R1 completed — ranking contract is now versioned in refs, source register paths are current, and normalized candidate inputs explicitly include recurrence and task-age fields.
 - 2026-04-18: Migrated from kitty-specs 007-execution-prioritization-foundations

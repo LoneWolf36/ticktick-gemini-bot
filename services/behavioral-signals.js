@@ -1,3 +1,5 @@
+import { createHash } from 'node:crypto';
+
 /**
  * Behavioral Signal Classifier — passive observation of task events.
  *
@@ -70,6 +72,7 @@ const CONFIDENCE = Object.freeze({
  * @property {string} category - Task category if available, else 'unknown'
  * @property {string|null} projectId - Project ID if available
  * @property {number} confidence - 0.0 to 1.0 confidence in the signal
+ * @property {string|null} subjectKey - Stable derived task key for aggregate detection
  * @property {object} metadata - Derived counts/ deltas only; NEVER raw titles/text
  * @property {string} timestamp - ISO timestamp of the event
  */
@@ -191,18 +194,18 @@ export function classifyTaskEvent(event) {
  * @private
  */
 function emitSignal(type, event) {
-    return {
+    return withSubjectKey({
         type,
         category: event.category || 'unknown',
         projectId: event.projectId || null,
         confidence: 1.0,
         metadata: buildMetadata(event),
         timestamp: event.timestamp || new Date().toISOString(),
-    };
+    }, event);
 }
 
 function emitPatternSignal(type, event, confidence, metadata = {}) {
-    return {
+    return withSubjectKey({
         type,
         category: event.category || 'unknown',
         projectId: event.projectId || null,
@@ -212,6 +215,21 @@ function emitPatternSignal(type, event, confidence, metadata = {}) {
             ...metadata,
         },
         timestamp: event.timestamp || new Date().toISOString(),
+    }, event);
+}
+
+export function deriveSubjectKey(taskId) {
+    if (typeof taskId !== 'string' || taskId.trim() === '') {
+        return null;
+    }
+
+    return createHash('sha256').update(taskId).digest('hex').slice(0, 16);
+}
+
+function withSubjectKey(signal, event) {
+    return {
+        ...signal,
+        subjectKey: deriveSubjectKey(event?.taskId),
     };
 }
 
@@ -473,7 +491,7 @@ export function detectPostpone(event) {
 
     // Forward move = postponement
     if (after > before) {
-        return {
+        return withSubjectKey({
             type: SignalType.POSTPONE,
             category: event.category || 'unknown',
             projectId: event.projectId || null,
@@ -483,7 +501,7 @@ export function detectPostpone(event) {
                 daysMoved: Math.round((after.getTime() - before.getTime()) / (1000 * 60 * 60 * 24)),
             },
             timestamp: event.timestamp || new Date().toISOString(),
-        };
+        }, event);
     }
 
     // Backward move (earlier) — not a postpone
@@ -533,6 +551,7 @@ export function detectScopeChange(event) {
     }
 
     return {
+        subjectKey: deriveSubjectKey(event.taskId),
         type: SignalType.SCOPE_CHANGE,
         category: event.category || 'unknown',
         projectId: event.projectId || null,
@@ -568,7 +587,7 @@ export function detectDecomposition(event) {
 
     // Subtasks added — decomposition detected
     if (delta > 0) {
-        return {
+        return withSubjectKey({
             type: SignalType.DECOMPOSITION,
             category: event.category || 'unknown',
             projectId: event.projectId || null,
@@ -578,7 +597,7 @@ export function detectDecomposition(event) {
                 newSubtaskCount: subtaskCountAfter,
             },
             timestamp: event.timestamp || new Date().toISOString(),
-        };
+        }, event);
     }
 
     return null;

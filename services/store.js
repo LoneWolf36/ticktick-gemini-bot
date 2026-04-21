@@ -25,7 +25,11 @@ export const MODE_URGENT = 'urgent';
 export const VALID_WORK_STYLE_MODES = [MODE_STANDARD, MODE_FOCUS, MODE_URGENT];
 export const DEFAULT_URGENT_EXPIRY_MS = 2 * 60 * 60 * 1000; // 2 hours
 export const DEFAULT_BEHAVIORAL_USER_ID = 'default';
-export const BEHAVIORAL_SIGNAL_RETENTION_DAYS = 90;
+export const BEHAVIORAL_SIGNAL_RETENTION_DAYS = Math.max(1, Number.parseInt(process.env.BEHAVIORAL_SIGNAL_RETENTION_DAYS || '30', 10) || 30);
+export const BEHAVIORAL_SIGNAL_ARCHIVE_DAYS = Math.max(
+    BEHAVIORAL_SIGNAL_RETENTION_DAYS,
+    Number.parseInt(process.env.BEHAVIORAL_SIGNAL_ARCHIVE_DAYS || '90', 10) || 90,
+);
 
 function logWorkStyleTelemetry({ userId, previousMode, nextMode, expiresAt = null, reason = 'user_request' }) {
     let eventType = 'mode_updated';
@@ -83,6 +87,7 @@ const DEFAULT_STATE = {
 let redis = null;
 let state = null;
 let useRedis = false;
+let fileSaveQueue = Promise.resolve();
 
 if (process.env.REDIS_URL) {
     try {
@@ -229,33 +234,35 @@ async function save() {
         }
     } else {
         ensureDir();
-        try {
-            const jsonStr = _validateSerialization(state);
-            const fd = fs.openSync(STORE_FILE_TMP, 'w');
-            fs.writeSync(fd, jsonStr);
-            fs.fsyncSync(fd);
-            fs.closeSync(fd);
-
-            // Win 1: Durable backup rotation (file-based persistence only)
+        const snapshot = structuredClone(state);
+        fileSaveQueue = fileSaveQueue.catch(() => {}).then(() => {
             try {
-                if (fs.existsSync(STORE_FILE)) {
-                    const BACKUP_FILE = `${STORE_FILE}.bak`;
-                    fs.copyFileSync(STORE_FILE, BACKUP_FILE);
-                }
-            } catch (backupErr) { /* Best-effort backup */ }
+                const jsonStr = _validateSerialization(snapshot);
+                const fd = fs.openSync(STORE_FILE_TMP, 'w');
+                fs.writeSync(fd, jsonStr);
+                fs.fsyncSync(fd);
+                fs.closeSync(fd);
 
-            fs.renameSync(STORE_FILE_TMP, STORE_FILE);
+                try {
+                    if (fs.existsSync(STORE_FILE)) {
+                        const BACKUP_FILE = `${STORE_FILE}.bak`;
+                        fs.copyFileSync(STORE_FILE, BACKUP_FILE);
+                    }
+                } catch (backupErr) { /* Best-effort backup */ }
 
-            // Best-effort directory fsync (max durability on Linux)
-            try {
-                const dirFd = fs.openSync(DATA_DIR, 'r');
-                fs.fsyncSync(dirFd);
-                fs.closeSync(dirFd);
-            } catch { /* Ignore directory sync failures */ }
+                fs.renameSync(STORE_FILE_TMP, STORE_FILE);
 
-        } catch (err) {
-            console.error('⚠️  Local file save failed. Existing data preserved.', err.message);
-        }
+                try {
+                    const dirFd = fs.openSync(DATA_DIR, 'r');
+                    fs.fsyncSync(dirFd);
+                    fs.closeSync(dirFd);
+                } catch { /* Ignore directory sync failures */ }
+
+            } catch (err) {
+                console.error('⚠️  Local file save failed. Existing data preserved.', err.message);
+            }
+        });
+        await fileSaveQueue;
     }
 }
 
@@ -297,7 +304,47 @@ function assertIsoTimestamp(value, fieldName) {
 }
 
 function isAllowedBehavioralMetadataValue(value) {
-    return typeof value === 'number' || typeof value === 'boolean' || value === null;
+    return typeof value === 'boolean' || value === null;
+}
+
+function sanitizeBehavioralMetadataForStorage(signal) {
+    const metadata = signal?.metadata ?? {};
+    const sanitized = {
+        planningSubtypeA: null,
+        planningSubtypeB: null,
+        scopeChange: null,
+        wordingOnlyEdit: null,
+        decompositionChange: null,
+    };
+
+    if (signal?.type === 'planning_without_execution') {
+        sanitized.planningSubtypeA = metadata.planningSubtypeA === true;
+        sanitized.planningSubtypeB = metadata.planningSubtypeB === true;
+    }
+
+    if (signal?.type === 'scope_change') {
+        sanitized.scopeChange = true;
+        sanitized.wordingOnlyEdit = false;
+    }
+
+    if (signal?.type === 'decomposition') {
+        sanitized.decompositionChange = true;
+    }
+
+    return sanitized;
+}
+
+function getBehavioralRetentionBoundaryMs(nowMs = Date.now()) {
+    return nowMs - (BEHAVIORAL_SIGNAL_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+}
+
+function getBehavioralArchiveBoundaryMs(nowMs = Date.now()) {
+    return nowMs - (BEHAVIORAL_SIGNAL_ARCHIVE_DAYS * 24 * 60 * 60 * 1000);
+}
+
+function isBehavioralSignalActive(signal, nowMs = Date.now()) {
+    const signalMs = Date.parse(signal?.timestamp || '');
+    return Number.isFinite(signalMs) && signalMs >= getBehavioralRetentionBoundaryMs(nowMs);
 }
 
 function validateBehavioralSignal(signal) {
@@ -305,7 +352,7 @@ function validateBehavioralSignal(signal) {
         throw new Error('Behavioral signal must be an object');
     }
 
-    const forbiddenTopLevelKeys = ['title', 'message', 'description', 'content', 'rawMessage', 'rawTaskTitle'];
+    const forbiddenTopLevelKeys = ['title', 'message', 'description', 'content', 'rawMessage', 'rawTaskTitle', 'taskId'];
     for (const key of forbiddenTopLevelKeys) {
         if (signal[key] !== undefined) {
             throw new Error(`Behavioral signal must not include raw field: ${key}`);
@@ -328,18 +375,24 @@ function validateBehavioralSignal(signal) {
         throw new Error('Behavioral signal confidence must be a number between 0 and 1');
     }
 
+    if (signal.subjectKey !== undefined && signal.subjectKey !== null && typeof signal.subjectKey !== 'string') {
+        throw new Error('Behavioral signal subjectKey must be a string or null');
+    }
+
     assertIsoTimestamp(signal.timestamp, 'Behavioral signal timestamp');
 
-    const metadata = signal.metadata ?? {};
-    if (typeof metadata !== 'object' || Array.isArray(metadata)) {
+    const rawMetadata = signal.metadata ?? {};
+    if (typeof rawMetadata !== 'object' || Array.isArray(rawMetadata)) {
         throw new Error('Behavioral signal metadata must be an object');
     }
 
     for (const forbiddenKey of forbiddenTopLevelKeys) {
-        if (metadata[forbiddenKey] !== undefined) {
+        if (rawMetadata[forbiddenKey] !== undefined) {
             throw new Error(`Behavioral signal metadata must not include raw field: ${forbiddenKey}`);
         }
     }
+
+    const metadata = sanitizeBehavioralMetadataForStorage(signal);
 
     for (const [key, value] of Object.entries(metadata)) {
         if (!isAllowedBehavioralMetadataValue(value)) {
@@ -351,6 +404,7 @@ function validateBehavioralSignal(signal) {
         type: signal.type,
         category: signal.category ?? null,
         projectId: signal.projectId ?? null,
+        subjectKey: signal.subjectKey ?? null,
         confidence: signal.confidence,
         metadata,
         timestamp: signal.timestamp,
@@ -522,7 +576,7 @@ export async function appendBehavioralSignals(userId, signals = []) {
     state.behavioralSignals[userId] = [...existingSignals, ...validatedSignals]
         .filter((signal) => matchesBehavioralSignalRange(
             signal,
-            Date.now() - (BEHAVIORAL_SIGNAL_RETENTION_DAYS * 24 * 60 * 60 * 1000),
+            getBehavioralArchiveBoundaryMs(),
             null,
         ));
 
@@ -530,18 +584,20 @@ export async function appendBehavioralSignals(userId, signals = []) {
     return cloneSignals(validatedSignals);
 }
 
-export async function getBehavioralSignals(userId) {
+export async function getBehavioralSignals(userId, { includeExpired = false } = {}) {
     assertUserId(userId);
     await load();
     ensureBehavioralSignalBucket();
-    return cloneSignals(Array.isArray(state.behavioralSignals[userId]) ? state.behavioralSignals[userId] : []);
+    const signals = Array.isArray(state.behavioralSignals[userId]) ? state.behavioralSignals[userId] : [];
+    const visibleSignals = includeExpired ? signals : signals.filter((signal) => isBehavioralSignalActive(signal));
+    return cloneSignals(visibleSignals);
 }
 
-export async function queryBehavioralSignalsByTimeRange(userId, { from = null, to = null } = {}) {
+export async function queryBehavioralSignalsByTimeRange(userId, { from = null, to = null, includeExpired = false } = {}) {
     assertUserId(userId);
     const fromMs = normalizeTimeRangeBoundary(from, 'from');
     const toMs = normalizeTimeRangeBoundary(to, 'to');
-    const signals = await getBehavioralSignals(userId);
+    const signals = await getBehavioralSignals(userId, { includeExpired });
     return signals.filter((signal) => matchesBehavioralSignalRange(signal, fromMs, toMs));
 }
 

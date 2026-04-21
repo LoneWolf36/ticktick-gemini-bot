@@ -61,6 +61,11 @@ import {
   SignalType,
   getSignalRegistry,
 } from '../services/behavioral-signals.js';
+import {
+  BehavioralPatternType,
+  PatternConfidence,
+  detectBehavioralPatterns,
+} from '../services/behavioral-patterns.js';
 
 test('classifyTaskEvent emits expected base signal by event type', () => {
   const cases = [
@@ -497,6 +502,89 @@ test('behavioral signal storage rejects raw text fields', async () => {
   );
 });
 
+test('behavioral memory stores only minimal semantic metadata and domain tags', async () => {
+  const userId = `behavioral-minimal-${Date.now()}`;
+  await store.deleteBehavioralSignals(userId);
+
+  await store.appendBehavioralSignals(userId, [{
+    type: SignalType.PLANNING_WITHOUT_EXECUTION,
+    category: 'career',
+    projectId: 'career-project',
+    confidence: 0.92,
+    subjectKey: 'subject-1',
+    metadata: {
+      planningSubtypeA: true,
+      planningSubtypeB: false,
+      planningComplexityScore: 9,
+      completionRateWindow: 0.1,
+      checklistDelta: 8,
+    },
+    timestamp: new Date().toISOString(),
+  }]);
+
+  const [stored] = await store.getBehavioralSignals(userId, { includeExpired: true });
+
+  assert.equal(stored.category, 'career');
+  assert.equal(stored.projectId, 'career-project');
+  assert.equal(stored.subjectKey, 'subject-1');
+  assert.deepEqual(stored.metadata, {
+    planningSubtypeA: true,
+    planningSubtypeB: false,
+    scopeChange: null,
+    wordingOnlyEdit: null,
+    decompositionChange: null,
+  });
+});
+
+test('behavioral memory excludes expired signals from reads and pattern outputs', async () => {
+  const userId = `behavioral-retention-${Date.now()}`;
+  await store.deleteBehavioralSignals(userId);
+
+  const oldTimestamp = new Date(Date.now() - (31 * 24 * 60 * 60 * 1000)).toISOString();
+  await store.appendBehavioralSignals(userId, [
+    {
+      type: SignalType.POSTPONE,
+      category: 'work',
+      projectId: 'career',
+      confidence: 0.9,
+      subjectKey: 'old-postpone',
+      metadata: {},
+      timestamp: oldTimestamp,
+    },
+    {
+      type: SignalType.POSTPONE,
+      category: 'work',
+      projectId: 'career',
+      confidence: 0.9,
+      subjectKey: 'old-postpone',
+      metadata: {},
+      timestamp: oldTimestamp,
+    },
+    {
+      type: SignalType.POSTPONE,
+      category: 'work',
+      projectId: 'career',
+      confidence: 0.9,
+      subjectKey: 'old-postpone',
+      metadata: {},
+      timestamp: oldTimestamp,
+    },
+  ]);
+
+  const visibleSignals = await store.getBehavioralSignals(userId);
+  const archivedSignals = await store.getBehavioralSignals(userId, { includeExpired: true });
+  const querySignals = await store.queryBehavioralSignalsByTimeRange(userId, {
+    from: new Date(Date.now() - (40 * 24 * 60 * 60 * 1000)).toISOString(),
+    to: new Date().toISOString(),
+  });
+  const patterns = detectBehavioralPatterns(archivedSignals, { nowMs: Date.now() });
+
+  assert.equal(visibleSignals.length, 0);
+  assert.equal(querySignals.length, 0);
+  assert.equal(archivedSignals.length, 3);
+  assert.equal(patterns.length, 0);
+});
+
 test('ticktick adapter persists classified behavioral signals without blocking mutations', async () => {
   const userId = `behavioral-adapter-${Date.now()}`;
   const client = new TickTickClient({ accessToken: 'token', refreshToken: 'refresh', tokenExpiresAt: '2099-01-01T00:00:00Z' });
@@ -516,4 +604,164 @@ test('ticktick adapter persists classified behavioral signals without blocking m
 
   assert.equal(createdTask.id, 'task-created');
   assert.ok(storedSignals.some((signal) => signal.type === SignalType.CREATION));
+});
+
+test('behavioral signal storage serializes concurrent file writes without dropping signals', async () => {
+  const userId = `behavioral-concurrent-${Date.now()}`;
+  await store.deleteBehavioralSignals(userId);
+
+  const batches = Array.from({ length: 6 }, (_, index) => classifyTaskEvent({
+    eventType: 'create',
+    taskId: `task-${index}`,
+    category: `cat-${index % 3}`,
+    projectId: `proj-${index % 3}`,
+    timestamp: `2026-04-1${index}T10:00:00Z`,
+  }));
+
+  await Promise.all(batches.map((signals) => store.appendBehavioralSignals(userId, signals)));
+  const storedSignals = await store.getBehavioralSignals(userId);
+
+  assert.equal(storedSignals.length, batches.flat().length);
+});
+
+test('behavioral pattern engine detects snooze spiral from aggregated postpones', () => {
+  const signals = [
+    classifyTaskEvent({
+      eventType: 'update',
+      taskId: 'same-task',
+      category: 'work',
+      projectId: 'career',
+      dueDateBefore: '2026-04-10T10:00:00Z',
+      dueDateAfter: '2026-04-12T10:00:00Z',
+      timestamp: '2026-04-01T10:00:00Z',
+    })[0],
+    classifyTaskEvent({
+      eventType: 'update',
+      taskId: 'same-task',
+      category: 'work',
+      projectId: 'career',
+      dueDateBefore: '2026-04-12T10:00:00Z',
+      dueDateAfter: '2026-04-14T10:00:00Z',
+      timestamp: '2026-04-03T10:00:00Z',
+    })[0],
+    classifyTaskEvent({
+      eventType: 'update',
+      taskId: 'same-task',
+      category: 'work',
+      projectId: 'career',
+      dueDateBefore: '2026-04-14T10:00:00Z',
+      dueDateAfter: '2026-04-16T10:00:00Z',
+      timestamp: '2026-04-05T10:00:00Z',
+    })[0],
+  ];
+
+  const patterns = detectBehavioralPatterns(signals, { nowMs: Date.parse('2026-04-06T12:00:00Z') });
+  const snoozePattern = patterns.find((pattern) => pattern.type === BehavioralPatternType.SNOOZE_SPIRAL);
+
+  assert.ok(snoozePattern);
+  assert.equal(snoozePattern.confidence, PatternConfidence.STANDARD);
+  assert.equal(snoozePattern.eligibleForSurfacing, true);
+  assert.equal(snoozePattern.signalCount, 3);
+});
+
+test('behavioral pattern engine detects planning overload aggregates and suppresses low-confidence surfacing', () => {
+  const typeASignals = [
+    classifyTaskEvent({
+      eventType: 'update',
+      taskId: 'plan-a-1',
+      category: 'career',
+      projectId: 'career',
+      checklistCountBefore: 0,
+      checklistCountAfter: 6,
+      descriptionLengthBefore: 20,
+      descriptionLengthAfter: 260,
+      subtaskCountBefore: 0,
+      subtaskCountAfter: 6,
+      planningComplexityScore: 7,
+      completionRateWindow: 0,
+      planningSubtypeA: true,
+      timestamp: '2026-04-01T09:00:00Z',
+    }).find((signal) => signal.type === SignalType.PLANNING_WITHOUT_EXECUTION),
+    classifyTaskEvent({
+      eventType: 'update',
+      taskId: 'plan-a-2',
+      category: 'career',
+      projectId: 'career',
+      checklistCountBefore: 1,
+      checklistCountAfter: 8,
+      descriptionLengthBefore: 40,
+      descriptionLengthAfter: 280,
+      subtaskCountBefore: 0,
+      subtaskCountAfter: 7,
+      planningComplexityScore: 8,
+      completionRateWindow: 0,
+      planningSubtypeA: true,
+      timestamp: '2026-04-03T09:00:00Z',
+    }).find((signal) => signal.type === SignalType.PLANNING_WITHOUT_EXECUTION),
+    classifyTaskEvent({
+      eventType: 'update',
+      taskId: 'plan-a-3',
+      category: 'career',
+      projectId: 'career',
+      checklistCountBefore: 2,
+      checklistCountAfter: 9,
+      descriptionLengthBefore: 30,
+      descriptionLengthAfter: 300,
+      subtaskCountBefore: 1,
+      subtaskCountAfter: 7,
+      planningComplexityScore: 9,
+      completionRateWindow: 0,
+      planningSubtypeA: true,
+      timestamp: '2026-04-05T09:00:00Z',
+    }).find((signal) => signal.type === SignalType.PLANNING_WITHOUT_EXECUTION),
+  ];
+
+  const creationSignals = Array.from({ length: 10 }, (_, index) => classifyTaskEvent({
+    eventType: 'create',
+    taskId: `overload-${index}`,
+    category: ['career', 'health', 'admin'][index % 3],
+    projectId: ['p-career', 'p-health', 'p-admin'][index % 3],
+    timestamp: `2026-04-${String(7 + Math.floor(index / 2)).padStart(2, '0')}T10:00:00Z`,
+  }).find((signal) => signal.type === SignalType.CREATION));
+  const completionSignals = [
+    classifyTaskEvent({ eventType: 'complete', taskId: 'c1', category: 'career', projectId: 'p-career', timestamp: '2026-04-08T10:00:00Z' })[0],
+    classifyTaskEvent({ eventType: 'complete', taskId: 'c2', category: 'admin', projectId: 'p-admin', timestamp: '2026-04-09T10:00:00Z' })[0],
+  ];
+  const lowConfidenceSignals = [
+    classifyTaskEvent({
+      eventType: 'update',
+      taskId: 'same-task-low',
+      category: 'work',
+      projectId: 'career',
+      dueDateBefore: '2026-04-10T10:00:00Z',
+      dueDateAfter: '2026-04-12T10:00:00Z',
+      timestamp: '2026-04-01T10:00:00Z',
+    })[0],
+    classifyTaskEvent({
+      eventType: 'update',
+      taskId: 'same-task-low',
+      category: 'work',
+      projectId: 'career',
+      dueDateBefore: '2026-04-12T10:00:00Z',
+      dueDateAfter: '2026-04-14T10:00:00Z',
+      timestamp: '2026-04-03T10:00:00Z',
+    })[0],
+  ];
+
+  const patterns = detectBehavioralPatterns([...typeASignals, ...creationSignals, ...completionSignals, ...lowConfidenceSignals], {
+    nowMs: Date.parse('2026-04-10T12:00:00Z'),
+  });
+  const typeAPattern = patterns.find((pattern) => pattern.type === BehavioralPatternType.PLANNING_TYPE_A);
+  const typeBPattern = patterns.find((pattern) => pattern.type === BehavioralPatternType.PLANNING_TYPE_B);
+  const lowConfidenceSnooze = patterns.find((pattern) => pattern.type === BehavioralPatternType.SNOOZE_SPIRAL && pattern.signalCount === 2);
+
+  assert.ok(typeAPattern);
+  assert.equal(typeAPattern.confidence, PatternConfidence.STANDARD);
+  assert.equal(typeAPattern.eligibleForSurfacing, true);
+  assert.ok(typeBPattern);
+  assert.equal(typeBPattern.confidence, PatternConfidence.STANDARD);
+  assert.equal(typeBPattern.eligibleForSurfacing, true);
+  assert.ok(lowConfidenceSnooze);
+  assert.equal(lowConfidenceSnooze.confidence, PatternConfidence.LOW);
+  assert.equal(lowConfidenceSnooze.eligibleForSurfacing, false);
 });

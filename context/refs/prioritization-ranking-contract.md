@@ -45,6 +45,7 @@ Required contract fields:
 - `workStyleMode`
 - `urgentMode`
 - `behavioralInferenceThreshold`
+- `priorityOverrides`
 - `stateSource`
 
 User context enters ranking through `goalThemeProfile`, which is derived from declared goals in user context.

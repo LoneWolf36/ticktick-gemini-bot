@@ -146,9 +146,107 @@ test('execution prioritization returns structured degraded recommendation result
   assert.equal(result.topRecommendation.taskId, 'task-1');
   assert.equal(result.degraded, true);
   assert.equal(result.degradedReason, 'unknown_goals');
+   assert.equal(result.rankingConfidence, 'low');
+   assert.equal(result.shouldAskClarification, true);
+   assert.equal(result.clarificationReason, 'missing_goal_context');
+   assert.match(result.uncertaintyLabel, /uncertain/i);
   assert.equal(result.context.goalThemeProfile.confidence, 'weak');
   assert.equal(result.topRecommendation.inferenceConfidence, 'weak');
   assert.match(result.topRecommendation.rationaleText, /Possible next candidate/i);
+});
+
+test('execution prioritization marks strong rankings as high confidence without clarification', () => {
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-career-strong',
+      title: 'Prepare backend system design interview notes',
+      projectId: 'career',
+      projectName: 'Career',
+      dueDate: '2026-03-10T12:00:00Z',
+      status: 0,
+    }),
+  ];
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile(`GOALS:\n1. Land a senior backend role`, { source: 'user_context' }),
+    nowIso: '2026-03-10T10:00:00Z',
+  });
+
+  const result = rankPriorityCandidatesForTest(candidates, context);
+
+  assert.equal(result.rankingConfidence, 'high');
+  assert.equal(result.uncertaintyLabel, null);
+  assert.equal(result.shouldAskClarification, false);
+  assert.equal(result.clarificationReason, null);
+  assert.doesNotMatch(result.topRecommendation.rationaleText, /likely|possibly|potentially|possible/i);
+});
+
+test('execution prioritization applies explicit task overrides ahead of heuristic ranking', () => {
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-important',
+      title: 'Prepare backend interview notes',
+      projectId: 'career',
+      projectName: 'Career',
+      status: 0,
+    }),
+    normalizePriorityCandidate({
+      id: 'task-override',
+      title: 'Call landlord',
+      projectId: 'admin',
+      projectName: 'Admin',
+      status: 0,
+    }),
+  ];
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+    nowIso: '2026-04-21T12:00:00Z',
+    priorityOverrides: [{
+      taskId: 'task-override',
+      reason: 'manual_top_priority',
+      expiresAt: '2026-04-21T18:00:00Z',
+    }],
+  });
+
+  const result = rankPriorityCandidatesForTest(candidates, context);
+
+  assert.equal(result.topRecommendation.taskId, 'task-override');
+  assert.equal(result.ranked[0].exceptionApplied, true);
+  assert.equal(result.ranked[0].exceptionReason, 'manual_top_priority');
+  assert.match(result.ranked[0].rationaleText, /top priority for now/i);
+});
+
+test('execution prioritization ignores expired overrides', () => {
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-career',
+      title: 'Prepare backend interview notes',
+      projectId: 'career',
+      projectName: 'Career',
+      status: 0,
+    }),
+    normalizePriorityCandidate({
+      id: 'task-old-override',
+      title: 'Organize desk drawer',
+      projectId: 'home',
+      projectName: 'Home',
+      status: 0,
+    }),
+  ];
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+    nowIso: '2026-04-21T12:00:00Z',
+    priorityOverrides: [{
+      taskId: 'task-old-override',
+      reason: 'expired_override',
+      expiresAt: '2026-04-20T12:00:00Z',
+    }],
+  });
+
+  const result = rankPriorityCandidatesForTest(candidates, context);
+
+  assert.equal(result.topRecommendation.taskId, 'task-career');
+  assert.equal(result.ranked[0].exceptionApplied, false);
+  assert.equal(result.ranked.some((item) => item.exceptionReason === 'expired_override'), false);
 });
 
 test('execution prioritization ranks meaningful work above low-value admin when goals are explicit', () => {

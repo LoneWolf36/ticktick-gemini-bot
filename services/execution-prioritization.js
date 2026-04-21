@@ -261,6 +261,48 @@ function urgentModeWeight(candidate, urgency, context) {
     return boost;
 }
 
+function normalizePriorityOverride(override, nowIso = null) {
+    if (!override || typeof override !== 'object' || Array.isArray(override)) {
+        return null;
+    }
+
+    const taskId = normalizeWhitespace(override.taskId);
+    if (!taskId) {
+        return null;
+    }
+
+    const expiresAt = typeof override.expiresAt === 'string' && !Number.isNaN(Date.parse(override.expiresAt))
+        ? override.expiresAt
+        : null;
+    const nowMs = typeof nowIso === 'string' && !Number.isNaN(Date.parse(nowIso))
+        ? Date.parse(nowIso)
+        : Date.now();
+
+    if (expiresAt && Date.parse(expiresAt) <= nowMs) {
+        return null;
+    }
+
+    return {
+        taskId,
+        reason: normalizeWhitespace(override.reason) || 'explicit_user_priority',
+        expiresAt,
+    };
+}
+
+function resolvePriorityOverrides(overrides, nowIso = null) {
+    if (!Array.isArray(overrides)) {
+        return [];
+    }
+
+    return overrides
+        .map((override) => normalizePriorityOverride(override, nowIso))
+        .filter(Boolean);
+}
+
+function findPriorityOverride(taskId, context) {
+    return (context.priorityOverrides || []).find((override) => override.taskId === taskId) || null;
+}
+
 function inferInferenceConfidence({ rationaleCode, urgency, degraded, themeMatches, exceptionApplied }) {
     if (exceptionApplied === true) {
         return 'strong';
@@ -318,6 +360,20 @@ function buildRationaleText(rationaleCode, candidate, themeMatches, inferenceCon
 }
 
 function assessCandidate(candidate, context) {
+    const priorityOverride = findPriorityOverride(candidate.taskId, context);
+    if (priorityOverride) {
+        return {
+            candidate,
+            score: 10_000,
+            rationaleCode: 'user_override',
+            rationaleText: 'You marked this task as the top priority for now.',
+            inferenceConfidence: 'strong',
+            exceptionApplied: true,
+            exceptionReason: priorityOverride.reason,
+            fallbackUsed: false,
+        };
+    }
+
     const themeMatches = inferThemeMatches(candidate, context.goalThemeProfile);
     const urgency = parseUrgency(candidate, context.nowIso);
     const degraded = context.goalThemeProfile.confidence !== 'explicit';
@@ -430,10 +486,11 @@ export function normalizePriorityCandidate(task = {}) {
 export function buildRankingContext(options = {}) {
     return {
         goalThemeProfile: options.goalThemeProfile || createGoalThemeProfile('', { source: 'fallback' }),
-        nowIso: options.nowIso ?? null,
+        nowIso: options.nowIso || null,
         workStyleMode: options.workStyleMode || 'unknown',
         urgentMode: options.urgentMode === true,
         behavioralInferenceThreshold: options.behavioralInferenceThreshold || 'strong',
+        priorityOverrides: resolvePriorityOverrides(options.priorityOverrides, options.nowIso),
         stateSource: options.stateSource || 'none',
     };
 }
@@ -553,12 +610,29 @@ export function buildRecommendationResult({ ranked = [], degradedReason = 'none'
     const finalDegradedReason = normalizedRanked.length === 0
         ? 'no_candidates'
         : degradedReason;
+    const rankingConfidence = normalizedRanked.length > 0
+        && finalDegradedReason === 'none'
+        && normalizedRanked.every((decision) => decision.inferenceConfidence === 'strong')
+        ? 'high'
+        : 'low';
+    const shouldAskClarification = rankingConfidence === 'low' && finalDegradedReason !== 'no_candidates';
+    const uncertaintyLabel = rankingConfidence === 'low'
+        ? (finalDegradedReason === 'unknown_goals'
+            ? 'Ranking is uncertain because goal context is incomplete.'
+            : 'Ranking is uncertain because some evidence is weak or conflicting.')
+        : null;
 
     return {
         topRecommendation: normalizedRanked[0] || null,
         ranked: normalizedRanked,
         degraded: finalDegradedReason !== 'none',
         degradedReason: finalDegradedReason,
+        rankingConfidence,
+        uncertaintyLabel,
+        shouldAskClarification,
+        clarificationReason: shouldAskClarification
+            ? (finalDegradedReason === 'unknown_goals' ? 'missing_goal_context' : 'weak_inference')
+            : null,
         context: resolvedContext,
     };
 }
