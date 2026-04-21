@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-20T15:10:00Z"
+last_edited: "2026-04-21T13:45:00Z"
 source_specs: ["007-execution-prioritization-foundations"]
 complexity: "complex"
 ---
@@ -21,9 +21,9 @@ See `context/refs/evidence-log.csv` for evidence tracking.
 ### R1: Ranking Contract and Inputs
 **Description:** A ranking contract defines what inputs feed the prioritization engine and what outputs it produces.
 **Acceptance Criteria:**
-- [ ] Ranking contract specifies: input signals (due date, priority field, project, recurrence, task age, user context), output (ordered list with rationale per item)
-- [ ] Input sources are catalogued in `context/refs/source-register.csv`
-- [ ] Contract is versioned and changes are logged
+- [x] Ranking contract specifies: input signals (due date, priority field, project, recurrence, task age, user context), output (ordered list with rationale per item)
+- [x] Input sources are catalogued in `context/refs/source-register.csv`
+- [x] Contract is versioned and changes are logged
 **Dependencies:** none
 
 ### R2: Core Leverage Ranking Engine
@@ -137,9 +137,10 @@ See `context/refs/evidence-log.csv` for evidence tracking.
 - [x] Audit R6 (Project Resolution): `inferProjectIdFromTask(...)` consults ranking-derived priority context when available, then falls back to built-in project fragment defaults when ranking context is degraded or insufficient.
 - [x] Audit R11 (MVP Scope Boundary): ranking remains local heuristic code in `services/execution-prioritization.js` with no ML model calls, no cross-user comparison, and no external ranking API dependency.
 - [x] Audit R12 (User Goal Awareness): `createGoalThemeProfile(...)` parses declared goals from product context and `assessCandidate(...)` boosts matching tasks without penalizing degraded/no-goal cases.
-- [ ] Keep R1 unchecked until `context/refs/source-register.csv` exists and contract/version logging is recorded.
+- [x] Audit R1 (Ranking Contract and Inputs): `context/refs/prioritization-ranking-contract.md` now defines the canonical ranking inputs/outputs and version history; `context/refs/source-register.csv` now catalogs current repo-relative evidence sources; `services/execution-prioritization.js` exposes recurrence (`repeatFlag`) and task-age (`taskAgeDays`) fields in the normalized candidate contract.
 - [ ] Keep R4, R5, R7, R8, R9, and R10 unchecked pending explicit override, trend, observability, behavioral-input, anti-planning-bias, and full regression evidence.
 
 ## Changelog
 - 2026-04-20: R2, R6, R11, and R12 completed — ranking now has audited leverage scoring, project-resolution integration, explicit MVP boundaries, and declared-goal awareness.
+- 2026-04-21: R1 completed — ranking contract is now versioned in refs, source register paths are current, and normalized candidate inputs explicitly include recurrence and task-age fields.
 - 2026-04-18: Migrated from kitty-specs 007-execution-prioritization-foundations

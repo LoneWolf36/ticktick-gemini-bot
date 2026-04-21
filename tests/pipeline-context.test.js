@@ -1,6 +1,8 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPipelineContextBuilder, validatePipelineContext } from '../services/pipeline-context.js';
+import { createPipelineObservability } from '../services/pipeline-observability.js';
+import { createPipelineHarness } from './pipeline-harness.js';
 
 // Mock TickTick adapter
 function createMockAdapter(projects = []) {
@@ -85,6 +87,32 @@ test('T001: context builder accepts injected requestId for deterministic tests',
     });
 
     assert.equal(context.requestId, 'test-uuid-123');
+});
+
+test('T001: buildRequestContext includes immutable lifecycle envelope and correlation id', async () => {
+    const adapter = createMockAdapter(DEFAULT_PROJECTS);
+    const builder = createPipelineContextBuilder({ adapter, timezone: 'UTC' });
+    const context = await builder.buildRequestContext('Test', {
+        currentDate: '2026-04-13',
+        requestId: 'req-r1-lifecycle',
+        entryPoint: 'telegram',
+        mode: 'interactive',
+    });
+
+    assert.equal(context.correlationId, 'req-r1-lifecycle');
+    assert.equal(context.lifecycle.request.metadata.requestId, 'req-r1-lifecycle');
+    assert.equal(context.lifecycle.request.metadata.correlationId, 'req-r1-lifecycle');
+    assert.equal(context.lifecycle.request.metadata.entryPoint, 'telegram');
+    assert.equal(context.lifecycle.request.userMessage, 'Test');
+    assert.deepEqual(context.lifecycle.ax, {
+        status: 'pending',
+        intentOutput: null,
+        failure: null,
+    });
+    assert.deepEqual(context.lifecycle.execute.requests, []);
+    assert.deepEqual(context.lifecycle.execute.results, []);
+    assert.ok(Object.isFrozen(context));
+    assert.ok(Object.isFrozen(context.lifecycle));
 });
 
 test('T001: context builder accepts injected date for deterministic tests', async () => {
@@ -402,8 +430,6 @@ test('T003: pipeline passes canonical context fields to normalizer', async () =>
 // ============================================================
 
 test('WP01: full pipeline flow with canonical context succeeds', async () => {
-    const { createPipelineHarness } = await import('./pipeline-harness.js');
-
     const harness = createPipelineHarness({
         intents: [{
             type: 'create',
@@ -419,4 +445,51 @@ test('WP01: full pipeline flow with canonical context succeeds', async () => {
     assert.ok(result.requestId, 'Result includes requestId');
     assert.ok(result.entryPoint !== undefined, 'Result includes entryPoint');
     assert.ok(result.mode !== undefined, 'Result includes mode');
+});
+
+test('R1: observability consumers receive canonical immutable pipeline context snapshots', async () => {
+    const observed = [];
+    const observability = createPipelineObservability({
+        eventSink: async (event, context) => {
+            observed.push({ event, context });
+        },
+        logger: null,
+    });
+
+    const harness = createPipelineHarness({
+        intents: [{
+            type: 'create',
+            title: 'Write summary',
+            confidence: 0.9,
+        }],
+        observability,
+    });
+
+    const result = await harness.processMessage('write summary', {
+        requestId: 'req-r1-observability',
+        entryPoint: 'telegram',
+        mode: 'interactive',
+    });
+
+    const requestEvent = observed.find(({ event }) => event.eventType === 'pipeline.request.received');
+    const finalEvent = observed.findLast(({ event }) => event.eventType === 'pipeline.request.completed');
+
+    assert.ok(requestEvent?.context, 'request event should receive context');
+    assert.ok(finalEvent?.context, 'final event should receive context');
+    assert.equal(requestEvent.context.lifecycle.ax.intentOutput, null, 'request snapshot stays pre-AX');
+    assert.equal(finalEvent.context.correlationId, 'req-r1-observability');
+    assert.equal(finalEvent.context.lifecycle.ax.status, 'success');
+    assert.equal(finalEvent.context.lifecycle.normalize.status, 'success');
+    assert.equal(finalEvent.context.lifecycle.execute.status, 'success');
+    assert.equal(finalEvent.context.lifecycle.result.type, 'task');
+    assert.equal(finalEvent.context.lifecycle.request.metadata.requestId, 'req-r1-observability');
+    assert.equal(finalEvent.context.lifecycle.execute.requests.length, 1);
+    assert.equal(finalEvent.context.lifecycle.execute.results.length, 1);
+    assert.deepEqual(finalEvent.context.lifecycle.validationFailures, []);
+    assert.ok(finalEvent.context.lifecycle.timing.totalDurationMs !== null);
+    assert.ok(result.pipelineContext, 'result exposes canonical pipeline context');
+    assert.ok(Object.isFrozen(result.pipelineContext));
+    assert.throws(() => {
+        result.pipelineContext.lifecycle.execute.requests.push({ nope: true });
+    }, TypeError);
 });

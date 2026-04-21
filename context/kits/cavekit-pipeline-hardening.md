@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-20T15:45:00Z"
+last_edited: "2026-04-21T13:45:00Z"
 source_specs: ["003-pipeline-hardening-and-regression"]
 complexity: "complex"
 ---
@@ -21,9 +21,9 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 ### R1: Canonical Pipeline Context
 **Description:** A single pipeline context object carries the full lifecycle state of every request from entry to adapter response.
 **Acceptance Criteria:**
-- [ ] Pipeline context includes: request metadata, AX intent output, normalized actions, adapter requests/results, validation failures, timing, and correlation ID
-- [ ] Context is immutable after each stage writes to it — no later stage mutates earlier fields
-- [ ] Pipeline context is available to all observability consumers without requiring separate instrumentation
+- [x] Pipeline context includes: request metadata, AX intent output, normalized actions, adapter requests/results, validation failures, timing, and correlation ID
+- [x] Context is immutable after each stage writes to it — no later stage mutates earlier fields
+- [x] Pipeline context is available to all observability consumers without requiring separate instrumentation
 **Dependencies:** none
 
 ### R2: Entry-Point Context Wiring
@@ -136,7 +136,7 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 
 - [x] R6 audited directly against `tests/pipeline-harness.js` and `context/refs/pipeline-harness.js`: harness accepts structured input, supports `adapterOverrides` for failure-path mocking, uses in-memory fixtures, and runs without Telegram or live TickTick.
 - [x] R9 audited directly against `services/pipeline-observability.js`, `context/refs/telemetry-events.schema.json`, and `tests/regression.pipeline-hardening-mutation.test.js` (`WP06 T017`): emitted events keep the required schema fields, preserve `requestId` tracing across request/execution/result steps, and avoid raw user-message persistence in telemetry payloads.
-- [ ] R1 remains unchecked: request context builder is validated, but the single immutable lifecycle object described by the AC is not yet persisted across all stages with AX output, normalized actions, adapter requests/results, validation failures, and timing bundled together.
+- [x] R1 audited directly against `services/pipeline-context.js`, `services/pipeline.js`, `services/pipeline-observability.js`, `tests/pipeline-context.test.js`, and `tests/regression.pipeline-hardening-mutation.test.js`: immutable lifecycle snapshots now capture request metadata, correlation ID, AX output, normalization state, execution requests/results, validation failures, timing, and final result; observability sinks receive the canonical context without changing the telemetry event schema.
 - [ ] R2 remains unchecked: entry points consistently pass pipeline options, but handlers do not themselves construct the full canonical context object before the pipeline call.
 - [ ] R3 remains unchecked: failure handling exists, but the exact transient/permanent/partial classification contract in the AC is not implemented as written.
 - [ ] R4 remains unchecked: no exponential backoff/ETA semantics for TickTick 429 responses were verified.
@@ -150,3 +150,4 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 ## Changelog
 - 2026-04-18: Migrated from kitty-specs 003-pipeline-hardening-and-regression
 - 2026-04-20: R6 and R9 completed — offline harness behavior and telemetry contract now have direct code + regression evidence.
+- 2026-04-21: R1 completed — canonical immutable pipeline context now persists across request, AX, normalization, execution, and result stages with observability access.

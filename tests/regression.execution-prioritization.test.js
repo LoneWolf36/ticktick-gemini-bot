@@ -86,6 +86,8 @@ test('execution prioritization normalizes candidates and flags sensitive content
     projectName: 'Inbox',
     priority: 0,
     dueDate: null,
+    repeatFlag: 'FREQ=WEEKLY',
+    createdAt: '2026-04-18T00:00:00Z',
     status: 0,
   });
 
@@ -97,10 +99,26 @@ test('execution prioritization normalizes candidates and flags sensitive content
     projectName: 'Inbox',
     priority: 0,
     dueDate: null,
+    repeatFlag: 'FREQ=WEEKLY',
+    taskAgeDays: Math.max(0, Math.floor((Date.now() - Date.parse('2026-04-18T00:00:00Z')) / (24 * 60 * 60 * 1000))),
     status: 0,
     source: 'ticktick',
     containsSensitiveContent: true,
   });
+});
+
+test('execution prioritization ships a versioned ranking contract and current source register', () => {
+  const contract = readFileSync(new URL('../context/refs/prioritization-ranking-contract.md', import.meta.url), 'utf8');
+  const sourceRegister = readFileSync(new URL('../context/refs/source-register.csv', import.meta.url), 'utf8');
+
+  assert.match(contract, /Version:\s*1\.0\.0/);
+  assert.match(contract, /repeatFlag/);
+  assert.match(contract, /taskAgeDays/);
+  assert.match(contract, /ordered list with rationale/i);
+
+  assert.doesNotMatch(sourceRegister, /[A-Z]:\\/);
+  assert.match(sourceRegister, /context\/refs\/prioritization-ranking-contract\.md/);
+  assert.match(sourceRegister, /services\/execution-prioritization\.js/);
 });
 
 test('execution prioritization returns structured degraded recommendation results', () => {

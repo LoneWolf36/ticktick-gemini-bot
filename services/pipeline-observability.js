@@ -65,9 +65,9 @@ export function createPipelineObservability({
         };
 
         emitConsole(logger, event);
-        await emitToSink(eventSink, 'emit', event);
-        await emitToSink(metricSink, 'increment', `pipeline.${event.step}.${event.status}`, 1, event);
-        await emitToSink(traceSink, 'addEvent', event.eventType, event);
+        await emitToSink(eventSink, 'emit', event, context);
+        await emitToSink(metricSink, 'increment', `pipeline.${event.step}.${event.status}`, 1, event, context);
+        await emitToSink(traceSink, 'addEvent', event.eventType, event, context);
         return event;
     }
 

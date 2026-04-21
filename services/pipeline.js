@@ -3,7 +3,11 @@
  * Orchestrates the full task processing flow:
  * Message -> AX Intent Extraction -> Normalization -> TickTick Adapter Execution
  */
-import { createPipelineContextBuilder } from './pipeline-context.js';
+import {
+    createPipelineContextBuilder,
+    snapshotPipelineValue,
+    updatePipelineContext,
+} from './pipeline-context.js';
 import { createPipelineObservability } from './pipeline-observability.js';
 import { QuotaExhaustedError } from './ax-intent.js';
 import { resolveTarget, buildClarificationPrompt } from './task-resolver.js';
@@ -133,6 +137,43 @@ function buildFailureResult(context, {
     };
 }
 
+function attachPipelineContext(result, context) {
+    return {
+        ...result,
+        pipelineContext: context || null,
+    };
+}
+
+function finalizePipelineContext(context, requestStartedAt, {
+    resultType,
+    status,
+    summary = null,
+    failureClass = null,
+    rolledBack = false,
+    validationFailures,
+}) {
+    const completedAt = Date.now();
+    return updatePipelineContext(context, (draft) => {
+        if (validationFailures !== undefined) {
+            draft.lifecycle.validationFailures = snapshotPipelineValue(validationFailures);
+        }
+        draft.lifecycle.result = {
+            status,
+            type: resultType,
+            summary,
+            failureClass,
+            rolledBack,
+        };
+        draft.lifecycle.timing.requestCompletedAt = new Date(completedAt).toISOString();
+        draft.lifecycle.timing.totalDurationMs = completedAt - requestStartedAt;
+        draft.lifecycle.timing.stages.result = {
+            startedAt: new Date(completedAt).toISOString(),
+            durationMs: 0,
+            status,
+        };
+    });
+}
+
 function buildNonTaskResult(context, reason, details = null) {
     const userMessage = (context?.userMessage || '').trim().toLowerCase();
     const isGreeting = /^(hi|hey|hello|howdy|greetings|good\s*(morning|afternoon|evening|night)|how are you|what'?s up)\b/.test(userMessage);
@@ -196,7 +237,7 @@ function isUrgentWorkStyle(context) {
 }
 
 function updateChecklistContext(context, metadata = {}) {
-    if (!context || typeof context !== 'object') return null;
+    if (!context || typeof context !== 'object') return context;
 
     const existing = context.checklistContext && typeof context.checklistContext === 'object'
         ? context.checklistContext
@@ -214,11 +255,14 @@ function updateChecklistContext(context, metadata = {}) {
                 : null),
     };
 
-    context.checklistContext = next.hasChecklist === null && next.clarificationQuestion === null
+    const resolvedChecklistContext = next.hasChecklist === null && next.clarificationQuestion === null
         ? null
         : next;
 
-    return context.checklistContext;
+    return updatePipelineContext(context, (draft) => {
+        draft.checklistContext = snapshotPipelineValue(resolvedChecklistContext);
+        draft.lifecycle.request.checklistContext = snapshotPipelineValue(resolvedChecklistContext);
+    });
 }
 
 function isQuotaFailure(error) {
@@ -426,6 +470,14 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
         try {
             context = await contextBuilder.buildRequestContext(userMessage, options);
             requestStartedAt = Date.now();
+            context = updatePipelineContext(context, (draft) => {
+                draft.lifecycle.timing.requestStartedAt = new Date(requestStartedAt).toISOString();
+                draft.lifecycle.timing.stages.request = {
+                    startedAt: new Date(requestStartedAt).toISOString(),
+                    durationMs: null,
+                    status: 'start',
+                };
+            });
 
             await telemetry.emit(context, {
                 eventType: 'pipeline.request.received',
@@ -449,6 +501,18 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 });
             } catch (error) {
                 const failureClass = isQuotaFailure(error) ? FAILURE_CLASSES.QUOTA : FAILURE_CLASSES.UNEXPECTED;
+                context = updatePipelineContext(context, (draft) => {
+                    draft.lifecycle.ax.status = 'failure';
+                    draft.lifecycle.ax.failure = {
+                        failureClass,
+                        message: error.message,
+                    };
+                    draft.lifecycle.timing.stages.ax = {
+                        startedAt: new Date(axStartedAt).toISOString(),
+                        durationMs: Date.now() - axStartedAt,
+                        status: 'failure',
+                    };
+                });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.ax.failed',
                     step: 'ax',
@@ -464,6 +528,19 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
 
             if (isMalformedIntentPayload(intents)) {
                 console.warn(`[Pipeline:${context.requestId}] Malformed AX output.`);
+                context = updatePipelineContext(context, (draft) => {
+                    draft.lifecycle.ax.status = 'failure';
+                    draft.lifecycle.ax.intentOutput = snapshotPipelineValue(intents);
+                    draft.lifecycle.ax.failure = {
+                        failureClass: FAILURE_CLASSES.MALFORMED_AX,
+                        message: 'Malformed AX output.',
+                    };
+                    draft.lifecycle.timing.stages.ax = {
+                        startedAt: new Date(axStartedAt).toISOString(),
+                        durationMs: Date.now() - axStartedAt,
+                        status: 'failure',
+                    };
+                });
                 const failureResult = buildFailureResult(context, {
                     failureClass: FAILURE_CLASSES.MALFORMED_AX,
                     stage: 'ax',
@@ -472,6 +549,13 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         receivedType: Array.isArray(intents) ? 'array' : typeof intents,
                     },
                     retryable: true,
+                });
+                context = finalizePipelineContext(context, requestStartedAt, {
+                    resultType: 'error',
+                    status: 'failure',
+                    summary: 'Malformed AX output.',
+                    failureClass: FAILURE_CLASSES.MALFORMED_AX,
+                    rolledBack: false,
                 });
 
                 await telemetry.emit(context, {
@@ -492,8 +576,19 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     failureClass: FAILURE_CLASSES.MALFORMED_AX,
                     rolledBack: false,
                 });
-                return failureResult;
+                return attachPipelineContext(failureResult, context);
             }
+
+            context = updatePipelineContext(context, (draft) => {
+                draft.lifecycle.ax.status = 'success';
+                draft.lifecycle.ax.intentOutput = snapshotPipelineValue(intents);
+                draft.lifecycle.ax.failure = null;
+                draft.lifecycle.timing.stages.ax = {
+                    startedAt: new Date(axStartedAt).toISOString(),
+                    durationMs: Date.now() - axStartedAt,
+                    status: 'success',
+                };
+            });
 
             await telemetry.emit(context, {
                 eventType: 'pipeline.ax.completed',
@@ -509,6 +604,11 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
 
             if (intents.length === 0) {
                 console.log(`[Pipeline:${context.requestId}] No intents extracted. Routing as non-task.`);
+                context = finalizePipelineContext(context, requestStartedAt, {
+                    resultType: 'non-task',
+                    status: 'success',
+                    summary: NON_TASK_REASONS.EMPTY_INTENTS,
+                });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.completed',
                     step: 'result',
@@ -519,13 +619,13 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         reason: NON_TASK_REASONS.EMPTY_INTENTS,
                     },
                 });
-                return buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS);
+                return attachPipelineContext(buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS), context);
             }
 
             // Checklist/multi-task classification (WP04): detect ambiguous structure requests
             const hasChecklist = intents.some(i => Array.isArray(i.checklistItems) && i.checklistItems.length > 0);
             const hasMultipleCreates = intents.filter(i => i.type === 'create').length > 1;
-            updateChecklistContext(context, { hasChecklist });
+            context = updateChecklistContext(context, { hasChecklist });
 
             if (hasChecklist && hasMultipleCreates) {
                 // Check if user already provided a preference (clarification resume path)
@@ -572,7 +672,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     const clarificationQuestion = isUrgentWorkStyle(context)
                         ? 'Checklist or separate tasks?'
                         : 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?';
-                    updateChecklistContext(context, { clarificationQuestion });
+                    context = updateChecklistContext(context, { clarificationQuestion });
                     const clarificationResult = {
                         type: 'clarification',
                         results: [],
@@ -587,6 +687,11 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         mode: context.mode || null,
                         checklistContext: context.checklistContext || null,
                     };
+                    context = finalizePipelineContext(context, requestStartedAt, {
+                        resultType: 'clarification',
+                        status: 'success',
+                        summary: 'ambiguous_checklist_vs_multi_task',
+                    });
 
                     await telemetry.emit(context, {
                         eventType: 'pipeline.request.completed',
@@ -598,7 +703,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                             reason: 'ambiguous_checklist_vs_multi_task',
                         },
                     });
-                    return clarificationResult;
+                    return attachPipelineContext(clarificationResult, context);
                 }
             }
 
@@ -610,6 +715,9 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
             if (hasMutation && hasCreate) {
                 // Mixed create+mutation: out of scope for v1
                 console.warn(`[Pipeline:${context.requestId}] Mixed create+mutation request rejected.`);
+                context = updatePipelineContext(context, (draft) => {
+                    draft.lifecycle.validationFailures = snapshotPipelineValue(['mixed_create_and_mutation']);
+                });
                 const failureResult = buildFailureResult(context, {
                     failureClass: FAILURE_CLASSES.VALIDATION,
                     stage: 'mutation-routing',
@@ -618,6 +726,14 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         intentTypes: intents.map(i => i.type),
                     },
                     retryable: true,
+                });
+                context = finalizePipelineContext(context, requestStartedAt, {
+                    resultType: 'error',
+                    status: 'failure',
+                    summary: 'Mixed create+mutation request is out of scope.',
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    rolledBack: false,
+                    validationFailures: ['mixed_create_and_mutation'],
                 });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.failed',
@@ -630,7 +746,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         reason: 'mixed_create_and_mutation',
                     },
                 });
-                return failureResult;
+                return attachPipelineContext(failureResult, context);
             }
 
             let resolvedTask = null;
@@ -669,11 +785,21 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     });
 
                     if (resolverResult.status === 'clarification') {
-                        return buildClarificationResult(context, resolverResult);
+                        context = finalizePipelineContext(context, requestStartedAt, {
+                            resultType: 'clarification',
+                            status: 'success',
+                            summary: resolverResult.reason,
+                        });
+                        return attachPipelineContext(buildClarificationResult(context, resolverResult), context);
                     }
 
                     if (resolverResult.status === 'not_found') {
-                        return buildNotFoundResult(context, resolverResult.reason);
+                        context = finalizePipelineContext(context, requestStartedAt, {
+                            resultType: 'not-found',
+                            status: 'success',
+                            summary: resolverResult.reason,
+                        });
+                        return attachPipelineContext(buildNotFoundResult(context, resolverResult.reason), context);
                     }
 
                     // resolved
@@ -726,6 +852,18 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
 
             const validActions = normalizedActions.filter(a => a.valid);
             const invalidActions = normalizedActions.filter(a => !a.valid);
+            context = updatePipelineContext(context, (draft) => {
+                draft.lifecycle.normalize.status = 'success';
+                draft.lifecycle.normalize.normalizedActions = snapshotPipelineValue(normalizedActions);
+                draft.lifecycle.normalize.validActions = snapshotPipelineValue(validActions);
+                draft.lifecycle.normalize.invalidActions = snapshotPipelineValue(invalidActions);
+                draft.lifecycle.validationFailures = snapshotPipelineValue(invalidActions.map(a => a.validationErrors).flat());
+                draft.lifecycle.timing.stages.normalize = {
+                    startedAt: new Date(normalizeStartedAt).toISOString(),
+                    durationMs: Date.now() - normalizeStartedAt,
+                    status: 'success',
+                };
+            });
 
             await telemetry.emit(context, {
                 eventType: 'pipeline.normalize.completed',
@@ -758,6 +896,14 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     },
                     retryable: true,
                 });
+                context = finalizePipelineContext(context, requestStartedAt, {
+                    resultType: 'error',
+                    status: 'failure',
+                    summary: 'All intents failed validation.',
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    rolledBack: false,
+                    validationFailures: invalidActions.map(a => a.validationErrors).flat(),
+                });
 
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.failed',
@@ -767,10 +913,15 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     failureClass: FAILURE_CLASSES.VALIDATION,
                     rolledBack: false,
                 });
-                return failureResult;
+                return attachPipelineContext(failureResult, context);
             }
 
             if (validActions.length === 0) {
+                context = finalizePipelineContext(context, requestStartedAt, {
+                    resultType: 'non-task',
+                    status: 'success',
+                    summary: 'no_valid_actions_after_normalization',
+                });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.completed',
                     step: 'result',
@@ -782,14 +933,34 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         note: 'No valid actions after normalization.',
                     },
                 });
-                return buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS, {
+                return attachPipelineContext(buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS, {
                     note: 'No valid actions after normalization.',
-                });
+                }), context);
             }
 
             const executionResult = await _executeActions(validActions, adapter, context, telemetry);
+            context = updatePipelineContext(context, (draft) => {
+                draft.lifecycle.execute.status = executionResult.terminalFailure ? 'failure' : 'success';
+                draft.lifecycle.execute.requests = snapshotPipelineValue(executionResult.executionRequests);
+                draft.lifecycle.execute.results = snapshotPipelineValue(executionResult.executionResults);
+                draft.lifecycle.execute.failures = snapshotPipelineValue(executionResult.failures);
+                draft.lifecycle.execute.rollbackFailures = snapshotPipelineValue(executionResult.rollbackFailures);
+                draft.lifecycle.timing.stages.execute = {
+                    startedAt: new Date(executionResult.executeStartedAt).toISOString(),
+                    durationMs: executionResult.durationMs,
+                    status: executionResult.terminalFailure ? 'failure' : 'success',
+                };
+            });
 
             if (executionResult.terminalFailure) {
+                context = finalizePipelineContext(context, requestStartedAt, {
+                    resultType: 'error',
+                    status: 'failure',
+                    summary: executionResult.terminalFailure.summary,
+                    failureClass: executionResult.terminalFailure.failureClass,
+                    rolledBack: executionResult.terminalFailure.rolledBack,
+                    validationFailures: context.lifecycle.validationFailures,
+                });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.failed',
                     step: 'result',
@@ -803,7 +974,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     },
                 });
 
-                return buildFailureResult(context, {
+                return attachPipelineContext(buildFailureResult(context, {
                     failureClass: executionResult.terminalFailure.failureClass,
                     stage: executionResult.terminalFailure.stage,
                     summary: executionResult.terminalFailure.summary,
@@ -818,7 +989,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     results: executionResult.results,
                     intents,
                     normalizedActions: validActions,
-                });
+                }), context);
             }
 
             const allErrors = [
@@ -827,6 +998,12 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
             ];
 
             const confirmationText = _buildConfirmation(executionResult.results, executionResult.errors, context);
+            context = finalizePipelineContext(context, requestStartedAt, {
+                resultType: 'task',
+                status: 'success',
+                summary: 'task_execution_completed',
+                validationFailures: context.lifecycle.validationFailures,
+            });
 
             await telemetry.emit(context, {
                 eventType: 'pipeline.request.completed',
@@ -840,7 +1017,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 },
             });
 
-            return {
+            return attachPipelineContext({
                 type: 'task',
                 actions: validActions,
                 results: executionResult.results,
@@ -855,7 +1032,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 checklistMetadata: validActions
                     .filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0)
                     .map(a => ({ actionIndex: a._index ?? null, checklistItemCount: a.checklistItems.length })),
-            };
+            }, context);
         } catch (error) {
             let failureClass = FAILURE_CLASSES.UNEXPECTED;
             let stage = 'pipeline';
@@ -874,6 +1051,14 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
             console.error('[Pipeline] Unhandled pipeline error:', error);
 
             if (context) {
+                context = finalizePipelineContext(context, requestStartedAt, {
+                    resultType: 'error',
+                    status: 'failure',
+                    summary,
+                    failureClass,
+                    rolledBack: false,
+                    validationFailures: context.lifecycle.validationFailures,
+                });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.failed',
                     step: 'result',
@@ -887,22 +1072,25 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 });
             }
 
-            return buildFailureResult(context, {
+            return attachPipelineContext(buildFailureResult(context, {
                 failureClass,
                 stage,
                 summary,
                 error,
                 retryable: failureClass !== FAILURE_CLASSES.MALFORMED_AX,
-            });
+            }), context);
         }
     }
 
     async function _executeActions(actions, adapter, context, telemetry) {
+        const executeStartedAt = Date.now();
         const results = [];
         const errors = [];
         const failures = [];
         const rollbackFailures = [];
         const successfulRecords = [];
+        const executionRequests = [];
+        const executionResults = [];
         const allowRetry = actions.length > 1;
 
         console.log(`[Pipeline:${context.requestId}] Executing ${actions.length} valid action(s).`);
@@ -914,10 +1102,24 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
 
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                 record.attempts = attempt;
+                executionRequests.push(snapshotPipelineValue({
+                    phase: 'execute',
+                    actionIndex: index,
+                    attempt,
+                    action,
+                }));
 
                 try {
                     const preWriteSnapshot = await capturePreWriteSnapshot(action, adapter);
                     const result = await executeAction(action, adapter);
+                    executionResults.push(snapshotPipelineValue({
+                        phase: 'execute',
+                        actionIndex: index,
+                        attempt,
+                        status: 'success',
+                        actionType: action.type,
+                        result,
+                    }));
                     record.result = result;
                     record.rollbackStep = buildRollbackStep(action, index, result, preWriteSnapshot);
                     record.status = 'succeeded';
@@ -941,6 +1143,15 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     break;
                 } catch (err) {
                     const message = err?.message || 'Unknown adapter failure';
+                    executionResults.push(snapshotPipelineValue({
+                        phase: 'execute',
+                        actionIndex: index,
+                        attempt,
+                        status: 'failure',
+                        actionType: action.type,
+                        errorMessage: message,
+                        willRetry: attempt < maxAttempts,
+                    }));
                     record.errorMessage = message;
                     record.failureClass = ACTION_FAILURE_CLASSES.ADAPTER;
 
@@ -970,6 +1181,10 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
 
                     if (successfulRecords.length === 0) {
                         return {
+                            executeStartedAt,
+                            durationMs: Date.now() - executeStartedAt,
+                            executionRequests,
+                            executionResults,
                             results,
                             errors,
                             failures,
@@ -990,10 +1205,22 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         };
                     }
 
-                    const rollbackResult = await rollbackSuccessfulActions(successfulRecords, adapter, context, telemetry, rollbackFailures);
+                    const rollbackResult = await rollbackSuccessfulActions(
+                        successfulRecords,
+                        adapter,
+                        context,
+                        telemetry,
+                        rollbackFailures,
+                        executionRequests,
+                        executionResults,
+                    );
 
                     if (rollbackResult.allSucceeded) {
                         return {
+                            executeStartedAt,
+                            durationMs: Date.now() - executeStartedAt,
+                            executionRequests,
+                            executionResults,
                             results,
                             errors,
                             failures,
@@ -1015,6 +1242,10 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     }
 
                     return {
+                        executeStartedAt,
+                        durationMs: Date.now() - executeStartedAt,
+                        executionRequests,
+                        executionResults,
                         results,
                         errors,
                         failures,
@@ -1042,6 +1273,10 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
         }
 
         return {
+            executeStartedAt,
+            durationMs: Date.now() - executeStartedAt,
+            executionRequests,
+            executionResults,
             results,
             errors,
             failures,
@@ -1052,7 +1287,15 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
         };
     }
 
-    async function rollbackSuccessfulActions(successfulRecords, adapter, context, telemetry, rollbackFailures) {
+    async function rollbackSuccessfulActions(
+        successfulRecords,
+        adapter,
+        context,
+        telemetry,
+        rollbackFailures,
+        executionRequests,
+        executionResults,
+    ) {
         const recordsInOriginalOrder = [...successfulRecords].sort((left, right) => left.index - right.index);
         const recordsInRollbackOrder = [...recordsInOriginalOrder].reverse();
 
@@ -1086,7 +1329,20 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
             }
 
             try {
+                executionRequests.push(snapshotPipelineValue({
+                    phase: 'rollback',
+                    actionIndex: record.index,
+                    attempt: 1,
+                    rollbackStep,
+                }));
                 await executeRollbackStep(rollbackStep, adapter);
+                executionResults.push(snapshotPipelineValue({
+                    phase: 'rollback',
+                    actionIndex: record.index,
+                    attempt: 1,
+                    status: 'success',
+                    rollbackType: rollbackStep.type,
+                }));
                 record.status = 'rolled_back';
                 record.failureClass = ACTION_FAILURE_CLASSES.NONE;
                 record.errorMessage = null;
@@ -1104,6 +1360,14 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     },
                 });
             } catch (error) {
+                executionResults.push(snapshotPipelineValue({
+                    phase: 'rollback',
+                    actionIndex: record.index,
+                    attempt: 1,
+                    status: 'failure',
+                    rollbackType: rollbackStep.type,
+                    errorMessage: error.message,
+                }));
                 record.status = 'rollback_failed';
                 record.failureClass = ACTION_FAILURE_CLASSES.ROLLBACK;
                 record.errorMessage = error.message;

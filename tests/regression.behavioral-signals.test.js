@@ -440,3 +440,80 @@ test('adapter failure preserves parsed intent and normalized action for retry', 
   assert.equal(result.normalizedActions.length, 1, 'Should have one normalized action');
   assert.equal(result.normalizedActions[0].title, 'Test task', 'Normalized action title should be preserved');
 });
+
+test('behavioral signal storage stays tenant-scoped and supports time-range queries', async () => {
+  const userId = `behavioral-range-${Date.now()}`;
+  const signals = classifyTaskEvent({
+    eventType: 'update',
+    taskId: 't-range',
+    category: 'work',
+    projectId: 'career',
+    dueDateBefore: '2026-04-10T10:00:00Z',
+    dueDateAfter: '2026-04-14T10:00:00Z',
+    taskAgeDays: 12,
+    timestamp: '2026-04-12T10:00:00Z',
+  });
+
+  await store.deleteBehavioralSignals(userId);
+  await store.appendBehavioralSignals(userId, signals);
+
+  const storedSignals = await store.getBehavioralSignals(userId);
+  const inRangeSignals = await store.queryBehavioralSignalsByTimeRange(userId, {
+    from: '2026-04-12T00:00:00Z',
+    to: '2026-04-12T23:59:59Z',
+  });
+  const outOfRangeSignals = await store.queryBehavioralSignalsByTimeRange(userId, {
+    from: '2026-04-13T00:00:00Z',
+    to: '2026-04-13T23:59:59Z',
+  });
+
+  assert.equal(storedSignals.length, signals.length);
+  assert.equal(inRangeSignals.length, signals.length);
+  assert.equal(outOfRangeSignals.length, 0);
+
+  const removed = await store.deleteBehavioralSignals(userId, {
+    from: '2026-04-12T00:00:00Z',
+    to: '2026-04-12T23:59:59Z',
+  });
+  const remainingSignals = await store.getBehavioralSignals(userId);
+
+  assert.equal(removed, signals.length);
+  assert.equal(remainingSignals.length, 0);
+});
+
+test('behavioral signal storage rejects raw text fields', async () => {
+  const userId = `behavioral-privacy-${Date.now()}`;
+
+  await assert.rejects(
+    store.appendBehavioralSignals(userId, [{
+      type: SignalType.CREATION,
+      category: 'work',
+      projectId: 'career',
+      confidence: 1,
+      metadata: { title: 'raw task title' },
+      timestamp: '2026-04-14T10:00:00Z',
+    }]),
+    /must not include raw field: title/
+  );
+});
+
+test('ticktick adapter persists classified behavioral signals without blocking mutations', async () => {
+  const userId = `behavioral-adapter-${Date.now()}`;
+  const client = new TickTickClient({ accessToken: 'token', refreshToken: 'refresh', tokenExpiresAt: '2099-01-01T00:00:00Z' });
+  client.createTask = async (taskData) => ({ id: 'task-created', ...taskData });
+
+  const adapter = new TickTickAdapter(client);
+
+  await store.deleteBehavioralSignals(userId);
+  const createdTask = await adapter.createTask({
+    title: 'Buy milk',
+    projectId: 'personal',
+    userId,
+  });
+  await new Promise((resolve) => setTimeout(resolve, 20));
+
+  const storedSignals = await store.getBehavioralSignals(userId);
+
+  assert.equal(createdTask.id, 'task-created');
+  assert.ok(storedSignals.some((signal) => signal.type === SignalType.CREATION));
+});

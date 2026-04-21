@@ -1,6 +1,7 @@
 import { TickTickClient } from './ticktick.js';
 import { validateChecklistItem } from './shared-utils.js';
 import { classifyTaskEvent } from './behavioral-signals.js';
+import { appendBehavioralSignals, DEFAULT_BEHAVIORAL_USER_ID } from './store.js';
 
 const PROJECT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const VALID_PRIORITIES = [0, 1, 3, 5]; // TickTick valid priority values
@@ -49,20 +50,22 @@ export class TickTickAdapter {
      * @private
      */
     _observeSignals(eventType, eventMetadata) {
-        try {
+        Promise.resolve().then(async () => {
+            const { userId = DEFAULT_BEHAVIORAL_USER_ID, ...safeEventMetadata } = eventMetadata || {};
             const event = {
                 eventType,
                 timestamp: new Date().toISOString(),
-                ...eventMetadata,
+                ...safeEventMetadata,
             };
             const signals = classifyTaskEvent(event);
             if (signals.length > 0) {
-                this._log('behavioralSignals', { signals: signals.length, types: signals.map(s => s.type) });
+                await appendBehavioralSignals(String(userId), signals);
+                this._log('behavioralSignals', { userId, signals: signals.length, types: signals.map(s => s.type) });
             }
-        } catch (error) {
+        }).catch((error) => {
             // NEVER block the mutation — log and continue
             this._log('behavioralSignals', `FAILED (non-blocking): ${error.message}`, true);
-        }
+        });
     }
 
     /**
@@ -418,6 +421,7 @@ export class TickTickAdapter {
 
             // T006: Non-blocking behavioral signal observation
             this._observeSignals('create', {
+                userId: normalizedAction.userId,
                 category: normalizedAction.category || null,
                 projectId: validatedProjectId,
                 ...this._deriveBehavioralCreateMetadata(normalizedAction, mappedItems),
@@ -611,6 +615,7 @@ export class TickTickAdapter {
 
             // T006: Non-blocking behavioral signal observation
             this._observeSignals('update', {
+                userId: normalizedAction.userId,
                 category: normalizedAction.category || null,
                 projectId: targetProjectId,
                 dueDateBefore: normalizedAction._dueDateBefore || null,
@@ -728,7 +733,7 @@ export class TickTickAdapter {
      * @example
      * await adapter.completeTask('task123...', 'proj456...');
      */
-    async completeTask(taskId, projectId) {
+    async completeTask(taskId, projectId, userId = DEFAULT_BEHAVIORAL_USER_ID) {
         const start = Date.now();
         this._log('completeTask', { taskId, projectId });
         try {
@@ -740,6 +745,7 @@ export class TickTickAdapter {
 
             // T006: Non-blocking behavioral signal observation
             this._observeSignals('complete', {
+                userId,
                 taskId,
                 projectId,
             });
@@ -765,7 +771,7 @@ export class TickTickAdapter {
      * @example
      * await adapter.deleteTask('task123...', 'proj456...');
      */
-    async deleteTask(taskId, projectId) {
+    async deleteTask(taskId, projectId, userId = DEFAULT_BEHAVIORAL_USER_ID) {
         const start = Date.now();
         this._log('deleteTask', { taskId, projectId });
         try {
@@ -777,6 +783,7 @@ export class TickTickAdapter {
 
             // T006: Non-blocking behavioral signal observation
             this._observeSignals('delete', {
+                userId,
                 taskId,
                 projectId,
             });

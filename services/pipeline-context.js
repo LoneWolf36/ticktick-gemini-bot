@@ -16,6 +16,89 @@ const DEFAULT_ENTRY_POINT = 'unknown';
 const DEFAULT_MODE = 'default';
 const DEFAULT_WORK_STYLE_MODE = 'standard';
 
+function cloneValue(value) {
+    if (value === undefined) return undefined;
+    if (typeof globalThis.structuredClone === 'function') {
+        return globalThis.structuredClone(value);
+    }
+    return JSON.parse(JSON.stringify(value));
+}
+
+function deepFreeze(value, seen = new WeakSet()) {
+    if (!value || typeof value !== 'object' || seen.has(value)) return value;
+    seen.add(value);
+
+    Object.freeze(value);
+    for (const nested of Object.values(value)) {
+        deepFreeze(nested, seen);
+    }
+    return value;
+}
+
+export function snapshotPipelineValue(value) {
+    return cloneValue(value);
+}
+
+export function updatePipelineContext(context, updater) {
+    const draft = cloneValue(context);
+    updater(draft);
+    return deepFreeze(draft);
+}
+
+function createLifecycleState(baseContext) {
+    return {
+        request: {
+            metadata: {
+                requestId: baseContext.requestId,
+                correlationId: baseContext.correlationId,
+                entryPoint: baseContext.entryPoint,
+                mode: baseContext.mode,
+                workStyleMode: baseContext.workStyleMode,
+                currentDate: baseContext.currentDate,
+                timezone: baseContext.timezone,
+            },
+            userMessage: baseContext.userMessage,
+            availableProjects: snapshotPipelineValue(baseContext.availableProjects),
+            availableProjectNames: snapshotPipelineValue(baseContext.availableProjectNames),
+            existingTask: snapshotPipelineValue(baseContext.existingTask),
+            activeTasks: snapshotPipelineValue(baseContext.activeTasks),
+            checklistContext: snapshotPipelineValue(baseContext.checklistContext),
+        },
+        ax: {
+            status: 'pending',
+            intentOutput: null,
+            failure: null,
+        },
+        normalize: {
+            status: 'pending',
+            normalizedActions: [],
+            validActions: [],
+            invalidActions: [],
+        },
+        execute: {
+            status: 'pending',
+            requests: [],
+            results: [],
+            failures: [],
+            rollbackFailures: [],
+        },
+        validationFailures: [],
+        timing: {
+            requestStartedAt: null,
+            requestCompletedAt: null,
+            totalDurationMs: null,
+            stages: {},
+        },
+        result: {
+            status: 'pending',
+            type: null,
+            summary: null,
+            failureClass: null,
+            rolledBack: false,
+        },
+    };
+}
+
 function normalizeChecklistContext(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
 
@@ -132,6 +215,38 @@ export function validatePipelineContext(context) {
         }
     }
 
+    if ('correlationId' in context && context.correlationId !== context.requestId) {
+        errors.push('correlationId must match requestId');
+    }
+
+    if ('lifecycle' in context) {
+        if (!context.lifecycle || typeof context.lifecycle !== 'object' || Array.isArray(context.lifecycle)) {
+            errors.push('lifecycle must be an object');
+        } else {
+            if (!context.lifecycle.request || typeof context.lifecycle.request !== 'object' || Array.isArray(context.lifecycle.request)) {
+                errors.push('lifecycle.request must be an object');
+            }
+            if (!context.lifecycle.ax || typeof context.lifecycle.ax !== 'object' || Array.isArray(context.lifecycle.ax)) {
+                errors.push('lifecycle.ax must be an object');
+            }
+            if (!context.lifecycle.normalize || typeof context.lifecycle.normalize !== 'object' || Array.isArray(context.lifecycle.normalize)) {
+                errors.push('lifecycle.normalize must be an object');
+            }
+            if (!context.lifecycle.execute || typeof context.lifecycle.execute !== 'object' || Array.isArray(context.lifecycle.execute)) {
+                errors.push('lifecycle.execute must be an object');
+            }
+            if (!Array.isArray(context.lifecycle?.validationFailures)) {
+                errors.push('lifecycle.validationFailures must be an array');
+            }
+            if (!context.lifecycle.timing || typeof context.lifecycle.timing !== 'object' || Array.isArray(context.lifecycle.timing)) {
+                errors.push('lifecycle.timing must be an object');
+            }
+            if (!context.lifecycle.result || typeof context.lifecycle.result !== 'object' || Array.isArray(context.lifecycle.result)) {
+                errors.push('lifecycle.result must be an object');
+            }
+        }
+    }
+
     return { ok: errors.length === 0, errors };
 }
 
@@ -169,22 +284,28 @@ export function createPipelineContextBuilder({
             }
         );
 
+        const requestId = options.requestId || requestIdFactory();
+        const workStyleMode = typeof options.workStyleMode === 'string' && options.workStyleMode.trim()
+            ? options.workStyleMode.trim().toLowerCase()
+            : DEFAULT_WORK_STYLE_MODE;
+
         const context = {
-            requestId: options.requestId || requestIdFactory(),
+            requestId,
+            correlationId: requestId,
             entryPoint: options.entryPoint || DEFAULT_ENTRY_POINT,
             mode: options.mode || DEFAULT_MODE,
-            workStyleMode: typeof options.workStyleMode === 'string' && options.workStyleMode.trim()
-                ? options.workStyleMode.trim().toLowerCase()
-                : DEFAULT_WORK_STYLE_MODE,
+            workStyleMode,
             userMessage,
             currentDate,
             timezone,
-            availableProjects,
-            availableProjectNames: deriveProjectNames(availableProjects),
-            existingTask: options.existingTask || null,
-            activeTasks,
-            checklistContext,
+            availableProjects: snapshotPipelineValue(availableProjects),
+            availableProjectNames: snapshotPipelineValue(deriveProjectNames(availableProjects)),
+            existingTask: snapshotPipelineValue(options.existingTask || null),
+            activeTasks: snapshotPipelineValue(activeTasks),
+            checklistContext: snapshotPipelineValue(checklistContext),
         };
+
+        context.lifecycle = createLifecycleState(context);
 
         const strict = options.strictContext ?? (process.env.NODE_ENV !== 'production');
         const validation = validatePipelineContext(context);
@@ -199,7 +320,7 @@ export function createPipelineContextBuilder({
             throw error;
         }
 
-        return context;
+        return deepFreeze(context);
     };
 
     return { buildRequestContext };

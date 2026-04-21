@@ -405,6 +405,12 @@ export function createGoalThemeProfile(rawContext = '', options = {}) {
 }
 
 export function normalizePriorityCandidate(task = {}) {
+    const createdAt = task.createdTime ?? task.createdAt ?? null;
+    const createdAtMs = typeof createdAt === 'string' ? Date.parse(createdAt) : NaN;
+    const taskAgeDays = Number.isNaN(createdAtMs)
+        ? null
+        : Math.max(0, Math.floor((Date.now() - createdAtMs) / (24 * 60 * 60 * 1000)));
+
     return {
         taskId: task.taskId || task.id || '',
         title: asString(task.title),
@@ -413,6 +419,8 @@ export function normalizePriorityCandidate(task = {}) {
         projectName: task.projectName ?? null,
         priority: task.priority ?? null,
         dueDate: task.dueDate ?? null,
+        repeatFlag: task.repeatFlag ?? null,
+        taskAgeDays,
         status: task.status ?? null,
         source: 'ticktick',
         containsSensitiveContent: containsSensitiveContent(`${asString(task.title)}\n${asString(task.content)}`),

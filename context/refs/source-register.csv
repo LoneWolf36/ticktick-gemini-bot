@@ -1,10 +1,10 @@
 source_id,artifact,kind,location,purpose,status
-SRC-001,Feature specification,spec,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\kitty-specs\007-execution-prioritization-foundations\spec.md,Defines the product policy and success criteria for leverage-first ranking,reviewed
-SRC-002,Implementation plan,plan,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\kitty-specs\007-execution-prioritization-foundations\plan.md,Defines intended module boundaries and execution sequencing,reviewed
-SRC-003,Gemini service,code,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\services\gemini.js,Shows current prompt paths and fallback prioritization heuristics,reviewed
-SRC-004,Bot commands,code,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\bot\commands.js,Shows command-level policy sweep and integration surfaces,reviewed
-SRC-005,User context template,code,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\services\user_context.example.js,Shows explicit goal-oriented context already exists,reviewed
-SRC-006,TickTick adapter,code,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\services\ticktick-adapter.js,Shows the current mutable task shape exposed to application services,reviewed
-SRC-007,Briefing and weekly modernization spec,spec,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\kitty-specs\006-briefing-weekly-modernization\spec.md,Defines downstream dependency on shared foundation policy,reviewed
-SRC-008,Work style and urgent mode spec,spec,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\kitty-specs\008-work-style-and-urgent-mode\spec.md,Defines future state-modifier ownership and precedence rules,reviewed
-SRC-009,Behavioral signals and memory spec,spec,C:\Users\Huzefa Khan\Downloads\Gmail\ticktick-gemini\kitty-specs\009-behavioral-signals-and-memory\spec.md,Defines privacy and reflection boundaries that 007 must not absorb,reviewed
+SRC-001,Prioritization kit,kit,context/kits/cavekit-prioritization.md,Defines accepted prioritization requirements and validation notes,reviewed
+SRC-002,Ranking contract,ref,context/refs/prioritization-ranking-contract.md,Defines canonical ranking inputs outputs versioning and change log,reviewed
+SRC-003,Research brief,ref,context/refs/research-007-execution-prioritization-foundations.md,Explains leverage-first ranking rationale and domain boundaries,reviewed
+SRC-004,Data model,ref,context/refs/data-model-007-execution-prioritization-foundations.md,Defines normalized candidate ranking context decision and result shapes,reviewed
+SRC-005,Ranking engine,code,services/execution-prioritization.js,Implements deterministic ranking and normalized candidate contract,reviewed
+SRC-006,User context template,code,services/user_context.example.js,Defines declared goal input available to prioritization,reviewed
+SRC-007,TickTick adapter,code,services/ticktick-adapter.js,Defines task fields and recurrence data available from TickTick-facing flows,reviewed
+SRC-008,Briefings kit,kit,context/kits/cavekit-briefings.md,Documents downstream consumer of ranking outputs,reviewed
+SRC-009,Behavioral memory kit,kit,context/kits/cavekit-behavioral-memory.md,Documents optional behavioral-signal input boundary and privacy constraints,reviewed

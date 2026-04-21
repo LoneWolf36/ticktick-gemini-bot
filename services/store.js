@@ -5,7 +5,7 @@
 //   - ticktick-bot:state => JSON blob for shared bot/task state
 //   - user:{userId}:work_style_mode => JSON object { mode, expiresAt? }, defaults to standard when missing
 // File fallback schema:
-//   - data/store.json => JSON blob for shared bot/task state plus workStyleModes[userId]
+//   - data/store.json => JSON blob for shared bot/task state plus workStyleModes[userId] and behavioralSignals[userId]
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
@@ -24,6 +24,8 @@ export const MODE_FOCUS = 'focus';
 export const MODE_URGENT = 'urgent';
 export const VALID_WORK_STYLE_MODES = [MODE_STANDARD, MODE_FOCUS, MODE_URGENT];
 export const DEFAULT_URGENT_EXPIRY_MS = 2 * 60 * 60 * 1000; // 2 hours
+export const DEFAULT_BEHAVIORAL_USER_ID = 'default';
+export const BEHAVIORAL_SIGNAL_RETENTION_DAYS = 90;
 
 function logWorkStyleTelemetry({ userId, previousMode, nextMode, expiresAt = null, reason = 'user_request' }) {
     let eventType = 'mode_updated';
@@ -61,6 +63,7 @@ const DEFAULT_STATE = {
     pendingReorg: null,  // Proposed global reorg plan awaiting apply/refine/cancel
     pendingMutationClarification: null, // Pending mutation clarification state for free-form handler
     pendingChecklistClarification: null, // Pending checklist vs separate-tasks clarification (WP05)
+    behavioralSignals: {}, // R2: { [userId]: BehavioralSignal[] }
     processedTasks: {},  // User has clicked approve/skip/drop
     failedTasks: {},     // AI analysis failed (rate limit) — parked to prevent re-polling
     undoLog: [],
@@ -106,6 +109,16 @@ function ensureDir() {
     if (!fs.existsSync(DATA_DIR)) fs.mkdirSync(DATA_DIR, { recursive: true });
 }
 
+function normalizeBehavioralSignalsMap(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return {};
+    }
+
+    return Object.fromEntries(
+        Object.entries(value).map(([userId, signals]) => [userId, Array.isArray(signals) ? signals : []])
+    );
+}
+
 async function loadFromRedis() {
     try {
         const raw = await redis.get(REDIS_KEY);
@@ -121,6 +134,7 @@ async function loadFromRedis() {
                 pendingReorg: rest.pendingReorg || null,
                 pendingMutationClarification: rest.pendingMutationClarification || null,
                 pendingChecklistClarification: rest.pendingChecklistClarification || null,
+                behavioralSignals: normalizeBehavioralSignalsMap(rest.behavioralSignals),
                 processedTasks: rest.processedTasks || {},
                 undoLog: rest.undoLog || [],
             };
@@ -191,6 +205,7 @@ function loadFromFile() {
             pendingReorg: rest.pendingReorg || null,
             pendingMutationClarification: rest.pendingMutationClarification || null,
             pendingChecklistClarification: rest.pendingChecklistClarification || null,
+            behavioralSignals: normalizeBehavioralSignalsMap(rest.behavioralSignals),
             processedTasks: rest.processedTasks || {},
             undoLog: rest.undoLog || [],
         };
@@ -273,6 +288,105 @@ function assertUserId(userId) {
     if (userId === undefined || userId === null || userId === '') {
         throw new Error('userId is required');
     }
+}
+
+function assertIsoTimestamp(value, fieldName) {
+    if (typeof value !== 'string' || Number.isNaN(Date.parse(value))) {
+        throw new Error(`${fieldName} must be a valid ISO timestamp string`);
+    }
+}
+
+function isAllowedBehavioralMetadataValue(value) {
+    return typeof value === 'number' || typeof value === 'boolean' || value === null;
+}
+
+function validateBehavioralSignal(signal) {
+    if (!signal || typeof signal !== 'object' || Array.isArray(signal)) {
+        throw new Error('Behavioral signal must be an object');
+    }
+
+    const forbiddenTopLevelKeys = ['title', 'message', 'description', 'content', 'rawMessage', 'rawTaskTitle'];
+    for (const key of forbiddenTopLevelKeys) {
+        if (signal[key] !== undefined) {
+            throw new Error(`Behavioral signal must not include raw field: ${key}`);
+        }
+    }
+
+    if (typeof signal.type !== 'string' || signal.type.trim() === '') {
+        throw new Error('Behavioral signal type is required');
+    }
+
+    if (signal.category !== null && signal.category !== undefined && typeof signal.category !== 'string') {
+        throw new Error('Behavioral signal category must be a string or null');
+    }
+
+    if (signal.projectId !== null && signal.projectId !== undefined && typeof signal.projectId !== 'string') {
+        throw new Error('Behavioral signal projectId must be a string or null');
+    }
+
+    if (typeof signal.confidence !== 'number' || signal.confidence < 0 || signal.confidence > 1) {
+        throw new Error('Behavioral signal confidence must be a number between 0 and 1');
+    }
+
+    assertIsoTimestamp(signal.timestamp, 'Behavioral signal timestamp');
+
+    const metadata = signal.metadata ?? {};
+    if (typeof metadata !== 'object' || Array.isArray(metadata)) {
+        throw new Error('Behavioral signal metadata must be an object');
+    }
+
+    for (const forbiddenKey of forbiddenTopLevelKeys) {
+        if (metadata[forbiddenKey] !== undefined) {
+            throw new Error(`Behavioral signal metadata must not include raw field: ${forbiddenKey}`);
+        }
+    }
+
+    for (const [key, value] of Object.entries(metadata)) {
+        if (!isAllowedBehavioralMetadataValue(value)) {
+            throw new Error(`Behavioral signal metadata.${key} must be number, boolean, or null`);
+        }
+    }
+
+    return {
+        type: signal.type,
+        category: signal.category ?? null,
+        projectId: signal.projectId ?? null,
+        confidence: signal.confidence,
+        metadata,
+        timestamp: signal.timestamp,
+    };
+}
+
+function ensureBehavioralSignalBucket() {
+    if (!state.behavioralSignals || typeof state.behavioralSignals !== 'object' || Array.isArray(state.behavioralSignals)) {
+        state.behavioralSignals = {};
+    }
+}
+
+function normalizeTimeRangeBoundary(value, fieldName) {
+    if (value === null || value === undefined) {
+        return null;
+    }
+    assertIsoTimestamp(value, fieldName);
+    return Date.parse(value);
+}
+
+function matchesBehavioralSignalRange(signal, fromMs, toMs) {
+    const signalMs = Date.parse(signal.timestamp);
+    if (!Number.isFinite(signalMs)) {
+        return false;
+    }
+    if (fromMs !== null && signalMs < fromMs) {
+        return false;
+    }
+    if (toMs !== null && signalMs > toMs) {
+        return false;
+    }
+    return true;
+}
+
+function cloneSignals(signals) {
+    return structuredClone(signals);
 }
 
 // ─── Work-Style Mode (R1: State Management Contract) ─────────
@@ -390,6 +504,73 @@ export async function setWorkStyleMode(userId, mode, options = {}) {
         reason: options.reason || 'user_request',
     });
     return entry;
+}
+
+// ─── Behavioral Signals (R2: Redis Storage Layer) ────────────
+
+export async function appendBehavioralSignals(userId, signals = []) {
+    assertUserId(userId);
+    await load();
+    ensureBehavioralSignalBucket();
+
+    if (!Array.isArray(signals)) {
+        throw new Error('signals must be an array');
+    }
+
+    const validatedSignals = signals.map((signal) => validateBehavioralSignal(signal));
+    const existingSignals = Array.isArray(state.behavioralSignals[userId]) ? state.behavioralSignals[userId] : [];
+    state.behavioralSignals[userId] = [...existingSignals, ...validatedSignals]
+        .filter((signal) => matchesBehavioralSignalRange(
+            signal,
+            Date.now() - (BEHAVIORAL_SIGNAL_RETENTION_DAYS * 24 * 60 * 60 * 1000),
+            null,
+        ));
+
+    await save();
+    return cloneSignals(validatedSignals);
+}
+
+export async function getBehavioralSignals(userId) {
+    assertUserId(userId);
+    await load();
+    ensureBehavioralSignalBucket();
+    return cloneSignals(Array.isArray(state.behavioralSignals[userId]) ? state.behavioralSignals[userId] : []);
+}
+
+export async function queryBehavioralSignalsByTimeRange(userId, { from = null, to = null } = {}) {
+    assertUserId(userId);
+    const fromMs = normalizeTimeRangeBoundary(from, 'from');
+    const toMs = normalizeTimeRangeBoundary(to, 'to');
+    const signals = await getBehavioralSignals(userId);
+    return signals.filter((signal) => matchesBehavioralSignalRange(signal, fromMs, toMs));
+}
+
+export async function deleteBehavioralSignals(userId, { from = null, to = null } = {}) {
+    assertUserId(userId);
+    await load();
+    ensureBehavioralSignalBucket();
+
+    if (from === null && to === null) {
+        const removed = Array.isArray(state.behavioralSignals[userId]) ? state.behavioralSignals[userId].length : 0;
+        delete state.behavioralSignals[userId];
+        await save();
+        return removed;
+    }
+
+    const fromMs = normalizeTimeRangeBoundary(from, 'from');
+    const toMs = normalizeTimeRangeBoundary(to, 'to');
+    const currentSignals = Array.isArray(state.behavioralSignals[userId]) ? state.behavioralSignals[userId] : [];
+    const keptSignals = currentSignals.filter((signal) => !matchesBehavioralSignalRange(signal, fromMs, toMs));
+    const removed = currentSignals.length - keptSignals.length;
+
+    if (keptSignals.length === 0) {
+        delete state.behavioralSignals[userId];
+    } else {
+        state.behavioralSignals[userId] = keptSignals;
+    }
+
+    await save();
+    return removed;
 }
 
 // ─── Task Status Checks ─────────────────────────────────────
