@@ -17,6 +17,7 @@ const DAILY_CLOSE_KIND = 'daily_close';
 const WEEKLY_KIND = 'weekly';
 const ENTRY_POINT_VALUES = new Set(['manual_command', 'scheduler']);
 const TONE_POLICY_VALUES = new Set(['preserve_existing']);
+const DELIVERY_CHANNEL_VALUES = new Set(['telegram']);
 const DISALLOWED_WATCHOUT_LABELS = new Set(['avoidance', 'callout']);
 const WORK_STYLE_MODE_VALUES = new Set(['standard', 'focus', 'urgent']);
 
@@ -32,10 +33,28 @@ function toString(value, fallback = '') {
     return fallback;
 }
 
+function normalizeScheduleMetadata(rawContext = {}, entryPoint = 'manual_command') {
+    const schedulingMetadata = rawContext.schedulingMetadata || rawContext.scheduling_metadata || {};
+    const triggerKind = schedulingMetadata.triggerKind || schedulingMetadata.trigger_kind;
+
+    return {
+        triggerKind: triggerKind === 'scheduled' || entryPoint === 'scheduler' ? 'scheduled' : 'manual',
+        scheduleKey: schedulingMetadata.scheduleKey || schedulingMetadata.schedule_key || null,
+        scheduledForIso: schedulingMetadata.scheduledForIso || schedulingMetadata.scheduled_for_iso || null,
+        graceWindowMinutes: Number.isInteger(schedulingMetadata.graceWindowMinutes)
+            ? schedulingMetadata.graceWindowMinutes
+            : Number.isInteger(schedulingMetadata.grace_window_minutes)
+                ? schedulingMetadata.grace_window_minutes
+                : null,
+    };
+}
+
 function normalizeSummaryRequestContext(kind, rawContext = {}) {
     const entryPoint = rawContext.entryPoint || rawContext.entry_point;
     const tonePolicy = rawContext.tonePolicy || rawContext.tone_policy;
     const workStyleMode = rawContext.workStyleMode || rawContext.work_style_mode;
+    const deliveryChannel = rawContext.deliveryChannel || rawContext.delivery_channel;
+    const normalizedEntryPoint = ENTRY_POINT_VALUES.has(entryPoint) ? entryPoint : 'manual_command';
 
     return {
         kind: kind === WEEKLY_KIND
@@ -43,12 +62,14 @@ function normalizeSummaryRequestContext(kind, rawContext = {}) {
             : kind === DAILY_CLOSE_KIND
                 ? DAILY_CLOSE_KIND
                 : BRIEFING_KIND,
-        entryPoint: ENTRY_POINT_VALUES.has(entryPoint) ? entryPoint : 'manual_command',
+        entryPoint: normalizedEntryPoint,
         userId: rawContext.userId ?? rawContext.user_id ?? null,
         generatedAtIso: rawContext.generatedAtIso || rawContext.generated_at_iso || new Date().toISOString(),
         timezone: rawContext.timezone || null,
         workStyleMode: WORK_STYLE_MODE_VALUES.has(workStyleMode) ? workStyleMode : 'standard',
         urgentMode: rawContext.urgentMode === true || rawContext.urgent_mode === true,
+        deliveryChannel: DELIVERY_CHANNEL_VALUES.has(deliveryChannel) ? deliveryChannel : 'telegram',
+        schedulingMetadata: normalizeScheduleMetadata(rawContext, normalizedEntryPoint),
         tonePolicy: TONE_POLICY_VALUES.has(tonePolicy) ? tonePolicy : 'preserve_existing',
     };
 }
@@ -215,6 +236,8 @@ export function createSummaryDiagnostics({
     return {
         kind: normalizedContext.kind,
         entryPoint: normalizedContext.entryPoint,
+        deliveryChannel: normalizedContext.deliveryChannel,
+        schedulingMetadata: normalizedContext.schedulingMetadata,
         sourceCounts: buildSourceCounts({ activeTasks, processedHistory }),
         degraded: rankingResult?.degraded === true,
         degradedReason: rankingResult?.degradedReason || null,

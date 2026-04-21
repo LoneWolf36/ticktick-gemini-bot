@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-19T00:00:00Z"
+last_edited: "2026-04-20T15:10:00Z"
 source_specs: ["009-behavioral-signals-and-memory"]
 complexity: "complex"
 ---
@@ -18,9 +18,9 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 ### R1: Signal Classifier Core
 **Description:** A classifier identifies behavioral patterns from task management activity.
 **Acceptance Criteria:**
-- [ ] Classifier detects 8 pattern types: (1) Snooze Spiral — repeated postponement, (2) Commitment Overloader — creation far exceeding completion, (3) Stale Task Museum — long-untouched tasks, (4) Quick Win Addiction — small-task bias, (5) Vague Task Writer — non-actionable titles, (6) Deadline Daredevil — chronic last-minute execution, (7) Category Avoidance — systematic domain avoidance, (8) Planning-Without-Execution — elaborate planning or overload without follow-through (sub-types: Type A Planning as Avoidance, Type B Ambitious Overload)
-- [ ] Each detected pattern has a confidence score
-- [ ] Classifier operates on derived signals only — never raw message text
+- [x] Classifier detects 8 pattern types: (1) Snooze Spiral — repeated postponement, (2) Commitment Overloader — creation far exceeding completion, (3) Stale Task Museum — long-untouched tasks, (4) Quick Win Addiction — small-task bias, (5) Vague Task Writer — non-actionable titles, (6) Deadline Daredevil — chronic last-minute execution, (7) Category Avoidance — systematic domain avoidance, (8) Planning-Without-Execution — elaborate planning or overload without follow-through (sub-types: Type A Planning as Avoidance, Type B Ambitious Overload)
+- [x] Each detected pattern has a confidence score
+- [x] Classifier operates on derived signals only — never raw message text
 **Dependencies:** none
 
 ### R2: Redis Storage Layer
@@ -100,9 +100,9 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 ### R10: Non-Blocking Architecture
 **Description:** The behavioral-signal layer is non-blocking; task capture and mutation flows continue working even if this layer is unavailable.
 **Acceptance Criteria:**
-- [ ] Pipeline operates normally when behavioral layer is down
-- [ ] Signal write failures are logged but do not surface to the user
-- [ ] No pipeline operation waits synchronously for behavioral signal writes
+- [x] Pipeline operates normally when behavioral layer is down
+- [x] Signal write failures are logged but do not surface to the user
+- [x] No pipeline operation waits synchronously for behavioral signal writes
 **Dependencies:** none
 
 ### R11: Recomputable Reflections
@@ -164,9 +164,12 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 
 ## Validation Action Items — 2026-04-19
 
-- [ ] Reconcile this file's R1 dependency status with `context/kits/cavekit-overview.md`, which currently places Behavioral Memory behind Tier 0 pipeline/work-style foundations.
-- [ ] If R1 truly has upstream dependencies, encode them here so future validation blocked counts reflect reality.
-- [ ] If R1 is intentionally independent, update the overview dependency graph to remove the conflict.
+- [x] R1 intentionally remains a Tier 0 root with `Dependencies: none`, matching the root-requirement dependency graph in `context/kits/cavekit-overview.md`.
+- [x] Audit R1 (Signal Classifier Core): `services/behavioral-signals.js` now emits all 8 behavioral-memory pattern families with confidence scores using derived numeric/boolean metadata only; no raw titles or message text cross the classifier boundary.
+- [x] Downstream dependencies R2-R15 now unblock from an explicitly implemented R1 root.
+- [x] Audit R10 (Non-Blocking Architecture): `services/ticktick-adapter.js` routes create/update/complete/delete observation through `_observeSignals(...)`, catches classifier failures, logs them as `FAILED (non-blocking)`, and never blocks mutation completion on behavioral-signal observation.
 
 ## Changelog
+- 2026-04-20: R10 completed — behavioral signal observation is best-effort only and cannot block task mutations.
+- 2026-04-20: R1 completed — classifier now emits all 8 pattern families with confidence scores using derived metadata only.
 - 2026-04-18: Migrated from kitty-specs 009-behavioral-signals-and-memory

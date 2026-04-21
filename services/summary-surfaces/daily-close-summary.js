@@ -20,6 +20,17 @@ function asProcessedHistory(processedHistory = []) {
     return toArray(processedHistory).filter((entry) => entry && typeof entry === 'object');
 }
 
+const REFLECTION_TEMPLATES = {
+    BACKOFF_STANDARD: 'Several suggested tasks stayed open repeatedly. Keep tomorrow smaller or pause instead of escalating.',
+    BACKOFF_URGENT: 'Several suggested tasks stayed open repeatedly. Cut scope and choose one restart step instead of pushing harder.',
+    DIRECT_CALLOUT: 'A few suggested tasks stayed open repeatedly. Name the friction once and choose one smaller restart step.',
+    NO_ACTIVITY: '',
+    MEANINGFUL_PROGRESS: 'You moved meaningful work today. Keep the close-out factual and light.',
+    IMPORTANT_WORK_OPEN: 'Important work stayed open today. Name the blocker plainly and choose the first restart step.',
+    MIXED_DAY: 'Today was mixed: some progress landed, and some work stayed open. Close on one concrete restart step.',
+    LIGHT_EVIDENCE: 'The day was light on hard evidence. Keep the reflection brief and reset around one concrete next step.',
+};
+
 function toDayKey(value, timezone = 'UTC') {
     if (!value) return null;
     const parsed = new Date(value);
@@ -73,31 +84,31 @@ function buildReflection({ todayHistory = [], activeTasks = [], interventionProf
 
     if (interventionProfile?.shouldBackOff === true) {
         return context.workStyleMode === 'urgent'
-            ? 'Recent suggestions were ignored repeatedly. Cut scope and choose one restart step instead of pushing harder.'
-            : 'Recent suggestions were skipped or dropped repeatedly. Keep tomorrow smaller or pause instead of escalating.';
+            ? REFLECTION_TEMPLATES.BACKOFF_URGENT
+            : REFLECTION_TEMPLATES.BACKOFF_STANDARD;
     }
 
     if (interventionProfile?.directCalloutAllowed === true) {
-        return 'A few suggested tasks were skipped or dropped repeatedly. Name the friction once and choose one smaller restart step.';
+        return REFLECTION_TEMPLATES.DIRECT_CALLOUT;
     }
 
     if (todayHistory.length === 0) {
-        return '';
+        return REFLECTION_TEMPLATES.NO_ACTIVITY;
     }
 
     if (approvedCount >= 2 && approvedCount >= skippedCount + droppedCount) {
-        return 'You moved meaningful work today. Keep the close-out factual and light.';
+        return REFLECTION_TEMPLATES.MEANINGFUL_PROGRESS;
     }
 
     if (approvedCount === 0 && highPriorityOpenCount > 0 && skippedCount + droppedCount >= 2) {
-        return 'Important work stayed open today. Name the blocker plainly and choose the first restart step.';
+        return REFLECTION_TEMPLATES.IMPORTANT_WORK_OPEN;
     }
 
     if (approvedCount > 0 && skippedCount + droppedCount > 0) {
-        return 'Today was mixed: some progress landed, and some work stayed open. Close on one concrete restart step.';
+        return REFLECTION_TEMPLATES.MIXED_DAY;
     }
 
-    return 'The day was light on hard evidence. Keep the reflection brief and reset around one concrete next step.';
+    return REFLECTION_TEMPLATES.LIGHT_EVIDENCE;
 }
 
 function buildResetCue({ activeTasks = [], rankingResult = null, todayHistory = [] } = {}) {

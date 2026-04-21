@@ -35,6 +35,7 @@ function buildPriorityItems(activeTasks = [], ranking = []) {
                 project_name: task.projectName || null,
                 due_date: task.dueDate || null,
                 priority_label: toPriorityLabel(task.priority),
+                rationale_code: decision.rationaleCode || null,
                 rationale_text: decision.rationaleText || decision.rationaleCode || 'High-impact active work.',
             };
         })
@@ -50,8 +51,26 @@ function buildPriorityItems(activeTasks = [], ranking = []) {
         project_name: task.projectName || null,
         due_date: task.dueDate || null,
         priority_label: toPriorityLabel(task.priority),
+        rationale_code: null,
         rationale_text: 'High-impact active work.',
     }));
+}
+
+function ensureGoalAlignedPriority(priorities = [], fallbackPriorities = []) {
+    const normalized = Array.isArray(priorities) ? priorities.filter(Boolean) : [];
+    const goalCandidate = (Array.isArray(fallbackPriorities) ? fallbackPriorities : [])
+        .find((item) => item?.rationale_code === 'goal_alignment');
+
+    if (!goalCandidate) return normalized.slice(0, 3);
+    if (normalized.some((item) => item?.task_id === goalCandidate.task_id || item?.rationale_code === 'goal_alignment')) {
+        return normalized.slice(0, 3);
+    }
+
+    if (normalized.length < 3) {
+        return [goalCandidate, ...normalized].slice(0, 3);
+    }
+
+    return [goalCandidate, ...normalized.filter((item) => item?.task_id !== goalCandidate.task_id).slice(0, 2)];
 }
 
 function buildNotices({ activeTasks = [], context = {}, rankingResult = null }) {
@@ -198,12 +217,25 @@ export function composeBriefingSummarySections({
         : 'Review active tasks, select one high-impact action, and begin immediately.';
 
     const modelNormalized = normalizeModelSummary(modelSummary || {});
-    const priorities = mergePriorities({
+    const priorities = ensureGoalAlignedPriority(mergePriorities({
         modelPriorities: modelNormalized.priorities,
         fallbackPriorities,
         activeTasks: normalizedTasks,
-    });
+    }), fallbackPriorities);
     const topPriority = priorities[0];
+
+    if (normalizedTasks.length === 0 || priorities.length === 0) {
+        return {
+            focus: 'No relevant tasks need attention right now.',
+            priorities: [],
+            why_now: [],
+            start_now: 'No briefing actions. Check back after new tasks land.',
+            notices: mergeNotices(
+                buildNotices({ activeTasks: normalizedTasks, context, rankingResult }),
+                modelNormalized.notices,
+            ),
+        };
+    }
 
     const focus = modelNormalized.focus || fallbackFocus;
     const whyNow = modelNormalized.why_now.length > 0 ? modelNormalized.why_now : fallbackWhyNow;

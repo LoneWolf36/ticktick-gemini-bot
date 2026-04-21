@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-18T22:30:00Z"
+last_edited: "2026-04-20T15:10:00Z"
 source_specs: ["007-execution-prioritization-foundations"]
 complexity: "complex"
 ---
@@ -29,11 +29,11 @@ See `context/refs/evidence-log.csv` for evidence tracking.
 ### R2: Core Leverage Ranking Engine
 **Description:** Engine computes a leverage-based ranking that distinguishes important long-term work from busywork.
 **Acceptance Criteria:**
-- [ ] Ranking distinguishes important work from low-value busywork
-- [ ] Ranking actively avoids rewarding motion-as-progress
-- [ ] Long-term-goal tasks are surfaced when they exist and are plausible, not only when they're urgent
-- [ ] Ranking produces at most 3 top items for daily planning (aligns with briefing constraint)
-- [ ] Ranking is deterministic for the same input state
+- [x] Ranking distinguishes important work from low-value busywork
+- [x] Ranking actively avoids rewarding motion-as-progress
+- [x] Long-term-goal tasks are surfaced when they exist and are plausible, not only when they're urgent
+- [x] Ranking produces at most 3 top items for daily planning (aligns with briefing constraint)
+- [x] Ranking is deterministic for the same input state
 **Dependencies:** R1
 
 ### R3: Ranking Confidence and Uncertainty
@@ -65,8 +65,8 @@ See `context/refs/evidence-log.csv` for evidence tracking.
 ### R6: Integration Seam: Project Resolution
 **Description:** Project resolution in the task pipeline can consult ranking for priority context.
 **Acceptance Criteria:**
-- [ ] Project resolution priority follows the ranking policy when available
-- [ ] When ranking is unavailable, project resolution uses its own defaults
+- [x] Project resolution priority follows the ranking policy when available
+- [x] When ranking is unavailable, project resolution uses its own defaults
 **Dependencies:** R2, cavekit-task-pipeline R7
 
 ### R7: Ranking Observability
@@ -105,16 +105,16 @@ See `context/refs/evidence-log.csv` for evidence tracking.
 ### R11: MVP Scope Boundary
 **Description:** Ranking stays within MVP scope — no ML models, no user profiling, no multi-user comparison.
 **Acceptance Criteria:**
-- [ ] Ranking uses heuristic rules, not trained ML models
-- [ ] No cross-user data comparison
-- [ ] No external API calls for ranking computation
+- [x] Ranking uses heuristic rules, not trained ML models
+- [x] No cross-user data comparison
+- [x] No external API calls for ranking computation
 **Dependencies:** none
 
 ### R12: User Goal Awareness
 **Description:** Ranking is aware of long-term user goals when declared, incorporating them into leverage assessment.
 **Acceptance Criteria:**
-- [ ] If user has declared goals (stored in product context), ranking considers goal-aligned tasks as higher leverage
-- [ ] If no goals are declared, ranking works on task-level signals alone without penalty
+- [x] If user has declared goals (stored in product context), ranking considers goal-aligned tasks as higher leverage
+- [x] If no goals are declared, ranking works on task-level signals alone without penalty
 **Dependencies:** R2
 
 ## Out of Scope
@@ -131,5 +131,15 @@ See `context/refs/evidence-log.csv` for evidence tracking.
 - See also: cavekit-behavioral-memory.md (optional behavioral signal input)
 - See also: cavekit-work-style.md (urgent mode may affect ranking presentation)
 
+## Validation Action Items — 2026-04-20
+
+- [x] Audit R2 (Core Leverage Ranking Engine): `services/execution-prioritization.js` scores candidates with explicit goal-alignment, urgency, blocker-removal, and capacity-protection rules; `rankPriorityCandidates(...)` sorts deterministically and returns a bounded ranked list that briefing surfaces cap to 3 items.
+- [x] Audit R6 (Project Resolution): `inferProjectIdFromTask(...)` consults ranking-derived priority context when available, then falls back to built-in project fragment defaults when ranking context is degraded or insufficient.
+- [x] Audit R11 (MVP Scope Boundary): ranking remains local heuristic code in `services/execution-prioritization.js` with no ML model calls, no cross-user comparison, and no external ranking API dependency.
+- [x] Audit R12 (User Goal Awareness): `createGoalThemeProfile(...)` parses declared goals from product context and `assessCandidate(...)` boosts matching tasks without penalizing degraded/no-goal cases.
+- [ ] Keep R1 unchecked until `context/refs/source-register.csv` exists and contract/version logging is recorded.
+- [ ] Keep R4, R5, R7, R8, R9, and R10 unchecked pending explicit override, trend, observability, behavioral-input, anti-planning-bias, and full regression evidence.
+
 ## Changelog
+- 2026-04-20: R2, R6, R11, and R12 completed — ranking now has audited leverage scoring, project-resolution integration, explicit MVP boundaries, and declared-goal awareness.
 - 2026-04-18: Migrated from kitty-specs 007-execution-prioritization-foundations

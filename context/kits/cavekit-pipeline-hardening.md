@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-19T01:00:00Z"
+last_edited: "2026-04-20T15:45:00Z"
 source_specs: ["003-pipeline-hardening-and-regression"]
 complexity: "complex"
 ---
@@ -61,10 +61,10 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 ### R6: Direct Pipeline Harness
 **Description:** A test harness exercises the full pipeline path without requiring Telegram or live TickTick.
 **Acceptance Criteria:**
-- [ ] Harness accepts JSON input representing user messages and returns pipeline context output
-- [ ] Harness supports mocked adapter responses for testing failure paths
-- [ ] Harness validates pipeline contracts without network dependencies
-- [ ] See `context/refs/pipeline-harness.js` for reference implementation
+- [x] Harness accepts JSON input representing user messages and returns pipeline context output
+- [x] Harness supports mocked adapter responses for testing failure paths
+- [x] Harness validates pipeline contracts without network dependencies
+- [x] See `context/refs/pipeline-harness.js` for reference implementation
 **Dependencies:** R1
 
 ### R7: Story-Level Regression Coverage
@@ -89,9 +89,9 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 ### R9: Observability Integration
 **Description:** Pipeline telemetry is structured, queryable, and compatible with the behavioral memory boundary.
 **Acceptance Criteria:**
-- [ ] Telemetry events conform to `context/refs/telemetry-events.schema.json`
-- [ ] End-to-end request tracing via correlation ID from entry point to adapter result
-- [ ] Telemetry does not persist raw user messages in long-term storage
+- [x] Telemetry events conform to `context/refs/telemetry-events.schema.json`
+- [x] End-to-end request tracing via correlation ID from entry point to adapter result
+- [x] Telemetry does not persist raw user messages in long-term storage
 **Dependencies:** R1
 
 ### R10: Acceptance Matrix Coverage
@@ -132,5 +132,21 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 - [x] `tests/e2e-live-ticktick.mjs` mapped as optional live smoke-test harness for production-parity verification (complements R6's offline harness).
 - [x] Drift notes for live TickTick E2E harness resolved by mapping above.
 
+## Validation Action Items — 2026-04-20
+
+- [x] R6 audited directly against `tests/pipeline-harness.js` and `context/refs/pipeline-harness.js`: harness accepts structured input, supports `adapterOverrides` for failure-path mocking, uses in-memory fixtures, and runs without Telegram or live TickTick.
+- [x] R9 audited directly against `services/pipeline-observability.js`, `context/refs/telemetry-events.schema.json`, and `tests/regression.pipeline-hardening-mutation.test.js` (`WP06 T017`): emitted events keep the required schema fields, preserve `requestId` tracing across request/execution/result steps, and avoid raw user-message persistence in telemetry payloads.
+- [ ] R1 remains unchecked: request context builder is validated, but the single immutable lifecycle object described by the AC is not yet persisted across all stages with AX output, normalized actions, adapter requests/results, validation failures, and timing bundled together.
+- [ ] R2 remains unchecked: entry points consistently pass pipeline options, but handlers do not themselves construct the full canonical context object before the pipeline call.
+- [ ] R3 remains unchecked: failure handling exists, but the exact transient/permanent/partial classification contract in the AC is not implemented as written.
+- [ ] R4 remains unchecked: no exponential backoff/ETA semantics for TickTick 429 responses were verified.
+- [ ] R5 remains unchecked: current execution retry logic is limited and does not satisfy the single-task exponential-backoff AC.
+- [ ] R7 remains unchecked: regression coverage is broad, but this pass did not prove every cavekit-task-pipeline story maps cleanly to at least one automated regression.
+- [ ] R8 remains unchecked: burst isolation is tested, but this pass did not prove the full no-race-condition write-path claim strictly enough to close the requirement.
+- [ ] R10 remains unchecked: `context/refs/acceptance-matrix.json` exists, but it does not yet provide full FR-to-test-case tracking.
+- [ ] R11 remains unchecked: adapter errors are classified, but the AC's exact typed surface (`not found`, `already completed`, `permission denied`, `network error`) is not fully implemented.
+- [ ] R12 remains unchecked: parsed intents are not persisted for deferred retry/manual recovery under full API unavailability.
+
 ## Changelog
 - 2026-04-18: Migrated from kitty-specs 003-pipeline-hardening-and-regression
+- 2026-04-20: R6 and R9 completed — offline harness behavior and telemetry contract now have direct code + regression evidence.

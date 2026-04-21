@@ -4,6 +4,7 @@ import { classifyTaskEvent } from './behavioral-signals.js';
 
 const PROJECT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const VALID_PRIORITIES = [0, 1, 3, 5]; // TickTick valid priority values
+const ACTION_VERB_REGEX = /^(call|email|pay|book|write|draft|review|ship|send|apply|buy|clean|fix|prepare|schedule|plan|submit|update|organize|finish|confirm|get|set|message|follow|protect)\b/i;
 /**
  * TickTick Adapter - Narrow interface for all TickTick REST API interactions.
  * Wraps TickTickClient with validation, error classification, and structured logging.
@@ -216,6 +217,25 @@ export class TickTickAdapter {
         return validItems;
     }
 
+    _deriveBehavioralCreateMetadata(normalizedAction, mappedItems) {
+        const title = typeof normalizedAction.title === 'string' ? normalizedAction.title.trim() : '';
+        const titleWordCount = title ? title.split(/\s+/).filter(Boolean).length : 0;
+        const titleCharacterCount = title.length;
+        const contentLength = normalizedAction.content ? normalizedAction.content.length : 0;
+        const checklistCountAfter = mappedItems ? mappedItems.length : 0;
+
+        return {
+            titleWordCount,
+            titleCharacterCount,
+            hasActionVerb: ACTION_VERB_REGEX.test(title),
+            smallTaskCandidate: titleWordCount > 0 && titleWordCount <= 4 && contentLength <= 80 && checklistCountAfter <= 1,
+            checklistCountAfter,
+            descriptionLengthAfter: contentLength,
+            planningComplexityScore: checklistCountAfter + (contentLength >= 200 ? 3 : 0),
+            planningSubtypeA: checklistCountAfter >= 6 || contentLength >= 200,
+        };
+    }
+
     /**
      * Validates due date string format.
      * @param {string|null|undefined} dueDate - Due date to validate
@@ -400,8 +420,7 @@ export class TickTickAdapter {
             this._observeSignals('create', {
                 category: normalizedAction.category || null,
                 projectId: validatedProjectId,
-                checklistCountAfter: mappedItems ? mappedItems.length : 0,
-                descriptionLengthAfter: normalizedAction.content ? normalizedAction.content.length : 0,
+                ...this._deriveBehavioralCreateMetadata(normalizedAction, mappedItems),
             });
 
             this._log('createTask', `SUCCESS { id: "${createdTask.id}", ${elapsed}ms }`);

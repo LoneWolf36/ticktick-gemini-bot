@@ -168,6 +168,47 @@ function buildCarryForward(activeTasks = []) {
     }));
 }
 
+function buildDeferredCarryForward(processedHistory = [], activeTasks = []) {
+    const activeByTitle = new Map(
+        activeTasks
+            .map((task) => [toString(task.title).toLowerCase(), task])
+            .filter(([title]) => Boolean(title)),
+    );
+    const deferred = [];
+    const seenTitles = new Set();
+
+    for (const entry of processedHistory) {
+        if (entry?.skipped !== true || entry?.dropped === true) continue;
+        const title = toString(entry.originalTitle || entry.title);
+        if (!title) continue;
+
+        const normalizedTitle = title.toLowerCase();
+        if (seenTitles.has(normalizedTitle)) continue;
+        seenTitles.add(normalizedTitle);
+
+        const activeTask = activeByTitle.get(normalizedTitle);
+        deferred.push({
+            task_id: entry.taskId ?? activeTask?.id ?? activeTask?.taskId ?? null,
+            title,
+            reason: 'Deferred or rescheduled this week and still needs a concrete next step.',
+        });
+    }
+
+    if (deferred.length >= 3) {
+        return deferred.slice(0, 3);
+    }
+
+    for (const item of buildCarryForward(activeTasks)) {
+        const normalizedTitle = toString(item.title).toLowerCase();
+        if (!normalizedTitle || seenTitles.has(normalizedTitle)) continue;
+        deferred.push(item);
+        seenTitles.add(normalizedTitle);
+        if (deferred.length >= 3) break;
+    }
+
+    return deferred;
+}
+
 function buildNextFocus(activeTasks = [], rankingResult = null) {
     const ranked = Array.isArray(rankingResult?.ranked) ? rankingResult.ranked : [];
     if (ranked.length > 0) {
@@ -300,7 +341,7 @@ export function composeWeeklySummarySections({
         : buildProgress(normalizedHistory, historyAvailable);
     const carryForward = normalizedModel.carry_forward.length > 0
         ? normalizedModel.carry_forward
-        : buildCarryForward(normalizedTasks);
+        : buildDeferredCarryForward(normalizedHistory, normalizedTasks);
     const nextFocus = buildNextFocus(normalizedTasks, rankingResult);
     const watchouts = mergeWatchouts(
         normalizedModel.watchouts,

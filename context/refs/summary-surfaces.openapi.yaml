@@ -43,12 +43,31 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/WeeklyComposeResponse'
+  /internal/summary-surfaces/daily-close:
+    post:
+      summary: Compose a structured end-of-day reflection and deterministic Telegram output
+      operationId: composeDailyCloseSummary
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/DailyCloseComposeRequest'
+      responses:
+        '200':
+          description: Structured end-of-day reflection plus formatted output
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/DailyCloseComposeResponse'
 components:
   schemas:
     SummaryRequestContext:
       type: object
       required:
         - entry_point
+        - delivery_channel
+        - scheduling_metadata
         - urgent_mode
         - generated_at_iso
         - tone_policy
@@ -69,6 +88,39 @@ components:
           type:
             - string
             - 'null'
+        work_style_mode:
+          type: string
+          enum:
+            - standard
+            - focus
+            - urgent
+        delivery_channel:
+          type: string
+          enum:
+            - telegram
+        scheduling_metadata:
+          type: object
+          required:
+            - trigger_kind
+          properties:
+            trigger_kind:
+              type: string
+              enum:
+                - manual
+                - scheduled
+            schedule_key:
+              type:
+                - string
+                - 'null'
+            scheduled_for_iso:
+              type:
+                - string
+                - 'null'
+              format: date-time
+            grace_window_minutes:
+              type:
+                - integer
+                - 'null'
         urgent_mode:
           type: boolean
         tone_policy:
@@ -374,6 +426,56 @@ components:
       properties:
         summary:
           $ref: '#/components/schemas/WeeklySummary'
+        formatted_text:
+          type: string
+        diagnostics:
+          $ref: '#/components/schemas/SummaryDiagnostics'
+    DailyCloseSummary:
+      type: object
+      required:
+        - stats
+        - reflection
+        - reset_cue
+        - notices
+      properties:
+        stats:
+          type: array
+          items:
+            type: string
+        reflection:
+          type: string
+        reset_cue:
+          type: string
+        notices:
+          type: array
+          items:
+            $ref: '#/components/schemas/SummaryNotice'
+    DailyCloseComposeRequest:
+      type: object
+      required:
+        - context
+        - active_tasks
+        - processed_history
+      properties:
+        context:
+          $ref: '#/components/schemas/SummaryRequestContext'
+        active_tasks:
+          type: array
+          items:
+            $ref: '#/components/schemas/TaskInput'
+        processed_history:
+          type: array
+          items:
+            $ref: '#/components/schemas/ProcessedHistoryEntry'
+    DailyCloseComposeResponse:
+      type: object
+      required:
+        - summary
+        - formatted_text
+        - diagnostics
+      properties:
+        summary:
+          $ref: '#/components/schemas/DailyCloseSummary'
         formatted_text:
           type: string
         diagnostics:
