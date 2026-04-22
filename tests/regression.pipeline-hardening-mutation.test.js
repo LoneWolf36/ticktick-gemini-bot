@@ -1055,6 +1055,115 @@ test('WP06 T020: fail-closed — quota exhaustion returns user-safe message', as
   assert.match(result.confirmationText, /quota.*exhausted|try.*again/i);
 });
 
+test('WP06 R4: pipeline surfaces rate-limit ETA in user message when adapter provides retry metadata', async () => {
+  let createAttempts = 0;
+  const pipeline = createPipeline({
+    axIntent: {
+      extractIntents: async () => [{ type: 'create', title: 'Rate limited task' }],
+    },
+    normalizer: {
+      normalizeActions: (intents) => intents.map((intent) => ({
+        ...intent,
+        projectId: 'inbox',
+        valid: true,
+        validationErrors: [],
+      })),
+    },
+    adapter: {
+      listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+      listActiveTasks: async () => [],
+      createTask: async () => {
+        createAttempts += 1;
+        const error = new Error('429 Too Many Requests');
+        error.code = 'RATE_LIMITED';
+        error.retryAfterMs = 90000;
+        error.retryAt = new Date(Date.now() + 90000).toISOString();
+        throw error;
+      },
+    },
+  });
+
+  const result = await pipeline.processMessage('create rate-limited task', {
+    requestId: 'req-r4-rate-limit-eta',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  assert.equal(result.type, 'error');
+  assert.equal(result.failure.class, 'adapter');
+  assert.equal(result.failure.failureCategory, 'transient');
+  assert.equal(createAttempts, 1, 'pipeline should not re-hit TickTick after adapter-level 429 handling');
+  assert.match(result.confirmationText, /(retry|try again).*(minute|second|at|in)/i);
+
+  const failureDetails = result.failure?.details || {};
+  const firstFailure = Array.isArray(failureDetails.failures) ? failureDetails.failures[0] : null;
+  assert.ok(
+    Number.isFinite(failureDetails.retryAfterMs)
+      || typeof failureDetails.retryAt === 'string'
+      || Number.isFinite(firstFailure?.retryAfterMs)
+      || typeof firstFailure?.retryAt === 'string',
+    'expected retry ETA metadata preserved in failure details',
+  );
+});
+
+test('WP06 R4: pipeline distinguishes quota exhaustion from transient rate limiting', async () => {
+  const makePipeline = (errorFactory) => createPipeline({
+    axIntent: {
+      extractIntents: async () => [{ type: 'create', title: 'Task' }],
+    },
+    normalizer: {
+      normalizeActions: (intents) => intents.map((intent) => ({
+        ...intent,
+        projectId: 'inbox',
+        valid: true,
+        validationErrors: [],
+      })),
+    },
+    adapter: {
+      listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+      listActiveTasks: async () => [],
+      createTask: async () => {
+        throw errorFactory();
+      },
+    },
+  });
+
+  const transientResult = await makePipeline(() => {
+    const error = new Error('429 Too Many Requests');
+    error.code = 'RATE_LIMITED';
+    error.retryAfterMs = 30000;
+    return error;
+  }).processMessage('create transient', {
+    requestId: 'req-r4-transient',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  const quotaResult = await makePipeline(() => {
+    const error = new Error('Quota exhausted for task writes');
+    error.code = 'QUOTA_EXHAUSTED';
+    return error;
+  }).processMessage('create quota', {
+    requestId: 'req-r4-quota',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  assert.equal(transientResult.type, 'error');
+  assert.equal(quotaResult.type, 'error');
+
+  assert.equal(transientResult.failure.class, 'adapter');
+  assert.equal(quotaResult.failure.class, 'adapter');
+  assert.equal(transientResult.failure.failureCategory, 'transient');
+  assert.equal(quotaResult.failure.failureCategory, 'permanent');
+  assert.notEqual(
+    transientResult.confirmationText,
+    quotaResult.confirmationText,
+    'quota exhaustion and transient rate limits should produce distinguishable user feedback',
+  );
+  assert.match(quotaResult.confirmationText, /quota/i);
+});
+
 // =========================================================================
 // WP06 — T012: Failure-path regressions (additional coverage)
 // =========================================================================

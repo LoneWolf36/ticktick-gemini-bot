@@ -9,6 +9,10 @@ const TOKEN_FILE = path.join(__dirname, '..', 'token.json');
 const API_BASE = 'https://api.ticktick.com/open/v1';
 const OAUTH_BASE = 'https://ticktick.com/oauth';
 
+const RATE_LIMIT_MAX_RETRIES = Math.max(0, Number.parseInt(process.env.TICKTICK_RATE_LIMIT_MAX_RETRIES || '3', 10) || 3);
+const RATE_LIMIT_BASE_DELAY_MS = Math.max(100, Number.parseInt(process.env.TICKTICK_RATE_LIMIT_BASE_DELAY_MS || '1000', 10) || 1000);
+const RATE_LIMIT_MAX_DELAY_MS = Math.max(RATE_LIMIT_BASE_DELAY_MS, Number.parseInt(process.env.TICKTICK_RATE_LIMIT_MAX_DELAY_MS || '30000', 10) || 30000);
+
 export class TickTickClient {
     constructor({ clientId, clientSecret, redirectUri }) {
         this.clientId = clientId;
@@ -272,45 +276,139 @@ export class TickTickClient {
             return resp.data;
         };
 
-        try {
-            return await makeReq();
-        } catch (err) {
-            if (err.response?.status === 401 && this.refreshToken) {
-                if (!this._refreshPromise) {
-                    this._refreshPromise = this._refreshAccessToken().finally(() => {
-                        this._refreshPromise = null;
-                    });
-                }
-                // Wait for ongoing refresh
-                await this._refreshPromise;
-                // Retry requested once cleanly
-                try {
-                    return await makeReq();
-                } catch (retryErr) {
-                    if (retryErr.response?.status === 401) {
-                        this.accessToken = null;
-                        this.refreshToken = null;
-                        this._invalidateCache();
-                        console.error('🔑 TickTick token expired (retry rejected token) — re-authorize at /health');
-                        const customErr = new Error('TICKTICK_TOKEN_EXPIRED');
-                        customErr.isAuthError = true;
-                        throw customErr;
+        const requestWithAuthRecovery = async () => {
+            try {
+                return await makeReq();
+            } catch (err) {
+                if (err.response?.status === 401 && this.refreshToken) {
+                    if (!this._refreshPromise) {
+                        this._refreshPromise = this._refreshAccessToken().finally(() => {
+                            this._refreshPromise = null;
+                        });
                     }
-                    throw retryErr;
+                    await this._refreshPromise;
+                    try {
+                        return await makeReq();
+                    } catch (retryErr) {
+                        if (retryErr.response?.status === 401) {
+                            this.accessToken = null;
+                            this.refreshToken = null;
+                            this._invalidateCache();
+                            console.error('🔑 TickTick token expired (retry rejected token) — re-authorize at /health');
+                            const customErr = new Error('TICKTICK_TOKEN_EXPIRED');
+                            customErr.isAuthError = true;
+                            throw customErr;
+                        }
+                        throw retryErr;
+                    }
                 }
-            }
 
-            if (err.response?.status === 401) {
-                this.accessToken = null;
-                this.refreshToken = null;
-                this._invalidateCache();
-                console.error('🔑 TickTick token expired (refresh failed/missing) — re-authorize at /health');
-                const customErr = new Error('TICKTICK_TOKEN_EXPIRED');
-                customErr.isAuthError = true;
-                throw customErr;
+                if (err.response?.status === 401) {
+                    this.accessToken = null;
+                    this.refreshToken = null;
+                    this._invalidateCache();
+                    console.error('🔑 TickTick token expired (refresh failed/missing) — re-authorize at /health');
+                    const customErr = new Error('TICKTICK_TOKEN_EXPIRED');
+                    customErr.isAuthError = true;
+                    throw customErr;
+                }
+                throw err;
             }
-            throw err;
+        };
+
+        const maxAttempts = RATE_LIMIT_MAX_RETRIES + 1;
+        for (let attempt = 1; attempt <= maxAttempts; attempt++) {
+            try {
+                return await requestWithAuthRecovery();
+            } catch (err) {
+                if (err?.response?.status !== 429) {
+                    throw err;
+                }
+
+                const rateLimitMeta = this._extractRateLimitMeta(err);
+                const isQuotaExhausted = this._isQuotaExhausted(err);
+                const retryAfterMs = rateLimitMeta.retryAfterMs;
+                const waitMs = retryAfterMs ?? this._calculateExponentialBackoffMs(attempt);
+                const retryAt = waitMs ? new Date(Date.now() + waitMs).toISOString() : null;
+                const canRetry = !isQuotaExhausted && attempt < maxAttempts && waitMs <= RATE_LIMIT_MAX_DELAY_MS;
+
+                err.code = isQuotaExhausted ? 'RATE_LIMIT_QUOTA_EXHAUSTED' : 'RATE_LIMITED';
+                err.statusCode = 429;
+                err.retryAfterMs = retryAfterMs ?? waitMs;
+                err.retryAt = rateLimitMeta.retryAt || retryAt;
+                err.attempts = attempt;
+                err.isQuotaExhausted = isQuotaExhausted;
+
+                if (!canRetry) {
+                    throw err;
+                }
+
+                await this._sleep(waitMs);
+            }
         }
+    }
+
+    _calculateExponentialBackoffMs(attempt) {
+        const exp = RATE_LIMIT_BASE_DELAY_MS * (2 ** Math.max(0, attempt - 1));
+        return Math.min(exp, RATE_LIMIT_MAX_DELAY_MS);
+    }
+
+    _extractRateLimitMeta(error) {
+        const retryAfterHeader = error?.response?.headers?.['retry-after'];
+        const bodyRetryAfter = error?.response?.data?.retry_after;
+
+        const headerMs = this._parseRetryAfterValue(retryAfterHeader, { treatNumericAsSeconds: true });
+        const bodyMs = this._parseRetryAfterValue(bodyRetryAfter, { treatNumericAsSeconds: false });
+        const retryAfterMs = headerMs ?? bodyMs ?? null;
+        const retryAt = retryAfterMs ? new Date(Date.now() + retryAfterMs).toISOString() : null;
+
+        return {
+            retryAfterMs,
+            retryAt,
+        };
+    }
+
+    _parseRetryAfterValue(value, { treatNumericAsSeconds } = {}) {
+        if (value === null || value === undefined) return null;
+        const raw = String(value).trim();
+        if (!raw) return null;
+
+        const asNumber = Number(raw);
+        if (Number.isFinite(asNumber) && asNumber >= 0) {
+            if (treatNumericAsSeconds === false && asNumber > 1000) return Math.floor(asNumber);
+            return Math.floor(asNumber * 1000);
+        }
+
+        const asDateMs = Date.parse(raw);
+        if (!Number.isNaN(asDateMs)) {
+            return Math.max(0, asDateMs - Date.now());
+        }
+
+        return null;
+    }
+
+    _isQuotaExhausted(error) {
+        const chunks = [];
+        const body = error?.response?.data;
+
+        if (typeof error?.message === 'string') chunks.push(error.message);
+        if (typeof body === 'string') {
+            chunks.push(body);
+        } else if (body && typeof body === 'object') {
+            const keys = ['message', 'msg', 'error', 'error_description', 'detail', 'reason', 'code'];
+            for (const key of keys) {
+                if (typeof body[key] === 'string') chunks.push(body[key]);
+            }
+        }
+
+        const text = chunks.join(' ').toLowerCase();
+        return /(quota|exhaust|limit reached|per day|daily|day limit|billing|insufficient)/i.test(text);
+    }
+
+    async _sleep(ms) {
+        const wait = Number.isFinite(ms) ? Math.max(0, ms) : 0;
+        if (wait <= 0) return;
+        await new Promise((resolve) => setTimeout(resolve, wait));
     }
 
     _invalidateCache() {

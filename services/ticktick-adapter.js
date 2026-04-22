@@ -77,9 +77,13 @@ export class TickTickAdapter {
      */
     _classifyError(error, operation) {
         const classified = new Error(error.message);
-        classified.code = this._getErrorCode(error);
+        classified.code = error.code || this._getErrorCode(error);
         classified.operation = operation;
-        classified.statusCode = error.response?.status;
+        classified.statusCode = error.statusCode || error.response?.status;
+        if (error.retryAfterMs !== undefined) classified.retryAfterMs = error.retryAfterMs;
+        if (error.retryAt !== undefined) classified.retryAt = error.retryAt;
+        if (error.attempts !== undefined) classified.attempts = error.attempts;
+        if (error.isQuotaExhausted !== undefined) classified.isQuotaExhausted = error.isQuotaExhausted;
         classified.originalError = error;
         return classified;
     }
@@ -91,10 +95,11 @@ export class TickTickAdapter {
      * @private
      */
     _getErrorCode(error) {
-        if (error.response?.status === 401 || error.response?.status === 403) return 'AUTH_ERROR';
-        if (error.response?.status === 404) return 'NOT_FOUND';
-        if (error.response?.status === 429) return 'RATE_LIMITED';
-        if (error.response?.status >= 500) return 'SERVER_ERROR';
+        const status = error.statusCode || error.response?.status;
+        if (status === 401 || status === 403) return 'AUTH_ERROR';
+        if (status === 404) return 'NOT_FOUND';
+        if (status === 429) return 'RATE_LIMITED';
+        if (status >= 500) return 'SERVER_ERROR';
         if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') return 'NETWORK_ERROR';
         return 'API_ERROR';
     }

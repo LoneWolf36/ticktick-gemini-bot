@@ -2,6 +2,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 import { AxGen } from '@ax-llm/ax';
+import axios from 'axios';
 
 import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../services/shared-utils.js';
 import { executeActions, registerCommands } from '../bot/commands.js';
@@ -212,6 +213,144 @@ test('TickTickAdapter createTask preserves ordinary create without checklistItem
   assert.equal(createPayload.dueDate, '2025-04-01T17:00:00.000Z');
   assert.equal(createPayload.content, 'Some notes');
   assert.equal(Object.hasOwn(createPayload, 'items'), false, 'items should NOT be present for ordinary create');
+});
+
+test('TickTickClient retries 429 with bounded attempts and backoff without real sleep', async () => {
+  const originalAdapter = axios.defaults.adapter;
+  const originalSetTimeout = globalThis.setTimeout;
+  const observedBackoffs = [];
+  let callCount = 0;
+
+  globalThis.setTimeout = (fn, ms, ...args) => {
+    observedBackoffs.push(ms);
+    return originalSetTimeout(fn, 0, ...args);
+  };
+
+  axios.defaults.adapter = async (config) => {
+    callCount += 1;
+
+    if (callCount <= 2) {
+      const err = new Error('429 Too Many Requests');
+      err.response = {
+        status: 429,
+        headers: {},
+        data: {},
+      };
+      err.config = config;
+      throw err;
+    }
+
+    return {
+      status: 200,
+      statusText: 'OK',
+      headers: {},
+      config,
+      data: { ok: true },
+    };
+  };
+
+  try {
+    const client = new TickTickClient({ clientId: 'cid', clientSecret: 'secret', redirectUri: 'http://localhost/cb' });
+    client.accessToken = 'test-access-token';
+
+    const result = await client._requestWithRetry('GET', '/project');
+
+    assert.deepEqual(result, { ok: true });
+    assert.equal(callCount, 3, 'expected initial call + two retries before success');
+    assert.ok(observedBackoffs.length >= 2, 'expected backoff delays to be scheduled');
+    assert.ok(observedBackoffs[1] >= observedBackoffs[0], 'expected non-decreasing backoff delays');
+  } finally {
+    axios.defaults.adapter = originalAdapter;
+    globalThis.setTimeout = originalSetTimeout;
+  }
+});
+
+test('TickTickClient preserves retry-after metadata on terminal 429 failures', async () => {
+  const originalAdapter = axios.defaults.adapter;
+  const originalSetTimeout = globalThis.setTimeout;
+
+  globalThis.setTimeout = (fn, _ms, ...args) => originalSetTimeout(fn, 0, ...args);
+
+  axios.defaults.adapter = async (config) => {
+    const err = new Error('429 Too Many Requests');
+    err.response = {
+      status: 429,
+      headers: {
+        'retry-after': '12',
+      },
+      data: {
+        retry_after: 12,
+      },
+    };
+    err.config = config;
+    throw err;
+  };
+
+  try {
+    const client = new TickTickClient({ clientId: 'cid', clientSecret: 'secret', redirectUri: 'http://localhost/cb' });
+    client.accessToken = 'test-access-token';
+
+    await assert.rejects(
+      () => client._requestWithRetry('GET', '/project'),
+      (error) => {
+        assert.equal(error.code, 'RATE_LIMITED');
+        assert.ok(
+          Number.isFinite(error.retryAfterMs) || typeof error.retryAt === 'string',
+          'expected retryAfterMs and/or retryAt metadata on 429 error',
+        );
+        return true;
+      },
+    );
+  } finally {
+    axios.defaults.adapter = originalAdapter;
+    globalThis.setTimeout = originalSetTimeout;
+  }
+});
+
+test('TickTickClient does not sleep through oversized retry-after windows', async () => {
+  const originalAdapter = axios.defaults.adapter;
+  const originalSetTimeout = globalThis.setTimeout;
+  let callCount = 0;
+  let slept = false;
+
+  globalThis.setTimeout = (fn, _ms, ...args) => {
+    slept = true;
+    return originalSetTimeout(fn, 0, ...args);
+  };
+
+  axios.defaults.adapter = async (config) => {
+    callCount += 1;
+    const err = new Error('429 Too Many Requests');
+    err.response = {
+      status: 429,
+      headers: {
+        'retry-after': '3600',
+      },
+      data: {},
+    };
+    err.config = config;
+    throw err;
+  };
+
+  try {
+    const client = new TickTickClient({ clientId: 'cid', clientSecret: 'secret', redirectUri: 'http://localhost/cb' });
+    client.accessToken = 'test-access-token';
+
+    await assert.rejects(
+      () => client._requestWithRetry('GET', '/project'),
+      (error) => {
+        assert.equal(error.code, 'RATE_LIMITED');
+        assert.ok(error.retryAfterMs >= 3600000);
+        return true;
+      },
+    );
+
+    assert.equal(callCount, 1, 'oversized retry windows should fail fast without retrying');
+    assert.equal(slept, false, 'oversized retry windows should not sleep in-process');
+  } finally {
+    axios.defaults.adapter = originalAdapter;
+    globalThis.setTimeout = originalSetTimeout;
+  }
 });
 
 test('pipeline retries once and rolls back earlier successful writes', async () => {

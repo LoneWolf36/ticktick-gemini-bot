@@ -47,8 +47,49 @@ const USER_FAILURE_MESSAGES = {
     [FAILURE_CLASSES.UNEXPECTED]: '⚠️ An unexpected error occurred while processing your request.',
 };
 
-function classifyAdapterFailureCategory(message = '') {
-    const normalized = String(message || '').toLowerCase();
+function normalizeRetryDelayMs(retryAfterMs, retryAt) {
+    if (Number.isFinite(retryAfterMs) && retryAfterMs >= 0) {
+        return Math.floor(retryAfterMs);
+    }
+    if (typeof retryAt === 'string') {
+        const parsed = Date.parse(retryAt);
+        if (!Number.isNaN(parsed)) return Math.max(0, parsed - Date.now());
+    }
+    return null;
+}
+
+function formatRetryEta(retryAfterMs, retryAt) {
+    const ms = normalizeRetryDelayMs(retryAfterMs, retryAt);
+    if (!Number.isFinite(ms)) return null;
+    const totalSeconds = Math.max(1, Math.ceil(ms / 1000));
+    if (totalSeconds < 60) return `${totalSeconds}s`;
+    const minutes = Math.ceil(totalSeconds / 60);
+    if (minutes < 60) return `${minutes}m`;
+    const hours = Math.ceil(minutes / 60);
+    return `${hours}h`;
+}
+
+function extractAdapterErrorMeta(errorOrMessage) {
+    if (!errorOrMessage || typeof errorOrMessage === 'string') return {};
+    return {
+        code: errorOrMessage.code || null,
+        statusCode: errorOrMessage.statusCode || null,
+        retryAfterMs: errorOrMessage.retryAfterMs,
+        retryAt: errorOrMessage.retryAt,
+        isQuotaExhausted: errorOrMessage.isQuotaExhausted === true,
+    };
+}
+
+function classifyAdapterFailureCategory(errorOrMessage = '') {
+    const meta = extractAdapterErrorMeta(errorOrMessage);
+    if (meta.isQuotaExhausted || meta.code === 'RATE_LIMIT_QUOTA_EXHAUSTED' || meta.code === 'QUOTA_EXHAUSTED') {
+        return FAILURE_CATEGORIES.PERMANENT;
+    }
+    if (meta.code === 'RATE_LIMITED' || meta.statusCode === 429) {
+        return FAILURE_CATEGORIES.TRANSIENT;
+    }
+
+    const normalized = String(typeof errorOrMessage === 'string' ? errorOrMessage : errorOrMessage?.message || '').toLowerCase();
 
     if (/(timeout|timed out|rate limit|too many requests|\b429\b|temporar|econnreset|eai_again|network|\b502\b|\b503\b|\b504\b)/i.test(normalized)) {
         return FAILURE_CATEGORIES.TRANSIENT;
@@ -95,10 +136,25 @@ function buildUserFailureMessage({ failureClass, failureCategory, details, rolle
     }
 
     if (failureClass === FAILURE_CLASSES.ADAPTER && failureCategory === FAILURE_CATEGORIES.TRANSIENT) {
+        const adapterError = details?.adapterError || {};
+        const isRateLimited = adapterError.statusCode === 429 || adapterError.code === 'RATE_LIMITED';
+        if (isRateLimited) {
+            const eta = formatRetryEta(adapterError.retryAfterMs, adapterError.retryAt);
+            return eta
+                ? `⚠️ TickTick is temporarily rate-limiting requests. Please retry in about ${eta}.`
+                : '⚠️ TickTick is temporarily rate-limiting requests. Please retry shortly.';
+        }
         return '⚠️ Temporary task update failure. Please retry shortly.';
     }
 
     if (failureClass === FAILURE_CLASSES.ADAPTER && failureCategory === FAILURE_CATEGORIES.PERMANENT) {
+        const adapterError = details?.adapterError || {};
+        if (adapterError.isQuotaExhausted || adapterError.code === 'RATE_LIMIT_QUOTA_EXHAUSTED' || adapterError.code === 'QUOTA_EXHAUSTED') {
+            const eta = formatRetryEta(adapterError.retryAfterMs, adapterError.retryAt);
+            return eta
+                ? `⚠️ TickTick quota is exhausted. Please retry in about ${eta}.`
+                : '⚠️ TickTick quota is exhausted right now. Please retry later.';
+        }
         return '⚠️ Task update could not be applied. Please correct the task details and retry.';
     }
 
@@ -515,14 +571,20 @@ async function executeRollbackStep(step, adapter) {
     }
 }
 
-function buildExecutionFailure(action, message, attempt) {
+function buildExecutionFailure(action, message, attempt, adapterError = null) {
+    const meta = extractAdapterErrorMeta(adapterError);
     return {
         type: action?.type || 'unknown',
         title: action?.title || null,
         taskId: action?.taskId || null,
         message,
         attempt,
-        failureCategory: classifyAdapterFailureCategory(message),
+        failureCategory: classifyAdapterFailureCategory(adapterError || message),
+        code: meta.code || null,
+        statusCode: meta.statusCode || null,
+        retryAfterMs: meta.retryAfterMs,
+        retryAt: meta.retryAt,
+        isQuotaExhausted: meta.isQuotaExhausted,
     };
 }
 
@@ -1223,7 +1285,11 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     break;
                 } catch (err) {
                     const message = err?.message || 'Unknown adapter failure';
-                    const adapterFailureCategory = classifyAdapterFailureCategory(message);
+                    const adapterError = extractAdapterErrorMeta(err);
+                    const adapterFailureCategory = classifyAdapterFailureCategory(err || message);
+                    const isAdapterRateLimited = adapterError.statusCode === 429
+                        || adapterError.code === 'RATE_LIMITED'
+                        || adapterError.code === 'RATE_LIMIT_QUOTA_EXHAUSTED';
                     executionResults.push(snapshotPipelineValue({
                         phase: 'execute',
                         actionIndex: index,
@@ -1231,7 +1297,12 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         status: 'failure',
                         actionType: action.type,
                         errorMessage: message,
-                        willRetry: adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT && attempt < maxAttempts,
+                        errorCode: adapterError.code || null,
+                        statusCode: adapterError.statusCode || null,
+                        retryAfterMs: adapterError.retryAfterMs,
+                        retryAt: adapterError.retryAt,
+                        isQuotaExhausted: adapterError.isQuotaExhausted,
+                        willRetry: adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT && attempt < maxAttempts && !isAdapterRateLimited,
                         failureCategory: adapterFailureCategory,
                     }));
                     record.errorMessage = message;
@@ -1248,18 +1319,23 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         rolledBack: false,
                         metadata: {
                             actionIndex: index,
-                            willRetry: adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT && attempt < maxAttempts,
+                            willRetry: adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT && attempt < maxAttempts && !isAdapterRateLimited,
                             failureCategory: adapterFailureCategory,
+                            errorCode: adapterError.code || null,
+                            statusCode: adapterError.statusCode || null,
+                            retryAfterMs: adapterError.retryAfterMs,
+                            retryAt: adapterError.retryAt,
+                            isQuotaExhausted: adapterError.isQuotaExhausted,
                         },
                     });
 
-                    if (adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT && attempt < maxAttempts) {
+                    if (adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT && attempt < maxAttempts && !isAdapterRateLimited) {
                         continue;
                     }
 
                     record.status = 'failed';
                     errors.push(`${action.type} failed: ${message}`);
-                    failures.push(buildExecutionFailure(action, message, attempt));
+                    failures.push(buildExecutionFailure(action, message, attempt, err));
                     results.push(record);
 
                     if (successfulRecords.length === 0) {
@@ -1282,7 +1358,11 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                                 userMessage: buildUserFailureMessage({
                                     failureClass: FAILURE_CLASSES.ADAPTER,
                                     failureCategory: adapterFailureCategory,
-                                    details: { successCount: 0, failureCount: failures.length },
+                                    details: {
+                                        successCount: 0,
+                                        failureCount: failures.length,
+                                        adapterError,
+                                    },
                                     rolledBack: false,
                                 }),
                                 developerMessage: `Action ${index} (${action.type}) failed after ${attempt} attempt(s): ${message}`,
@@ -1292,6 +1372,9 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                                 attempts: attempt,
                                 successCount: 0,
                                 failureCount: failures.length,
+                                details: {
+                                    adapterError,
+                                },
                             },
                         };
                     }
