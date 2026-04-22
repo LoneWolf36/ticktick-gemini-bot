@@ -4,6 +4,7 @@ import {
     SUMMARY_NOTICE_SEVERITIES,
     WEEKLY_WATCHOUT_EVIDENCE_SOURCES,
 } from '../schemas.js';
+import { buildBehavioralPatternNotice } from './behavioral-pattern-notices.js';
 import { buildEngagementPatternNotice, deriveInterventionProfile } from './intervention-profile.js';
 
 const DISALLOWED_WATCHOUT_LABELS = new Set(['avoidance', 'callout']);
@@ -285,6 +286,7 @@ function buildRankingTrendNotice(rankingResult = null) {
 
 function buildNotices({
     activeTasks = [],
+    behavioralPatterns = [],
     processedHistory = [],
     historyAvailable = true,
     historyIsSparse = false,
@@ -330,6 +332,13 @@ function buildNotices({
         notices.push(rankingTrendNotice);
     }
 
+    const behavioralNotice = buildBehavioralPatternNotice(behavioralPatterns, {
+        nowIso: context.generatedAtIso,
+    });
+    if (behavioralNotice) {
+        notices.push(behavioralNotice);
+    }
+
     if (context.urgentMode === true) {
         notices.push({
             code: 'urgent_mode_active',
@@ -362,6 +371,7 @@ function normalizeModelSummary(summary = {}, evidenceContext = {}) {
 export function composeWeeklySummarySections({
     modelSummary = {},
     activeTasks = [],
+    behavioralPatterns = [],
     processedHistory = [],
     historyAvailable = true,
     rankingResult = null,
@@ -397,6 +407,7 @@ export function composeWeeklySummarySections({
         normalizedModel.notices,
         buildNotices({
             activeTasks: normalizedTasks,
+            behavioralPatterns,
             processedHistory: normalizedHistory,
             historyAvailable,
             historyIsSparse,

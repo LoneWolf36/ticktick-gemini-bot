@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-21T13:45:00Z"
+last_edited: "2026-04-22T01:15:00Z"
 source_specs: ["003-pipeline-hardening-and-regression"]
 complexity: "complex"
 ---
@@ -37,9 +37,9 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 ### R3: Failure Classification
 **Description:** Pipeline failures are classified into deterministic categories with appropriate user messaging and recovery semantics.
 **Acceptance Criteria:**
-- [ ] Classification categories: transient (API timeout, rate limit), permanent (invalid input, missing project), partial (some tasks succeeded, some failed)
-- [ ] Transient failures trigger retry; permanent failures surface clear user-facing error; partial failures report what succeeded and what failed
-- [ ] User-facing error messages are terse, actionable, and do not expose internal details
+- [x] Classification categories: transient (API timeout, rate limit), permanent (invalid input, missing project), partial (some tasks succeeded, some failed)
+- [x] Transient failures trigger retry; permanent failures surface clear user-facing error; partial failures report what succeeded and what failed
+- [x] User-facing error messages are terse, actionable, and do not expose internal details
 **Dependencies:** R1
 
 ### R4: Quota and Rate-Limit Semantics
@@ -138,7 +138,7 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 - [x] R9 audited directly against `services/pipeline-observability.js`, `context/refs/telemetry-events.schema.json`, and `tests/regression.pipeline-hardening-mutation.test.js` (`WP06 T017`): emitted events keep the required schema fields, preserve `requestId` tracing across request/execution/result steps, and avoid raw user-message persistence in telemetry payloads.
 - [x] R1 audited directly against `services/pipeline-context.js`, `services/pipeline.js`, `services/pipeline-observability.js`, `tests/pipeline-context.test.js`, and `tests/regression.pipeline-hardening-mutation.test.js`: immutable lifecycle snapshots now capture request metadata, correlation ID, AX output, normalization state, execution requests/results, validation failures, timing, and final result; observability sinks receive the canonical context without changing the telemetry event schema.
 - [ ] R2 remains unchecked: entry points consistently pass pipeline options, but handlers do not themselves construct the full canonical context object before the pipeline call.
-- [ ] R3 remains unchecked: failure handling exists, but the exact transient/permanent/partial classification contract in the AC is not implemented as written.
+- [x] R3 audited directly against `services/pipeline.js`, `tests/regression.pipeline-hardening-mutation.test.js`, and `tests/regression.adapter-execution-reorg.test.js`: pipeline failures now classify deterministic transient/permanent/partial categories, transient adapter failures retry once automatically, permanent failures surface corrective user-safe messaging, and partial failures report success/failure counts without exposing internal details.
 - [ ] R4 remains unchecked: no exponential backoff/ETA semantics for TickTick 429 responses were verified.
 - [ ] R5 remains unchecked: current execution retry logic is limited and does not satisfy the single-task exponential-backoff AC.
 - [ ] R7 remains unchecked: regression coverage is broad, but this pass did not prove every cavekit-task-pipeline story maps cleanly to at least one automated regression.
@@ -151,3 +151,4 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 - 2026-04-18: Migrated from kitty-specs 003-pipeline-hardening-and-regression
 - 2026-04-20: R6 and R9 completed — offline harness behavior and telemetry contract now have direct code + regression evidence.
 - 2026-04-21: R1 completed — canonical immutable pipeline context now persists across request, AX, normalization, execution, and result stages with observability access.
+- 2026-04-22: R3 completed — pipeline failure handling now emits deterministic transient/permanent/partial categories with retry, corrective messaging, and partial-failure reporting covered by regression tests.

@@ -953,6 +953,7 @@ test('WP06 T020: fail-closed — validation failure returns user-safe message', 
 });
 
 test('WP06 T020: fail-closed — adapter failure returns generic retry message', async () => {
+  let createAttempts = 0;
   const pipeline = createPipeline({
     axIntent: {
       extractIntents: async () => [{ type: 'create', title: 'Test task' }],
@@ -968,7 +969,10 @@ test('WP06 T020: fail-closed — adapter failure returns generic retry message',
     adapter: {
       listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
       listActiveTasks: async () => [],
-      createTask: async () => { throw new Error('TickTick API 503 Service Unavailable'); },
+      createTask: async () => {
+        createAttempts += 1;
+        throw new Error('TickTick API 503 Service Unavailable');
+      },
     },
   });
 
@@ -980,10 +984,52 @@ test('WP06 T020: fail-closed — adapter failure returns generic retry message',
 
   assert.equal(result.type, 'error');
   assert.equal(result.failure.class, 'adapter');
+  assert.equal(result.failure.failureCategory, 'transient');
+  assert.equal(result.failure.retryable, true);
+  assert.equal(createAttempts, 2);
   assert.match(result.confirmationText, /failed.*retry|retry.*shortly/i);
   // User message MUST NOT expose internal error details
   assert.equal(result.confirmationText.includes('503'), false);
   assert.equal(result.confirmationText.includes('Service Unavailable'), false);
+});
+
+test('WP06 T020: permanent adapter failures do not retry and ask for correction', async () => {
+  let createAttempts = 0;
+  const pipeline = createPipeline({
+    axIntent: {
+      extractIntents: async () => [{ type: 'create', title: 'Test task' }],
+    },
+    normalizer: {
+      normalizeActions: (intents) => intents.map(intent => ({
+        ...intent,
+        projectId: 'missing-project',
+        valid: true,
+        validationErrors: [],
+      })),
+    },
+    adapter: {
+      listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+      listActiveTasks: async () => [],
+      createTask: async () => {
+        createAttempts += 1;
+        throw new Error('Missing project: could not resolve project');
+      },
+    },
+  });
+
+  const result = await pipeline.processMessage('create test', {
+    requestId: 'req-fail-closed-adapter-permanent',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  assert.equal(result.type, 'error');
+  assert.equal(result.failure.class, 'adapter');
+  assert.equal(result.failure.failureCategory, 'permanent');
+  assert.equal(result.failure.retryable, false);
+  assert.equal(createAttempts, 1);
+  assert.match(result.confirmationText, /correct.*retry|could not be applied/i);
+  assert.equal(result.confirmationText.includes('missing-project'), false);
 });
 
 test('WP06 T020: fail-closed — quota exhaustion returns user-safe message', async () => {

@@ -1,3 +1,5 @@
+import { buildBehavioralPatternNotice } from './behavioral-pattern-notices.js';
+
 function asActiveTasks(tasks = []) {
     return (Array.isArray(tasks) ? tasks : [])
         .filter((task) => task && (task.status === 0 || task.status === undefined));
@@ -89,7 +91,7 @@ function ensureGoalAlignedPriority(priorities = [], fallbackPriorities = []) {
     return [goalCandidate, ...normalized.filter((item) => item?.task_id !== goalCandidate.task_id).slice(0, 2)];
 }
 
-function buildNotices({ activeTasks = [], context = {}, rankingResult = null }) {
+function buildNotices({ activeTasks = [], behavioralPatterns = [], context = {}, rankingResult = null }) {
     const notices = [];
 
     if (activeTasks.length < 2) {
@@ -108,6 +110,13 @@ function buildNotices({ activeTasks = [], context = {}, rankingResult = null }) 
             severity: 'warning',
             evidence_source: 'system',
         });
+    }
+
+    const behavioralNotice = buildBehavioralPatternNotice(behavioralPatterns, {
+        nowIso: context.generatedAtIso,
+    });
+    if (behavioralNotice) {
+        notices.push(behavioralNotice);
     }
 
     if (context.urgentMode === true) {
@@ -210,6 +219,7 @@ function mergePriorities({
 
 export function composeBriefingSummarySections({
     activeTasks = [],
+    behavioralPatterns = [],
     rankingResult = null,
     context = {},
     modelSummary = null,
@@ -247,7 +257,7 @@ export function composeBriefingSummarySections({
             why_now: [],
             start_now: 'No briefing actions. Check back after new tasks land.',
             notices: mergeNotices(
-                buildNotices({ activeTasks: normalizedTasks, context, rankingResult }),
+                buildNotices({ activeTasks: normalizedTasks, behavioralPatterns, context, rankingResult }),
                 modelNormalized.notices,
             ),
         };
@@ -263,7 +273,7 @@ export function composeBriefingSummarySections({
         why_now: whyNow,
         start_now: startNow,
         notices: mergeNotices(
-            buildNotices({ activeTasks: normalizedTasks, context, rankingResult }),
+            buildNotices({ activeTasks: normalizedTasks, behavioralPatterns, context, rankingResult }),
             modelNormalized.notices,
         ),
     };

@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-19T00:00:00Z"
+last_edited: "2026-04-22T01:35:00Z"
 source_specs: ["004-post-migration-cleanup"]
 complexity: "quick"
 ---
@@ -16,10 +16,10 @@ Post-migration cleanup: dead code removal, documentation alignment, env-var stan
 ### R1: Dead Code Removal
 **Description:** Legacy task-creation and mutation paths that are replaced by the structured pipeline must be removed.
 **Acceptance Criteria:**
-- [ ] All legacy prompt-based task creation code is removed
-- [ ] All legacy direct-API-call mutation code is removed
-- [ ] Legacy boundary points are documented explaining what was removed and why
-- [ ] No orphaned imports, unused exports, or dead helper functions remain
+- [x] All legacy prompt-based task creation code is removed
+- [x] All legacy direct-API-call mutation code is removed
+- [x] Legacy boundary points are documented explaining what was removed and why
+- [x] No orphaned imports, unused exports, or dead helper functions remain
 **Dependencies:** none
 
 ### R2: README and Architecture Documentation
@@ -75,6 +75,8 @@ Post-migration cleanup: dead code removal, documentation alignment, env-var stan
 - [x] Checkpoint tooling (`commands/save-checkpoint.js`, `commands/README.md`) removed — `docs/ARCHITECTURE.md` already stated these were intentionally removed.
 - [x] Orphaned `tasks/WP*.md` prompt copies removed — canonical versions live under `kitty-specs.archived/`.
 - [x] Rate limiter removed from `bot/commands.js` (YAGNI for 1-user MVP).
+- [x] Audit R1 (Dead Code Removal): legacy prompt-driven task-writing paths are gone; retained direct adapter calls in `bot/commands.js` (`/undo`, `executeActions`) and `bot/callbacks.js` (approve/drop callbacks) are explicitly documented operational or reorg boundaries rather than orphaned legacy writers, and no orphaned imports or dead helper exports were introduced by the pipeline migration.
 
 ## Changelog
 - 2026-04-18: Migrated from kitty-specs 004-post-migration-cleanup
+- 2026-04-22: R1 completed — legacy prompt-writing paths are removed, retained operational mutation boundaries are documented, and cleanup validation no longer treats them as orphaned drift.

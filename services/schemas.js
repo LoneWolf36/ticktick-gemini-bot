@@ -80,6 +80,7 @@ export const SUMMARY_NOTICE_CODES = Object.freeze([
     'missing_history',
     'degraded_ranking',
     'ranking_trend',
+    'behavioral_pattern',
     'urgent_mode_active',
     'engagement_pattern',
     'delivery_context',
@@ -91,6 +92,7 @@ export const SUMMARY_NOTICE_EVIDENCE_SOURCES = Object.freeze([
     'tasks',
     'processed_history',
     'ranking',
+    'behavioral_memory',
     'state',
     'system',
 ]);

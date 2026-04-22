@@ -282,6 +282,7 @@ test('pipeline retries once and rolls back earlier successful writes', async () 
 
   assert.equal(result.type, 'error');
   assert.equal(result.failure.class, 'adapter');
+  assert.equal(result.failure.failureCategory, 'partial');
   assert.equal(result.failure.rolledBack, true);
   assert.equal(result.results.length, 2);
   assert.equal(result.results[0].status, 'rolled_back');
@@ -378,6 +379,7 @@ test('pipeline classifies rollback failures when compensation is unsupported', a
   // First complete succeeds, second complete fails after retry, rollback of first (uncomplete) throws
   assert.equal(result.type, 'error');
   assert.equal(result.failure.class, 'rollback');
+  assert.equal(result.failure.failureCategory, 'partial');
   assert.equal(result.failure.rolledBack, false);
   assert.equal(result.results.length, 2);
   assert.equal(result.results[0].status, 'rollback_failed');

@@ -238,6 +238,34 @@ test('composeBriefingSummary consumes ranking output for task selection', () => 
   assert.equal(result.summary.priorities[0].rationale_text, 'Directly moves the core goal.');
 });
 
+test('composeBriefingSummary can surface fresh high-confidence behavioral patterns', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    generatedAtIso: '2026-04-22T12:00:00Z',
+  };
+
+  const result = composeBriefingSummary({
+    context,
+    activeTasks,
+    rankingResult,
+    behavioralPatterns: [{
+      type: 'snooze_spiral',
+      confidence: 'high',
+      eligibleForSurfacing: true,
+      signalCount: 4,
+      windowStart: '2026-04-20T10:00:00Z',
+      windowEnd: '2026-04-22T09:00:00Z',
+    }],
+  });
+
+  const notice = result.summary.notices.find((item) => item.code === 'behavioral_pattern');
+  assert.ok(notice);
+  assert.equal(notice.evidence_source, 'behavioral_memory');
+  assert.match(notice.message, /postpones|rescheduling/i);
+});
+
 test('composeWeeklySummary always returns fixed weekly top-level sections', () => {
   const activeTasks = buildSummaryActiveTasksFixture();
   const processedHistory = buildSummaryProcessedHistoryFixture();
@@ -375,6 +403,78 @@ test('composeWeeklySummary can reference ranking trends in notices', () => {
   assert.ok(rankingNotice);
   assert.match(rankingNotice.message, /ranking trends toward goal-aligned work/i);
   assert.equal(rankingNotice.evidence_source, 'ranking');
+});
+
+test('composeWeeklySummary can surface behavioral pattern notices when available', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildSummaryProcessedHistoryFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+    generatedAtIso: '2026-04-22T12:00:00Z',
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+    behavioralPatterns: [{
+      type: 'planning_without_execution_type_a',
+      confidence: 'standard',
+      eligibleForSurfacing: true,
+      signalCount: 3,
+      windowStart: '2026-04-19T08:00:00Z',
+      windowEnd: '2026-04-21T18:00:00Z',
+    }],
+  });
+
+  const notice = result.summary.notices.find((item) => item.code === 'behavioral_pattern');
+  assert.ok(notice);
+  assert.equal(notice.evidence_source, 'behavioral_memory');
+  assert.match(notice.message, /planning|execution/i);
+});
+
+test('summary surfaces omit low-confidence or stale behavioral patterns gracefully', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildSummaryProcessedHistoryFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+    generatedAtIso: '2026-04-22T12:00:00Z',
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+    behavioralPatterns: [
+      {
+        type: 'snooze_spiral',
+        confidence: 'low',
+        eligibleForSurfacing: false,
+        signalCount: 2,
+        windowStart: '2026-04-20T08:00:00Z',
+        windowEnd: '2026-04-21T08:00:00Z',
+      },
+      {
+        type: 'planning_without_execution_type_b',
+        confidence: 'high',
+        eligibleForSurfacing: true,
+        signalCount: 12,
+        windowStart: '2026-02-01T08:00:00Z',
+        windowEnd: '2026-02-05T08:00:00Z',
+      },
+    ],
+  });
+
+  assert.equal(result.summary.notices.some((item) => item.code === 'behavioral_pattern'), false);
+  assert.ok(result.formattedText.length > 0);
 });
 
 test('composeWeeklySummary stays observational and scannable', () => {

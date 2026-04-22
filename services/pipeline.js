@@ -21,6 +21,12 @@ const FAILURE_CLASSES = {
     UNEXPECTED: 'unexpected',
 };
 
+const FAILURE_CATEGORIES = {
+    TRANSIENT: 'transient',
+    PERMANENT: 'permanent',
+    PARTIAL: 'partial',
+};
+
 const ACTION_FAILURE_CLASSES = {
     NONE: 'none',
     VALIDATION: 'validation',
@@ -41,6 +47,64 @@ const USER_FAILURE_MESSAGES = {
     [FAILURE_CLASSES.UNEXPECTED]: '⚠️ An unexpected error occurred while processing your request.',
 };
 
+function classifyAdapterFailureCategory(message = '') {
+    const normalized = String(message || '').toLowerCase();
+
+    if (/(timeout|timed out|rate limit|too many requests|\b429\b|temporar|econnreset|eai_again|network|\b502\b|\b503\b|\b504\b)/i.test(normalized)) {
+        return FAILURE_CATEGORIES.TRANSIENT;
+    }
+
+    if (/(invalid|missing project|project .*not found|could not resolve project|permission denied|forbidden|already completed|unsupported|not found|requires)/i.test(normalized)) {
+        return FAILURE_CATEGORIES.PERMANENT;
+    }
+
+    return FAILURE_CATEGORIES.TRANSIENT;
+}
+
+function deriveFailureCategory({ failureClass, failureCategory, details, rolledBack = false, retryable = true }) {
+    if (failureCategory) return failureCategory;
+    if (rolledBack || details?.partialFailure || failureClass === FAILURE_CLASSES.ROLLBACK) {
+        return FAILURE_CATEGORIES.PARTIAL;
+    }
+
+    switch (failureClass) {
+        case FAILURE_CLASSES.QUOTA:
+            return FAILURE_CATEGORIES.TRANSIENT;
+        case FAILURE_CLASSES.MALFORMED_AX:
+        case FAILURE_CLASSES.VALIDATION:
+            return FAILURE_CATEGORIES.PERMANENT;
+        case FAILURE_CLASSES.ADAPTER:
+            return details?.adapterFailureCategory || (retryable ? FAILURE_CATEGORIES.TRANSIENT : FAILURE_CATEGORIES.PERMANENT);
+        case FAILURE_CLASSES.UNEXPECTED:
+        default:
+            return retryable ? FAILURE_CATEGORIES.TRANSIENT : FAILURE_CATEGORIES.PERMANENT;
+    }
+}
+
+function buildUserFailureMessage({ failureClass, failureCategory, details, rolledBack }) {
+    if (failureCategory === FAILURE_CATEGORIES.PARTIAL) {
+        const successCount = Number.isInteger(details?.successCount) ? details.successCount : null;
+        const failureCount = Number.isInteger(details?.failureCount) ? details.failureCount : null;
+        const summary = successCount !== null && failureCount !== null
+            ? `${successCount} succeeded, ${failureCount} failed.`
+            : 'Some tasks succeeded and some failed.';
+
+        return rolledBack
+            ? `⚠️ Task updates partially failed: ${summary} Earlier successful changes were rolled back.`
+            : `⚠️ Task updates partially failed: ${summary} Please review your tasks.`;
+    }
+
+    if (failureClass === FAILURE_CLASSES.ADAPTER && failureCategory === FAILURE_CATEGORIES.TRANSIENT) {
+        return '⚠️ Temporary task update failure. Please retry shortly.';
+    }
+
+    if (failureClass === FAILURE_CLASSES.ADAPTER && failureCategory === FAILURE_CATEGORIES.PERMANENT) {
+        return '⚠️ Task update could not be applied. Please correct the task details and retry.';
+    }
+
+    return USER_FAILURE_MESSAGES[failureClass] || USER_FAILURE_MESSAGES[FAILURE_CLASSES.UNEXPECTED];
+}
+
 function resolveDevMode(context) {
     const mode = (context?.mode || '').toLowerCase();
     if (['dev', 'development', 'debug', 'diagnostic', 'test'].includes(mode)) return true;
@@ -49,6 +113,7 @@ function resolveDevMode(context) {
 
 function buildFailureResult(context, {
     failureClass,
+    failureCategory = null,
     stage,
     summary,
     error,
@@ -63,8 +128,16 @@ function buildFailureResult(context, {
 }) {
     const isDevMode = resolveDevMode(context);
     const diagnostics = [];
+    const resolvedFailureCategory = deriveFailureCategory({
+        failureClass,
+        failureCategory,
+        details,
+        rolledBack,
+        retryable,
+    });
 
     if (failureClass) diagnostics.push(`failure_class: ${failureClass}`);
+    if (resolvedFailureCategory) diagnostics.push(`failure_category: ${resolvedFailureCategory}`);
     if (stage) diagnostics.push(`failure_stage: ${stage}`);
     if (summary) diagnostics.push(summary);
     if (developerMessage) diagnostics.push(developerMessage);
@@ -105,7 +178,12 @@ function buildFailureResult(context, {
         }
     }
 
-    const confirmationText = userMessage || USER_FAILURE_MESSAGES[failureClass] || USER_FAILURE_MESSAGES[FAILURE_CLASSES.UNEXPECTED];
+    const confirmationText = userMessage || buildUserFailureMessage({
+        failureClass,
+        failureCategory: resolvedFailureCategory,
+        details,
+        rolledBack,
+    });
     const failureDeveloperMessage = developerMessage || summary || error?.message || null;
 
     return {
@@ -114,6 +192,7 @@ function buildFailureResult(context, {
         failure: {
             class: failureClass,
             failureClass,
+            failureCategory: resolvedFailureCategory,
             stage,
             summary: summary || null,
             details: details || null,
@@ -443,6 +522,7 @@ function buildExecutionFailure(action, message, attempt) {
         taskId: action?.taskId || null,
         message,
         attempt,
+        failureCategory: classifyAdapterFailureCategory(message),
     };
 }
 
@@ -1098,7 +1178,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
         for (let index = 0; index < actions.length; index++) {
             const action = actions[index];
             const record = createExecutionRecord(action, index);
-            const maxAttempts = allowRetry ? 2 : 1;
+            const maxAttempts = 2;
 
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                 record.attempts = attempt;
@@ -1143,6 +1223,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     break;
                 } catch (err) {
                     const message = err?.message || 'Unknown adapter failure';
+                    const adapterFailureCategory = classifyAdapterFailureCategory(message);
                     executionResults.push(snapshotPipelineValue({
                         phase: 'execute',
                         actionIndex: index,
@@ -1150,7 +1231,8 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         status: 'failure',
                         actionType: action.type,
                         errorMessage: message,
-                        willRetry: attempt < maxAttempts,
+                        willRetry: adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT && attempt < maxAttempts,
+                        failureCategory: adapterFailureCategory,
                     }));
                     record.errorMessage = message;
                     record.failureClass = ACTION_FAILURE_CLASSES.ADAPTER;
@@ -1166,11 +1248,12 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         rolledBack: false,
                         metadata: {
                             actionIndex: index,
-                            willRetry: attempt < maxAttempts,
+                            willRetry: adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT && attempt < maxAttempts,
+                            failureCategory: adapterFailureCategory,
                         },
                     });
 
-                    if (attempt < maxAttempts) {
+                    if (adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT && attempt < maxAttempts) {
                         continue;
                     }
 
@@ -1193,14 +1276,22 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                             failureCount: failures.length,
                             terminalFailure: {
                                 failureClass: FAILURE_CLASSES.ADAPTER,
+                                failureCategory: adapterFailureCategory,
                                 stage: 'adapter',
                                 summary: 'Task execution failed before rollback could run.',
-                                userMessage: USER_FAILURE_MESSAGES[FAILURE_CLASSES.ADAPTER],
+                                userMessage: buildUserFailureMessage({
+                                    failureClass: FAILURE_CLASSES.ADAPTER,
+                                    failureCategory: adapterFailureCategory,
+                                    details: { successCount: 0, failureCount: failures.length },
+                                    rolledBack: false,
+                                }),
                                 developerMessage: `Action ${index} (${action.type}) failed after ${attempt} attempt(s): ${message}`,
-                                retryable: true,
+                                retryable: adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT,
                                 rolledBack: false,
                                 actionIndex: index,
                                 attempts: attempt,
+                                successCount: 0,
+                                failureCount: failures.length,
                             },
                         };
                     }
@@ -1229,14 +1320,26 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                             failureCount: failures.length,
                             terminalFailure: {
                                 failureClass: FAILURE_CLASSES.ADAPTER,
+                                failureCategory: FAILURE_CATEGORIES.PARTIAL,
                                 stage: 'adapter',
                                 summary: 'Task execution failed after retry. Earlier successful writes were rolled back.',
-                                userMessage: '⚠️ Task updates failed after a retry. Earlier successful changes were rolled back.',
+                                userMessage: buildUserFailureMessage({
+                                    failureClass: FAILURE_CLASSES.ADAPTER,
+                                    failureCategory: FAILURE_CATEGORIES.PARTIAL,
+                                    details: {
+                                        partialFailure: true,
+                                        successCount: rollbackResult.recordsInOriginalOrder.length,
+                                        failureCount: failures.length,
+                                    },
+                                    rolledBack: true,
+                                }),
                                 developerMessage: `Action ${index} (${action.type}) failed after ${attempt} attempt(s). Rollback succeeded for ${rollbackResult.recordsInOriginalOrder.length} earlier action(s).`,
                                 retryable: true,
                                 rolledBack: true,
                                 actionIndex: index,
                                 attempts: attempt,
+                                successCount: rollbackResult.recordsInOriginalOrder.length,
+                                failureCount: failures.length,
                             },
                         };
                     }
@@ -1254,14 +1357,26 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         failureCount: failures.length,
                         terminalFailure: {
                             failureClass: FAILURE_CLASSES.ROLLBACK,
+                            failureCategory: FAILURE_CATEGORIES.PARTIAL,
                             stage: 'rollback',
                             summary: 'Task execution failed after retry, and rollback was incomplete.',
-                            userMessage: USER_FAILURE_MESSAGES[FAILURE_CLASSES.ROLLBACK],
+                            userMessage: buildUserFailureMessage({
+                                failureClass: FAILURE_CLASSES.ROLLBACK,
+                                failureCategory: FAILURE_CATEGORIES.PARTIAL,
+                                details: {
+                                    partialFailure: true,
+                                    successCount: rollbackResult.recordsInOriginalOrder.length,
+                                    failureCount: failures.length,
+                                },
+                                rolledBack: false,
+                            }),
                             developerMessage: `Action ${index} (${action.type}) failed after ${attempt} attempt(s). Rollback failed for ${rollbackFailures.length} earlier action(s).`,
                             retryable: false,
                             rolledBack: false,
                             actionIndex: index,
                             attempts: attempt,
+                            successCount: rollbackResult.recordsInOriginalOrder.length,
+                            failureCount: failures.length,
                         },
                     };
                 }

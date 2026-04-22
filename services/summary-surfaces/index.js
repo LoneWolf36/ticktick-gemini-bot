@@ -309,6 +309,7 @@ export function logSummarySurfaceEvent({
 export function composeBriefingSummary({
     context = {},
     activeTasks = [],
+    behavioralPatterns = [],
     rankingResult = null,
     modelSummary = null,
 } = {}) {
@@ -317,6 +318,7 @@ export function composeBriefingSummary({
         composeBriefingSummarySections({
             context: normalizedContext,
             activeTasks: toArray(activeTasks),
+            behavioralPatterns: toArray(behavioralPatterns),
             rankingResult,
             modelSummary,
         }),
@@ -345,6 +347,7 @@ export function composeBriefingSummary({
 export function composeWeeklySummary({
     context = {},
     activeTasks = [],
+    behavioralPatterns = [],
     processedHistory = [],
     historyAvailable = true,
     rankingResult = null,
@@ -355,6 +358,7 @@ export function composeWeeklySummary({
         composeWeeklySummarySections({
             context: normalizedContext,
             activeTasks: toArray(activeTasks),
+            behavioralPatterns: toArray(behavioralPatterns),
             processedHistory: toArray(processedHistory),
             historyAvailable: historyAvailable === true,
             rankingResult,

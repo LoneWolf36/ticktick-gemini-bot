@@ -13,6 +13,7 @@ import {
     inferProjectIdFromTask,
     rankPriorityCandidates,
 } from './execution-prioritization.js';
+import { detectBehavioralPatterns } from './behavioral-patterns.js';
 
 // ─── User Context ────────────────────────────────────────────
 // Priority: 1) local user_context.js (gitignored), 2) USER_CONTEXT env var, 3) generic default
@@ -169,6 +170,22 @@ export class GeminiAnalyzer {
         }
 
         return { goalThemeProfile, ranking, orderedTasks };
+    }
+
+    async _resolveBehavioralPatterns(options = {}) {
+        const userId = options.userId ?? options.chatId ?? store.getChatId();
+        if (userId == null) {
+            return [];
+        }
+
+        try {
+            const signals = await store.getBehavioralSignals(userId);
+            return detectBehavioralPatterns(signals, {
+                nowMs: Date.parse(options.generatedAtIso || new Date().toISOString()) || Date.now(),
+            });
+        } catch {
+            return [];
+        }
     }
 
     async _resolveRecommendationState(options = {}) {
@@ -504,6 +521,7 @@ export class GeminiAnalyzer {
             orderedTasks,
             recommendationState,
         } = await this.generateDailyBriefingModelSummary(tasks, options);
+        const behavioralPatterns = await this._resolveBehavioralPatterns(options);
 
         return composeBriefingSummary({
             context: {
@@ -516,6 +534,7 @@ export class GeminiAnalyzer {
                 tonePolicy: 'preserve_existing',
             },
             activeTasks: orderedTasks,
+            behavioralPatterns,
             rankingResult: ranking,
             modelSummary,
         });
@@ -544,6 +563,7 @@ export class GeminiAnalyzer {
         const processed = processedEntries
             .map((entry) => formatProcessedTask(entry))
             .join('\n');
+        const behavioralPatterns = await this._resolveBehavioralPatterns(options);
 
         const workStylePromptNote = buildWorkStylePromptNote(recommendationState.workStyleMode);
         const prompt = `${workStylePromptNote ? `${workStylePromptNote}\n\n` : ''}Current active tasks (${orderedTasks.length}):\n${taskList || 'None'}\n\nProcessed tasks this week (${processedEntries.length}):\n${processed || 'None'}`;
@@ -562,6 +582,7 @@ export class GeminiAnalyzer {
                 tonePolicy: options.tonePolicy || 'preserve_existing',
             },
             activeTasks: orderedTasks,
+            behavioralPatterns,
             processedHistory: processedEntries,
             historyAvailable: options.historyAvailable !== false,
             rankingResult: ranking,

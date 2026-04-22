@@ -24,6 +24,9 @@ export function taskReviewKeyboard(taskId) {
 export function registerCallbacks(bot, ticktick, gemini, adapter, pipeline) {
 
     // ─── Approve: move pending → processed, update TickTick ───
+    // RETAINED BOUNDARY: inline review callbacks apply precomputed review edits
+    // directly through the adapter. This is an operational review surface, not
+    // a legacy prompt-writing path that should route through the task pipeline.
     bot.callbackQuery(/^a:(.+)$/, async (ctx) => {
         if (!isAuthorized(ctx)) {
             await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
@@ -94,6 +97,9 @@ export function registerCallbacks(bot, ticktick, gemini, adapter, pipeline) {
     });
 
     // ─── Drop: move pending → processed, flag for removal ─────
+    // RETAINED BOUNDARY: inline drop callbacks intentionally perform the final
+    // delete through the adapter after human confirmation. This is kept as an
+    // operational moderation surface, not a freeform task-writing path.
     bot.callbackQuery(/^d:(.+)$/, async (ctx) => {
         if (!isAuthorized(ctx)) {
             await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });

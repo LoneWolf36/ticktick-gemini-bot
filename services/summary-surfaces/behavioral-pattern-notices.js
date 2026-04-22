@@ -1,0 +1,67 @@
+import { BehavioralPatternType } from '../behavioral-patterns.js';
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+const RETENTION_DAYS = Math.max(1, Number.parseInt(process.env.BEHAVIORAL_SIGNAL_RETENTION_DAYS || '30', 10) || 30);
+
+function toArray(value) {
+    return Array.isArray(value) ? value : [];
+}
+
+function parsePatternTime(value) {
+    if (typeof value !== 'string' || value.trim().length === 0) return null;
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? null : parsed;
+}
+
+function confidenceWeight(confidence) {
+    if (confidence === 'high') return 3;
+    if (confidence === 'standard') return 2;
+    return 1;
+}
+
+function isFreshPattern(pattern, nowMs = Date.now()) {
+    const windowEndMs = parsePatternTime(pattern?.windowEnd) ?? parsePatternTime(pattern?.windowStart);
+    if (windowEndMs === null) return false;
+    return windowEndMs >= nowMs - (RETENTION_DAYS * DAY_MS);
+}
+
+function describePattern(pattern) {
+    if (pattern?.type === BehavioralPatternType.SNOOZE_SPIRAL) {
+        return 'Repeated postpones are clustering around the same task, so pick a concrete next action instead of rescheduling again.';
+    }
+    if (pattern?.type === BehavioralPatternType.PLANNING_TYPE_A) {
+        return 'Detailed planning is accumulating without completion, so bias today toward execution over more breakdown.';
+    }
+    if (pattern?.type === BehavioralPatternType.PLANNING_TYPE_B) {
+        return 'Task capture is outpacing completion across domains, so keep focus narrow before adding more.';
+    }
+    return 'Recent behavioral signals suggest keeping the plan concrete and execution-focused.';
+}
+
+export function selectBehavioralPatternsForSummary(patterns = [], { nowIso = null } = {}) {
+    const nowMs = parsePatternTime(nowIso) ?? Date.now();
+    return toArray(patterns)
+        .filter((pattern) => pattern && typeof pattern === 'object')
+        .filter((pattern) => pattern.eligibleForSurfacing === true)
+        .filter((pattern) => pattern.confidence === 'standard' || pattern.confidence === 'high')
+        .filter((pattern) => isFreshPattern(pattern, nowMs))
+        .sort((left, right) => {
+            const leftWeight = confidenceWeight(left.confidence);
+            const rightWeight = confidenceWeight(right.confidence);
+            if (leftWeight !== rightWeight) return rightWeight - leftWeight;
+            return (right.signalCount || 0) - (left.signalCount || 0);
+        });
+}
+
+export function buildBehavioralPatternNotice(patterns = [], { nowIso = null } = {}) {
+    const selected = selectBehavioralPatternsForSummary(patterns, { nowIso });
+    const pattern = selected[0];
+    if (!pattern) return null;
+
+    return {
+        code: 'behavioral_pattern',
+        message: describePattern(pattern),
+        severity: 'info',
+        evidence_source: 'behavioral_memory',
+    };
+}
