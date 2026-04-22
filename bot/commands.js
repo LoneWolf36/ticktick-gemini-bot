@@ -1,4 +1,6 @@
-// Bot command handlers — /start, /status, /scan, /briefing, /weekly, /review, /pending, /undo
+// Bot command handlers — operational bootstrap plus manual command surfaces.
+// /start is an operational bootstrap / command-discovery surface, not a standalone Cavekit domain requirement.
+// /daily_close is the manual entrypoint for cavekit-briefings R7 (End-of-Day Reflection).
 import * as store from '../services/store.js';
 import { InlineKeyboard } from 'grammy';
 import { USER_CONTEXT } from '../services/gemini.js';
@@ -90,7 +92,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
     };
 
-    // ─── /start ───────────────────────────────────────────────
+    // ─── /start (operational bootstrap / command discovery) ──
     bot.command('start', async (ctx) => {
         if (!await guardAccess(ctx)) return;
         const chatId = ctx.chat.id;
@@ -604,7 +606,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
     });
 
-    // ─── /daily_close ─────────────────────────────────────────
+    // ─── /daily_close (cavekit-briefings R7 manual surface) ──
     bot.command('daily_close', async (ctx) => {
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }

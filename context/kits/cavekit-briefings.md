@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-20T15:10:00Z"
+last_edited: "2026-04-22T00:55:00Z"
 source_specs: ["006-briefing-weekly-modernization"]
 complexity: "complex"
 ---
@@ -164,12 +164,13 @@ See `context/refs/summary-surfaces.openapi.yaml` for API contracts.
 - [x] Audit R3 (Weekly Structured Summary): weekly summaries now surface completed work, deferred/rescheduled carry-forward items, and upcoming focus together, while keeping watchouts and notices observational rather than diagnostic.
 - [x] Audit R4 (Deterministic Summary Formatter): daily-close rendering now uses explicit deterministic templates, repeated formatting of identical input returns identical output, and reflection copy stays compact, concrete, non-judgmental, and restart-oriented.
 - [x] Audit R5 (Manual Command Integration): `bot/commands.js` exposes `/briefing` and `/weekly`, and regression tests verify manual vs scheduler parity for `generateDailyBriefingSummary(...)` and `generateWeeklyDigestSummary(...)` given the same snapshot.
-- [x] Audit R7 (End-of-Day Reflection): `composeDailyCloseSummary(...)` builds short, factual, non-punitive reflection copy from same-day processed history and open-task state, including sparse-day and irregular-use fail-open behavior.
+- [x] Audit R7 (End-of-Day Reflection): `composeDailyCloseSummary(...)` builds short, factual, non-punitive reflection copy from same-day processed history and open-task state, including sparse-day and irregular-use fail-open behavior, and `bot/commands.js` wires `/daily_close` as the manual command entrypoint for that same surface.
 - [x] Audit R13 (Work-Style Awareness): `formatSummary(...)` shortens briefing, weekly, and daily-close outputs in urgent mode while preserving the standard compact default style.
 - [ ] Validate scheduler grace-window behavior from R6 against the live startup path once the new scheduler delivery tests are in place.
 - [ ] Keep R8, R9, R10, R11, R12, R14, and R15 unchecked pending stricter observability, behavioral-memory integration, due-date fallback, adaptation, edge-case, and regression evidence.
 
 ## Changelog
+- 2026-04-22: Clarified ownership — `/daily_close` in `bot/commands.js` is the manual command surface for Briefings R7, while `/start` remains an operational bootstrap surface.
 - 2026-04-20: R5, R7, and R13 completed — manual summary commands, end-of-day reflection behavior, and work-style-aware formatting now have direct code and regression evidence.
 - 2026-04-20: R4 completed — deterministic daily-close formatting is now explicitly tested and reflection copy stays compact, concrete, and non-judgmental.
 - 2026-04-20: R3 completed — weekly summary now preserves completed work, deferred or rescheduled carry-forward, observational pattern notes, and concise scannability.

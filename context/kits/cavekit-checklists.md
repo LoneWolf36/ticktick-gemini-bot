@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-19T00:45:00Z"
+last_edited: "2026-04-22T00:55:00Z"
 source_specs: ["005-checklist-subtask-support"]
 complexity: "medium"
 ---
@@ -16,33 +16,33 @@ Checklist/subtask extraction, creation, and clarification for create-time task o
 ### R1: Checklist Intent Extraction
 **Description:** AX extraction supports an optional `checklistItems` field for create actions.
 **Acceptance Criteria:**
-- [ ] Given "plan trip: book flights, pack bags, renew travel card", AX extracts one create action with `checklistItems: [{title: "Book flights"}, {title: "Pack bags"}, {title: "Renew travel card"}]`
-- [ ] Given a long task with primary objective and sub-steps, primary objective becomes title and sub-steps become checklist items
-- [ ] Checklist item objects have `{ title, status?, sortOrder? }`
-- [ ] This extension does not affect mutation actions from cavekit-task-pipeline
+- [x] Given "plan trip: book flights, pack bags, renew travel card", AX extracts one create action with `checklistItems: [{title: "Book flights"}, {title: "Pack bags"}, {title: "Renew travel card"}]`
+- [x] Given a long task with primary objective and sub-steps, primary objective becomes title and sub-steps become checklist items
+- [x] Checklist item objects have `{ title, status?, sortOrder? }`
+- [x] This extension does not affect mutation actions from cavekit-task-pipeline
 **Dependencies:** cavekit-task-pipeline R1
 
 ### R2: Checklist vs Multi-Task Disambiguation
 **Description:** System explicitly distinguishes checklist intent (one task with sub-items) from multi-task intent (separate standalone tasks).
 **Acceptance Criteria:**
-- [ ] Given "plan trip: book flights, pack bags", one parent task with checklist items is created
-- [ ] Given "book flights, pack bags, and call uber friday", separate standalone tasks are created
-- [ ] Given ambiguous phrasing where checklist vs multi-task cannot be safely distinguished, system asks a clarification question or falls back to plain task creation conservatively
+- [x] Given "plan trip: book flights, pack bags", one parent task with checklist items is created
+- [x] Given "book flights, pack bags, and call uber friday", separate standalone tasks are created
+- [x] Given ambiguous phrasing where checklist vs multi-task cannot be safely distinguished, system asks a clarification question or falls back to plain task creation conservatively
 **Dependencies:** R1, cavekit-task-pipeline R2
 
 ### R3: Checklist Item Normalization
 **Description:** Normalizer cleans checklist item text separately from parent task title normalization.
 **Acceptance Criteria:**
-- [ ] Checklist item titles are cleaned independently from parent title
-- [ ] Deeply nested steps flatten to one checklist level in v1
-- [ ] If more checklist items than TickTick supports comfortably, system caps or truncates with logging rather than failing silently
+- [x] Checklist item titles are cleaned independently from parent title
+- [x] Deeply nested steps flatten to one checklist level in v1
+- [x] If more checklist items than TickTick supports comfortably, system caps or truncates with logging rather than failing silently
 **Dependencies:** R1
 
 ### R4: Adapter Checklist Creation
 **Description:** TickTickAdapter supports creating tasks with checklist items.
 **Acceptance Criteria:**
-- [ ] Adapter `createTask` accepts optional `checklistItems` array and maps it to TickTick API payload
-- [ ] Created task in TickTick has the correct checklist items visible
+- [x] Adapter `createTask` accepts optional `checklistItems` array and maps it to TickTick API payload
+- [x] Created task in TickTick has the correct checklist items visible
 **Dependencies:** cavekit-task-pipeline R4
 
 ### R5: Terse Checklist Confirmations
@@ -83,7 +83,13 @@ Checklist/subtask extraction, creation, and clarification for create-time task o
 
 ## Validation Action Items — 2026-04-19
 
+- [x] Audit R1 (Checklist Intent Extraction): `tests/ax-intent.test.js` verifies AX emits one create action with structured `checklistItems`, preserving a single parent objective plus ordered sub-steps without changing mutation intent shapes.
+- [x] Audit R2 (Checklist vs Multi-Task Disambiguation): `tests/regression.checklist-clarification.test.js` verifies one-parent checklist creation, separate multi-task creation, and clarification / conservative fallback when phrasing is ambiguous.
+- [x] Audit R3 (Checklist Item Normalization): `services/normalizer.js` cleans checklist item titles independently, flattens to one checklist level, caps items at 30 with warnings, and normalizes status/sortOrder; `tests/normalizer.test.js` covers trimming, truncation, invalid-item dropping, and over-limit behavior.
+- [x] Audit R4 (Adapter Checklist Creation): `services/ticktick-adapter.js` maps optional `checklistItems` into TickTick payload `items`, assigns stable sort order, and drops malformed items safely; `tests/regression.adapter-execution-reorg.test.js` verifies payload mapping directly.
 - [x] `tests/e2e-live-checklist.mjs` excluded from drift checks — it is a mocked logic validator redundant with `tests/regression.checklist-clarification.test.js`, kept only for interactive debugging.
+- [ ] Keep R5, R6, and R7 unchecked pending direct evidence for terse checklist confirmations, end-to-end checklist logging, and the dedicated pipeline-harness regression requirement wording.
 
 ## Changelog
+- 2026-04-22: R1-R4 completed — checklist extraction, disambiguation, normalization, and adapter payload mapping now have direct code and regression evidence.
 - 2026-04-18: Migrated from kitty-specs 005-checklist-subtask-support

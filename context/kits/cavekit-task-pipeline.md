@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-20T01:45:00Z"
+last_edited: "2026-04-22T00:55:00Z"
 source_specs: ["001-task-operations-pipeline", "002-natural-language-task-mutations"]
 complexity: "complex"
 ---
@@ -34,10 +34,10 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 ### R3: Deterministic Normalization
 **Description:** All AX output is deterministically normalized before execution: title truncation, content suppression, recurrence-hint-to-repeatFlag conversion, due-date expansion, project resolution.
 **Acceptance Criteria:**
-- [ ] Titles are short, verb-led, free from dates, priorities, project names, or leaked user context
-- [ ] Titles never exceed configured character limit; excess detail moves to content or is dropped
-- [ ] Content contains only useful references (URLs, locations, instructions) — no coaching prose, motivational filler, or analysis noise
-- [ ] AX output with invalid fields, low confidence, or malformed data is rejected; bot asks user to rephrase
+- [x] Titles are short, verb-led, free from dates, priorities, project names, or leaked user context
+- [x] Titles never exceed configured character limit; excess detail moves to content or is dropped
+- [x] Content contains only useful references (URLs, locations, instructions) — no coaching prose, motivational filler, or analysis noise
+- [x] AX output with invalid fields, low confidence, or malformed data is rejected; bot asks user to rephrase
 **Dependencies:** R1
 
 ### R4: Single TickTick Adapter
@@ -180,6 +180,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 ## Validation Action Items — 2026-04-19
 
 - [x] R1 (Structured Intent Extraction): all 4 ACs implemented and verified. AX field validation enforced via `R1_INTENT_ACTION_FIELDS`, dentist/groceries/hello regression tests pass in both full and lightweight suites.
+- [x] R3 (Deterministic Normalization): `services/normalizer.js` deterministically strips title noise, normalizes repeat/project/date fields, suppresses filler content, and rejects malformed data paths; `tests/normalizer.test.js` covers title, content, checklist, recurrence, and truncation behavior directly.
 - [x] R4 (Single TickTick Adapter): all 3 ACs implemented and verified. All production writes route through adapter, read-only display flows remain allowed per repo guidance, live harnesses were updated, and adapter failure preserves parsed intent with `intents` + `normalizedActions` in failure result.
 - [x] R15 (Command Surfaces): `/scan`, `/pending`, `/review`, `/undo`, `/menu`, `/status`, and `/reset` are implemented in `bot/commands.js` and now checked explicitly.
 - [x] Drift rate limiter: removed 2026-04-19 (YAGNI for 1-user MVP; listed as out-of-scope here).
@@ -188,6 +189,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - [x] Validation-facing comments in live harnesses and reorg services were updated to reflect their final Cavekit ownership/exclusion status.
 
 ## Changelog
+- 2026-04-22: R3 completed — deterministic normalization now has direct code and regression evidence for title cleanup, filler suppression, project/date/repeat handling, and malformed-input rejection.
 - 2026-04-20: R17 completed — autonomous poll auto-apply policy is explicitly owned, documented, and mapped to scheduler/status behavior.
 - 2026-04-20: R15 and R16 completed — command surfaces are explicitly checked, reorg flow is fully mapped, and remaining auto-apply ownership is isolated as the next signal cleanup item.
 - 2026-04-19: R1 and R4 completed — AX field validation, regression coverage, adapter boundary enforcement, intent preservation on failure.
