@@ -330,6 +330,86 @@ test('execution prioritization deprioritizes planning-heavy tasks without execut
   assert.equal(result.ranked[1].taskId, 'task-planning');
 });
 
+test('execution prioritization emits ranking telemetry with input state and final ordering', () => {
+  const telemetry = [];
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-career',
+      title: 'Prepare backend interview notes',
+      content: 'Draft concrete examples',
+      projectId: 'career',
+      projectName: 'Career',
+      priority: 5,
+      dueDate: '2026-04-23T12:00:00Z',
+      repeatFlag: null,
+      createdAt: '2026-04-20T00:00:00Z',
+      status: 0,
+    }),
+    normalizePriorityCandidate({
+      id: 'task-admin',
+      title: 'Buy groceries',
+      content: 'milk eggs bread',
+      projectId: 'personal',
+      projectName: 'Personal',
+      priority: 1,
+      status: 0,
+    }),
+  ];
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+    nowIso: '2026-04-21T12:00:00Z',
+    rankingTelemetrySink: (payload) => telemetry.push(payload),
+  });
+
+  const result = rankPriorityCandidatesForTest(candidates, context);
+
+  assert.equal(result.topRecommendation.taskId, 'task-career');
+  assert.equal(telemetry.length, 1);
+  assert.equal(telemetry[0].eventType, 'ranking.computed');
+  assert.equal(telemetry[0].inputState.goalConfidence, 'explicit');
+  assert.equal(telemetry[0].inputState.candidates.length, 2);
+  assert.deepEqual(telemetry[0].inputState.candidates[0], {
+    taskId: 'task-career',
+    projectId: 'career',
+    priority: 5,
+    dueDate: '2026-04-23T12:00:00Z',
+    repeatFlag: null,
+    taskAgeDays: Math.max(0, Math.floor((Date.now() - Date.parse('2026-04-20T00:00:00Z')) / (24 * 60 * 60 * 1000))),
+    status: 0,
+    source: 'ticktick',
+    containsSensitiveContent: false,
+  });
+  assert.equal(telemetry[0].computedScores.length, 2);
+  assert.equal(telemetry[0].finalOrdering[0].taskId, 'task-career');
+  assert.match(telemetry[0].finalOrdering[0].rationaleText, /goal|career/i);
+});
+
+test('execution prioritization telemetry avoids raw task content fields', () => {
+  const telemetry = [];
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-sensitive',
+      title: 'Reset bank password',
+      content: 'Positive1111!',
+      projectId: 'admin',
+      projectName: 'Admin',
+      priority: 3,
+      status: 0,
+    }),
+  ];
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('', { source: 'fallback' }),
+    rankingTelemetrySink: (payload) => telemetry.push(payload),
+  });
+
+  rankPriorityCandidatesForTest(candidates, context);
+
+  const serialized = JSON.stringify(telemetry[0]);
+  assert.doesNotMatch(serialized, /Reset bank password/);
+  assert.doesNotMatch(serialized, /Positive1111!/);
+  assert.equal(telemetry[0].inputState.candidates[0].containsSensitiveContent, true);
+});
+
 test('execution prioritization ranks meaningful work above low-value admin when goals are explicit', () => {
   const candidates = [
     normalizePriorityCandidate({

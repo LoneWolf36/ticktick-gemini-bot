@@ -9,3 +9,5 @@ EV-007,SRC-004,bot/commands.js:782-819,Sensitive task content is preserved durin
 EV-008,SRC-007,006-briefing-weekly-modernization/spec.md:77,Briefing and weekly must inherit shared foundation policy,007 must expose a reusable policy surface for summaries,high
 EV-009,SRC-008,008-work-style-and-urgent-mode/spec.md:73-77,Urgent mode and state precedence belong to feature 008,007 should accept modifiers but not own the resolver,high
 EV-010,SRC-009,009-behavioral-signals-and-memory/spec.md:71-77,Behavioral reflection must remain observational and privacy-bounded,007 should not store or infer long-term behavior as part of ranking,high
+EV-011,SRC-005,services/execution-prioritization.js,Ranking computations emit sanitized telemetry with input state computed scores final ordering and rationale,Each prioritization run is traceable without relying on raw task text in operational logs,high
+EV-012,SRC-010,tests/regression.execution-prioritization.test.js,Regression coverage asserts telemetry captures ranking evidence while excluding raw task titles and content,Observability stays privacy-bounded and verifiable under automated tests,high

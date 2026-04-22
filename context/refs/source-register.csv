@@ -8,3 +8,4 @@ SRC-006,User context template,code,services/user_context.example.js,Defines decl
 SRC-007,TickTick adapter,code,services/ticktick-adapter.js,Defines task fields and recurrence data available from TickTick-facing flows,reviewed
 SRC-008,Briefings kit,kit,context/kits/cavekit-briefings.md,Documents downstream consumer of ranking outputs,reviewed
 SRC-009,Behavioral memory kit,kit,context/kits/cavekit-behavioral-memory.md,Documents optional behavioral-signal input boundary and privacy constraints,reviewed
+SRC-010,Ranking regression tests,test,tests/regression.execution-prioritization.test.js,Verifies ranking contract overrides guardrails and telemetry behavior,reviewed
