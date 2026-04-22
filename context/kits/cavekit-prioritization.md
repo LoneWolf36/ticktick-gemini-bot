@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-21T17:05:00Z"
+last_edited: "2026-04-21T17:40:00Z"
 source_specs: ["007-execution-prioritization-foundations"]
 complexity: "complex"
 ---
@@ -88,9 +88,9 @@ See `context/refs/evidence-log.csv` for evidence tracking.
 ### R9: Anti-Busywork Guardrails
 **Description:** Ranking engine has explicit guardrails against optimizing for busywork.
 **Acceptance Criteria:**
-- [ ] Quick-win tasks do not dominate the top of the ranking unless genuinely important
-- [ ] Task count is never a ranking signal (more tasks ≠ more productive)
-- [ ] Planning-heavy tasks without execution evidence are deprioritized
+- [x] Quick-win tasks do not dominate the top of the ranking unless genuinely important
+- [x] Task count is never a ranking signal (more tasks ≠ more productive)
+- [x] Planning-heavy tasks without execution evidence are deprioritized
 **Dependencies:** R2
 
 ### R10: Regression Coverage
@@ -140,10 +140,12 @@ See `context/refs/evidence-log.csv` for evidence tracking.
 - [x] Audit R1 (Ranking Contract and Inputs): `context/refs/prioritization-ranking-contract.md` now defines the canonical ranking inputs/outputs and version history; `context/refs/source-register.csv` now catalogs current repo-relative evidence sources; `services/execution-prioritization.js` exposes recurrence (`repeatFlag`) and task-age (`taskAgeDays`) fields in the normalized candidate contract.
 - [x] Audit R3 (Ranking Confidence and Uncertainty): `services/execution-prioritization.js` now emits explicit `rankingConfidence`, uncertainty labels, and clarification flags while strong-confidence rationale remains direct and weak inference stays hedged rather than stated as fact.
 - [x] Audit R4 (Exceptions and Rationale): `services/execution-prioritization.js` now accepts explicit `priorityOverrides` in ranking context, applies non-expired overrides as top-priority exceptions, and preserves rationale text for each ranked item using observational language.
-- [ ] Keep R5, R7, R8, R9, and R10 unchecked pending briefing-trend integration, observability, behavioral-input, anti-planning-bias, and full regression evidence.
+- [x] Audit R9 (Anti-Busywork Guardrails): `services/execution-prioritization.js` now applies explicit quick-win and planning-heavy penalties without using task count as a ranking signal, and `tests/regression.execution-prioritization.test.js` covers quick-win suppression, count invariance, and planning-heavy deprioritization.
+- [ ] Keep R5, R7, R8, and R10 unchecked pending briefing-trend integration, observability, behavioral-input, and full regression evidence.
 
 ## Changelog
 - 2026-04-21: R4 completed — ranking now supports explicit time-bounded task overrides while preserving rationale for every ranked item.
+- 2026-04-21: R9 completed — anti-busywork guardrails now suppress shallow quick wins, ignore raw task count, and deprioritize planning-heavy tasks without execution evidence.
 - 2026-04-21: R3 completed — ranking output now carries explicit confidence, uncertainty labels, and clarification flags for weak or degraded results.
 - 2026-04-20: R2, R6, R11, and R12 completed — ranking now has audited leverage scoring, project-resolution integration, explicit MVP boundaries, and declared-goal awareness.
 - 2026-04-21: R1 completed — ranking contract is now versioned in refs, source register paths are current, and normalized candidate inputs explicitly include recurrence and task-age fields.

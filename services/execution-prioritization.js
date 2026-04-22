@@ -19,6 +19,18 @@ const BLOCKER_KEYWORDS = [
     'unblock', 'blocker', 'reset password', 'password', 'credential', 'login',
     'access', 'wifi', 'internet',
 ];
+const QUICK_WIN_KEYWORDS = [
+    'buy', 'clean', 'desk', 'drawer', 'email', 'groceries', 'grocery', 'inbox',
+    'organize', 'sort', 'tidy', 'quick', 'small', 'admin', 'errand', 'shopping',
+];
+const PLANNING_HEAVY_KEYWORDS = [
+    'analyze', 'analysis', 'brainstorm', 'investigate', 'outline', 'plan', 'planning',
+    'research', 'review notes', 'roadmap', 'strategy', 'think through',
+];
+const EXECUTION_EVIDENCE_KEYWORDS = [
+    'apply', 'book', 'build', 'call', 'complete', 'deliver', 'draft', 'implement',
+    'practice', 'prepare', 'send', 'ship', 'submit', 'update', 'write',
+];
 const STOP_WORDS = new Set([
     'a', 'an', 'and', 'avoid', 'current', 'for', 'from', 'goal', 'goals', 'growth',
     'land', 'notes', 'now', 'of', 'order', 'priority', 'protect', 'role', 'senior',
@@ -261,6 +273,57 @@ function urgentModeWeight(candidate, urgency, context) {
     return boost;
 }
 
+function wordCount(text) {
+    return normalizeWhitespace(text).split(/\s+/).filter(Boolean).length;
+}
+
+function isQuickWinTask(candidate) {
+    const title = normalizeWhitespace(candidate.title).toLowerCase();
+    const content = normalizeWhitespace(candidate.content).toLowerCase();
+    const combined = `${title} ${content}`.trim();
+    const shortTitle = wordCount(title) > 0 && wordCount(title) <= 4;
+    const hasQuickWinKeyword = QUICK_WIN_KEYWORDS.some((keyword) => combined.includes(keyword));
+    const hasLittleContext = content.length === 0 || wordCount(content) <= 6;
+
+    return shortTitle && hasQuickWinKeyword && hasLittleContext;
+}
+
+function isPlanningHeavyWithoutExecution(candidate) {
+    const combined = `${candidate.title} ${candidate.content || ''}`.toLowerCase();
+    const hasPlanningKeyword = PLANNING_HEAVY_KEYWORDS.some((keyword) => combined.includes(keyword));
+    const hasExecutionEvidence = EXECUTION_EVIDENCE_KEYWORDS.some((keyword) => combined.includes(keyword));
+
+    return hasPlanningKeyword && !hasExecutionEvidence;
+}
+
+function quickWinPenalty(candidate, { themeMatches, urgency, consequentialAdmin, blockerRemoval, capacityProtection }) {
+    if (!isQuickWinTask(candidate)) {
+        return 0;
+    }
+
+    if (urgency === 'high' || consequentialAdmin || blockerRemoval || capacityProtection) {
+        return 0;
+    }
+
+    if (themeMatches.length > 0 && candidate.priority === 5) {
+        return 0;
+    }
+
+    return 18;
+}
+
+function planningHeavyPenalty(candidate, { urgency, blockerRemoval, capacityProtection }) {
+    if (!isPlanningHeavyWithoutExecution(candidate)) {
+        return 0;
+    }
+
+    if (urgency === 'high' || blockerRemoval || capacityProtection) {
+        return 0;
+    }
+
+    return 26;
+}
+
 function normalizePriorityOverride(override, nowIso = null) {
     if (!override || typeof override !== 'object' || Array.isArray(override)) {
         return null;
@@ -377,23 +440,26 @@ function assessCandidate(candidate, context) {
     const themeMatches = inferThemeMatches(candidate, context.goalThemeProfile);
     const urgency = parseUrgency(candidate, context.nowIso);
     const degraded = context.goalThemeProfile.confidence !== 'explicit';
+    const capacityProtection = isCapacityProtection(candidate, context);
+    const blockerRemoval = isBlockerRemoval(candidate);
+    const consequentialAdmin = isConsequentialAdmin(candidate);
 
     let rationaleCode = 'fallback';
     let exceptionApplied = false;
     let exceptionReason = 'none';
     let score = priorityWeight(candidate.priority);
 
-    if (isCapacityProtection(candidate, context)) {
+    if (capacityProtection) {
         score = 120 + priorityWeight(candidate.priority);
         rationaleCode = 'capacity_protection';
         exceptionApplied = true;
         exceptionReason = 'capacity_protection';
-    } else if (isBlockerRemoval(candidate)) {
+    } else if (blockerRemoval) {
         score = 115 + priorityWeight(candidate.priority);
         rationaleCode = 'blocker_removal';
         exceptionApplied = true;
         exceptionReason = 'blocker';
-    } else if (urgency === 'high' && isConsequentialAdmin(candidate)) {
+    } else if (urgency === 'high' && consequentialAdmin) {
         score = 108 + priorityWeight(candidate.priority);
         rationaleCode = 'urgency';
         exceptionApplied = true;
@@ -413,11 +479,23 @@ function assessCandidate(candidate, context) {
             score += 14;
         }
 
-        if (isConsequentialAdmin(candidate)) {
+        if (consequentialAdmin) {
             score += 12;
         }
 
         score += urgentModeWeight(candidate, urgency, context);
+        score -= quickWinPenalty(candidate, {
+            themeMatches,
+            urgency,
+            consequentialAdmin,
+            blockerRemoval,
+            capacityProtection,
+        });
+        score -= planningHeavyPenalty(candidate, {
+            urgency,
+            blockerRemoval,
+            capacityProtection,
+        });
     }
 
     const inferenceConfidence = inferInferenceConfidence({

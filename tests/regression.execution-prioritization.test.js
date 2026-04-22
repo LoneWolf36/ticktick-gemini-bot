@@ -249,6 +249,87 @@ test('execution prioritization ignores expired overrides', () => {
   assert.equal(result.ranked.some((item) => item.exceptionReason === 'expired_override'), false);
 });
 
+test('execution prioritization keeps quick-win busywork below important work unless it is genuinely important', () => {
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-important',
+      title: 'Prepare backend interview notes',
+      projectId: 'career',
+      projectName: 'Career',
+      status: 0,
+    }),
+    normalizePriorityCandidate({
+      id: 'task-quick-win',
+      title: 'Organize desk drawer',
+      projectId: 'home',
+      projectName: 'Home',
+      status: 0,
+    }),
+  ];
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+  });
+
+  const result = rankPriorityCandidatesForTest(candidates, context);
+
+  assert.equal(result.topRecommendation.taskId, 'task-important');
+  assert.equal(result.ranked[1].taskId, 'task-quick-win');
+});
+
+test('execution prioritization does not use task count as a ranking signal', () => {
+  const importantTask = normalizePriorityCandidate({
+    id: 'task-important',
+    title: 'Prepare backend interview notes',
+    projectId: 'career',
+    projectName: 'Career',
+    status: 0,
+  });
+  const quickWins = Array.from({ length: 8 }, (_, index) => normalizePriorityCandidate({
+    id: `task-quick-${index + 1}`,
+    title: `Organize drawer ${index + 1}`,
+    projectId: 'home',
+    projectName: 'Home',
+    status: 0,
+  }));
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+  });
+
+  const baseResult = rankPriorityCandidatesForTest([importantTask], context);
+  const crowdedResult = rankPriorityCandidatesForTest([importantTask, ...quickWins], context);
+
+  assert.equal(baseResult.topRecommendation.taskId, 'task-important');
+  assert.equal(crowdedResult.topRecommendation.taskId, 'task-important');
+  assert.equal(crowdedResult.ranked[0].rationaleCode, baseResult.ranked[0].rationaleCode);
+});
+
+test('execution prioritization deprioritizes planning-heavy tasks without execution evidence', () => {
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-planning',
+      title: 'Plan backend job search strategy',
+      projectId: 'career',
+      projectName: 'Career',
+      status: 0,
+    }),
+    normalizePriorityCandidate({
+      id: 'task-execution',
+      title: 'Apply to backend roles',
+      projectId: 'career',
+      projectName: 'Career',
+      status: 0,
+    }),
+  ];
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+  });
+
+  const result = rankPriorityCandidatesForTest(candidates, context);
+
+  assert.equal(result.topRecommendation.taskId, 'task-execution');
+  assert.equal(result.ranked[1].taskId, 'task-planning');
+});
+
 test('execution prioritization ranks meaningful work above low-value admin when goals are explicit', () => {
   const candidates = [
     normalizePriorityCandidate({
