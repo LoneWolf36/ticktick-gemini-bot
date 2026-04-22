@@ -596,6 +596,7 @@ export class GeminiAnalyzer {
             ...options,
             ...recommendationState,
         });
+        const behavioralPatterns = await this._resolveBehavioralPatterns(options);
 
         const processedEntries = Array.isArray(processedTasks)
             ? processedTasks.filter(Boolean)
@@ -612,6 +613,7 @@ export class GeminiAnalyzer {
                 tonePolicy: options.tonePolicy || 'preserve_existing',
             },
             activeTasks: orderedTasks,
+            behavioralPatterns,
             processedHistory: processedEntries,
             rankingResult: ranking,
             modelSummary: {},

@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-21T17:05:00Z"
+last_edited: "2026-04-22T21:25:00Z"
 source_specs: ["009-behavioral-signals-and-memory"]
 complexity: "complex"
 ---
@@ -65,11 +65,11 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 ### R6: Summary Surface Integration
 **Description:** Behavioral patterns are consumable by briefing and reflection surfaces.
 **Acceptance Criteria:**
-- [ ] Briefing surfaces can query active patterns with confidence >= standard
-- [ ] Weekly summary can include observational behavioral callouts
-- [ ] End-of-day reflection can reference today's behavioral signals
-- [ ] If signal data is missing, stale, corrupt, or reset, surfaces fail open — omit the callout, don't crash
-- [ ] Low-confidence interpretations are OMITTED from summaries rather than surfaced speculatively
+- [x] Briefing surfaces can query active patterns with confidence >= standard
+- [x] Weekly summary can include observational behavioral callouts
+- [x] End-of-day reflection can reference today's behavioral signals
+- [x] If signal data is missing, stale, corrupt, or reset, surfaces fail open — omit the callout, don't crash
+- [x] Low-confidence interpretations are OMITTED from summaries rather than surfaced speculatively
 **Dependencies:** R3, cavekit-briefings R9
 
 ### R7: Behavioral Reflection Language
@@ -172,8 +172,10 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 - [x] Audit R3 (Pattern Detection Engine): `services/behavioral-patterns.js` now derives Snooze Spiral and Planning-Without-Execution aggregate patterns from retained signals, assigns low/standard/high confidence, and marks only standard/high confidence patterns as surfacing-eligible.
 - [x] Audit R4 (Privacy Tier Manager): `services/store.js` now strips retained behavioral metadata down to minimal semantic flags (`planningSubtypeA/B`, `scopeChange`, `wordingOnlyEdit`, `decompositionChange`), forbids raw task/user text plus raw task IDs, and keeps operational logging separate from long-term behavioral memory.
 - [x] Audit R5 (Retention Windows): `services/store.js` now uses a configurable 30-day default retention window for reads/queries while preserving a separate archive horizon; `services/behavioral-patterns.js` excludes expired signals from aggregate pattern output.
+- [x] Audit R6 (Summary Surface Integration): `services/gemini.js` now resolves behavioral patterns for daily briefing, weekly digest, and daily-close generation; `services/summary-surfaces/briefing-summary.js`, `weekly-summary.js`, and `daily-close-summary.js` surface only fresh eligible standard/high-confidence behavioral notices via `services/summary-surfaces/behavioral-pattern-notices.js`; `tests/regression.summary-surfaces.test.js` covers daily, weekly, and daily-close callouts plus fail-open omission for stale/low-confidence/invalid data.
 
 ## Changelog
+- 2026-04-22: R6 completed — briefing, weekly, and daily-close summary surfaces now consume retained behavioral patterns read-only, omit low-confidence or stale signals, and fail open when behavioral data is missing or invalid.
 - 2026-04-21: R5 completed — behavioral memory now uses a configurable 30-day default query window and excludes expired signals from queries and patterns without immediate hard deletion.
 - 2026-04-21: R4 completed — retained behavioral memory now stores only minimal semantic flags plus domain tags and rejects raw text or raw task identifiers.
 - 2026-04-21: R3 completed — aggregate pattern engine now detects snooze spirals and planning overload patterns with low/standard/high confidence and surfacing eligibility.

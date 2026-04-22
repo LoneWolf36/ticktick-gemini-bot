@@ -1,4 +1,5 @@
 import { buildEngagementPatternNotice, deriveInterventionProfile } from './intervention-profile.js';
+import { buildBehavioralPatternNotice } from './behavioral-pattern-notices.js';
 
 function toArray(value) {
     return Array.isArray(value) ? value : [];
@@ -126,7 +127,7 @@ function buildResetCue({ activeTasks = [], rankingResult = null, todayHistory = 
     return `Tomorrow’s restart: begin with “${targetTask.title || 'Untitled task'}” and finish the first executable step.`;
 }
 
-function buildNotices({ processedHistory = [], todayHistory = [], context = {} } = {}) {
+function buildNotices({ processedHistory = [], behavioralPatterns = [], todayHistory = [], context = {} } = {}) {
     const notices = [];
     const interventionProfile = deriveInterventionProfile(processedHistory, {
         generatedAtIso: context.generatedAtIso,
@@ -164,6 +165,13 @@ function buildNotices({ processedHistory = [], todayHistory = [], context = {} }
         notices.push(engagementNotice);
     }
 
+    const behavioralNotice = buildBehavioralPatternNotice(behavioralPatterns, {
+        nowIso: context.generatedAtIso,
+    });
+    if (behavioralNotice) {
+        notices.push(behavioralNotice);
+    }
+
     return notices;
 }
 
@@ -197,6 +205,7 @@ function mergeNotices(baseNotices = [], modelNotices = []) {
 export function composeDailyCloseSummarySections({
     context = {},
     activeTasks = [],
+    behavioralPatterns = [],
     processedHistory = [],
     rankingResult = null,
     modelSummary = null,
@@ -223,7 +232,12 @@ export function composeDailyCloseSummarySections({
             todayHistory,
         }),
         notices: mergeNotices(
-            buildNotices({ processedHistory: normalizedProcessedHistory, todayHistory, context }),
+            buildNotices({
+                processedHistory: normalizedProcessedHistory,
+                behavioralPatterns: toArray(behavioralPatterns),
+                todayHistory,
+                context,
+            }),
             model.notices,
         ),
     };

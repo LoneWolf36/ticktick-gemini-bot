@@ -389,6 +389,7 @@ export function composeWeeklySummary({
 export function composeDailyCloseSummary({
     context = {},
     activeTasks = [],
+    behavioralPatterns = [],
     processedHistory = [],
     rankingResult = null,
     modelSummary = null,
@@ -398,6 +399,7 @@ export function composeDailyCloseSummary({
         composeDailyCloseSummarySections({
             context: normalizedContext,
             activeTasks: toArray(activeTasks),
+            behavioralPatterns: toArray(behavioralPatterns),
             processedHistory: toArray(processedHistory),
             rankingResult,
             modelSummary,

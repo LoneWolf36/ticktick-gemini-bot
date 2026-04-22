@@ -722,6 +722,80 @@ test('composeDailyCloseSummary stays minimal and non-punitive for irregular use'
   assert.equal(/punish|failure|lazy/i.test(result.formattedText), false);
 });
 
+test('composeDailyCloseSummary can surface fresh standard/high-confidence behavioral pattern notice', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildDailyCloseProcessedHistoryFixture({ variant: 'meaningful' });
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture({ kind: 'daily_close' }),
+    generatedAtIso: '2026-04-22T12:00:00Z',
+  };
+
+  const result = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory,
+    rankingResult,
+    behavioralPatterns: [{
+      type: 'planning_without_execution_type_a',
+      confidence: 'high',
+      eligibleForSurfacing: true,
+      signalCount: 4,
+      windowStart: '2026-04-20T08:00:00Z',
+      windowEnd: '2026-04-22T10:00:00Z',
+    }],
+  });
+
+  const notice = result.summary.notices.find((item) => item.code === 'behavioral_pattern');
+  assert.ok(notice);
+  assert.equal(notice.evidence_source, 'behavioral_memory');
+  assert.match(notice.message, /planning|execution/i);
+});
+
+test('composeDailyCloseSummary omits low-confidence stale invalid behavioral patterns and still renders', () => {
+  const activeTasks = buildSummaryActiveTasksFixture({ variant: 'sparse' });
+  const processedHistory = buildDailyCloseProcessedHistoryFixture({ variant: 'backoff' });
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture({ kind: 'daily_close' }),
+    generatedAtIso: '2026-04-22T12:00:00Z',
+  };
+
+  const result = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory,
+    rankingResult,
+    behavioralPatterns: [
+      {
+        type: 'snooze_spiral',
+        confidence: 'low',
+        eligibleForSurfacing: false,
+        signalCount: 2,
+        windowStart: '2026-04-20T08:00:00Z',
+        windowEnd: '2026-04-21T08:00:00Z',
+      },
+      {
+        type: 'planning_without_execution_type_b',
+        confidence: 'high',
+        eligibleForSurfacing: true,
+        signalCount: 10,
+        windowStart: '2026-02-01T08:00:00Z',
+        windowEnd: '2026-02-05T08:00:00Z',
+      },
+      {
+        type: 'unknown_pattern',
+        confidence: 'standard',
+        eligibleForSurfacing: true,
+        signalCount: 3,
+      },
+    ],
+  });
+
+  assert.equal(result.summary.notices.some((item) => item.code === 'behavioral_pattern'), false);
+  assert.ok(result.formattedText.length > 0);
+});
+
 test('formatSummary renders daily-close sections in fixed order and keeps output Telegram-safe', () => {
   const summary = buildDailyCloseSummaryFixture();
   const { text, telegramSafe } = formatSummary({
