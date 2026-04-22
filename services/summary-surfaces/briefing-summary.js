@@ -22,6 +22,22 @@ function toPriorityLabel(priority) {
     return null;
 }
 
+function parseDueDate(value) {
+    if (typeof value !== 'string' || value.trim().length === 0) return Number.POSITIVE_INFINITY;
+    const parsed = Date.parse(value);
+    return Number.isNaN(parsed) ? Number.POSITIVE_INFINITY : parsed;
+}
+
+function sortTasksByDueDate(activeTasks = []) {
+    return activeTasks
+        .map((task, index) => ({ task, index, dueAt: parseDueDate(task?.dueDate) }))
+        .sort((left, right) => {
+            if (left.dueAt !== right.dueAt) return left.dueAt - right.dueAt;
+            return left.index - right.index;
+        })
+        .map(({ task }) => task);
+}
+
 function buildPriorityItems(activeTasks = [], ranking = []) {
     const byTaskId = new Map(activeTasks.map((task) => [task.id || task.taskId, task]));
     const rankedItems = (Array.isArray(ranking) ? ranking : [])
@@ -45,7 +61,7 @@ function buildPriorityItems(activeTasks = [], ranking = []) {
         return rankedItems.slice(0, 3);
     }
 
-    return activeTasks.slice(0, 3).map((task) => ({
+    return sortTasksByDueDate(activeTasks).slice(0, 3).map((task) => ({
         task_id: task.id || task.taskId || 'unknown-task',
         title: task.title || 'Untitled task',
         project_name: task.projectName || null,

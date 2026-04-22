@@ -79,6 +79,7 @@ export const SUMMARY_NOTICE_CODES = Object.freeze([
     'irregular_use',
     'missing_history',
     'degraded_ranking',
+    'ranking_trend',
     'urgent_mode_active',
     'engagement_pattern',
     'delivery_context',
@@ -89,6 +90,7 @@ export const SUMMARY_NOTICE_SEVERITIES = Object.freeze(['info', 'warning']);
 export const SUMMARY_NOTICE_EVIDENCE_SOURCES = Object.freeze([
     'tasks',
     'processed_history',
+    'ranking',
     'state',
     'system',
 ]);

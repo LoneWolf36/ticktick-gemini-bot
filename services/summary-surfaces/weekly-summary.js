@@ -247,6 +247,42 @@ function buildWatchouts({ activeTasks = [], processedHistory = [], historyAvaila
     return watchouts;
 }
 
+function describeRationaleTrend(code) {
+    if (code === 'goal_alignment') return 'goal-aligned work';
+    if (code === 'urgency') return 'near-term deadlines';
+    if (code === 'blocker_removal') return 'blocker-clearing work';
+    if (code === 'capacity_protection') return 'capacity protection';
+    if (code === 'user_override') return 'explicit manual priorities';
+    if (code === 'fallback') return 'fallback ranking heuristics';
+    return 'mixed ranking signals';
+}
+
+function buildRankingTrendNotice(rankingResult = null) {
+    const ranked = Array.isArray(rankingResult?.ranked) ? rankingResult.ranked.slice(0, 3) : [];
+    if (ranked.length === 0) return null;
+
+    const counts = new Map();
+    for (const decision of ranked) {
+        const code = typeof decision?.rationaleCode === 'string' && decision.rationaleCode.trim().length > 0
+            ? decision.rationaleCode
+            : 'fallback';
+        counts.set(code, (counts.get(code) || 0) + 1);
+    }
+
+    const ordered = [...counts.entries()].sort((left, right) => right[1] - left[1]);
+    const [primaryCode, primaryCount] = ordered[0] || ['fallback', 0];
+    const secondaryCode = ordered[1]?.[0] || null;
+
+    return {
+        code: 'ranking_trend',
+        message: primaryCount >= 2 || !secondaryCode
+            ? `Ranking trends toward ${describeRationaleTrend(primaryCode)}.`
+            : `Ranking trends blend ${describeRationaleTrend(primaryCode)} with ${describeRationaleTrend(secondaryCode)}.`,
+        severity: 'info',
+        evidence_source: 'ranking',
+    };
+}
+
 function buildNotices({
     activeTasks = [],
     processedHistory = [],
@@ -287,6 +323,11 @@ function buildNotices({
             severity: 'warning',
             evidence_source: 'system',
         });
+    }
+
+    const rankingTrendNotice = buildRankingTrendNotice(rankingResult);
+    if (rankingTrendNotice) {
+        notices.push(rankingTrendNotice);
     }
 
     if (context.urgentMode === true) {

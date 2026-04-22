@@ -166,6 +166,78 @@ test('composeBriefingSummary adds degraded-ranking notice when ranking is degrad
   assert.ok(result.summary.notices.some((notice) => notice.code === 'degraded_ranking'));
 });
 
+test('composeBriefingSummary falls back to due-date ordering when ranking is unavailable', () => {
+  const activeTasks = [
+    {
+      id: 'task-undated',
+      title: 'Undated cleanup',
+      status: 0,
+      dueDate: null,
+      priority: 1,
+      projectName: 'Admin',
+    },
+    {
+      id: 'task-later',
+      title: 'Later due task',
+      status: 0,
+      dueDate: '2026-03-24',
+      priority: 3,
+      projectName: 'Career',
+    },
+    {
+      id: 'task-sooner',
+      title: 'Sooner due task',
+      status: 0,
+      dueDate: '2026-03-22',
+      priority: 1,
+      projectName: 'Career',
+    },
+  ];
+  const context = buildSummaryResolvedStateFixture();
+
+  const result = composeBriefingSummary({
+    context,
+    activeTasks,
+    rankingResult: null,
+  });
+
+  assert.deepEqual(result.summary.priorities.map((item) => item.task_id), [
+    'task-sooner',
+    'task-later',
+    'task-undated',
+  ]);
+});
+
+test('composeBriefingSummary consumes ranking output for task selection', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const context = buildSummaryResolvedStateFixture();
+  const rankingResult = {
+    ranked: [
+      createRankingDecision({
+        taskId: activeTasks[2].id,
+        rank: 1,
+        rationaleCode: 'goal_alignment',
+        rationaleText: 'Directly moves the core goal.',
+      }),
+      createRankingDecision({
+        taskId: activeTasks[0].id,
+        rank: 2,
+        rationaleCode: 'urgency',
+        rationaleText: 'Due soon.',
+      }),
+    ],
+  };
+
+  const result = composeBriefingSummary({
+    context,
+    activeTasks,
+    rankingResult,
+  });
+
+  assert.equal(result.summary.priorities[0].task_id, activeTasks[2].id);
+  assert.equal(result.summary.priorities[0].rationale_text, 'Directly moves the core goal.');
+});
+
 test('composeWeeklySummary always returns fixed weekly top-level sections', () => {
   const activeTasks = buildSummaryActiveTasksFixture();
   const processedHistory = buildSummaryProcessedHistoryFixture();
@@ -259,6 +331,50 @@ test('composeWeeklySummary covers completed work deferred work and upcoming prev
   assert.ok(result.summary.carry_forward.some((item) => /Deferred mock interview/.test(item.title)));
   assert.ok(result.summary.carry_forward.some((item) => /Deferred or rescheduled this week/.test(item.reason)));
   assert.ok(result.summary.next_focus.includes('Ship weekly architecture PR'));
+});
+
+test('composeWeeklySummary can reference ranking trends in notices', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildSummaryProcessedHistoryFixture();
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+  };
+  const rankingResult = {
+    ranked: [
+      createRankingDecision({
+        taskId: activeTasks[0].id,
+        rank: 1,
+        rationaleCode: 'goal_alignment',
+        rationaleText: 'Directly moves the core goal.',
+      }),
+      createRankingDecision({
+        taskId: activeTasks[1].id,
+        rank: 2,
+        rationaleCode: 'goal_alignment',
+        rationaleText: 'Keeps the main goal moving.',
+      }),
+      createRankingDecision({
+        taskId: activeTasks[2].id,
+        rank: 3,
+        rationaleCode: 'urgency',
+        rationaleText: 'Due soon.',
+      }),
+    ],
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+  });
+
+  const rankingNotice = result.summary.notices.find((notice) => notice.code === 'ranking_trend');
+  assert.ok(rankingNotice);
+  assert.match(rankingNotice.message, /ranking trends toward goal-aligned work/i);
+  assert.equal(rankingNotice.evidence_source, 'ranking');
 });
 
 test('composeWeeklySummary stays observational and scannable', () => {
