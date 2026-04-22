@@ -1343,14 +1343,8 @@ test('WP07 T072: pronoun-only underspecified target — verify resolution behavi
 
   const result = await harness.processMessage('update it');
 
-  // Underspecified pronoun "it" with multiple tasks: the resolver may find zero or one match
-  // Key assertion: the result is NOT a confident multi-target mutation
-  assert.ok(
-    result.type === 'clarification' || result.type === 'not-found' || result.type === 'task',
-    `pronoun-only should produce a defined outcome, got type: ${result.type}`
-  );
-  // If it did mutate, it should be at most 1 task (single-target policy)
-  assert.ok(harness.adapterCalls.update.length <= 1, 'should mutate at most one target');
+  assert.equal(result.type, 'clarification');
+  assert.equal(harness.adapterCalls.update.length, 0);
 });
 
 test('WP07 T072: ambiguous matches require clarification instead of mutation', async () => {

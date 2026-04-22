@@ -15,7 +15,7 @@ import { createHash } from 'node:crypto';
  */
 
 // ---------------------------------------------------------------------------
-// T001: Signal Taxonomy
+// Signal Taxonomy
 // ---------------------------------------------------------------------------
 
 /**
@@ -112,7 +112,7 @@ const CONFIDENCE = Object.freeze({
  */
 
 // ---------------------------------------------------------------------------
-// T002: Classifier Entry Point (pure function — no side effects)
+// Classifier Entry Point (pure function — no side effects)
 // ---------------------------------------------------------------------------
 
 /**
@@ -145,16 +145,16 @@ export function classifyTaskEvent(event) {
             pushIfPresent(signals, detectPlanningWithoutExecution(event));
             break;
         case 'update':
-            // T003: Postpone detection
+            // Postpone detection
             const postponeSignal = detectPostpone(event);
             if (postponeSignal) signals.push(postponeSignal);
             pushIfPresent(signals, detectSnoozeSpiral(event));
 
-            // T004: Scope change detection
+            // Scope change detection
             const scopeSignal = detectScopeChange(event);
             if (scopeSignal) signals.push(scopeSignal);
 
-            // T005: Decomposition detection
+            // Decomposition detection
             const decompSignal = detectDecomposition(event);
             if (decompSignal) signals.push(decompSignal);
             pushIfPresent(signals, detectStaleTaskMuseum(event));
@@ -459,7 +459,7 @@ export function detectPlanningWithoutExecution(event) {
 }
 
 // ---------------------------------------------------------------------------
-// T003: Postpone Detection
+// Postpone Detection
 // ---------------------------------------------------------------------------
 
 /**
@@ -509,7 +509,7 @@ export function detectPostpone(event) {
 }
 
 // ---------------------------------------------------------------------------
-// T004: Scope Change Detection
+// Scope Change Detection
 // ---------------------------------------------------------------------------
 
 /**
@@ -564,7 +564,7 @@ export function detectScopeChange(event) {
 }
 
 // ---------------------------------------------------------------------------
-// T005: Decomposition Detection
+// Decomposition Detection
 // ---------------------------------------------------------------------------
 
 /**

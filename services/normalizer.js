@@ -6,7 +6,7 @@
  * - Mutation actions (update/complete/delete) carry targetQuery from AX and resolved
  *   taskId/originalProjectId from the task resolver.
  * - Mutation actions require resolved task context (taskId) to pass validation.
- * - Content is preserved on updates per FR-005 unless explicit replacement is requested.
+ * - Content is preserved on updates unless explicit replacement is requested.
  * - Mixed create+mutation or multi-mutation batches are rejected cleanly.
  */
 
@@ -161,7 +161,7 @@ function _formatISO(date, timezone = 'Europe/Dublin', endOfDay = true) {
 }
 
 /**
- * Normalizes a title to be concise, verb-led, and noise-free per FR-006.
+ * Normalizes a title to be concise, verb-led, and noise-free.
  * 
  * Transformations applied in order:
  * 1. Trim whitespace
@@ -221,7 +221,7 @@ function _normalizeTitle(rawTitle, maxLength = 100) {
 
 /**
  * Filters content, keeping only useful references (URLs, locations, instructions)
- * and preserving existing content during updates per FR-007.
+ * and preserving existing content during updates.
  * 
  * Content cleaning steps:
  * 1. Strip motivational/coaching filler phrases
@@ -262,7 +262,7 @@ function _normalizeContent(rawContent, existingContent) {
         }
     }
 
-    // Update existing content preservation logic (FR-007)
+    // Update existing content preservation logic
     if (existingContent && existingContent.trim()) {
         if (!newContent || newContent === existingContent.trim()) {
             return existingContent;
@@ -327,7 +327,7 @@ function _contentAddsValue(newContent, existingContent) {
     return hasNewUrls || hasNewLocations || hasNewInstructions || hasSubstantialContent;
 }
 
-// Checklist normalization constants (T021-T026)
+// Checklist normalization constants
 const CHECKLIST_ITEM_MAX_LENGTH = 50;
 const MAX_CHECKLIST_ITEMS = 30;
 
@@ -372,18 +372,18 @@ function _cleanChecklistItemTitle(rawTitle) {
 /**
  * Normalizes and validates raw AX checklist items.
  *
- * T021: Accept raw AX checklistItems, return clean items or empty array.
- * T022: Clean item text — trim, strip filler, drop empty, truncate ~50 chars.
- * T023: Cap at 30 items, log truncation.
- * T024: Assign zero-based sort order when absent.
- * T025: Validate — require non-empty title, default status to 0 (incomplete),
+ * Accept raw AX checklistItems, return clean items or empty array.
+ * Clean item text — trim, strip filler, drop empty, truncate ~50 chars.
+ * Cap at 30 items, log truncation.
+ * Assign zero-based sort order when absent.
+ * Validate — require non-empty title, default status to 0 (incomplete),
  *        reject nested checklist structures.
  *
  * @param {Array|null} rawItems - Raw checklistItems from AX intent
  * @returns {Array} Clean, validated checklist items (may be empty)
  */
 function _normalizeChecklistItems(rawItems) {
-    // T021: Ordinary actions ignore absent field
+    // Ordinary actions ignore absent field
     if (!rawItems || !Array.isArray(rawItems) || rawItems.length === 0) {
         return [];
     }
@@ -394,14 +394,14 @@ function _normalizeChecklistItems(rawItems) {
     for (let i = 0; i < rawItems.length; i++) {
         const raw = rawItems[i];
 
-        // T025: Reject unsupported nested checklist structures
+        // Reject unsupported nested checklist structures
         if (raw && typeof raw === 'object' && raw.items && Array.isArray(raw.items)) {
             console.warn(`[Normalizer] Dropping checklist item ${i}: nested checklists not supported`);
             droppedCount++;
             continue;
         }
 
-        // T025: Require non-empty title
+        // Require non-empty title
         const cleanedTitle = _cleanChecklistItemTitle(raw?.title ?? raw);
 
         if (!cleanedTitle) {
@@ -409,10 +409,10 @@ function _normalizeChecklistItems(rawItems) {
             continue;
         }
 
-        // T025: Default status to 0 (incomplete / unchecked)
+        // Default status to 0 (incomplete / unchecked)
         const status = 0;
 
-        // T024: Assign zero-based sort order; normalize numeric if present
+        // Assign zero-based sort order; normalize numeric if present
         let sortOrder = i;
         if (raw && typeof raw === 'object' && raw.sortOrder !== undefined) {
             const parsed = Number(raw.sortOrder);
@@ -428,7 +428,7 @@ function _normalizeChecklistItems(rawItems) {
         });
     }
 
-    // T023: Cap at 30 items
+    // Cap at 30 items
     if (cleanedItems.length > MAX_CHECKLIST_ITEMS) {
         console.warn(`[Normalizer] Checklist truncated: ${cleanedItems.length} -> ${MAX_CHECKLIST_ITEMS} items (${cleanedItems.length - MAX_CHECKLIST_ITEMS} dropped)`);
         cleanedItems.length = MAX_CHECKLIST_ITEMS;
@@ -442,7 +442,7 @@ function _normalizeChecklistItems(rawItems) {
 }
 
 /**
- * Converts natural-language recurrence hints to RRULE strings per FR-008.
+ * Converts natural-language recurrence hints to RRULE strings.
  * 
  * Supported patterns:
  * - Simple: "daily", "weekdays", "weekends", "weekly", "biweekly", "monthly", "yearly"
@@ -691,7 +691,7 @@ export function validateMutationBatch(actions) {
         return { valid: false, reason: 'mixed_create_and_mutation' };
     }
 
-    // Multiple mutations: out of scope for v1 (single-target only, FR-009)
+    // Multiple mutations: out of scope for v1 (single-target only)
     const mutationCount = types.filter(t => mutationTypes.includes(t)).length;
     if (mutationCount > 1) {
         return { valid: false, reason: 'multiple_mutations' };
@@ -705,7 +705,7 @@ export function validateMutationBatch(actions) {
  *
  * Mutation validation:
  * - Mutation actions (update/complete/delete) require a resolved taskId.
- * - Fails closed when taskId is missing (FR-008).
+ * - Fails closed when taskId is missing.
  * - Confidence threshold still applies.
  */
 function _validateAction(action, minConfidence = 0.5) {
@@ -792,7 +792,7 @@ function _resolveActionType(intentAction, existingTask) {
  * - `options.resolvedTask` carries the resolver's selected task { id, projectId, title }.
  * - `options.existingTaskContent` preserves the original task description on updates.
  * - `targetQuery` is passed through from AX for logging/diagnostics.
- * - Mutation actions without a resolved taskId fail validation (fail-closed per FR-008).
+ * - Mutation actions without a resolved taskId fail validation (fail-closed).
  */
 export function normalizeAction(intentAction, options = {}) {
     const {
@@ -819,7 +819,7 @@ export function normalizeAction(intentAction, options = {}) {
         ? _normalizeContentForMutation(intentAction.content, existingTaskContent)
         : _normalizeContent(intentAction.content, existingTaskContent);
 
-    // T026: Attach checklist items to create actions only
+    // Attach checklist items to create actions only
     const checklistItems = intentAction.type === 'create' && intentAction.checklistItems !== undefined
         ? _normalizeChecklistItems(intentAction.checklistItems)
         : undefined;
@@ -844,7 +844,7 @@ export function normalizeAction(intentAction, options = {}) {
         validationErrors: []
     };
 
-    // T026: Only attach checklistItems to create actions
+    // Only attach checklistItems to create actions
     if (checklistItems !== undefined) {
         normalized.checklistItems = checklistItems;
     }

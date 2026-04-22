@@ -20,6 +20,7 @@ const CONTAINS_SCORE = 60;
 const FUZZY_SCORE_MIN = 30;
 const FUZZY_SCORE_MAX = 55;
 const CLARIFICATION_GAP = 15; // minimum score gap to avoid clarification
+const UNDERSPECIFIED_PRONOUN_QUERY = /^(it|this|that|them|these|those|this one|that one|this task|that task)$/;
 
 /**
  * Normalize a title for matching: lowercase, trim, collapse whitespace, strip punctuation.
@@ -168,6 +169,26 @@ export function resolveTarget({ targetQuery, activeTasks }) {
     }
 
     const normalizedQuery = normalizeTitle(targetQuery);
+
+    if (UNDERSPECIFIED_PRONOUN_QUERY.test(normalizedQuery)) {
+        const candidates = activeTasks
+            .filter((task) => task && typeof task.id === 'string' && typeof task.title === 'string' && task.title.trim())
+            .slice(0, 5)
+            .map((task) => ({
+                taskId: task.id,
+                projectId: task.projectId ?? null,
+                title: task.title,
+                score: 0,
+                matchType: 'underspecified',
+            }));
+
+        return {
+            status: 'clarification',
+            selected: null,
+            candidates,
+            reason: 'underspecified_pronoun',
+        };
+    }
 
     // Score all tasks
     const candidates = [];

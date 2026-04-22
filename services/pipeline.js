@@ -764,7 +764,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 return attachPipelineContext(buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS), context);
             }
 
-            // Checklist/multi-task classification (WP04): detect ambiguous structure requests
+            // Checklist/multi-task classification: detect ambiguous structure requests
             const hasChecklist = intents.some(i => Array.isArray(i.checklistItems) && i.checklistItems.length > 0);
             const hasMultipleCreates = intents.filter(i => i.type === 'create').length > 1;
             context = updateChecklistContext(context, { hasChecklist });
@@ -849,7 +849,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 }
             }
 
-            // Mutation routing (WP04): detect mutation intents and resolve targets
+            // Mutation routing: detect mutation intents and resolve targets
             const mutationTypes = ['update', 'complete', 'delete'];
             const hasMutation = intents.some(i => mutationTypes.includes(i.type));
             const hasCreate = intents.some(i => i.type === 'create');

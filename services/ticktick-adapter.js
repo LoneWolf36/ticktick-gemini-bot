@@ -414,7 +414,7 @@ export class TickTickAdapter {
             if (validatedProjectId !== null) taskData.projectId = validatedProjectId;
             if (normalizedAction.repeatFlag !== undefined && normalizedAction.repeatFlag !== null) taskData.repeatFlag = normalizedAction.repeatFlag;
 
-            // Map checklist items to TickTick items payload (T032, T033, T034)
+            // Map checklist items to TickTick items payload
             const mappedItems = this._mapChecklistItems(normalizedAction.checklistItems);
             if (mappedItems) {
                 taskData.items = mappedItems;
@@ -424,7 +424,7 @@ export class TickTickAdapter {
             const createdTask = await this._client.createTask(taskData);
             const elapsed = Date.now() - start;
 
-            // T006: Non-blocking behavioral signal observation
+            // Non-blocking behavioral signal observation
             this._observeSignals('create', {
                 userId: normalizedAction.userId,
                 taskId: createdTask.id,
@@ -465,7 +465,7 @@ export class TickTickAdapter {
         const start = Date.now();
         this._log('createTasksBatch', { count: normalizedActions?.length });
 
-        // Early return for empty input (T005)
+        // Early return for empty input
         if (!normalizedActions || normalizedActions.length === 0) {
             this._log('createTasksBatch', 'SUCCESS { created: 0, failed: 0, reason: "empty input" }');
             return { created: [], failed: [] };
@@ -473,14 +473,14 @@ export class TickTickAdapter {
 
         const results = { created: [], failed: [] };
 
-        // Sequential execution for simplicity and debuggability (T005)
+        // Sequential execution for simplicity and debuggability
         for (let i = 0; i < normalizedActions.length; i++) {
             const action = normalizedActions[i];
             try {
                 const createdTask = await this.createTask(action);
                 results.created.push(createdTask);
             } catch (error) {
-                // Per-item failure logging with action details (T005)
+                // Per-item failure logging with action details
                 this._log('createTasksBatch', `FAILED item ${i + 1}/${normalizedActions.length} { title: "${action?.title}", error: "${error.message}", code: "${error.code || 'UNKNOWN'}" }`, true);
                 results.failed.push({
                     action,
@@ -585,14 +585,14 @@ export class TickTickAdapter {
             if (targetProjectId !== undefined && targetProjectId !== null) updatePayload.projectId = targetProjectId;
             if (normalizedAction.repeatFlag !== undefined) updatePayload.repeatFlag = normalizedAction.repeatFlag;
 
-            // Handle content merge with mergeContent flag (T006)
+            // Handle content merge with mergeContent flag
             if (normalizedAction.content !== undefined) {
                 const newContent = normalizedAction.content || '';
                 const oldContent = existingTask.content || '';
                 const shouldMerge = normalizedAction.mergeContent !== false; // Default to true
 
                 if (!shouldMerge) {
-                    // Replace content entirely (T006)
+                    // Replace content entirely
                     updatePayload.content = newContent;
                 } else if (oldContent) {
                     if (oldContent === newContent || newContent === '') {
@@ -619,7 +619,7 @@ export class TickTickAdapter {
             const updatedTask = await this._client.updateTask(taskId, updatePayload);
             const elapsed = Date.now() - start;
 
-            // T006: Non-blocking behavioral signal observation
+            // Non-blocking behavioral signal observation
             this._observeSignals('update', {
                 userId: normalizedAction.userId,
                 taskId,
@@ -750,7 +750,7 @@ export class TickTickAdapter {
             await this._client.completeTask(projectId, taskId);
             const elapsed = Date.now() - start;
 
-            // T006: Non-blocking behavioral signal observation
+            // Non-blocking behavioral signal observation
             this._observeSignals('complete', {
                 userId,
                 taskId,
@@ -788,7 +788,7 @@ export class TickTickAdapter {
             await this._client.deleteTask(projectId, taskId);
             const elapsed = Date.now() - start;
 
-            // T006: Non-blocking behavioral signal observation
+            // Non-blocking behavioral signal observation
             this._observeSignals('delete', {
                 userId,
                 taskId,
