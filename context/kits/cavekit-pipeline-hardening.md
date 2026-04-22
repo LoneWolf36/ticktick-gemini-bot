@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-22T01:15:00Z"
+last_edited: "2026-04-22T16:30:00Z"
 source_specs: ["003-pipeline-hardening-and-regression"]
 complexity: "complex"
 ---
@@ -45,9 +45,9 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 ### R4: Quota and Rate-Limit Semantics
 **Description:** TickTick API quota and rate-limit responses are handled with backoff and user notification.
 **Acceptance Criteria:**
-- [ ] Rate-limit responses (429) trigger exponential backoff with configurable max retries
-- [ ] User is informed when rate limits prevent immediate execution with ETA if available
-- [ ] Quota exhaustion is distinguishable from transient failure
+- [x] Rate-limit responses (429) trigger exponential backoff with configurable max retries
+- [x] User is informed when rate limits prevent immediate execution with ETA if available
+- [x] Quota exhaustion is distinguishable from transient failure
 **Dependencies:** R3
 
 ### R5: Retry and Rollback
@@ -139,7 +139,7 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 - [x] R1 audited directly against `services/pipeline-context.js`, `services/pipeline.js`, `services/pipeline-observability.js`, `tests/pipeline-context.test.js`, and `tests/regression.pipeline-hardening-mutation.test.js`: immutable lifecycle snapshots now capture request metadata, correlation ID, AX output, normalization state, execution requests/results, validation failures, timing, and final result; observability sinks receive the canonical context without changing the telemetry event schema.
 - [ ] R2 remains unchecked: entry points consistently pass pipeline options, but handlers do not themselves construct the full canonical context object before the pipeline call.
 - [x] R3 audited directly against `services/pipeline.js`, `tests/regression.pipeline-hardening-mutation.test.js`, and `tests/regression.adapter-execution-reorg.test.js`: pipeline failures now classify deterministic transient/permanent/partial categories, transient adapter failures retry once automatically, permanent failures surface corrective user-safe messaging, and partial failures report success/failure counts without exposing internal details.
-- [ ] R4 remains unchecked: no exponential backoff/ETA semantics for TickTick 429 responses were verified.
+- [x] R4 audited directly against `services/ticktick.js`, `services/ticktick-adapter.js`, `services/pipeline.js`, `tests/regression.adapter-execution-reorg.test.js`, and `tests/regression.pipeline-hardening-mutation.test.js`: TickTick 429 responses now retry with configurable exponential backoff, preserve `Retry-After`/`retry_after` ETA metadata, fail fast on oversized retry windows, surface ETA-aware user messaging, and distinguish quota exhaustion from transient rate limiting.
 - [ ] R5 remains unchecked: current execution retry logic is limited and does not satisfy the single-task exponential-backoff AC.
 - [ ] R7 remains unchecked: regression coverage is broad, but this pass did not prove every cavekit-task-pipeline story maps cleanly to at least one automated regression.
 - [ ] R8 remains unchecked: burst isolation is tested, but this pass did not prove the full no-race-condition write-path claim strictly enough to close the requirement.
@@ -152,3 +152,4 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 - 2026-04-20: R6 and R9 completed — offline harness behavior and telemetry contract now have direct code + regression evidence.
 - 2026-04-21: R1 completed — canonical immutable pipeline context now persists across request, AX, normalization, execution, and result stages with observability access.
 - 2026-04-22: R3 completed — pipeline failure handling now emits deterministic transient/permanent/partial categories with retry, corrective messaging, and partial-failure reporting covered by regression tests.
+- 2026-04-22: R4 completed — TickTick 429 handling now uses configurable exponential backoff with ETA-aware user messaging, preserves rate-limit metadata through adapter and pipeline layers, and distinguishes quota exhaustion from transient rate limiting in regression coverage.

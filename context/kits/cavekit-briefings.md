@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-22T00:55:00Z"
+last_edited: "2026-04-22T16:10:00Z"
 source_specs: ["006-briefing-weekly-modernization"]
 complexity: "complex"
 ---
@@ -106,8 +106,8 @@ See `context/refs/summary-surfaces.openapi.yaml` for API contracts.
 ### R11: Ignored Guidance Adaptation
 **Description:** If user consistently ignores briefing suggestions, the system adapts rather than escalating.
 **Acceptance Criteria:**
-- [ ] Ignored guidance causes adaptation or backing off, not louder nagging
-- [ ] System does not add urgency markers to previously ignored items
+- [x] Ignored guidance causes adaptation or backing off, not louder nagging
+- [x] System does not add urgency markers to previously ignored items
 **Dependencies:** none
 
 ### R12: Summary Delivery Edge Cases
@@ -166,11 +166,13 @@ See `context/refs/summary-surfaces.openapi.yaml` for API contracts.
 - [x] Audit R5 (Manual Command Integration): `bot/commands.js` exposes `/briefing` and `/weekly`, and regression tests verify manual vs scheduler parity for `generateDailyBriefingSummary(...)` and `generateWeeklyDigestSummary(...)` given the same snapshot.
 - [x] Audit R7 (End-of-Day Reflection): `composeDailyCloseSummary(...)` builds short, factual, non-punitive reflection copy from same-day processed history and open-task state, including sparse-day and irregular-use fail-open behavior, and `bot/commands.js` wires `/daily_close` as the manual command entrypoint for that same surface.
 - [x] Audit R9 (Behavioral Signal Integration): `services/gemini.js` resolves behavioral patterns read-only, `services/summary-surfaces/index.js` passes them into briefing and weekly surfaces, `services/summary-surfaces/behavioral-pattern-notices.js` omits stale or low-confidence patterns, and `tests/regression.summary-surfaces.test.js` covers both surfaced and gracefully omitted callouts.
+- [x] Audit R11 (Ignored Guidance Adaptation): `services/summary-surfaces/intervention-profile.js` derives repeated-ignore/backoff profiles from processed-history signals, summary surfaces consume those notices, and `tests/regression.adapter-execution-reorg.test.js` covers both repeated-ignore callouts and daily-close backoff behavior without escalating urgency.
 - [x] Audit R13 (Work-Style Awareness): `formatSummary(...)` shortens briefing, weekly, and daily-close outputs in urgent mode while preserving the standard compact default style.
 - [ ] Validate scheduler grace-window behavior from R6 against the live startup path once the new scheduler delivery tests are in place.
-- [ ] Keep R8, R10, R11, R12, R14, and R15 unchecked pending stricter observability, due-date fallback, adaptation, edge-case, and regression evidence.
+- [ ] Keep R8, R10, R12, R14, and R15 unchecked pending stricter observability, due-date fallback, edge-case, and regression evidence.
 
 ## Changelog
+- 2026-04-22: R11 completed — repeated ignored guidance now triggers smaller-step or backoff messaging instead of escalating urgency, with regression coverage across weekly and daily-close summary surfaces.
 - 2026-04-22: R9 completed — briefing and weekly summary surfaces now consume behavioral-memory patterns read-only, while stale or low-confidence patterns are omitted gracefully.
 - 2026-04-22: Clarified ownership — `/daily_close` in `bot/commands.js` is the manual command surface for Briefings R7, while `/start` remains an operational bootstrap surface.
 - 2026-04-20: R5, R7, and R13 completed — manual summary commands, end-of-day reflection behavior, and work-style-aware formatting now have direct code and regression evidence.

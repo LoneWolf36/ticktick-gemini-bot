@@ -1,4 +1,4 @@
-// Inline keyboard callback handlers — approve, skip, drop, mutation clarification, checklist clarification (WP05)
+// Inline keyboard callback handlers — approve, skip, drop, mutation clarification, checklist clarification.
 // These move tasks from pendingTasks → processedTasks and resume mutation clarifications
 import { InlineKeyboard } from 'grammy';
 import * as store from '../services/store.js';
@@ -242,7 +242,7 @@ export function registerCallbacks(bot, ticktick, gemini, adapter, pipeline) {
         await editWithMarkdown(ctx, '❌ **Clarification canceled.** Rephrase or try again.');
     });
 
-    // ─── Checklist Clarification: shared handler (WP05) ──────
+    // ─── Checklist Clarification: shared handler ─────────────
     async function _handleChecklistClarification(ctx, { preference, skipChecklist, successPrefix }) {
         if (!isAuthorized(ctx)) {
             await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });

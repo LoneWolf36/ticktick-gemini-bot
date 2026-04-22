@@ -2,7 +2,7 @@
  * services/normalizer.js
  * Transforms raw AX intent actions into clean, validated, execution-ready normalised actions.
  *
- * Mutation support (WP03 — 002-natural-language-task-mutations):
+ * Mutation support for task-update normalization:
  * - Mutation actions (update/complete/delete) carry targetQuery from AX and resolved
  *   taskId/originalProjectId from the task resolver.
  * - Mutation actions require resolved task context (taskId) to pass validation.
@@ -610,7 +610,7 @@ function _expandDueDate(dueDateString, { currentDate = new Date(), timezone = 'E
 /**
  * Normalizes content for mutation actions (update/complete/delete).
  *
- * WP03 (T033): Preserve existing task content on updates per FR-005.
+ * Preserve existing task content on updates unless the new content adds value.
  * Only replaces content when the user explicitly provides new content that
  * adds value beyond the existing description. Otherwise, existing content
  * is preserved verbatim.
@@ -665,7 +665,7 @@ function _normalizeContentForMutation(newContent, existingContent) {
 /**
  * Validates a batch of normalized actions for supported mutation shapes.
  *
- * WP03 (T033): Reject mixed create+mutation and multi-mutation batches
+ * Reject mixed create+mutation and multi-mutation batches
  * that are out of scope for v1 single-target mutation.
  *
  * @param {Array<object>} actions - Normalized actions to validate
@@ -703,7 +703,7 @@ export function validateMutationBatch(actions) {
 /**
  * Validates a normalized action.
  *
- * Mutation validation (WP03):
+ * Mutation validation:
  * - Mutation actions (update/complete/delete) require a resolved taskId.
  * - Fails closed when taskId is missing (FR-008).
  * - Confidence threshold still applies.
@@ -720,7 +720,7 @@ function _validateAction(action, minConfidence = 0.5) {
         errors.push("Empty title after normalization");
     }
 
-    // WP03 (T032): Mutation actions require resolved task context — fail closed
+    // Mutation actions require resolved task context — fail closed.
     if (['update', 'complete', 'delete'].includes(action.type) && !action.taskId) {
         errors.push(`Missing taskId for ${action.type}: mutation requires resolved task context`);
     }
@@ -788,7 +788,7 @@ function _resolveActionType(intentAction, existingTask) {
 /**
  * Normalizes a single intent action.
  *
- * Mutation support (WP03):
+ * Mutation support:
  * - `options.resolvedTask` carries the resolver's selected task { id, projectId, title }.
  * - `options.existingTaskContent` preserves the original task description on updates.
  * - `targetQuery` is passed through from AX for logging/diagnostics.
@@ -855,7 +855,7 @@ export function normalizeAction(intentAction, options = {}) {
 /**
  * Normalizes multiple intent actions, expanding multi-day tasks.
  *
- * WP03: Validates batch shape to reject mixed create+mutation or
+ * Validates batch shape to reject mixed create+mutation or
  * multi-mutation requests that are out of scope for v1.
  */
 export function normalizeActions(intentActions, options = {}) {
@@ -881,7 +881,7 @@ export function normalizeActions(intentActions, options = {}) {
  * Returns { actions, batchError } where batchError is set when the
  * batch shape is unsupported (mixed create+mutation, multi-mutation).
  *
- * WP03 (T033): Single entry point for pipeline to normalize + validate batch shape.
+ * Single entry point for pipeline to normalize and validate batch shape.
  */
 export function normalizeActionBatch(intentActions, options = {}) {
     const actions = normalizeActions(intentActions, options);

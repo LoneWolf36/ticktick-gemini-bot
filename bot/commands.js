@@ -802,7 +802,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         // New pipeline path. Note: we leave gemini check in for the coach fallback optionally.
         await ctx.reply('🤔 Processing...');
         try {
-            // Check for pending checklist clarification resume (WP05)
+            // Check for pending checklist clarification resume.
             const pendingChecklist = store.getPendingChecklistClarification();
             if (pendingChecklist) {
                 // User replied to a checklist clarification — resume with their answer
@@ -897,7 +897,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 const reason = result.clarification?.reason || '';
 
                 if (reason === 'ambiguous_checklist_vs_multi_task') {
-                    // WP05: Checklist vs separate tasks clarification
+                    // Checklist vs separate-tasks clarification.
                     const intents = result.clarification?.candidates || [];
                     const question = result.confirmationText || 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?';
 

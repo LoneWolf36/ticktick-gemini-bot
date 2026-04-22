@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-22T00:55:00Z"
+last_edited: "2026-04-22T16:30:00Z"
 source_specs: ["001-task-operations-pipeline", "002-natural-language-task-mutations"]
 complexity: "complex"
 ---
@@ -93,11 +93,11 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 ### R10: Conservative Target Resolution
 **Description:** Mutations resolve exactly one target task before execution. System asks follow-up when resolution is ambiguous.
 **Acceptance Criteria:**
-- [ ] Given "Call mom" and "Call mom about insurance" exist, "done call mom" triggers clarification — not a guess
-- [ ] Given single exact title match plus fuzzy matches, exact match wins without follow-up
-- [ ] Given no task matches, system returns "task not found" and performs no write
-- [ ] Pronoun references like "move that one to Friday" trigger follow-up rather than guesswork
-- [ ] Delete operations fail closed when resolution is uncertain
+- [x] Given "Call mom" and "Call mom about insurance" exist, "done call mom" triggers clarification — not a guess
+- [x] Given single exact title match plus fuzzy matches, exact match wins without follow-up
+- [x] Given no task matches, system returns "task not found" and performs no write
+- [x] Pronoun references like "move that one to Friday" trigger follow-up rather than guesswork
+- [x] Delete operations fail closed when resolution is uncertain
 **Dependencies:** R4, R9
 
 ### R11: Mutation Content Preservation
@@ -183,6 +183,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - [x] R3 (Deterministic Normalization): `services/normalizer.js` deterministically strips title noise, normalizes repeat/project/date fields, suppresses filler content, and rejects malformed data paths; `tests/normalizer.test.js` covers title, content, checklist, recurrence, and truncation behavior directly.
 - [x] R4 (Single TickTick Adapter): all 3 ACs implemented and verified. All production writes route through adapter, read-only display flows remain allowed per repo guidance, live harnesses were updated, and adapter failure preserves parsed intent with `intents` + `normalizedActions` in failure result.
 - [x] R15 (Command Surfaces): `/scan`, `/pending`, `/review`, `/undo`, `/menu`, `/status`, and `/reset` are implemented in `bot/commands.js` and now checked explicitly.
+- [x] R10 (Conservative Target Resolution): `services/task-resolver.js` resolves exact/prefix/contains/fuzzy matches conservatively, `services/pipeline.js` routes mutation intents through clarification/not-found handling before execution, `tests/task-resolver.test.js` covers fail-closed ambiguity cases, and `tests/regression.pipeline-hardening-mutation.test.js` covers pronoun references, exact-match wins, not-found, and delete safety.
 - [x] Drift rate limiter: removed 2026-04-19 (YAGNI for 1-user MVP; listed as out-of-scope here).
 - [x] R16 (Guided Reorg): `/reorg` fetch/refine/apply/cancel flow, schema-backed actions, and policy sweep are implemented and now checked explicitly.
 - [x] R17 (Autonomous Poll Auto-Apply): scheduler polling, auto-apply notifications, status/docs/config exposure, and quota/auth parking behavior are now owned explicitly instead of inferred from status/config references.
@@ -190,6 +191,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 
 ## Changelog
 - 2026-04-22: R3 completed — deterministic normalization now has direct code and regression evidence for title cleanup, filler suppression, project/date/repeat handling, and malformed-input rejection.
+- 2026-04-22: R10 completed — mutation target resolution now fails closed on ambiguity, prefers exact matches over fuzzier candidates, returns not-found without writes, and requires clarification for pronoun-only or unsafe delete references.
 - 2026-04-20: R17 completed — autonomous poll auto-apply policy is explicitly owned, documented, and mapped to scheduler/status behavior.
 - 2026-04-20: R15 and R16 completed — command surfaces are explicitly checked, reorg flow is fully mapped, and remaining auto-apply ownership is isolated as the next signal cleanup item.
 - 2026-04-19: R1 and R4 completed — AX field validation, regression coverage, adapter boundary enforcement, intent preservation on failure.

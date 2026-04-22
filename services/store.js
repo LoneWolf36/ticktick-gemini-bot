@@ -66,7 +66,7 @@ const DEFAULT_STATE = {
     pendingTasks: {},    // Analyzed + sent to Telegram, awaiting user review
     pendingReorg: null,  // Proposed global reorg plan awaiting apply/refine/cancel
     pendingMutationClarification: null, // Pending mutation clarification state for free-form handler
-    pendingChecklistClarification: null, // Pending checklist vs separate-tasks clarification (WP05)
+    pendingChecklistClarification: null, // Pending checklist vs separate-tasks clarification
     behavioralSignals: {}, // R2: { [userId]: BehavioralSignal[] }
     processedTasks: {},  // User has clicked approve/skip/drop
     failedTasks: {},     // AI analysis failed (rate limit) — parked to prevent re-polling
@@ -762,7 +762,7 @@ export async function clearPendingMutationClarification() {
     await save();
 }
 
-// ─── Pending Checklist Clarification (WP05) ──────────────────
+// ─── Pending Checklist Clarification ──────────────────────────
 // Narrow state for resuming ambiguous checklist vs separate-tasks requests.
 // TTL: 24 hours — after expiry, the clarification is ignored and a conservative
 // fallback creates a plain parent task only.
