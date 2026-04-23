@@ -78,12 +78,9 @@ export function createPipelineHarness({
             adapterCalls.delete.push({ taskId, projectId });
             return { deleted: true, taskId };
         },
-    };
-    const adapter = {
-        ...baseAdapter,
         restoreTask: async (taskId, snapshot) => ({ id: taskId, ...snapshot }),
-        ...adapterOverrides,
     };
+    const adapter = { ...baseAdapter, ...adapterOverrides };
 
     const normalizerImpl = useRealNormalizer
         ? { normalizeActions: (input, options) => normalizer.normalizeActions(input, options) }
