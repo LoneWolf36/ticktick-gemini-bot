@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-22T16:30:00Z"
+last_edited: "2026-04-23T02:05:00Z"
 source_specs: ["001-task-operations-pipeline", "002-natural-language-task-mutations"]
 complexity: "complex"
 ---
@@ -111,10 +111,10 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 ### R12: Privacy-Aware Pipeline Logging
 **Description:** Full pipeline is logged with privacy-aware diagnostics. Logs do not persist raw user messages in long-term behavioral memory.
 **Acceptance Criteria:**
-- [ ] Logs capture: request metadata, AX intent output, normalized actions, adapter requests, adapter results, validation failures, timing
-- [ ] Mutation logs capture: intent, candidate targets, final chosen target, reason for skip
-- [ ] Adapter operation logs are consumed by pipeline observability for end-to-end failure tracing
-- [ ] Logs and behavioral signals do NOT persist raw user messages, raw task titles, or raw task descriptions unless explicit debug-only transient mode
+- [x] Logs capture: request metadata, AX intent output, normalized actions, adapter requests, adapter results, validation failures, timing
+- [x] Mutation logs capture: intent, candidate targets, final chosen target, reason for skip
+- [x] Adapter operation logs are consumed by pipeline observability for end-to-end failure tracing
+- [x] Logs and behavioral signals do NOT persist raw user messages, raw task titles, or raw task descriptions unless explicit debug-only transient mode
 **Dependencies:** none
 
 ### R13: Extremely Long Message Handling
@@ -184,12 +184,14 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - [x] R4 (Single TickTick Adapter): all 3 ACs implemented and verified. All production writes route through adapter, read-only display flows remain allowed per repo guidance, live harnesses were updated, and adapter failure preserves parsed intent with `intents` + `normalizedActions` in failure result.
 - [x] R15 (Command Surfaces): `/scan`, `/pending`, `/review`, `/undo`, `/menu`, `/status`, and `/reset` are implemented in `bot/commands.js` and now checked explicitly.
 - [x] R10 (Conservative Target Resolution): `services/task-resolver.js` resolves exact/prefix/contains/fuzzy matches conservatively, `services/pipeline.js` routes mutation intents through clarification/not-found handling before execution, `tests/task-resolver.test.js` covers fail-closed ambiguity cases, and `tests/regression.pipeline-hardening-mutation.test.js` covers pronoun references, exact-match wins, not-found, and delete safety.
+- [x] R12 (Privacy-Aware Pipeline Logging): `services/pipeline.js`, `services/pipeline-context.js`, and `services/pipeline-observability.js` now keep request/intent/action tracing while redacting raw user messages, task titles, task descriptions, and target queries from lifecycle snapshots, observability sink contexts, and console/telemetry metadata; `tests/regression.pipeline-logging-privacy.test.js` plus `tests/pipeline-context.test.js` cover telemetry, lifecycle, and console privacy boundaries.
 - [x] Drift rate limiter: removed 2026-04-19 (YAGNI for 1-user MVP; listed as out-of-scope here).
 - [x] R16 (Guided Reorg): `/reorg` fetch/refine/apply/cancel flow, schema-backed actions, and policy sweep are implemented and now checked explicitly.
 - [x] R17 (Autonomous Poll Auto-Apply): scheduler polling, auto-apply notifications, status/docs/config exposure, and quota/auth parking behavior are now owned explicitly instead of inferred from status/config references.
 - [x] Validation-facing comments in live harnesses and reorg services were updated to reflect their final Cavekit ownership/exclusion status.
 
 ## Changelog
+- 2026-04-23: R12 completed — pipeline diagnostics now preserve request/intent/action tracing while redacting raw user messages, raw task titles, raw task descriptions, and target queries from lifecycle snapshots, observability sink contexts, and console telemetry.
 - 2026-04-22: R3 completed — deterministic normalization now has direct code and regression evidence for title cleanup, filler suppression, project/date/repeat handling, and malformed-input rejection.
 - 2026-04-22: R10 completed — mutation target resolution now fails closed on ambiguity, prefers exact matches over fuzzier candidates, returns not-found without writes, and requires clarification for pronoun-only or unsafe delete references.
 - 2026-04-20: R17 completed — autonomous poll auto-apply policy is explicitly owned, documented, and mapped to scheduler/status behavior.

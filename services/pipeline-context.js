@@ -35,8 +35,50 @@ function deepFreeze(value, seen = new WeakSet()) {
     return value;
 }
 
+const PRIVACY_REDACTION_KEYS = new Set([
+    'userMessage',
+    'title',
+    'content',
+    'description',
+    'desc',
+    'originalTitle',
+    'originalContent',
+    'targetQuery',
+    'existingTaskContent',
+]);
+
+function sanitizePipelineDiagnosticValue(value) {
+    if (Array.isArray(value)) {
+        return value.map((entry) => sanitizePipelineDiagnosticValue(entry));
+    }
+    if (!value || typeof value !== 'object') {
+        return value;
+    }
+
+    const sanitized = {};
+    for (const [key, nested] of Object.entries(value)) {
+        if (PRIVACY_REDACTION_KEYS.has(key) && typeof nested === 'string' && nested.length > 0) {
+            sanitized[key] = '<redacted>';
+            if (key === 'userMessage' || key === 'targetQuery') {
+                sanitized[`${key}Length`] = nested.length;
+            }
+            continue;
+        }
+        sanitized[key] = sanitizePipelineDiagnosticValue(nested);
+    }
+    return sanitized;
+}
+
 export function snapshotPipelineValue(value) {
     return cloneValue(value);
+}
+
+export function snapshotPrivacySafePipelineValue(value) {
+    return cloneValue(sanitizePipelineDiagnosticValue(value));
+}
+
+export function sanitizePipelineContextForDiagnostics(context) {
+    return deepFreeze(snapshotPrivacySafePipelineValue(context));
 }
 
 export function updatePipelineContext(context, updater) {
@@ -57,12 +99,12 @@ function createLifecycleState(baseContext) {
                 currentDate: baseContext.currentDate,
                 timezone: baseContext.timezone,
             },
-            userMessage: baseContext.userMessage,
-            availableProjects: snapshotPipelineValue(baseContext.availableProjects),
-            availableProjectNames: snapshotPipelineValue(baseContext.availableProjectNames),
-            existingTask: snapshotPipelineValue(baseContext.existingTask),
-            activeTasks: snapshotPipelineValue(baseContext.activeTasks),
-            checklistContext: snapshotPipelineValue(baseContext.checklistContext),
+            userMessageLength: baseContext.userMessage?.length || 0,
+            availableProjects: snapshotPrivacySafePipelineValue(baseContext.availableProjects),
+            availableProjectNames: snapshotPrivacySafePipelineValue(baseContext.availableProjectNames),
+            existingTask: snapshotPrivacySafePipelineValue(baseContext.existingTask),
+            activeTasks: snapshotPrivacySafePipelineValue(baseContext.activeTasks),
+            checklistContext: snapshotPrivacySafePipelineValue(baseContext.checklistContext),
         },
         ax: {
             status: 'pending',

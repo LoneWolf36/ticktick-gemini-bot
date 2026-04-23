@@ -165,6 +165,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             `/reset — Wipe all bot data and start fresh\n` +
             `/status — Bot status and stats\n` +
             `/memory — View behavioral memory summary\n` +
+            `/forget — Clear behavioral memory\n` +
             `/urgent — Activate urgent mode\n` +
             `/focus — Activate focus mode\n` +
             `/normal — Return to standard mode\n` +
@@ -726,6 +727,24 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         } catch (err) {
             console.error('[MemoryCommand] Error:', err.message);
             await ctx.reply('🧠 Behavioral memory is unavailable right now. No summary available.');
+        }
+    });
+
+    // ─── /forget (cavekit-behavioral-memory R9) ──
+    bot.command('forget', async (ctx) => {
+        if (!await guardAccess(ctx)) return;
+        const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
+        if (!userId) {
+            await ctx.reply('❌ Could not identify user for behavioral memory.');
+            return;
+        }
+
+        try {
+            const deletedCount = await store.deleteBehavioralSignals(userId);
+            await ctx.reply(`🧠 Behavioral memory cleared. ${deletedCount} signal(s) removed. Previously stored patterns will no longer influence future summaries.`);
+        } catch (err) {
+            console.error('[ForgetCommand] Error:', err.message);
+            await ctx.reply('❌ Failed to clear behavioral memory. Please try again.');
         }
     });
 

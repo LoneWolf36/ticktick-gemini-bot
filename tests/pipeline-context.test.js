@@ -103,7 +103,7 @@ test('T001: buildRequestContext includes immutable lifecycle envelope and correl
     assert.equal(context.lifecycle.request.metadata.requestId, 'req-r1-lifecycle');
     assert.equal(context.lifecycle.request.metadata.correlationId, 'req-r1-lifecycle');
     assert.equal(context.lifecycle.request.metadata.entryPoint, 'telegram');
-    assert.equal(context.lifecycle.request.userMessage, 'Test');
+    assert.equal(context.lifecycle.request.userMessageLength, 4); // Length of 'Test'
     assert.deepEqual(context.lifecycle.ax, {
         status: 'pending',
         intentOutput: null,

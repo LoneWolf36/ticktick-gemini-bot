@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-23T01:35:00Z"
+last_edited: "2026-04-23T02:05:00Z"
 source_specs: ["009-behavioral-signals-and-memory"]
 complexity: "complex"
 ---
@@ -91,10 +91,10 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 ### R9: User Reset Controls
 **Description:** Users can reset retained behavioral memory with deterministic deletion.
 **Acceptance Criteria:**
-- [ ] User can request deletion via command (e.g., /forget or "clear my memory")
-- [ ] Deletion is deterministic — all retained signals within the window are cleared
-- [ ] After reset, no previously stored pattern influences future summaries
-- [ ] If user requests deletion shortly after a pattern was surfaced, system clears retained memory and stops reusing it
+- [x] User can request deletion via command (e.g., /forget or "clear my memory")
+- [x] Deletion is deterministic — all retained signals within the window are cleared
+- [x] After reset, no previously stored pattern influences future summaries
+- [x] If user requests deletion shortly after a pattern was surfaced, system clears retained memory and stops reusing it
 **Dependencies:** R2, R8
 
 ### R10: Non-Blocking Architecture
@@ -175,9 +175,11 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 - [x] Audit R6 (Summary Surface Integration): `services/gemini.js` now resolves behavioral patterns for daily briefing, weekly digest, and daily-close generation; `services/summary-surfaces/briefing-summary.js`, `weekly-summary.js`, and `daily-close-summary.js` surface only fresh eligible standard/high-confidence behavioral notices via `services/summary-surfaces/behavioral-pattern-notices.js`; `tests/regression.summary-surfaces.test.js` covers daily, weekly, and daily-close callouts plus fail-open omission for stale/low-confidence/invalid data.
 - [x] Audit R7 (Behavioral Reflection Language): `services/summary-surfaces/behavioral-pattern-notices.js` now phrases surfaced behavioral notices with concrete observational wording tied to counts/windows instead of diagnostic labels, `tests/regression.summary-surfaces.test.js` locks those notices against moral/character claims across surfaced patterns, and `tests/regression.behavioral-signals.test.js` covers the `GeminiAnalyzer._resolveBehavioralPatterns()` fail-open seam when signal lookup or pattern detection throws.
 - [x] Audit R8 (User Inspection Controls): `bot/commands.js` now exposes `/memory`, formats a plain-language summary from retained behavioral patterns, shows the retention window and last retained signal date, omits raw task text, and `tests/regression.behavioral-signals.test.js` covers populated, empty, and fail-open command paths.
+- [x] Audit R9 (User Reset Controls): `bot/commands.js` now exposes `/forget`, routes reset through deterministic `store.deleteBehavioralSignals(userId)` deletion, confirms how many retained signals were removed, and `tests/regression.behavioral-signals.test.js` verifies empty-state deletion plus that `/memory` no longer surfaces patterns after reset.
 - [x] Validation traceability: behavioral-signal coverage is also tracked in `tests/regression.behavioral-signals.test.js` (classifier, storage/privacy boundaries, retention/query behavior, and pattern detection paths tied to this kit's implemented requirements).
 
 ## Changelog
+- 2026-04-23: R9 completed — `/forget` now clears retained behavioral signals deterministically, confirms removal count, and ensures future memory summaries stop surfacing previously stored patterns after reset.
 - 2026-04-23: R8 completed — `/memory` now surfaces a plain-language behavioral memory summary with active patterns, retention window, and last signal date while failing open when lookup is unavailable.
 - 2026-04-22: R7 completed — surfaced behavioral notices now use concrete observational wording, low-confidence ambiguous patterns stay omitted, and `_resolveBehavioralPatterns()` has dedicated fail-open regression coverage when behavioral lookup or pattern detection fails.
 - 2026-04-22: R6 completed — briefing, weekly, and daily-close summary surfaces now consume retained behavioral patterns read-only, omit low-confidence or stale signals, and fail open when behavioral data is missing or invalid.

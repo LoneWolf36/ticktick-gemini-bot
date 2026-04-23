@@ -1,3 +1,5 @@
+import { sanitizePipelineContextForDiagnostics } from './pipeline-context.js';
+
 const ENTRY_POINT_ALIASES = {
     telegram: 'telegram_message',
     telegram_message: 'telegram_message',
@@ -49,6 +51,7 @@ export function createPipelineObservability({
     now = () => new Date(),
 } = {}) {
     async function emit(context, payload) {
+        const diagnosticContext = sanitizePipelineContextForDiagnostics(context);
         const event = {
             eventType: payload.eventType,
             timestamp: now().toISOString(),
@@ -65,9 +68,9 @@ export function createPipelineObservability({
         };
 
         emitConsole(logger, event);
-        await emitToSink(eventSink, 'emit', event, context);
-        await emitToSink(metricSink, 'increment', `pipeline.${event.step}.${event.status}`, 1, event, context);
-        await emitToSink(traceSink, 'addEvent', event.eventType, event, context);
+        await emitToSink(eventSink, 'emit', event, diagnosticContext);
+        await emitToSink(metricSink, 'increment', `pipeline.${event.step}.${event.status}`, 1, event, diagnosticContext);
+        await emitToSink(traceSink, 'addEvent', event.eventType, event, diagnosticContext);
         return event;
     }
 

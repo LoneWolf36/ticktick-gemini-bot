@@ -6,6 +6,8 @@
 import {
     createPipelineContextBuilder,
     snapshotPipelineValue,
+    snapshotPrivacySafePipelineValue,
+    sanitizePipelineContextForDiagnostics,
     updatePipelineContext,
 } from './pipeline-context.js';
 import { createPipelineObservability } from './pipeline-observability.js';
@@ -275,7 +277,7 @@ function buildFailureResult(context, {
 function attachPipelineContext(result, context) {
     return {
         ...result,
-        pipelineContext: context || null,
+        pipelineContext: context ? sanitizePipelineContextForDiagnostics(context) : null,
     };
 }
 
@@ -630,7 +632,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 },
             });
 
-            console.log(`[Pipeline:${context.requestId}] Processing message: "${context.userMessage.substring(0, 50)}..."`);
+            console.log(`[Pipeline:${context.requestId}] Processing message (${context.userMessage?.length || 0} chars)`);
 
             const axStartedAt = Date.now();
             let intents;
@@ -672,7 +674,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 console.warn(`[Pipeline:${context.requestId}] Malformed AX output.`);
                 context = updatePipelineContext(context, (draft) => {
                     draft.lifecycle.ax.status = 'failure';
-                    draft.lifecycle.ax.intentOutput = snapshotPipelineValue(intents);
+                    draft.lifecycle.ax.intentOutput = snapshotPrivacySafePipelineValue(intents);
                     draft.lifecycle.ax.failure = {
                         failureClass: FAILURE_CLASSES.MALFORMED_AX,
                         message: 'Malformed AX output.',
@@ -723,7 +725,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
 
             context = updatePipelineContext(context, (draft) => {
                 draft.lifecycle.ax.status = 'success';
-                draft.lifecycle.ax.intentOutput = snapshotPipelineValue(intents);
+                draft.lifecycle.ax.intentOutput = snapshotPrivacySafePipelineValue(intents);
                 draft.lifecycle.ax.failure = null;
                 draft.lifecycle.timing.stages.ax = {
                     startedAt: new Date(axStartedAt).toISOString(),
@@ -920,7 +922,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         status: resolverResult.status === 'resolved' ? 'success' : 'failure',
                         durationMs: Date.now() - resolveStartedAt,
                         metadata: {
-                            targetQuery,
+                            targetQueryLength: targetQuery.length,
                             resultStatus: resolverResult.status,
                             candidateCount: resolverResult.candidates.length,
                         },
@@ -967,7 +969,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     if (resolvedTask.projectId) {
                         mutationIntent.originalProjectId = resolvedTask.projectId;
                     }
-                    console.log(`[Pipeline:${context.requestId}] Clarification resume: using pre-resolved task "${resolvedTask.title}"`);
+                    console.log(`[Pipeline:${context.requestId}] Clarification resume: using pre-resolved task id=${resolvedTask.id}`);
                 } else {
                     // No targetQuery and no taskId — try to use existingTask from context
                     if (context.existingTask?.id) {
@@ -996,9 +998,9 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
             const invalidActions = normalizedActions.filter(a => !a.valid);
             context = updatePipelineContext(context, (draft) => {
                 draft.lifecycle.normalize.status = 'success';
-                draft.lifecycle.normalize.normalizedActions = snapshotPipelineValue(normalizedActions);
-                draft.lifecycle.normalize.validActions = snapshotPipelineValue(validActions);
-                draft.lifecycle.normalize.invalidActions = snapshotPipelineValue(invalidActions);
+                draft.lifecycle.normalize.normalizedActions = snapshotPrivacySafePipelineValue(normalizedActions);
+                draft.lifecycle.normalize.validActions = snapshotPrivacySafePipelineValue(validActions);
+                draft.lifecycle.normalize.invalidActions = snapshotPrivacySafePipelineValue(invalidActions);
                 draft.lifecycle.validationFailures = snapshotPipelineValue(invalidActions.map(a => a.validationErrors).flat());
                 draft.lifecycle.timing.stages.normalize = {
                     startedAt: new Date(normalizeStartedAt).toISOString(),
@@ -1083,10 +1085,10 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
             const executionResult = await _executeActions(validActions, adapter, context, telemetry);
             context = updatePipelineContext(context, (draft) => {
                 draft.lifecycle.execute.status = executionResult.terminalFailure ? 'failure' : 'success';
-                draft.lifecycle.execute.requests = snapshotPipelineValue(executionResult.executionRequests);
-                draft.lifecycle.execute.results = snapshotPipelineValue(executionResult.executionResults);
-                draft.lifecycle.execute.failures = snapshotPipelineValue(executionResult.failures);
-                draft.lifecycle.execute.rollbackFailures = snapshotPipelineValue(executionResult.rollbackFailures);
+                draft.lifecycle.execute.requests = snapshotPrivacySafePipelineValue(executionResult.executionRequests);
+                draft.lifecycle.execute.results = snapshotPrivacySafePipelineValue(executionResult.executionResults);
+                draft.lifecycle.execute.failures = snapshotPrivacySafePipelineValue(executionResult.failures);
+                draft.lifecycle.execute.rollbackFailures = snapshotPrivacySafePipelineValue(executionResult.rollbackFailures);
                 draft.lifecycle.timing.stages.execute = {
                     startedAt: new Date(executionResult.executeStartedAt).toISOString(),
                     durationMs: executionResult.durationMs,
@@ -1269,7 +1271,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     record.errorMessage = null;
                     successfulRecords.push(record);
 
-                    console.log(`[Pipeline:${context.requestId}] ✅ ${action.type.toUpperCase()} successful: ${action.title || action.taskId}`);
+                    console.log(`[Pipeline:${context.requestId}] ✅ ${action.type.toUpperCase()} successful: taskId=${result?.id || action.taskId || 'n/a'}`);
                     await telemetry.emit(context, {
                         eventType: 'pipeline.execute.succeeded',
                         step: 'execute',

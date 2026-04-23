@@ -904,3 +904,133 @@ test('/memory command fails open when signal lookup errors', async () => {
   assert.equal(replies.length, 1);
   assert.match(replies[0], /Behavioral memory is unavailable right now/i);
 });
+
+// ─── /forget command tests ───────────────────────────────────
+
+test('/forget command clears all behavioral signals for user', async () => {
+  await store.resetAll();
+  const { bot, handlers } = createCommandBotHarness();
+  registerCommands(
+    bot,
+    { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://example.test/auth', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }) },
+    { listActiveTasks: async () => [], listProjects: async () => [] },
+    {},
+  );
+
+  const userId = AUTHORIZED_CHAT_ID || Date.now();
+  
+  // Add some signals first
+  await store.appendBehavioralSignals(userId, [
+    classifyTaskEvent({ eventType: 'update', taskId: 'task-1', category: 'work', projectId: 'career', dueDateBefore: '2026-04-10T10:00:00Z', dueDateAfter: '2026-04-12T10:00:00Z', timestamp: '2026-04-18T10:00:00Z' })[0],
+    classifyTaskEvent({ eventType: 'update', taskId: 'task-2', category: 'work', projectId: 'career', dueDateBefore: '2026-04-12T10:00:00Z', dueDateAfter: '2026-04-14T10:00:00Z', timestamp: '2026-04-19T10:00:00Z' })[0],
+  ]);
+
+  // Verify signals exist before forget
+  const signalsBefore = await store.getBehavioralSignals(userId);
+  assert.equal(signalsBefore.length, 2);
+
+  // Execute /forget command
+  const replies = [];
+  await handlers.commands.get('forget')({
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => { replies.push(message); },
+  });
+
+  // Verify response message
+  assert.equal(replies.length, 1);
+  assert.match(replies[0], /Behavioral memory cleared/i);
+  assert.match(replies[0], /2 signal\(s\) removed/i);
+
+  // Verify signals are deleted
+  const signalsAfter = await store.getBehavioralSignals(userId);
+  assert.equal(signalsAfter.length, 0);
+});
+
+test('/forget command works when no signals exist', async () => {
+  await store.resetAll();
+  const { bot, handlers } = createCommandBotHarness();
+  registerCommands(
+    bot,
+    { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://example.test/auth', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }) },
+    { listActiveTasks: async () => [], listProjects: async () => [] },
+    {},
+  );
+
+  const userId = AUTHORIZED_CHAT_ID || Date.now();
+  
+  // Execute /forget command when no signals exist
+  const replies = [];
+  await handlers.commands.get('forget')({
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => { replies.push(message); },
+  });
+
+  // Verify response message
+  assert.equal(replies.length, 1);
+  assert.match(replies[0], /Behavioral memory cleared/i);
+  assert.match(replies[0], /0 signal\(s\) removed/i);
+
+  // Verify no signals exist
+  const signalsAfter = await store.getBehavioralSignals(userId);
+  assert.equal(signalsAfter.length, 0);
+});
+
+test('/memory after /forget shows no active patterns', async () => {
+  await store.resetAll();
+  const { bot, handlers } = createCommandBotHarness();
+  registerCommands(
+    bot,
+    { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://example.test/auth', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }) },
+    { listActiveTasks: async () => [], listProjects: async () => [] },
+    {},
+  );
+
+  const userId = AUTHORIZED_CHAT_ID || Date.now();
+  
+  // Add signals that would create a pattern
+  await store.appendBehavioralSignals(userId, [
+    classifyTaskEvent({ eventType: 'update', taskId: 'same-task', category: 'work', projectId: 'career', dueDateBefore: '2026-04-10T10:00:00Z', dueDateAfter: '2026-04-12T10:00:00Z', timestamp: '2026-04-18T10:00:00Z' })[0],
+    classifyTaskEvent({ eventType: 'update', taskId: 'same-task', category: 'work', projectId: 'career', dueDateBefore: '2026-04-12T10:00:00Z', dueDateAfter: '2026-04-14T10:00:00Z', timestamp: '2026-04-19T10:00:00Z' })[0],
+    classifyTaskEvent({ eventType: 'update', taskId: 'same-task', category: 'work', projectId: 'career', dueDateBefore: '2026-04-14T10:00:00Z', dueDateAfter: '2026-04-16T10:00:00Z', timestamp: '2026-04-20T10:00:00Z' })[0],
+  ]);
+
+  // Verify /memory shows patterns before forget
+  const memoryRepliesBefore = [];
+  await handlers.commands.get('memory')({
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => { memoryRepliesBefore.push(message); },
+  });
+  
+  assert.equal(memoryRepliesBefore.length, 1);
+  assert.match(memoryRepliesBefore[0], /postponed 3 times/i);
+
+  // Execute /forget command
+  const forgetReplies = [];
+  await handlers.commands.get('forget')({
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => { forgetReplies.push(message); },
+  });
+
+  // Verify forget response
+  assert.equal(forgetReplies.length, 1);
+  assert.match(forgetReplies[0], /Behavioral memory cleared/i);
+  assert.match(forgetReplies[0], /3 signal\(s\) removed/i);
+
+  // Verify /memory shows no patterns after forget
+  const memoryRepliesAfter = [];
+  await handlers.commands.get('memory')({
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => { memoryRepliesAfter.push(message); },
+  });
+  
+  assert.equal(memoryRepliesAfter.length, 1);
+  assert.match(memoryRepliesAfter[0], /No active patterns in the last 30 days/i);
+});
