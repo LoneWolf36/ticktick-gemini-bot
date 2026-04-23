@@ -1,5 +1,6 @@
 import { buildEngagementPatternNotice, deriveInterventionProfile } from './intervention-profile.js';
 import { buildBehavioralPatternNotice } from './behavioral-pattern-notices.js';
+import { buildReflectionRecomputeContext, buildReflectionRecomputeNotice } from './reflection-recompute.js';
 
 function toArray(value) {
     return Array.isArray(value) ? value : [];
@@ -77,7 +78,7 @@ function buildStats({ todayHistory = [], activeTasks = [] } = {}) {
     ];
 }
 
-function buildReflection({ todayHistory = [], activeTasks = [], interventionProfile = null, context = {} } = {}) {
+function buildReflection({ todayHistory = [], activeTasks = [], interventionProfile = null, context = {}, recomputeContext = null } = {}) {
     const approvedCount = todayHistory.filter((entry) => entry.approved === true).length;
     const skippedCount = todayHistory.filter((entry) => entry.skipped === true).length;
     const droppedCount = todayHistory.filter((entry) => entry.dropped === true).length;
@@ -94,6 +95,9 @@ function buildReflection({ todayHistory = [], activeTasks = [], interventionProf
     }
 
     if (todayHistory.length === 0) {
+        if (recomputeContext?.hasRetainedAggregates === true) {
+            return 'No processed log landed today. Re-anchor tomorrow from live tasks plus retained 30-day behavioral aggregates, then start one concrete step.';
+        }
         return REFLECTION_TEMPLATES.NO_ACTIVITY;
     }
 
@@ -127,7 +131,7 @@ function buildResetCue({ activeTasks = [], rankingResult = null, todayHistory = 
     return `Tomorrow’s restart: begin with “${targetTask.title || 'Untitled task'}” and finish the first executable step.`;
 }
 
-function buildNotices({ processedHistory = [], behavioralPatterns = [], todayHistory = [], context = {} } = {}) {
+function buildNotices({ processedHistory = [], behavioralPatterns = [], todayHistory = [], context = {}, recomputeContext = null } = {}) {
     const notices = [];
     const interventionProfile = deriveInterventionProfile(processedHistory, {
         generatedAtIso: context.generatedAtIso,
@@ -172,6 +176,11 @@ function buildNotices({ processedHistory = [], behavioralPatterns = [], todayHis
         notices.push(behavioralNotice);
     }
 
+    const recomputeNotice = buildReflectionRecomputeNotice(recomputeContext || {}, { surface: 'daily_close' });
+    if (recomputeNotice) {
+        notices.push(recomputeNotice);
+    }
+
     return notices;
 }
 
@@ -212,6 +221,13 @@ export function composeDailyCloseSummarySections({
 } = {}) {
     const normalizedActiveTasks = asActiveTasks(activeTasks);
     const normalizedProcessedHistory = asProcessedHistory(processedHistory);
+    const recomputeContext = buildReflectionRecomputeContext({
+        activeTasks: normalizedActiveTasks,
+        behavioralPatterns,
+        processedHistory: normalizedProcessedHistory,
+        historyAvailable: true,
+        context,
+    });
     const todayHistory = filterEntriesForDay(normalizedProcessedHistory, context);
     const interventionProfile = deriveInterventionProfile(normalizedProcessedHistory, {
         generatedAtIso: context.generatedAtIso,
@@ -225,6 +241,7 @@ export function composeDailyCloseSummarySections({
             activeTasks: normalizedActiveTasks,
             interventionProfile,
             context,
+            recomputeContext,
         }),
         reset_cue: model.reset_cue || buildResetCue({
             activeTasks: normalizedActiveTasks,
@@ -237,6 +254,7 @@ export function composeDailyCloseSummarySections({
                 behavioralPatterns: toArray(behavioralPatterns),
                 todayHistory,
                 context,
+                recomputeContext,
             }),
             model.notices,
         ),

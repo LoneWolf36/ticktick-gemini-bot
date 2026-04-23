@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-23T02:05:00Z"
+last_edited: "2026-04-23T18:20:00Z"
 source_specs: ["009-behavioral-signals-and-memory"]
 complexity: "complex"
 ---
@@ -108,8 +108,8 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 ### R11: Recomputable Reflections
 **Description:** Reflection surfaces can recompute useful output from live task state plus retained aggregates rather than requiring a permanent archive.
 **Acceptance Criteria:**
-- [ ] Daily and weekly reflections can reconstruct context from current TickTick state + 30-day aggregates
-- [ ] No permanent behavioral archive is needed beyond the retention window
+- [x] Daily and weekly reflections can reconstruct context from current TickTick state + 30-day aggregates
+- [x] No permanent behavioral archive is needed beyond the retention window
 **Dependencies:** R5, R6
 
 ### R12: Passive-by-Default Anti-Procrastination
@@ -176,9 +176,11 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 - [x] Audit R7 (Behavioral Reflection Language): `services/summary-surfaces/behavioral-pattern-notices.js` now phrases surfaced behavioral notices with concrete observational wording tied to counts/windows instead of diagnostic labels, `tests/regression.summary-surfaces.test.js` locks those notices against moral/character claims across surfaced patterns, and `tests/regression.behavioral-signals.test.js` covers the `GeminiAnalyzer._resolveBehavioralPatterns()` fail-open seam when signal lookup or pattern detection throws.
 - [x] Audit R8 (User Inspection Controls): `bot/commands.js` now exposes `/memory`, formats a plain-language summary from retained behavioral patterns, shows the retention window and last retained signal date, omits raw task text, and `tests/regression.behavioral-signals.test.js` covers populated, empty, and fail-open command paths.
 - [x] Audit R9 (User Reset Controls): `bot/commands.js` now exposes `/forget`, routes reset through deterministic `store.deleteBehavioralSignals(userId)` deletion, confirms how many retained signals were removed, and `tests/regression.behavioral-signals.test.js` verifies empty-state deletion plus that `/memory` no longer surfaces patterns after reset.
+- [x] Audit R11 (Recomputable Reflections): `services/summary-surfaces/reflection-recompute.js` now derives an explicit recomputation seam from live active tasks plus retained behavioral aggregates, `weekly-summary.js` and `daily-close-summary.js` surface recomputed context when processed history is missing or sparse, and `tests/regression.summary-surfaces.test.js` covers both weekly and daily-close reconstruction paths without requiring any permanent archive.
 - [x] Validation traceability: behavioral-signal coverage is also tracked in `tests/regression.behavioral-signals.test.js` (classifier, storage/privacy boundaries, retention/query behavior, and pattern detection paths tied to this kit's implemented requirements).
 
 ## Changelog
+- 2026-04-23: R11 completed — weekly and daily-close reflections now recompute useful context from live active tasks plus retained 30-day behavioral aggregates when processed history is missing or sparse, without introducing any permanent behavioral archive.
 - 2026-04-23: R9 completed — `/forget` now clears retained behavioral signals deterministically, confirms removal count, and ensures future memory summaries stop surfacing previously stored patterns after reset.
 - 2026-04-23: R8 completed — `/memory` now surfaces a plain-language behavioral memory summary with active patterns, retention window, and last signal date while failing open when lookup is unavailable.
 - 2026-04-22: R7 completed — surfaced behavioral notices now use concrete observational wording, low-confidence ambiguous patterns stay omitted, and `_resolveBehavioralPatterns()` has dedicated fail-open regression coverage when behavioral lookup or pattern detection fails.

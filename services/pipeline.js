@@ -414,6 +414,25 @@ function isMalformedIntentPayload(intents) {
     return intents.some(intent => !intent || typeof intent !== 'object' || Array.isArray(intent));
 }
 
+function isCreateClarificationIntent(intent) {
+    if (!intent || typeof intent !== 'object') return false;
+    if (intent.type !== 'create') return false;
+    if (intent.clarification === true) return true;
+    return typeof intent.clarificationQuestion === 'string' && intent.clarificationQuestion.trim().length > 0;
+}
+
+function pickCreateClarificationQuestion(intents, context) {
+    for (const intent of intents) {
+        if (typeof intent?.clarificationQuestion === 'string' && intent.clarificationQuestion.trim()) {
+            return intent.clarificationQuestion.trim();
+        }
+    }
+
+    return isUrgentWorkStyle(context)
+        ? 'Need one detail: what task should I create from unclear part?'
+        : 'I created the clear task. What exactly should I create from the unclear part?';
+}
+
 function createExecutionRecord(action, index) {
     return {
         index,
@@ -764,6 +783,63 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     },
                 });
                 return attachPipelineContext(buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS), context);
+            }
+
+            let deferredCreateFragmentClarification = null;
+            const createClarificationIntents = intents.filter(intent => isCreateClarificationIntent(intent));
+            const isCreateOnlyMessage = intents.every(intent => intent?.type === 'create');
+
+            if (isCreateOnlyMessage && createClarificationIntents.length > 0) {
+                const executableCreateIntents = intents.filter(intent => !isCreateClarificationIntent(intent));
+                const clarificationQuestion = pickCreateClarificationQuestion(createClarificationIntents, context);
+                const clarificationFragments = createClarificationIntents.map((intent) => ({
+                    title: intent?.title || null,
+                    clarificationQuestion: typeof intent?.clarificationQuestion === 'string' ? intent.clarificationQuestion : null,
+                }));
+
+                deferredCreateFragmentClarification = {
+                    question: clarificationQuestion,
+                    fragments: clarificationFragments,
+                };
+
+                if (executableCreateIntents.length === 0) {
+                    const clarificationResult = {
+                        type: 'clarification',
+                        results: [],
+                        errors: [],
+                        confirmationText: clarificationQuestion,
+                        clarification: {
+                            reason: 'ambiguous_create_fragment',
+                            fragments: clarificationFragments,
+                        },
+                        requestId: context.requestId || null,
+                        entryPoint: context.entryPoint || null,
+                        mode: context.mode || null,
+                        workStyleMode: context.workStyleMode || null,
+                        checklistContext: context.checklistContext || null,
+                    };
+
+                    context = finalizePipelineContext(context, requestStartedAt, {
+                        resultType: 'clarification',
+                        status: 'success',
+                        summary: 'ambiguous_create_fragment',
+                    });
+
+                    await telemetry.emit(context, {
+                        eventType: 'pipeline.request.completed',
+                        step: 'result',
+                        status: 'success',
+                        durationMs: Date.now() - requestStartedAt,
+                        metadata: {
+                            type: 'clarification',
+                            reason: 'ambiguous_create_fragment',
+                        },
+                    });
+
+                    return attachPipelineContext(clarificationResult, context);
+                }
+
+                intents = executableCreateIntents;
             }
 
             // Checklist/multi-task classification: detect ambiguous structure requests
@@ -1141,7 +1217,10 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 ...executionResult.errors,
             ];
 
-            const confirmationText = _buildConfirmation(executionResult.results, executionResult.errors, context);
+            const baseConfirmationText = _buildConfirmation(executionResult.results, executionResult.errors, context);
+            const confirmationText = deferredCreateFragmentClarification
+                ? `${baseConfirmationText}\n\n${deferredCreateFragmentClarification.question}`
+                : baseConfirmationText;
             context = finalizePipelineContext(context, requestStartedAt, {
                 resultType: 'task',
                 status: 'success',
@@ -1176,6 +1255,12 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 checklistMetadata: validActions
                     .filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0)
                     .map(a => ({ actionIndex: a._index ?? null, checklistItemCount: a.checklistItems.length })),
+                ...(deferredCreateFragmentClarification ? {
+                    clarification: {
+                        reason: 'ambiguous_create_fragment',
+                        fragments: deferredCreateFragmentClarification.fragments,
+                    },
+                } : {}),
             }, context);
         } catch (error) {
             let failureClass = FAILURE_CLASSES.UNEXPECTED;

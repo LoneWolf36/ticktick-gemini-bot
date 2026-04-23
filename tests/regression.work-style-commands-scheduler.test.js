@@ -636,6 +636,73 @@ test('registerCommands compresses mutation clarification copy in urgent mode', a
   assert.doesNotMatch(replies.at(-1), /Did you mean one of these\?/i);
 });
 
+test('registerCommands preserves create-fragment clarification question when no candidates exist', async () => {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) {
+      handlers.commands.set(name, handler);
+      return this;
+    },
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return this;
+    },
+    on(eventName, handler) {
+      handlers.events.push({ eventName, handler });
+      return this;
+    },
+  };
+
+  const clarificationQuestion = 'I created the clear task. What exactly should I create from the unclear part?';
+
+  registerCommands(
+    bot,
+    {
+      isAuthenticated: () => true,
+      getCacheAgeSeconds: () => null,
+      getAuthUrl: () => 'https://example.test/auth',
+      getAllTasks: async () => [],
+      getAllTasksCached: async () => [],
+      getLastFetchedProjects: () => [],
+    },
+    {
+      isQuotaExhausted: () => false,
+      quotaResumeTime: () => null,
+      activeKeyInfo: () => null,
+    },
+    {
+      listProjects: async () => [],
+      listActiveTasks: async () => [],
+    },
+    {
+      processMessage: async () => ({
+        type: 'clarification',
+        confirmationText: clarificationQuestion,
+        clarification: {
+          reason: 'ambiguous_create_fragment',
+          fragments: [{ title: 'Call uber friday', clarificationQuestion }],
+        },
+      }),
+    },
+  );
+
+  const messageHandler = handlers.events.find(({ eventName }) => eventName === 'message:text')?.handler;
+  const replies = [];
+  const userId = AUTHORIZED_CHAT_ID || `node-test-create-fragment-${Date.now()}`;
+
+  await messageHandler({
+    message: { text: 'book flight and call uber friday' },
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => {
+      replies.push(message);
+    },
+  });
+
+  assert.equal(replies.at(-1), clarificationQuestion);
+  assert.doesNotMatch(replies.at(-1), /Not sure what you mean/i);
+});
+
 test('registerCommands defaults mixed mode signals to standard with clarification', async () => {
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {

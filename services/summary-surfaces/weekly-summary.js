@@ -6,6 +6,7 @@ import {
 } from '../schemas.js';
 import { buildBehavioralPatternNotice } from './behavioral-pattern-notices.js';
 import { buildEngagementPatternNotice, deriveInterventionProfile } from './intervention-profile.js';
+import { buildReflectionRecomputeContext, buildReflectionRecomputeNotice } from './reflection-recompute.js';
 
 const DISALLOWED_WATCHOUT_LABELS = new Set(['avoidance', 'callout']);
 
@@ -292,6 +293,7 @@ function buildNotices({
     historyIsSparse = false,
     context = {},
     rankingResult = null,
+    recomputeContext = null,
 } = {}) {
     const notices = [];
     const interventionProfile = deriveInterventionProfile(processedHistory, {
@@ -355,6 +357,11 @@ function buildNotices({
         notices.push(engagementNotice);
     }
 
+    const recomputeNotice = buildReflectionRecomputeNotice(recomputeContext || {}, { surface: 'weekly' });
+    if (recomputeNotice) {
+        notices.push(recomputeNotice);
+    }
+
     return notices;
 }
 
@@ -379,7 +386,14 @@ export function composeWeeklySummarySections({
 } = {}) {
     const normalizedTasks = asActiveTasks(activeTasks);
     const normalizedHistory = asProcessedHistory(processedHistory);
-    const historyIsSparse = historyAvailable && normalizedHistory.length < 2;
+    const recomputeContext = buildReflectionRecomputeContext({
+        activeTasks: normalizedTasks,
+        behavioralPatterns,
+        processedHistory: normalizedHistory,
+        historyAvailable,
+        context,
+    });
+    const historyIsSparse = recomputeContext.historyIsSparse;
 
     const normalizedModel = normalizeModelSummary(modelSummary, {
         activeTasks: normalizedTasks,
@@ -413,6 +427,7 @@ export function composeWeeklySummarySections({
             historyIsSparse,
             context,
             rankingResult,
+            recomputeContext,
         }),
     );
 

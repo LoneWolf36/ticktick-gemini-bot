@@ -555,6 +555,40 @@ test('composeWeeklySummary reduces digest and adds missing history notice when h
   assert.ok(result.summary.notices.some((notice) => notice.code === 'missing_history'));
 });
 
+test('composeWeeklySummary recomputes context from live tasks plus retained aggregates when history is missing', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+    generatedAtIso: '2026-04-22T12:00:00Z',
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory: [],
+    historyAvailable: false,
+    rankingResult,
+    behavioralPatterns: [{
+      type: 'snooze_spiral',
+      confidence: 'high',
+      eligibleForSurfacing: true,
+      signalCount: 4,
+      windowStart: '2026-04-20T10:00:00Z',
+      windowEnd: '2026-04-22T09:00:00Z',
+    }],
+  });
+
+  const recomputeNotice = result.summary.notices.find((notice) => notice.code === 'delivery_context');
+  assert.ok(recomputeNotice);
+  assert.equal(recomputeNotice.evidence_source, 'behavioral_memory');
+  assert.match(recomputeNotice.message, /recomputed from live tasks/i);
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'behavioral_pattern'));
+  assert.ok(result.summary.carry_forward.length > 0);
+  assert.ok(result.summary.next_focus.length > 0);
+});
+
 test('composeWeeklySummary drops watchouts without evidence backing', () => {
   const activeTasks = buildSummaryActiveTasksFixture().map((task) => ({
     ...task,
@@ -736,6 +770,36 @@ test('composeDailyCloseSummary stays minimal and non-punitive for irregular use'
   assert.ok(result.summary.notices.some((notice) => notice.code === 'irregular_use'));
   assert.ok(result.summary.notices.some((notice) => notice.code === 'sparse_day'));
   assert.equal(/punish|failure|lazy/i.test(result.formattedText), false);
+});
+
+test('composeDailyCloseSummary can recompute no-activity reflection from live tasks plus retained aggregates', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture({ kind: 'daily_close' }),
+    generatedAtIso: '2026-04-22T12:00:00Z',
+  };
+
+  const result = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory: [],
+    rankingResult,
+    behavioralPatterns: [{
+      type: 'planning_without_execution_type_a',
+      confidence: 'high',
+      eligibleForSurfacing: true,
+      signalCount: 4,
+      windowStart: '2026-04-20T08:00:00Z',
+      windowEnd: '2026-04-22T10:00:00Z',
+    }],
+  });
+
+  const recomputeNotice = result.summary.notices.find((notice) => notice.code === 'delivery_context');
+  assert.ok(recomputeNotice);
+  assert.equal(recomputeNotice.evidence_source, 'behavioral_memory');
+  assert.match(result.summary.reflection, /retained 30-day behavioral aggregates/i);
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'behavioral_pattern'));
 });
 
 test('composeDailyCloseSummary can surface fresh standard/high-confidence behavioral pattern notice', () => {

@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-23T02:05:00Z"
+last_edited: "2026-04-23T18:20:00Z"
 source_specs: ["001-task-operations-pipeline", "002-natural-language-task-mutations"]
 complexity: "complex"
 ---
@@ -27,8 +27,8 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 ### R2: Multi-Task Parsing
 **Description:** System supports extracting multiple independent actions from a single user message.
 **Acceptance Criteria:**
-- [ ] Given "book flight, pack bag, and call uber friday", three separate create actions are extracted with correct individual titles and dates
-- [ ] Given a message with one clear task and one ambiguous fragment, the clear task is created silently and a focused clarification is asked for the ambiguous part
+- [x] Given "book flight, pack bag, and call uber friday", three separate create actions are extracted with correct individual titles and dates
+- [x] Given a message with one clear task and one ambiguous fragment, the clear task is created silently and a focused clarification is asked for the ambiguous part
 **Dependencies:** R1
 
 ### R3: Deterministic Normalization
@@ -180,6 +180,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 ## Validation Action Items — 2026-04-19
 
 - [x] R1 (Structured Intent Extraction): all 4 ACs implemented and verified. AX field validation enforced via `R1_INTENT_ACTION_FIELDS`, dentist/groceries/hello regression tests pass in both full and lightweight suites.
+- [x] R2 (Multi-Task Parsing): `services/pipeline.js` now preserves canonical multi-create execution, splits clear create intents from ambiguous create fragments, executes only the clear creates, and surfaces the remaining focused clarification through both pipeline and bot command flows; `tests/regression.pipeline-multi-create-clarification.test.js` plus `tests/regression.work-style-commands-scheduler.test.js` cover canonical multi-create, mixed clear+ambiguous fragments, pure ambiguous clarification, and checklist non-regression.
 - [x] R3 (Deterministic Normalization): `services/normalizer.js` deterministically strips title noise, normalizes repeat/project/date fields, suppresses filler content, and rejects malformed data paths; `tests/normalizer.test.js` covers title, content, checklist, recurrence, and truncation behavior directly.
 - [x] R4 (Single TickTick Adapter): all 3 ACs implemented and verified. All production writes route through adapter, read-only display flows remain allowed per repo guidance, live harnesses were updated, and adapter failure preserves parsed intent with `intents` + `normalizedActions` in failure result.
 - [x] R15 (Command Surfaces): `/scan`, `/pending`, `/review`, `/undo`, `/menu`, `/status`, and `/reset` are implemented in `bot/commands.js` and now checked explicitly.
@@ -191,6 +192,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - [x] Validation-facing comments in live harnesses and reorg services were updated to reflect their final Cavekit ownership/exclusion status.
 
 ## Changelog
+- 2026-04-23: R2 completed — the pipeline now executes clear create actions from multi-task input while surfacing focused clarification for ambiguous create fragments, preserves canonical multi-create parsing, and keeps checklist clarification behavior fail-closed.
 - 2026-04-23: R12 completed — pipeline diagnostics now preserve request/intent/action tracing while redacting raw user messages, raw task titles, raw task descriptions, and target queries from lifecycle snapshots, observability sink contexts, and console telemetry.
 - 2026-04-22: R3 completed — deterministic normalization now has direct code and regression evidence for title cleanup, filler suppression, project/date/repeat handling, and malformed-input rejection.
 - 2026-04-22: R10 completed — mutation target resolution now fails closed on ambiguity, prefers exact matches over fuzzier candidates, returns not-found without writes, and requires clarification for pronoun-only or unsafe delete references.

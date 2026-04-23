@@ -1013,10 +1013,10 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
                     await replyWithMarkdown(ctx, question + '\n\nReply with your choice or tap a button:', { reply_markup: keyboard });
                 } else {
-                    // Existing mutation clarification flow
+                    // Existing mutation clarification flow plus create-fragment clarification.
                     const candidates = result.clarification?.candidates || [];
                     if (candidates.length === 0) {
-                        await ctx.reply('Not sure what you mean — could you rephrase?');
+                        await ctx.reply(result.confirmationText || 'Not sure what you mean — could you rephrase?');
                     } else {
                         // Persist pending clarification so callbacks can resume
                         await store.setPendingMutationClarification({
