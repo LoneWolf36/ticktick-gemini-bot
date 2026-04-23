@@ -226,6 +226,7 @@ export function createSummaryDiagnostics({
     rankingResult = null,
     formattedText = '',
     formattedResult = null,
+    renderTimeMs = null,
 } = {}) {
     const normalizedContext = normalizeSummaryRequestContext(context.kind, context);
     const tonePreserved = formattedResult?.tonePreserved ?? true;
@@ -248,7 +249,34 @@ export function createSummaryDiagnostics({
             urgentReminderApplied: formattedResult?.urgentReminderApplied === true,
             truncated: formattedResult?.truncated === true,
         },
+        renderTimeMs: Number.isFinite(renderTimeMs) ? renderTimeMs : null,
         deliveryStatus: 'composed',
+    };
+}
+
+function summarizeLoggedOutput(summary = null) {
+    if (!summary || typeof summary !== 'object') {
+        return null;
+    }
+
+    const sectionKeys = Object.keys(summary);
+    const sectionSizes = {};
+    for (const key of sectionKeys) {
+        const value = summary[key];
+        sectionSizes[key] = Array.isArray(value)
+            ? value.length
+            : typeof value === 'string'
+                ? (value.trim().length > 0 ? 1 : 0)
+                : value && typeof value === 'object'
+                    ? Object.keys(value).length
+                    : value == null
+                        ? 0
+                        : 1;
+    }
+
+    return {
+        sectionKeys,
+        sectionSizes,
     };
 }
 
@@ -279,7 +307,7 @@ export function buildSummaryLogPayload({
         kind: diagnostics.kind,
         entryPoint: diagnostics.entryPoint,
         userId: context.userId ?? null,
-        summary: result?.summary || null,
+        summaryShape: summarizeLoggedOutput(result?.summary || null),
         diagnostics,
         error: error ? { message: error.message } : null,
         ...extra,
@@ -314,6 +342,7 @@ export function composeBriefingSummary({
     modelSummary = null,
 } = {}) {
     const normalizedContext = normalizeSummaryRequestContext(BRIEFING_KIND, context);
+    const renderStartMs = Date.now();
     const summary = ensureBriefingSections(
         composeBriefingSummarySections({
             context: normalizedContext,
@@ -332,6 +361,7 @@ export function composeBriefingSummary({
         rankingResult,
         formattedText,
         formattedResult,
+        renderTimeMs: Date.now() - renderStartMs,
     });
 
     return {
@@ -354,6 +384,7 @@ export function composeWeeklySummary({
     modelSummary = {},
 } = {}) {
     const normalizedContext = normalizeSummaryRequestContext(WEEKLY_KIND, context);
+    const renderStartMs = Date.now();
     const summary = ensureWeeklySections(
         composeWeeklySummarySections({
             context: normalizedContext,
@@ -374,6 +405,7 @@ export function composeWeeklySummary({
         rankingResult,
         formattedText,
         formattedResult,
+        renderTimeMs: Date.now() - renderStartMs,
     });
 
     return {
@@ -395,6 +427,7 @@ export function composeDailyCloseSummary({
     modelSummary = null,
 } = {}) {
     const normalizedContext = normalizeSummaryRequestContext(DAILY_CLOSE_KIND, context);
+    const renderStartMs = Date.now();
     const summary = ensureDailyCloseSections(
         composeDailyCloseSummarySections({
             context: normalizedContext,
@@ -414,6 +447,7 @@ export function composeDailyCloseSummary({
         rankingResult,
         formattedText,
         formattedResult,
+        renderTimeMs: Date.now() - renderStartMs,
     });
 
     return {

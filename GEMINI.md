@@ -44,7 +44,7 @@ The project uses **Cavekit** for spec-driven development. Domain kits are in `co
 
 ### Implementation Patterns
 *   **Deterministic Normalization:** All AI outputs from `ax-intent.js` MUST pass through `normalizer.js` to ensure clean titles, suppressed noise, and resolved project IDs.
-*   **Adapter Pattern:** All TickTick API calls MUST flow through `services/ticktick-adapter.js`. Do not call the low-level client directly in bot commands or other services.
+*   **Adapter Pattern:** All TickTick write operations MUST flow through `services/ticktick-adapter.js`. Read-only display/status paths may use the low-level client where the repository guidelines explicitly allow it, but bot write flows must not bypass the adapter/pipeline.
 *   **Error Handling:** Use the `QuotaExhaustedError` for AI key rotation and ensure the pipeline handles TickTick API unavailability gracefully (cavekit-pipeline-hardening R12).
 
 ## Project Structure

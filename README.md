@@ -194,7 +194,8 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 │   ├── store.js                 # Redis-backed state store (file fallback for local dev)
 │   ├── user_context.js          # YOUR personal context (gitignored — create from example)
 │   └── user_context.example.js  # Template to copy from
-├── kitty-specs/                 # Spec Kitty work packages and mission tracking
+├── context/kits/                # Cavekit domain kits (current source of truth)
+├── kitty-specs.archived/        # Archived Spec Kitty materials (historical only)
 ├── tests/                       # Regression and unit tests
 ├── .env.example                 # Environment variable template
 └── data/                        # Local store files (gitignored)

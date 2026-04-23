@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-23T01:35:00Z"
+last_edited: "2026-04-23T01:45:00Z"
 source_specs: ["006-briefing-weekly-modernization"]
 complexity: "complex"
 ---
@@ -83,9 +83,9 @@ See `context/refs/summary-surfaces.openapi.yaml` for API contracts.
 ### R8: Summary Observability
 **Description:** Summary generation and delivery are logged for debugging and regression.
 **Acceptance Criteria:**
-- [ ] Logs capture: summary type, trigger (manual/scheduled), input data shape, rendering time, delivery status
-- [ ] Failed deliveries are logged with reason (channel unavailable, rendering error)
-- [ ] Telemetry does not persist raw task titles in long-term storage
+- [x] Logs capture: summary type, trigger (manual/scheduled), input data shape, rendering time, delivery status
+- [x] Failed deliveries are logged with reason (channel unavailable, rendering error)
+- [x] Telemetry does not persist raw task titles in long-term storage
 **Dependencies:** none
 
 ### R9: Behavioral Signal Integration (Read-Only)
@@ -166,13 +166,15 @@ See `context/refs/summary-surfaces.openapi.yaml` for API contracts.
 - [x] Audit R5 (Manual Command Integration): `bot/commands.js` exposes `/briefing` and `/weekly`, and regression tests verify manual vs scheduler parity for `generateDailyBriefingSummary(...)` and `generateWeeklyDigestSummary(...)` given the same snapshot.
 - [x] Audit R6 (Scheduler Integration and Delivery Parity): `services/scheduler.js` schedules daily and weekly summary jobs through the same `generateDailyBriefingSummary(...)` / `generateWeeklyDigestSummary(...)` rendering path used by manual commands, now attaches scheduler metadata to those requests, and `tests/regression.scheduler-grace-window.test.js` covers startup grace-window catch-up, duplicate suppression, and scheduled-context parity.
 - [x] Audit R7 (End-of-Day Reflection): `composeDailyCloseSummary(...)` builds short, factual, non-punitive reflection copy from same-day processed history and open-task state, including sparse-day and irregular-use fail-open behavior, and `bot/commands.js` wires `/daily_close` as the manual command entrypoint for that same surface.
+- [x] Audit R8 (Summary Observability): `services/summary-surfaces/index.js` now logs summary kind, trigger, source-count input shape, scheduling metadata, render time, delivery status, and failure reason through `buildSummaryLogPayload(...)` / `logSummarySurfaceEvent(...)` while emitting only `summaryShape` metadata instead of raw summary content; `tests/regression.execution-prioritization.test.js` and `tests/regression.work-style-commands-scheduler.test.js` cover the normalized diagnostics payload and scheduler delivery metadata.
 - [x] Audit R9 (Behavioral Signal Integration): `services/gemini.js` resolves behavioral patterns read-only, `services/summary-surfaces/index.js` passes them into briefing and weekly surfaces, `services/summary-surfaces/behavioral-pattern-notices.js` omits stale or low-confidence patterns, and `tests/regression.summary-surfaces.test.js` covers both surfaced and gracefully omitted callouts.
 - [x] Audit R10 (Summary Prioritization): `services/gemini.js` ranks active tasks before composing the briefing surface, `services/summary-surfaces/briefing-summary.js` consumes ranked tasks when available, and `tests/regression.summary-surfaces.test.js` covers both ranking-backed task selection and due-date fallback when ranking is unavailable.
 - [x] Audit R11 (Ignored Guidance Adaptation): `services/summary-surfaces/intervention-profile.js` derives repeated-ignore/backoff profiles from processed-history signals, summary surfaces consume those notices, and `tests/regression.adapter-execution-reorg.test.js` covers both repeated-ignore callouts and daily-close backoff behavior without escalating urgency.
 - [x] Audit R13 (Work-Style Awareness): `formatSummary(...)` shortens briefing, weekly, and daily-close outputs in urgent mode while preserving the standard compact default style.
-- [ ] Keep R8, R12, R14, and R15 unchecked pending stricter observability, edge-case, and regression evidence.
+- [ ] Keep R12, R14, and R15 unchecked pending edge-case and regression evidence.
 
 ## Changelog
+- 2026-04-23: R8 completed — summary-surface telemetry now records type, trigger, input shape, render time, and delivery status with explicit failure reasons while omitting raw summary/task content from logged payloads.
 - 2026-04-23: R10 completed — briefing task selection now explicitly consumes ranking output when available and falls back to due-date ordering when ranking is unavailable, with direct regression evidence.
 - 2026-04-23: R6 completed — scheduled daily and weekly summaries now carry scheduler metadata through the shared rendering path, and startup grace-window catch-up is covered by dedicated scheduler regression tests.
 - 2026-04-22: R11 completed — repeated ignored guidance now triggers smaller-step or backoff messaging instead of escalating urgency, with regression coverage across weekly and daily-close summary surfaces.

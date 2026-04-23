@@ -545,6 +545,7 @@ test('buildSummaryLogPayload normalizes diagnostics field names and delivery sta
           urgentReminderApplied: false,
           truncated: false,
         },
+        renderTimeMs: 12,
         deliveryStatus: 'composed',
       },
     },
@@ -556,6 +557,12 @@ test('buildSummaryLogPayload normalizes diagnostics field names and delivery sta
   assert.deepEqual(payload.diagnostics.sourceCounts, { activeTasks: 3, processedHistory: 1 });
   assert.equal(Object.hasOwn(payload.diagnostics, 'source_counts'), false);
   assert.equal(payload.diagnostics.formattingDecisions.telegramSafe, true);
+  assert.equal(payload.diagnostics.renderTimeMs, 12);
+  assert.deepEqual(payload.summaryShape, {
+    sectionKeys: ['focus'],
+    sectionSizes: { focus: 1 },
+  });
+  assert.equal(Object.hasOwn(payload, 'summary'), false);
 });
 
 test('GeminiAnalyzer generateDailyBriefingSummary matches manual and scheduler output for the same inputs', async () => {
