@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-22T21:25:00Z"
+last_edited: "2026-04-22T22:15:00Z"
 source_specs: ["009-behavioral-signals-and-memory"]
 complexity: "complex"
 ---
@@ -75,9 +75,9 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 ### R7: Behavioral Reflection Language
 **Description:** All behavioral reflections use observational language — no diagnostic, moral, or character-based claims.
 **Acceptance Criteria:**
-- [ ] System says "You've postponed this task 3 times" not "You're procrastinating"
-- [ ] System says "Some tasks this week are vague" not "You have a focus problem"
-- [ ] If same behavior could be legitimate replanning vs avoidance, system uses observational language and omits low-confidence interpretations
+- [x] System says "You've postponed this task 3 times" not "You're procrastinating"
+- [x] System says "Some tasks this week are vague" not "You have a focus problem"
+- [x] If same behavior could be legitimate replanning vs avoidance, system uses observational language and omits low-confidence interpretations
 **Dependencies:** R1, R6
 
 ### R8: User Inspection Controls
@@ -173,8 +173,11 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 - [x] Audit R4 (Privacy Tier Manager): `services/store.js` now strips retained behavioral metadata down to minimal semantic flags (`planningSubtypeA/B`, `scopeChange`, `wordingOnlyEdit`, `decompositionChange`), forbids raw task/user text plus raw task IDs, and keeps operational logging separate from long-term behavioral memory.
 - [x] Audit R5 (Retention Windows): `services/store.js` now uses a configurable 30-day default retention window for reads/queries while preserving a separate archive horizon; `services/behavioral-patterns.js` excludes expired signals from aggregate pattern output.
 - [x] Audit R6 (Summary Surface Integration): `services/gemini.js` now resolves behavioral patterns for daily briefing, weekly digest, and daily-close generation; `services/summary-surfaces/briefing-summary.js`, `weekly-summary.js`, and `daily-close-summary.js` surface only fresh eligible standard/high-confidence behavioral notices via `services/summary-surfaces/behavioral-pattern-notices.js`; `tests/regression.summary-surfaces.test.js` covers daily, weekly, and daily-close callouts plus fail-open omission for stale/low-confidence/invalid data.
+- [x] Audit R7 (Behavioral Reflection Language): `services/summary-surfaces/behavioral-pattern-notices.js` now phrases surfaced behavioral notices with concrete observational wording tied to counts/windows instead of diagnostic labels, `tests/regression.summary-surfaces.test.js` locks those notices against moral/character claims across surfaced patterns, and `tests/regression.behavioral-signals.test.js` covers the `GeminiAnalyzer._resolveBehavioralPatterns()` fail-open seam when signal lookup or pattern detection throws.
+- [x] Validation traceability: behavioral-signal coverage is also tracked in `tests/regression.behavioral-signals.test.js` (classifier, storage/privacy boundaries, retention/query behavior, and pattern detection paths tied to this kit's implemented requirements).
 
 ## Changelog
+- 2026-04-22: R7 completed — surfaced behavioral notices now use concrete observational wording, low-confidence ambiguous patterns stay omitted, and `_resolveBehavioralPatterns()` has dedicated fail-open regression coverage when behavioral lookup or pattern detection fails.
 - 2026-04-22: R6 completed — briefing, weekly, and daily-close summary surfaces now consume retained behavioral patterns read-only, omit low-confidence or stale signals, and fail open when behavioral data is missing or invalid.
 - 2026-04-21: R5 completed — behavioral memory now uses a configurable 30-day default query window and excludes expired signals from queries and patterns without immediate hard deletion.
 - 2026-04-21: R4 completed — retained behavioral memory now stores only minimal semantic flags plus domain tags and rejects raw text or raw task identifiers.

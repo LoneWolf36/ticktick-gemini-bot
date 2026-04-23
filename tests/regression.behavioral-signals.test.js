@@ -765,3 +765,42 @@ test('behavioral pattern engine detects planning overload aggregates and suppres
   assert.equal(lowConfidenceSnooze.confidence, PatternConfidence.LOW);
   assert.equal(lowConfidenceSnooze.eligibleForSurfacing, false);
 });
+
+test('GeminiAnalyzer _resolveBehavioralPatterns fails open when behavioral signal lookup throws', async () => {
+  const analyzer = new GeminiAnalyzer(['dummy-key']);
+  analyzer._getBehavioralSignalsForSummary = async () => {
+    throw new Error('store unavailable');
+  };
+
+  const result = await analyzer._resolveBehavioralPatterns({ userId: 'behavioral-user', generatedAtIso: '2026-04-22T12:00:00Z' });
+
+  assert.deepEqual(result, []);
+});
+
+test('GeminiAnalyzer _resolveBehavioralPatterns fails open when pattern detection throws', async () => {
+  const analyzer = new GeminiAnalyzer(['dummy-key']);
+  analyzer._getBehavioralSignalsForSummary = async () => [{ type: 'postpone', timestamp: '2026-04-22T09:00:00Z' }];
+  analyzer._detectBehavioralPatternsForSummary = () => {
+    throw new Error('pattern detection failed');
+  };
+
+  const result = await analyzer._resolveBehavioralPatterns({ userId: 'behavioral-user', generatedAtIso: '2026-04-22T12:00:00Z' });
+
+  assert.deepEqual(result, []);
+});
+
+test('GeminiAnalyzer _resolveBehavioralPatterns fails open on store and detection-path faults', async () => {
+  const analyzer = new GeminiAnalyzer(['dummy-key']);
+
+  const fromStoreFault = await analyzer._resolveBehavioralPatterns({
+    userId: '',
+    generatedAtIso: '2026-04-22T12:00:00Z',
+  });
+  assert.deepEqual(fromStoreFault, []);
+
+  const fromDetectionPathFault = await analyzer._resolveBehavioralPatterns({
+    userId: 'behavioral-fail-open',
+    generatedAtIso: Symbol('invalid-generated-at'),
+  });
+  assert.deepEqual(fromDetectionPathFault, []);
+});

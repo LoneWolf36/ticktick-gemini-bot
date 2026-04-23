@@ -179,13 +179,21 @@ export class GeminiAnalyzer {
         }
 
         try {
-            const signals = await store.getBehavioralSignals(userId);
-            return detectBehavioralPatterns(signals, {
+            const signals = await this._getBehavioralSignalsForSummary(userId);
+            return this._detectBehavioralPatternsForSummary(signals, {
                 nowMs: Date.parse(options.generatedAtIso || new Date().toISOString()) || Date.now(),
             });
         } catch {
             return [];
         }
+    }
+
+    async _getBehavioralSignalsForSummary(userId) {
+        return store.getBehavioralSignals(userId);
+    }
+
+    _detectBehavioralPatternsForSummary(signals, options = {}) {
+        return detectBehavioralPatterns(signals, options);
     }
 
     async _resolveRecommendationState(options = {}) {

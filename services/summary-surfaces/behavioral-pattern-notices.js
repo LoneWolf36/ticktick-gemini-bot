@@ -27,15 +27,19 @@ function isFreshPattern(pattern, nowMs = Date.now()) {
 
 function describePattern(pattern) {
     if (pattern?.type === BehavioralPatternType.SNOOZE_SPIRAL) {
-        return 'Repeated postpones are clustering around the same task, so pick a concrete next action instead of rescheduling again.';
+        const count = Number.isFinite(pattern?.signalCount) ? pattern.signalCount : 'multiple';
+        return `This task was postponed ${count} times in the current window, so pick one concrete next action before rescheduling again.`;
     }
     if (pattern?.type === BehavioralPatternType.PLANNING_TYPE_A) {
-        return 'Detailed planning is accumulating without completion, so bias today toward execution over more breakdown.';
+        const count = Number.isFinite(pattern?.signalCount) ? pattern.signalCount : 'multiple';
+        return `Detailed planning changes stacked up ${count} times without matching completion, so bias today toward execution over more breakdown.`;
     }
     if (pattern?.type === BehavioralPatternType.PLANNING_TYPE_B) {
-        return 'Task capture is outpacing completion across domains, so keep focus narrow before adding more.';
+        const count = Number.isFinite(pattern?.signalCount) ? pattern.signalCount : 'multiple';
+        const domains = Number.isFinite(pattern?.uniqueDomains) ? pattern.uniqueDomains : 'multiple';
+        return `${count} new tasks landed across ${domains} domain${domains === 1 ? '' : 's'} before completion caught up, so keep focus narrow before adding more.`;
     }
-    return 'Recent behavioral signals suggest keeping the plan concrete and execution-focused.';
+    return 'Recent behavioral signals stayed mixed, so keep the next step concrete without over-interpreting the pattern.';
 }
 
 export function selectBehavioralPatternsForSummary(patterns = [], { nowIso = null } = {}) {

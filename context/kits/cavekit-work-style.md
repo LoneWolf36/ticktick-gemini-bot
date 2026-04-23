@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-20T00:30:00Z"
+last_edited: "2026-04-22T22:15:00Z"
 source_specs: ["008-work-style-and-urgent-mode"]
 complexity: "complex"
 ---
@@ -163,6 +163,7 @@ Tone state management (standard, focus, urgent), Telegram bot interface for mode
 - [x] Audit R11 (Focus Mode Behavior): scheduler now suppresses non-critical scheduled notifications in focus mode while still allowing critical alerts, manual briefing requests still answer normally in focus mode, and focus mode keeps manual deactivation by default while supporting optional explicit expiry.
 - [x] Audit R12 (Urgent Mode Content Rules): urgent-mode prompt notes now explicitly preserve validation/safety checks and substantive content, ambiguous mutations still return clarification instead of auto-proceeding, weak-confidence guidance remains labeled via R6 rules, and urgent weekly formatting trims only carry-forward/notices while preserving core progress, focus, and watchout content.
 - [x] Audit R13 (Integration Testing): regression and lightweight suites now cover urgent briefing shortening, focus-mode scheduled suppression, urgent expiry back to standard, fresh-import persistence, and task confirmation adaptation by mode end-to-end.
+- [x] Validation traceability: command/scheduler mode behavior coverage is explicitly tracked in `tests/regression.work-style-commands-scheduler.test.js`.
 
 ## Changelog
 - 2026-04-20: R13 completed — end-to-end tests now cover mode switching, suppression, expiry, persistence, and confirmation adaptation.

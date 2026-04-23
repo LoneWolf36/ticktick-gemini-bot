@@ -26,7 +26,7 @@ export function registerCallbacks(bot, ticktick, gemini, adapter, pipeline) {
     // ─── Approve: move pending → processed, update TickTick ───
     // RETAINED BOUNDARY: inline review callbacks apply precomputed review edits
     // directly through the adapter. This is an operational review surface, not
-    // a legacy prompt-writing path that should route through the task pipeline.
+    // product-feature drift from the canonical pipeline write path.
     bot.callbackQuery(/^a:(.+)$/, async (ctx) => {
         if (!isAuthorized(ctx)) {
             await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });

@@ -480,7 +480,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     // ─── /undo — revert last auto-applied change ──────────────
     // RETAINED BOUNDARY: /undo restores a previously applied structured change
     // directly through the adapter. It is an operational recovery path, not a
-    // legacy prompt-driven mutation surface.
+    // product-feature drift from the canonical pipeline write path.
     bot.command('undo', async (ctx) => {
         if (!await guardAccess(ctx)) return;
         const last = store.getLastUndoEntry();

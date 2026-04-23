@@ -31,6 +31,7 @@ import {
   formatSummary,
   normalizeWeeklyWatchouts,
 } from '../services/summary-surfaces/index.js';
+import { buildBehavioralPatternNotice } from '../services/summary-surfaces/behavioral-pattern-notices.js';
 import { createPipelineHarness, DEFAULT_PROJECTS, DEFAULT_ACTIVE_TASKS } from './pipeline-harness.js';
 import {
   buildRankingContext,
@@ -477,6 +478,21 @@ test('summary surfaces omit low-confidence or stale behavioral patterns graceful
   assert.ok(result.formattedText.length > 0);
 });
 
+test('behavioral pattern notices omit low-confidence ambiguous patterns', () => {
+  const notice = buildBehavioralPatternNotice([
+    {
+      type: 'snooze_spiral',
+      confidence: 'low',
+      eligibleForSurfacing: false,
+      signalCount: 2,
+      windowStart: '2026-04-20T08:00:00Z',
+      windowEnd: '2026-04-22T10:00:00Z',
+    },
+  ], { nowIso: '2026-04-22T12:00:00Z' });
+
+  assert.equal(notice, null);
+});
+
 test('composeWeeklySummary stays observational and scannable', () => {
   const activeTasks = buildSummaryActiveTasksFixture();
   const processedHistory = buildSummaryProcessedHistoryFixture({ variant: 'repeated_ignored' });
@@ -750,6 +766,82 @@ test('composeDailyCloseSummary can surface fresh standard/high-confidence behavi
   assert.ok(notice);
   assert.equal(notice.evidence_source, 'behavioral_memory');
   assert.match(notice.message, /planning|execution/i);
+});
+
+test('behavioral pattern notices stay observational across surfaced pattern types', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const processedHistory = buildSummaryProcessedHistoryFixture();
+  const dailyCloseHistory = buildDailyCloseProcessedHistoryFixture({ variant: 'meaningful' });
+  const disallowedTone = /diagnos|disorder|syndrome|moral|shame|blame|character|lazy|fault|bad person/i;
+  const cases = [
+    {
+      type: 'snooze_spiral',
+      confidence: 'high',
+      signalCount: 4,
+      windowStart: '2026-04-20T08:00:00Z',
+      windowEnd: '2026-04-22T10:00:00Z',
+      expectedCue: /postpon|reschedul/i,
+    },
+    {
+      type: 'planning_without_execution_type_a',
+      confidence: 'standard',
+      signalCount: 3,
+      windowStart: '2026-04-20T08:00:00Z',
+      windowEnd: '2026-04-22T10:00:00Z',
+      expectedCue: /planning|execution|breakdown/i,
+    },
+    {
+      type: 'planning_without_execution_type_b',
+      confidence: 'high',
+      signalCount: 12,
+      windowStart: '2026-04-20T08:00:00Z',
+      windowEnd: '2026-04-22T10:00:00Z',
+      expectedCue: /capture|completion|focus/i,
+    },
+  ];
+
+  for (const behavioralPattern of cases) {
+    const briefing = composeBriefingSummary({
+      context: {
+        ...buildSummaryResolvedStateFixture(),
+        generatedAtIso: '2026-04-22T12:00:00Z',
+      },
+      activeTasks,
+      rankingResult,
+      behavioralPatterns: [{ ...behavioralPattern, eligibleForSurfacing: true }],
+    });
+    const weekly = composeWeeklySummary({
+      context: {
+        ...buildSummaryResolvedStateFixture(),
+        kind: 'weekly',
+        generatedAtIso: '2026-04-22T12:00:00Z',
+      },
+      activeTasks,
+      processedHistory,
+      historyAvailable: true,
+      rankingResult,
+      behavioralPatterns: [{ ...behavioralPattern, eligibleForSurfacing: true }],
+    });
+    const dailyClose = composeDailyCloseSummary({
+      context: {
+        ...buildSummaryResolvedStateFixture({ kind: 'daily_close' }),
+        generatedAtIso: '2026-04-22T12:00:00Z',
+      },
+      activeTasks,
+      processedHistory: dailyCloseHistory,
+      rankingResult,
+      behavioralPatterns: [{ ...behavioralPattern, eligibleForSurfacing: true }],
+    });
+
+    for (const summary of [briefing.summary, weekly.summary, dailyClose.summary]) {
+      const notice = summary.notices.find((item) => item.code === 'behavioral_pattern');
+      assert.ok(notice);
+      assert.equal(notice.evidence_source, 'behavioral_memory');
+      assert.match(notice.message, behavioralPattern.expectedCue);
+      assert.equal(disallowedTone.test(notice.message), false);
+    }
+  }
 });
 
 test('composeDailyCloseSummary omits low-confidence stale invalid behavioral patterns and still renders', () => {
