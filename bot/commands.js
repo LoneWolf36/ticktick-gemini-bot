@@ -17,6 +17,7 @@ import {
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
 import { detectWorkStyleModeIntent } from '../services/ax-intent.js';
+import { detectBehavioralPatterns } from '../services/behavioral-patterns.js';
 
 // Rate limiter removed 2026-04-19 (cavekit-validate Phase 3): YAGNI for 1-user MVP.
 // Heavy-command rate limiting listed as out-of-scope in cavekit-task-pipeline.md.
@@ -82,6 +83,59 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         generatedAtIso: new Date().toISOString(),
     });
 
+    const describePatternForMemory = (pattern) => {
+        switch (pattern?.type) {
+            case 'snooze_spiral':
+                return `A task was postponed ${pattern.signalCount} times in the current window.`;
+            case 'planning_without_execution_type_a':
+                return `Detailed planning stacked up ${pattern.signalCount} times without matching completion.`;
+            case 'planning_without_execution_type_b':
+                return `${pattern.signalCount} new tasks landed before completion caught up.`;
+            default:
+                return `One recurring pattern was detected ${pattern.signalCount || 1} time(s).`;
+        }
+    };
+
+    const buildBehavioralMemorySummary = async (userId, { nowMs = Date.now() } = {}) => {
+        if (typeof userId !== 'string' && typeof userId !== 'number') {
+            throw new Error('invalid behavioral memory user');
+        }
+
+        const allSignals = await store.getBehavioralSignals(userId, { includeExpired: true });
+        const activePatterns = detectBehavioralPatterns(allSignals, { nowMs })
+            .filter((pattern) => pattern.eligibleForSurfacing === true);
+
+        const lastSignalTimestamp = allSignals
+            .map((signal) => Date.parse(signal?.timestamp || ''))
+            .filter(Number.isFinite)
+            .sort((left, right) => right - left)[0] || null;
+
+        const lines = [
+            '**🧠 Behavioral Memory Summary**',
+            '',
+        ];
+
+        if (activePatterns.length === 0) {
+            lines.push(`No active patterns in the last ${store.BEHAVIORAL_SIGNAL_RETENTION_DAYS} days.`);
+        } else {
+            lines.push('**Active Patterns**');
+            activePatterns.slice(0, 3).forEach((pattern, index) => {
+                lines.push(`${index + 1}. ${describePatternForMemory(pattern)} (${pattern.confidence} confidence)`);
+            });
+            if (activePatterns.length > 3) {
+                lines.push(`- ${activePatterns.length - 3} additional active pattern(s) are retained but omitted here for brevity.`);
+            }
+        }
+
+        lines.push('');
+        lines.push(`**Retention Window:** ${store.BEHAVIORAL_SIGNAL_RETENTION_DAYS} days`);
+        lines.push(`**Last Signal Date:** ${lastSignalTimestamp ? userLocaleString(new Date(lastSignalTimestamp).toISOString()) : 'No retained signals yet'}`);
+        lines.push('');
+        lines.push('_Derived patterns only. No raw task titles or raw message text are stored in behavioral memory._');
+
+        return lines.join('\n');
+    };
+
     const resolveCurrentWorkStyleMode = async (ctx) => {
         const userId = resolveWorkStyleModeUserId(ctx);
         if (userId == null) return store.MODE_STANDARD;
@@ -110,6 +164,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             `/undo — Revert last auto-applied change\n` +
             `/reset — Wipe all bot data and start fresh\n` +
             `/status — Bot status and stats\n` +
+            `/memory — View behavioral memory summary\n` +
             `/urgent — Activate urgent mode\n` +
             `/focus — Activate focus mode\n` +
             `/normal — Return to standard mode\n` +
@@ -653,6 +708,24 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 return;
             }
             await ctx.reply(`❌ Daily close error: ${err.message}`);
+        }
+    });
+
+    // ─── /memory (cavekit-behavioral-memory R8) ──
+    bot.command('memory', async (ctx) => {
+        if (!await guardAccess(ctx)) return;
+        const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
+        if (!userId) {
+            await ctx.reply('❌ Could not identify user for behavioral memory.');
+            return;
+        }
+
+        try {
+            const summary = await buildBehavioralMemorySummary(userId);
+            await replyWithMarkdown(ctx, summary);
+        } catch (err) {
+            console.error('[MemoryCommand] Error:', err.message);
+            await ctx.reply('🧠 Behavioral memory is unavailable right now. No summary available.');
         }
     });
 

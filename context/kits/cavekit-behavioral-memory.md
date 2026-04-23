@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-22T22:15:00Z"
+last_edited: "2026-04-23T01:35:00Z"
 source_specs: ["009-behavioral-signals-and-memory"]
 complexity: "complex"
 ---
@@ -83,9 +83,9 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 ### R8: User Inspection Controls
 **Description:** Users can view a plain-language summary of retained behavioral memory.
 **Acceptance Criteria:**
-- [ ] User can request a memory summary via command (e.g., /memory or "what do you remember about me")
-- [ ] Summary is plain-language and understandable without expert knowledge of internal scoring
-- [ ] Summary shows: active patterns, retention window, last signal date
+- [x] User can request a memory summary via command (e.g., /memory or "what do you remember about me")
+- [x] Summary is plain-language and understandable without expert knowledge of internal scoring
+- [x] Summary shows: active patterns, retention window, last signal date
 **Dependencies:** R2, R4
 
 ### R9: User Reset Controls
@@ -174,9 +174,11 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 - [x] Audit R5 (Retention Windows): `services/store.js` now uses a configurable 30-day default retention window for reads/queries while preserving a separate archive horizon; `services/behavioral-patterns.js` excludes expired signals from aggregate pattern output.
 - [x] Audit R6 (Summary Surface Integration): `services/gemini.js` now resolves behavioral patterns for daily briefing, weekly digest, and daily-close generation; `services/summary-surfaces/briefing-summary.js`, `weekly-summary.js`, and `daily-close-summary.js` surface only fresh eligible standard/high-confidence behavioral notices via `services/summary-surfaces/behavioral-pattern-notices.js`; `tests/regression.summary-surfaces.test.js` covers daily, weekly, and daily-close callouts plus fail-open omission for stale/low-confidence/invalid data.
 - [x] Audit R7 (Behavioral Reflection Language): `services/summary-surfaces/behavioral-pattern-notices.js` now phrases surfaced behavioral notices with concrete observational wording tied to counts/windows instead of diagnostic labels, `tests/regression.summary-surfaces.test.js` locks those notices against moral/character claims across surfaced patterns, and `tests/regression.behavioral-signals.test.js` covers the `GeminiAnalyzer._resolveBehavioralPatterns()` fail-open seam when signal lookup or pattern detection throws.
+- [x] Audit R8 (User Inspection Controls): `bot/commands.js` now exposes `/memory`, formats a plain-language summary from retained behavioral patterns, shows the retention window and last retained signal date, omits raw task text, and `tests/regression.behavioral-signals.test.js` covers populated, empty, and fail-open command paths.
 - [x] Validation traceability: behavioral-signal coverage is also tracked in `tests/regression.behavioral-signals.test.js` (classifier, storage/privacy boundaries, retention/query behavior, and pattern detection paths tied to this kit's implemented requirements).
 
 ## Changelog
+- 2026-04-23: R8 completed — `/memory` now surfaces a plain-language behavioral memory summary with active patterns, retention window, and last signal date while failing open when lookup is unavailable.
 - 2026-04-22: R7 completed — surfaced behavioral notices now use concrete observational wording, low-confidence ambiguous patterns stay omitted, and `_resolveBehavioralPatterns()` has dedicated fail-open regression coverage when behavioral lookup or pattern detection fails.
 - 2026-04-22: R6 completed — briefing, weekly, and daily-close summary surfaces now consume retained behavioral patterns read-only, omit low-confidence or stale signals, and fail open when behavioral data is missing or invalid.
 - 2026-04-21: R5 completed — behavioral memory now uses a configurable 30-day default query window and excludes expired signals from queries and patterns without immediate hard deletion.

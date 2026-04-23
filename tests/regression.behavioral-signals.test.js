@@ -804,3 +804,103 @@ test('GeminiAnalyzer _resolveBehavioralPatterns fails open on store and detectio
   });
   assert.deepEqual(fromDetectionPathFault, []);
 });
+
+// ─── /memory command tests ───────────────────────────────────
+
+function createCommandBotHarness() {
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) {
+      handlers.commands.set(name, handler);
+      return this;
+    },
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return this;
+    },
+    on(eventName, handler) {
+      handlers.events.push({ eventName, handler });
+      return this;
+    },
+  };
+  return { bot, handlers };
+}
+
+test('/memory command shows active patterns retention window and last signal date', async () => {
+  await store.resetAll();
+  const { bot, handlers } = createCommandBotHarness();
+  registerCommands(
+    bot,
+    { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://example.test/auth', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }) },
+    { listActiveTasks: async () => [], listProjects: async () => [] },
+    {},
+  );
+
+  const userId = AUTHORIZED_CHAT_ID || Date.now();
+  await store.appendBehavioralSignals(userId, [
+    classifyTaskEvent({ eventType: 'update', taskId: 'same-task', category: 'work', projectId: 'career', dueDateBefore: '2026-04-10T10:00:00Z', dueDateAfter: '2026-04-12T10:00:00Z', timestamp: '2026-04-18T10:00:00Z' })[0],
+    classifyTaskEvent({ eventType: 'update', taskId: 'same-task', category: 'work', projectId: 'career', dueDateBefore: '2026-04-12T10:00:00Z', dueDateAfter: '2026-04-14T10:00:00Z', timestamp: '2026-04-19T10:00:00Z' })[0],
+    classifyTaskEvent({ eventType: 'update', taskId: 'same-task', category: 'work', projectId: 'career', dueDateBefore: '2026-04-14T10:00:00Z', dueDateAfter: '2026-04-16T10:00:00Z', timestamp: '2026-04-20T10:00:00Z' })[0],
+  ]);
+
+  const replies = [];
+  await handlers.commands.get('memory')({
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => { replies.push(message); },
+  });
+
+  assert.equal(replies.length, 1);
+  assert.match(replies[0], /Behavioral Memory Summary/i);
+  assert.match(replies[0], /Retention Window:<\/b> 30 days/i);
+  assert.match(replies[0], /Last Signal Date:<\/b>/i);
+  assert.match(replies[0], /postponed 3 times/i);
+  assert.equal(/same-task/i.test(replies[0]), false);
+});
+
+test('/memory command handles empty signal state gracefully', async () => {
+  await store.resetAll();
+  const { bot, handlers } = createCommandBotHarness();
+  registerCommands(
+    bot,
+    { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://example.test/auth', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }) },
+    { listActiveTasks: async () => [], listProjects: async () => [] },
+    {},
+  );
+
+  const userId = AUTHORIZED_CHAT_ID || Date.now();
+  const replies = [];
+  await handlers.commands.get('memory')({
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => { replies.push(message); },
+  });
+
+  assert.equal(replies.length, 1);
+  assert.match(replies[0], /No active patterns in the last 30 days/i);
+  assert.match(replies[0], /No retained signals yet/i);
+});
+
+test('/memory command fails open when signal lookup errors', async () => {
+  await store.resetAll();
+  const { bot, handlers } = createCommandBotHarness();
+  registerCommands(
+    bot,
+    { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://example.test/auth', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }) },
+    { listActiveTasks: async () => [], listProjects: async () => [] },
+    {},
+  );
+
+  const replies = [];
+  await handlers.commands.get('memory')({
+    chat: { id: AUTHORIZED_CHAT_ID || Date.now() },
+    from: { id: Symbol('invalid-user-id') },
+    reply: async (message) => { replies.push(message); },
+  });
+
+  assert.equal(replies.length, 1);
+  assert.match(replies[0], /Behavioral memory is unavailable right now/i);
+});

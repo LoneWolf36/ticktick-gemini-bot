@@ -13,6 +13,11 @@ export const SCHEDULER_NOTIFICATION_TYPES = Object.freeze({
     QUOTA_EXHAUSTED: 'quota_exhausted',
 });
 
+// Default grace window for missed scheduled deliveries (in minutes)
+const DEFAULT_GRACE_WINDOW_MINUTES = 15;
+const WEEKLY_DIGEST_HOUR = 20;
+const WEEKDAY_INDEX = Object.freeze({ Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 });
+
 const FOCUS_SUPPRESSED_NOTIFICATION_TYPES = new Set([
     SCHEDULER_NOTIFICATION_TYPES.DAILY_BRIEFING,
     SCHEDULER_NOTIFICATION_TYPES.WEEKLY_DIGEST,
@@ -24,7 +29,84 @@ export function shouldSuppressScheduledNotification(workStyleMode, notificationT
     return workStyleMode === store.MODE_FOCUS && FOCUS_SUPPRESSED_NOTIFICATION_TYPES.has(notificationType);
 }
 
-export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter }) {
+/**
+ * Check if a scheduled delivery should be sent based on last delivery time and grace window
+ * @param {string|null} lastDeliveryIso - ISO timestamp of last delivery
+ * @param {string} scheduledTimeIso - ISO timestamp when delivery was scheduled for
+ * @param {number} graceWindowMinutes - Grace window in minutes
+ * @returns {boolean} Whether delivery should be sent
+ */
+export function shouldSendMissedDelivery(lastDeliveryIso, scheduledTimeIso, { nowIso = new Date().toISOString(), graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES } = {}) {
+    const scheduledMs = Date.parse(scheduledTimeIso || '');
+    const nowMs = Date.parse(nowIso || '') || Date.now();
+    if (!Number.isFinite(scheduledMs) || scheduledMs > nowMs) return false;
+
+    const graceWindowMs = graceWindowMinutes * 60 * 1000;
+    if (scheduledMs + graceWindowMs < nowMs) return false;
+
+    if (!lastDeliveryIso) return true;
+
+    const lastDeliveryMs = Date.parse(lastDeliveryIso || '');
+    if (!Number.isFinite(lastDeliveryMs)) return true;
+    return lastDeliveryMs < scheduledMs;
+}
+
+/**
+ * Helper to build scheduling metadata context for consistent delivery path
+ * @param {string} scheduleKey - Identifier for the schedule (e.g., 'daily-briefing')
+ * @param {string} scheduledForIso - When the delivery was scheduled for
+ * @param {number} graceWindowMinutes - Configured grace window
+ * @returns {Object} Scheduling metadata context
+ */
+export function buildSchedulingMetadata(scheduleKey, scheduledForIso, graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES) {
+    return {
+        schedulingMetadata: {
+            triggerKind: 'scheduled',
+            scheduleKey,
+            scheduledForIso,
+            graceWindowMinutes,
+        },
+    };
+}
+
+function getZonedClockParts(date, timezone) {
+    const formatter = new Intl.DateTimeFormat('en-US', {
+        timeZone: timezone,
+        weekday: 'short',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false,
+    });
+    const parts = formatter.formatToParts(date);
+    const weekday = parts.find((part) => part.type === 'weekday')?.value;
+    const hour = Number.parseInt(parts.find((part) => part.type === 'hour')?.value || '0', 10);
+    const minute = Number.parseInt(parts.find((part) => part.type === 'minute')?.value || '0', 10);
+
+    return {
+        weekday: WEEKDAY_INDEX[weekday] ?? null,
+        minutesSinceMidnight: (hour * 60) + minute,
+    };
+}
+
+function computeCatchupScheduledForIso({ scheduleKind, dailyHour = 8, weeklyDay = 0, timezone = 'Europe/Dublin', now = new Date(), graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES }) {
+    const { weekday, minutesSinceMidnight } = getZonedClockParts(now, timezone);
+    const scheduledMinutes = scheduleKind === 'weekly'
+        ? WEEKLY_DIGEST_HOUR * 60
+        : dailyHour * 60;
+
+    if (scheduleKind === 'weekly' && weekday !== weeklyDay) {
+        return null;
+    }
+
+    const diffMinutes = minutesSinceMidnight - scheduledMinutes;
+    if (diffMinutes < 0 || diffMinutes > graceWindowMinutes) {
+        return null;
+    }
+
+    return new Date(now.getTime() - (diffMinutes * 60 * 1000)).toISOString();
+}
+
+export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter, config = {} }) {
     if (!ticktick.isAuthenticated()) return false;
     const chatId = store.getChatId();
     if (!chatId) return false;
@@ -36,6 +118,12 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter }) {
     }
 
     console.log('Sending daily briefing...');
+    
+    // Build scheduling metadata for consistent delivery path
+    const scheduledForIso = config.scheduledForIso || new Date().toISOString();
+    const graceWindowMinutes = config.graceWindowMinutes || DEFAULT_GRACE_WINDOW_MINUTES;
+    const schedulingMetadata = buildSchedulingMetadata('daily-briefing', scheduledForIso, graceWindowMinutes);
+    
     const context = {
         kind: 'briefing',
         entryPoint: 'scheduler',
@@ -43,6 +131,7 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter }) {
         workStyleMode,
         urgentMode: workStyleMode === store.MODE_URGENT,
         generatedAtIso: new Date().toISOString(),
+        ...schedulingMetadata,
     };
     let briefing = null;
     try {
@@ -77,7 +166,7 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter }) {
     }
 }
 
-export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, processedTasks = store.getProcessedTasks() }) {
+export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, processedTasks = store.getProcessedTasks(), config = {} }) {
     if (!ticktick.isAuthenticated()) return false;
     const chatId = store.getChatId();
     if (!chatId) return false;
@@ -89,6 +178,12 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
     }
 
     console.log('Sending weekly digest...');
+    
+    // Build scheduling metadata for consistent delivery path
+    const scheduledForIso = config.scheduledForIso || new Date().toISOString();
+    const graceWindowMinutes = config.graceWindowMinutes || DEFAULT_GRACE_WINDOW_MINUTES;
+    const schedulingMetadata = buildSchedulingMetadata('weekly-digest', scheduledForIso, graceWindowMinutes);
+    
     const context = {
         kind: 'weekly',
         entryPoint: 'scheduler',
@@ -96,6 +191,7 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
         workStyleMode,
         urgentMode: workStyleMode === store.MODE_URGENT,
         generatedAtIso: new Date().toISOString(),
+        ...schedulingMetadata,
     };
     let digest = null;
     try {
@@ -135,6 +231,63 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
     }
 }
 
+/**
+ * Handle missed scheduled deliveries on startup
+ * @param {Object} services - Service dependencies
+ * @param {Object} config - Scheduler configuration
+ */
+export async function runStartupCatchupJobs({ bot, ticktick, gemini, adapter, processedTasks = store.getProcessedTasks() }, config = {}, { now = new Date() } = {}) {
+    const {
+        dailyHour = 8,
+        weeklyDay = 0,
+        timezone = 'Europe/Dublin',
+        graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES,
+    } = config;
+
+    const stats = store.getStats();
+    const nowIso = now.toISOString();
+    const results = { daily: false, weekly: false };
+
+    const dailyScheduledForIso = computeCatchupScheduledForIso({
+        scheduleKind: 'daily',
+        dailyHour,
+        timezone,
+        now,
+        graceWindowMinutes,
+    });
+    if (dailyScheduledForIso && shouldSendMissedDelivery(stats.lastDailyBriefing, dailyScheduledForIso, { nowIso, graceWindowMinutes })) {
+        console.log('Handling missed daily briefing on startup...');
+        results.daily = await runDailyBriefingJob({
+            bot,
+            ticktick,
+            gemini,
+            adapter,
+            config: { ...config, dailyHour, weeklyDay, timezone, graceWindowMinutes, scheduledForIso: dailyScheduledForIso },
+        });
+    }
+
+    const weeklyScheduledForIso = computeCatchupScheduledForIso({
+        scheduleKind: 'weekly',
+        weeklyDay,
+        timezone,
+        now,
+        graceWindowMinutes,
+    });
+    if (weeklyScheduledForIso && shouldSendMissedDelivery(stats.lastWeeklyDigest, weeklyScheduledForIso, { nowIso, graceWindowMinutes })) {
+        console.log('Handling missed weekly digest on startup...');
+        results.weekly = await runWeeklyDigestJob({
+            bot,
+            ticktick,
+            gemini,
+            adapter,
+            processedTasks,
+            config: { ...config, dailyHour, weeklyDay, timezone, graceWindowMinutes, scheduledForIso: weeklyScheduledForIso },
+        });
+    }
+
+    return results;
+}
+
 export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, config) {
     const {
         dailyHour = 8,
@@ -144,15 +297,21 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
         autoApplyLifeAdmin = false,
         autoApplyDrops = false,
         autoApplyMode = 'metadata-only',
+        graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES,
     } = config;
 
     const autoConfig = { autoApplyLifeAdmin, autoApplyDrops, autoApplyMode };
+    const schedulerConfig = { dailyHour, weeklyDay, timezone, graceWindowMinutes };
 
     console.log(`Scheduler starting (timezone: ${timezone})`);
     console.log(`   Daily briefing: ${dailyHour}:00`);
     console.log(`   Weekly digest: ${['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'][weeklyDay]} 20:00`);
     console.log(`   Task polling: every ${pollMinutes} min`);
     console.log(`   Auto-apply life-admin: ${autoApplyLifeAdmin ? 'ON' : 'OFF'}`);
+    console.log(`   Grace window: ${graceWindowMinutes} minutes`);
+
+    // Handle missed scheduled deliveries on startup
+    await runStartupCatchupJobs({ bot, ticktick, gemini, adapter }, schedulerConfig);
 
     // Task polling (every N minutes)
     let tokenExpiredNotified = false;
@@ -312,11 +471,11 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
     }, { timezone });
 
     cron.schedule(`0 ${dailyHour} * * *`, async () => {
-        await runDailyBriefingJob({ bot, ticktick, gemini, adapter });
+        await runDailyBriefingJob({ bot, ticktick, gemini, adapter, config: { graceWindowMinutes } });
     }, { timezone });
 
     cron.schedule(`0 20 * * ${weeklyDay}`, async () => {
-        await runWeeklyDigestJob({ bot, ticktick, gemini, adapter });
+        await runWeeklyDigestJob({ bot, ticktick, gemini, adapter, config: { graceWindowMinutes } });
     }, { timezone });
 
     await store.pruneOldEntries(14);
