@@ -1718,9 +1718,13 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
         const deleted = successful.filter(r => r.action.type === 'delete');
 
         if (successful.length === 1 && created.length === 1) {
+            const checklistCount = Array.isArray(created[0].action.checklistItems)
+                ? created[0].action.checklistItems.length
+                : 0;
+            const checklistSuffix = checklistCount > 0 ? ` (${checklistCount} items)` : '';
             text = urgentMode
-                ? `✅ ${created[0].action.title}`
-                : `✅ Created: ${created[0].action.title}`;
+                ? `✅ ${created[0].action.title}${checklistSuffix}`
+                : `✅ Created: ${created[0].action.title}${checklistSuffix}`;
         } else {
             const parts = [];
             if (created.length > 0) parts.push(urgentMode ? `Created ${created.length}` : `Created ${created.length} tasks`);

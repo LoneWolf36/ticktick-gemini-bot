@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-22T22:15:00Z"
+last_edited: "2026-04-24T12:20:00Z"
 ---
 
 # Cavekit Overview
@@ -105,3 +105,4 @@ Migrated from `kitty-specs/` (spec-kitty format) to `context/kits/` (cavekit for
 - [x] Requirement count corrected: 93 → 96 (R15 Command Surfaces + R16 Guided Reorg + R17 Autonomous Poll Auto-Apply added to Task Pipeline).
 - [x] See `context/plans/cavekit-validate-followups-2026-04-19.md` for sequencing and file ownership.
 - [x] Validation exclusion note: `services/user-settings.js` timezone runtime configuration and `services/shared-utils.js` `AUTHORIZED_CHAT_ID` / `guardAccess` access guard are operational runtime scaffolding, not product-kit-owned feature requirements; treat as non-drift unless a product kit explicitly claims them.
+- [x] Validation exclusion note: `services/user_context.example.js` is a committed local setup template for the gitignored personal context file, not a product runtime surface; treat it as operational/setup scaffolding unless a future kit explicitly claims it.

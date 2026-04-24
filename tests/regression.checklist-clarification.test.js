@@ -98,6 +98,35 @@ test('WP04 T046: checklist create creates one parent task with items', async () 
   assert.equal(createdAction.checklistItems[2].title, 'Schedule kickoff meeting');
 });
 
+test('R5: checklist create confirmation stays terse and includes item count', async () => {
+  const harness = createPipelineHarness({
+    intents: [
+      {
+        type: 'create',
+        title: 'Plan trip',
+        confidence: 0.95,
+        checklistItems: [
+          { title: 'Book flights' },
+          { title: 'Pack bags' },
+          { title: 'Renew travel card' },
+        ],
+      },
+    ],
+  });
+
+  const standard = await harness.processMessage('plan trip: book flights, pack bags, renew travel card', {
+    workStyleMode: store.MODE_STANDARD,
+  });
+  const urgent = await harness.processMessage('plan trip: book flights, pack bags, renew travel card', {
+    workStyleMode: store.MODE_URGENT,
+  });
+
+  assert.equal(standard.confirmationText, '✅ Created: Plan trip (3 items)');
+  assert.equal(urgent.confirmationText, '✅ Plan trip (3 items)');
+  assert.doesNotMatch(standard.confirmationText, /Book flights|Pack bags|Renew travel card/);
+  assert.doesNotMatch(urgent.confirmationText, /Book flights|Pack bags|Renew travel card/);
+});
+
 test('WP04 T046: multi-task create creates separate tasks without checklist', async () => {
   const { processMessage, adapterCalls } = createPipelineHarness({
     intents: [
