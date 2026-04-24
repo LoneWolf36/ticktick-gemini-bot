@@ -100,7 +100,7 @@ Migrated from `kitty-specs/` (spec-kitty format) to `context/kits/` (cavekit for
 - [x] Audit all migrated Cavekit kits against implemented code and mark completed acceptance criteria so validation no longer reports 0% progress by default.
 - [x] Align dependency planning here with per-requirement `Dependencies:` lines by treating the graph as root-requirement tiers, which resolves the Behavioral Memory R1 and Work Style R1 mismatches surfaced by validation.
 - [x] Tooling exclusion rule: `.archon/` workflows/commands are dev tooling, excluded from product drift checks.
-- [x] Checkpoint tooling removed (`commands/save-checkpoint.js`, `commands/README.md`) — `docs/ARCHITECTURE.md` stated these were intentionally removed.
+- [x] Checkpoint tooling removed (`commands/save-checkpoint.js`, `commands/README.md`) — `docs/ARCHITECTURE.md` no longer contains legacy checkpoint references.
 - [x] Orphaned `tasks/WP*.md` prompt copies removed — canonical versions live under `kitty-specs.archived/`.
 - [x] Requirement count corrected: 93 → 96 (R15 Command Surfaces + R16 Guided Reorg + R17 Autonomous Poll Auto-Apply added to Task Pipeline).
 - [x] See `context/plans/cavekit-validate-followups-2026-04-19.md` for sequencing and file ownership.

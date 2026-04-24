@@ -51,25 +51,25 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 ### R5: Recurring Task Creation
 **Description:** Recurring intent produces a single recurring TickTick task with proper `repeatFlag`, not multiple manual copies.
 **Acceptance Criteria:**
-- [ ] Given "practice DSA every weekday", one recurring task with weekday repeatFlag is created
-- [ ] Given "call mom every Sunday", one recurring task with weekly-Sunday repeatFlag is created
-- [ ] Given "run daily", one recurring task with daily repeatFlag is created
-- [ ] Given conflicting recurrence signals ("every weekday but only on Tuesday"), the system asks for clarification
+- [x] Given "practice DSA every weekday", one recurring task with weekday repeatFlag is created
+- [x] Given "call mom every Sunday", one recurring task with weekly-Sunday repeatFlag is created
+- [x] Given "run daily", one recurring task with daily repeatFlag is created
+- [x] Given conflicting recurrence signals ("every weekday but only on Tuesday"), the system asks for clarification
 **Dependencies:** R3
 
 ### R6: Multi-Day Splitting
 **Description:** When the user names distinct dates for separate sessions, the system creates separate one-off tasks rather than a recurring task.
 **Acceptance Criteria:**
-- [ ] Given "study system design monday tuesday and wednesday", three tasks are created with respective due dates
-- [ ] Given "gym mon wed fri" (ambiguous recurrence vs multi-day), the system creates three one-off tasks or asks whether the user means recurring
+- [x] Given "study system design monday tuesday and wednesday", three tasks are created with respective due dates
+- [x] Given "gym mon wed fri" (ambiguous recurrence vs multi-day), the system creates three one-off tasks or asks whether the user means recurring
 **Dependencies:** R3
 
 ### R7: Project Resolution
 **Description:** Project/category is resolved deterministically against known TickTick projects with safe fallback.
 **Acceptance Criteria:**
-- [ ] Given projects "Work", "Personal", "Health" exist and user sends "submit quarterly report", task is assigned to "Work"
-- [ ] Given ambiguous category, system falls back to safe default project and logs ambiguity
-- [ ] Given user names a project that does not exist, system uses default project and informs user
+- [x] Given projects "Work", "Personal", "Health" exist and user sends "submit quarterly report", task is assigned to "Work"
+- [x] Given ambiguous category, system falls back to safe default project and logs ambiguity
+- [x] Given user names a project that does not exist, system uses default project and informs user
 **Dependencies:** R4
 
 ### R8: Terse Responses
@@ -103,9 +103,9 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 ### R11: Mutation Content Preservation
 **Description:** Updates preserve existing task content unless user explicitly requests a content change. Adapter owns the single merge path.
 **Acceptance Criteria:**
-- [ ] Updating due date on a task with existing notes preserves all notes
-- [ ] Pipeline code does not pass already-merged content back into `adapter.updateTask`
-- [ ] Existing content is preserved as-is unless adapter merge appends genuinely new content below `\n---\n`
+- [x] Updating due date on a task with existing notes preserves all notes
+- [x] Pipeline code does not pass already-merged content back into `adapter.updateTask`
+- [x] Existing content is preserved as-is unless adapter merge appends genuinely new content below `\n---\n`
 **Dependencies:** R4
 
 ### R12: Privacy-Aware Pipeline Logging
@@ -126,8 +126,8 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 ### R14: Single-Target Mutation Boundary
 **Description:** v1 applies mutations to one resolved target per action only. No batch mutations.
 **Acceptance Criteria:**
-- [ ] Batch mutations ("move all gym tasks to next week") are rejected with guidance to use single-target requests
-- [ ] Mixed create+mutate in one message is rejected; system asks for simpler instruction
+- [x] Batch mutations ("move all gym tasks to next week") are rejected with guidance to use single-target requests
+- [x] Mixed create+mutate in one message is rejected; system asks for simpler instruction
 **Dependencies:** R10
 
 ### R15: Command Surfaces

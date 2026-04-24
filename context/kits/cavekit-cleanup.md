@@ -25,26 +25,26 @@ Post-migration cleanup: dead code removal, documentation alignment, env-var stan
 ### R2: README and Architecture Documentation
 **Description:** README and architecture docs are updated to reflect the structured pipeline.
 **Acceptance Criteria:**
-- [ ] README describes the current AX → normalizer → adapter pipeline
-- [ ] Architecture diagram (if present) reflects current data flow
-- [ ] Setup instructions reference current env vars and dependencies
+- [x] README describes the current AX → normalizer → adapter pipeline
+- [x] Architecture diagram (if present) reflects current data flow
+- [x] Setup instructions reference current env vars and dependencies
 **Dependencies:** R1
 
 ### R3: Agent and Deployment Documentation
 **Description:** Agent configuration docs (AGENTS.md, CLAUDE.md, GEMINI.md) and deployment docs (render.yaml) are updated.
 **Acceptance Criteria:**
-- [ ] Agent docs describe available commands and their pipeline integration
-- [ ] Deployment docs reflect current service dependencies
-- [ ] No references to removed legacy paths remain in agent docs
+- [x] Agent docs describe available commands and their pipeline integration
+- [x] Deployment docs reflect current service dependencies
+- [x] No references to removed legacy paths remain in agent docs
 **Dependencies:** R1
 
 ### R4: Env-Var Standardization
 **Description:** Environment variables are standardized and context templates are updated.
 **Acceptance Criteria:**
-- [ ] All env vars follow a consistent naming convention
-- [ ] `.env.example` and `workflow.env.example` are aligned with current code
-- [ ] No unused env vars remain in examples
-- [ ] Context templates reference correct current env vars
+- [x] All env vars follow a consistent naming convention
+- [x] `.env.example` and `workflow.env.example` are aligned with current code
+- [x] No unused env vars remain in examples
+- [x] Context templates reference correct current env vars
 **Dependencies:** R1
 
 ### R5: Full Regression Verification
@@ -72,7 +72,7 @@ Post-migration cleanup: dead code removal, documentation alignment, env-var stan
 - [x] `/reorg` drift resolved: mapped to R16 Guided Reorg in `cavekit-task-pipeline.md`.
 - [x] `reorgSchema` in `services/schemas.js` + `generateReorgProposal` in `services/gemini.js` — both belong to R16 Guided Reorg; no longer drift.
 - [x] Tooling exclusion rule decided: `.archon/` workflows/commands are dev tooling, excluded from product drift checks. See `context/kits/cavekit-overview.md` for the rule.
-- [x] Checkpoint tooling (`commands/save-checkpoint.js`, `commands/README.md`) removed — `docs/ARCHITECTURE.md` already stated these were intentionally removed.
+- [x] Checkpoint tooling (`commands/save-checkpoint.js`, `commands/README.md`) removed — `docs/ARCHITECTURE.md` no longer contains legacy checkpoint references.
 - [x] Orphaned `tasks/WP*.md` prompt copies removed — canonical versions live under `kitty-specs.archived/`.
 - [x] Rate limiter removed from `bot/commands.js` (YAGNI for 1-user MVP).
 - [x] Audit R1 (Dead Code Removal): legacy prompt-driven task-writing paths are gone; retained direct adapter calls in `bot/commands.js` (`/undo`, `executeActions`) and `bot/callbacks.js` (approve/drop callbacks) are explicitly documented operational or reorg boundaries rather than orphaned legacy writers, and no orphaned imports or dead helper exports were introduced by the pipeline migration.
