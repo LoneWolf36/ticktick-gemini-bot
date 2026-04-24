@@ -151,7 +151,8 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 | `TICKTICK_CLIENT_ID` | Yes | Your TickTick app client ID |
 | `TICKTICK_CLIENT_SECRET` | Yes | Your TickTick app secret |
 | `TICKTICK_REDIRECT_URI` | Yes | Same as WEBHOOK_URL + `/` |
-| `TICKTICK_ACCESS_TOKEN` | No | OAuth token (obtained via OAuth flow at `http://localhost:8080` — run locally first, then copy from console for deployment) |
+| `TICKTICK_ACCESS_TOKEN` | No | OAuth access token (optional; generated via OAuth flow at `http://localhost:8080`) |
+| `TICKTICK_REFRESH_TOKEN` | No | OAuth refresh token (optional but recommended with `TICKTICK_ACCESS_TOKEN`) |
 | `TELEGRAM_BOT_TOKEN` | Yes | Your bot token |
 | `TELEGRAM_CHAT_ID` | Yes | Your Telegram chat ID |
 | `GEMINI_API_KEYS` | Yes | Comma-separated Gemini API keys (preferred for rotation) |
@@ -166,6 +167,14 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 | `AUTO_APPLY_LIFE_ADMIN` | No | Auto-apply life-admin tasks (default: `true`) |
 | `AUTO_APPLY_DROPS` | No | Auto-apply drop candidates (default: `false`) |
 | `AUTO_APPLY_MODE` | No | `metadata-only` or `full` (default: `metadata-only`) |
+| `BEHAVIORAL_SIGNAL_RETENTION_DAYS` | No | Active behavioral-signal window in days (default: `30`) |
+| `BEHAVIORAL_SIGNAL_ARCHIVE_DAYS` | No | Total retained behavioral-signal history in days (default: `90`) |
+| `PIPELINE_TRANSIENT_MAX_RETRIES` | No | Pipeline transient retry attempts (default: `1`) |
+| `PIPELINE_TRANSIENT_BASE_DELAY_MS` | No | Base delay for transient retries (default: `250`) |
+| `PIPELINE_TRANSIENT_MAX_DELAY_MS` | No | Delay cap for transient retries (default: `4000`) |
+| `TICKTICK_RATE_LIMIT_MAX_RETRIES` | No | TickTick 429 retry attempts (default: `3`) |
+| `TICKTICK_RATE_LIMIT_BASE_DELAY_MS` | No | Base delay for TickTick 429 retries (default: `1000`) |
+| `TICKTICK_RATE_LIMIT_MAX_DELAY_MS` | No | Delay cap for TickTick 429 retries (default: `30000`) |
 
 5. Update the redirect URI at [developer.ticktick.com](https://developer.ticktick.com) to match
 6. Set up [UptimeRobot](https://uptimerobot.com) to ping `/health` every 5 min (keeps free tier awake)
@@ -195,7 +204,6 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 │   ├── user_context.js          # YOUR personal context (gitignored — create from example)
 │   └── user_context.example.js  # Template to copy from
 ├── context/kits/                # Cavekit domain kits (current source of truth)
-├── kitty-specs.archived/        # Archived Spec Kitty materials (historical only)
 ├── tests/                       # Regression and unit tests
 ├── .env.example                 # Environment variable template
 └── data/                        # Local store files (gitignored)

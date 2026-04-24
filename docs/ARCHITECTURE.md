@@ -2,7 +2,7 @@
 
 ## Current State
 
-The project has transitioned from Archon + Spec Kitty to **Cavekit** for spec-driven development.
+The project uses **Cavekit** for spec-driven development.
 
 ### Development Framework: Cavekit
 
@@ -18,10 +18,15 @@ Telegram Message
     → Normalizer (services/normalizer.js)
     → TickTick Adapter (services/ticktick-adapter.js)
     → TickTick REST API
+
+Parallel non-write paths:
+    Scheduler (services/scheduler.js)
+    → Daily briefing / Weekly digest / Polling notifications
+    → Telegram only (no TickTick mutation)
 ```
 
 See `AGENTS.md` for the full service module descriptions.
 
 ## Historical Notes
 
-- **2026-04-18**: Migrated from Spec Kitty + Archon to Cavekit. Legacy Archon workflows, quality gates, and reconciliation files were removed. Original spec-kitty artifacts are archived in `kitty-specs.archived/`.
+- Legacy prompt-driven write paths were removed. Current write behavior is centralized in AX → normalizer → adapter for deterministic, auditable mutations.

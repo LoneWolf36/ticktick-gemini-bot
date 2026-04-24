@@ -471,6 +471,37 @@ function pickCreateClarificationQuestion(intents, context) {
         : 'I created the clear task. What exactly should I create from the unclear part?';
 }
 
+function isLikelyBatchMutationIntent(intent, userMessage = '') {
+    if (!intent || typeof intent !== 'object') return false;
+    if (!['update', 'complete', 'delete'].includes(intent.type)) return false;
+
+    const target = String(intent.targetQuery || intent.title || '').toLowerCase();
+    const rawMessage = String(userMessage || '').toLowerCase();
+    const source = `${target} ${rawMessage}`;
+
+    const hasPluralTaskReference = /\btasks\b/.test(source);
+    const hasBulkQuantifier = /\b(all|every)\b/.test(source);
+    const hasBulkVerb = /\b(move|reschedule|complete|finish|delete|remove|update)\s+all\b/.test(source);
+
+    return (hasPluralTaskReference && hasBulkQuantifier) || hasBulkVerb;
+}
+
+function buildMutationBoundaryMessage(reason, context) {
+    if (reason === 'mixed_create_and_mutation') {
+        return isUrgentWorkStyle(context)
+            ? 'One instruction only. Do create or mutation, not both.'
+            : 'I can do create or mutate in one request, not both. Send one simpler instruction.';
+    }
+
+    if (reason === 'multiple_mutations' || reason === 'batch_mutation_not_supported') {
+        return isUrgentWorkStyle(context)
+            ? 'One target only. Name one task to change.'
+            : 'I can only mutate one task per request. Name a single task and try again.';
+    }
+
+    return USER_FAILURE_MESSAGES[FAILURE_CLASSES.VALIDATION];
+}
+
 function createExecutionRecord(action, index) {
     return {
         index,
@@ -1015,6 +1046,44 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
             const mutationTypes = ['update', 'complete', 'delete'];
             const hasMutation = intents.some(i => mutationTypes.includes(i.type));
             const hasCreate = intents.some(i => i.type === 'create');
+            const mutationIntents = intents.filter(i => mutationTypes.includes(i.type));
+
+            if (mutationIntents.length > 1) {
+                console.warn(`[Pipeline:${context.requestId}] Batch mutation request rejected.`);
+                context = updatePipelineContext(context, (draft) => {
+                    draft.lifecycle.validationFailures = snapshotPipelineValue(['multiple_mutations']);
+                });
+                const failureResult = buildFailureResult(context, {
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    stage: 'mutation-routing',
+                    summary: 'Batch mutation request is out of scope.',
+                    details: {
+                        intentTypes: intents.map(i => i.type),
+                    },
+                    userMessage: buildMutationBoundaryMessage('multiple_mutations', context),
+                    retryable: true,
+                });
+                context = finalizePipelineContext(context, requestStartedAt, {
+                    resultType: 'error',
+                    status: 'failure',
+                    summary: 'Batch mutation request is out of scope.',
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    rolledBack: false,
+                    validationFailures: ['multiple_mutations'],
+                });
+                await telemetry.emit(context, {
+                    eventType: 'pipeline.request.failed',
+                    step: 'result',
+                    status: 'failure',
+                    durationMs: Date.now() - requestStartedAt,
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    rolledBack: false,
+                    metadata: {
+                        reason: 'multiple_mutations',
+                    },
+                });
+                return attachPipelineContext(failureResult, context);
+            }
 
             if (hasMutation && hasCreate) {
                 // Mixed create+mutation: out of scope for v1
@@ -1029,6 +1098,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     details: {
                         intentTypes: intents.map(i => i.type),
                     },
+                    userMessage: buildMutationBoundaryMessage('mixed_create_and_mutation', context),
                     retryable: true,
                 });
                 context = finalizePipelineContext(context, requestStartedAt, {
@@ -1048,6 +1118,44 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     rolledBack: false,
                     metadata: {
                         reason: 'mixed_create_and_mutation',
+                    },
+                });
+                return attachPipelineContext(failureResult, context);
+            }
+
+            if (mutationIntents.length === 1 && isLikelyBatchMutationIntent(mutationIntents[0], context.userMessage)) {
+                console.warn(`[Pipeline:${context.requestId}] Batch-style single mutation request rejected.`);
+                context = updatePipelineContext(context, (draft) => {
+                    draft.lifecycle.validationFailures = snapshotPipelineValue(['batch_mutation_not_supported']);
+                });
+                const failureResult = buildFailureResult(context, {
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    stage: 'mutation-routing',
+                    summary: 'Batch mutation request is out of scope.',
+                    details: {
+                        intentTypes: intents.map(i => i.type),
+                        targetQueryPresent: Boolean(mutationIntents[0]?.targetQuery),
+                    },
+                    userMessage: buildMutationBoundaryMessage('batch_mutation_not_supported', context),
+                    retryable: true,
+                });
+                context = finalizePipelineContext(context, requestStartedAt, {
+                    resultType: 'error',
+                    status: 'failure',
+                    summary: 'Batch mutation request is out of scope.',
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    rolledBack: false,
+                    validationFailures: ['batch_mutation_not_supported'],
+                });
+                await telemetry.emit(context, {
+                    eventType: 'pipeline.request.failed',
+                    step: 'result',
+                    status: 'failure',
+                    durationMs: Date.now() - requestStartedAt,
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    rolledBack: false,
+                    metadata: {
+                        reason: 'batch_mutation_not_supported',
                     },
                 });
                 return attachPipelineContext(failureResult, context);
@@ -1152,7 +1260,61 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
             };
 
             const normalizeStartedAt = Date.now();
-            const normalizedActions = normalizer.normalizeActions(intents, normOptions);
+            const hasNormalizeActionBatch = typeof normalizer?.normalizeActionBatch === 'function';
+            const hasValidateMutationBatch = typeof normalizer?.validateMutationBatch === 'function';
+            const normalizedBatch = hasNormalizeActionBatch
+                ? normalizer.normalizeActionBatch(intents, normOptions)
+                : { actions: normalizer.normalizeActions(intents, normOptions), batchError: null };
+            const normalizedActions = Array.isArray(normalizedBatch?.actions) ? normalizedBatch.actions : [];
+            const batchValidation = normalizedBatch.batchError
+                ? { valid: false, reason: normalizedBatch.batchError }
+                : (hasValidateMutationBatch
+                    ? normalizer.validateMutationBatch(normalizedActions)
+                    : { valid: true, reason: null });
+
+            if (!batchValidation.valid) {
+                const reason = batchValidation.reason || 'unsupported_batch';
+                context = updatePipelineContext(context, (draft) => {
+                    draft.lifecycle.normalize.status = 'failure';
+                    draft.lifecycle.normalize.normalizedActions = snapshotPrivacySafePipelineValue(normalizedActions);
+                    draft.lifecycle.validationFailures = snapshotPipelineValue([reason]);
+                    draft.lifecycle.timing.stages.normalize = {
+                        startedAt: new Date(normalizeStartedAt).toISOString(),
+                        durationMs: Date.now() - normalizeStartedAt,
+                        status: 'failure',
+                    };
+                });
+                const failureResult = buildFailureResult(context, {
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    stage: 'normalize',
+                    summary: `Unsupported action batch: ${reason}`,
+                    details: {
+                        reason,
+                    },
+                    userMessage: buildMutationBoundaryMessage(reason, context),
+                    retryable: true,
+                });
+                context = finalizePipelineContext(context, requestStartedAt, {
+                    resultType: 'error',
+                    status: 'failure',
+                    summary: `Unsupported action batch: ${reason}`,
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    rolledBack: false,
+                    validationFailures: [reason],
+                });
+                await telemetry.emit(context, {
+                    eventType: 'pipeline.request.failed',
+                    step: 'result',
+                    status: 'failure',
+                    durationMs: Date.now() - requestStartedAt,
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    rolledBack: false,
+                    metadata: {
+                        reason,
+                    },
+                });
+                return attachPipelineContext(failureResult, context);
+            }
 
             const validActions = normalizedActions.filter(a => a.valid);
             const invalidActions = normalizedActions.filter(a => !a.valid);

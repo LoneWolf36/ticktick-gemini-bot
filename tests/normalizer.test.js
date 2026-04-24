@@ -662,6 +662,47 @@ describe('Integration Tests', () => {
         // All should have the same normalized title
         assert.ok(results.every(r => r.title === 'Study session'));
     });
+
+    it('should auto-split multi-day dueDate without explicit splitStrategy', () => {
+        const results = normalizeActions([
+            {
+                type: 'create',
+                title: 'Study system design',
+                dueDate: 'monday tuesday and wednesday',
+            }
+        ]);
+
+        assert.strictEqual(results.length, 3);
+        assert.ok(results.every(r => r.type === 'create'));
+        assert.ok(results.every(r => r.repeatFlag === null));
+        assert.ok(results.every(r => typeof r.dueDate === 'string' && r.dueDate.includes('T23:59:00.000')));
+    });
+
+    it('should not split multi-day dueDate when recurrence hint is present', () => {
+        const results = normalizeActions([
+            {
+                type: 'create',
+                title: 'Gym sessions',
+                dueDate: 'mon wed fri',
+                repeatHint: 'every weekday',
+            }
+        ]);
+
+        assert.strictEqual(results.length, 1);
+        assert.strictEqual(results[0].repeatFlag, 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR');
+    });
+
+    it('should preserve repeatFlag when AX provides it directly', () => {
+        const result = normalizeAction({
+            type: 'create',
+            title: 'Run daily',
+            repeatFlag: 'RRULE:FREQ=DAILY;INTERVAL=1',
+            repeatHint: null,
+        });
+
+        assert.strictEqual(result.repeatFlag, 'RRULE:FREQ=DAILY;INTERVAL=1');
+        assert.ok(result.valid);
+    });
 });
 
 describe('Validation Tests', () => {

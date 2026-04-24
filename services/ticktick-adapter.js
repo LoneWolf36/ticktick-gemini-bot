@@ -6,6 +6,7 @@ import { appendBehavioralSignals, DEFAULT_BEHAVIORAL_USER_ID } from './store.js'
 const PROJECT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const VALID_PRIORITIES = [0, 1, 3, 5]; // TickTick valid priority values
 const ACTION_VERB_REGEX = /^(call|email|pay|book|write|draft|review|ship|send|apply|buy|clean|fix|prepare|schedule|plan|submit|update|organize|finish|confirm|get|set|message|follow|protect)\b/i;
+const CONTENT_MERGE_SEPARATOR = '\n---\n';
 
 const ERROR_CODES = {
     VALIDATION: 'VALIDATION_ERROR',
@@ -363,53 +364,153 @@ export class TickTickAdapter {
         const start = Date.now();
         this._log('findProjectByName', { nameHint });
         try {
-            if (!nameHint) {
+            const projects = await this.listProjects();
+
+            const defaultProject = this._getSafeDefaultProject(projects);
+            if (!nameHint || typeof nameHint !== 'string' || nameHint.trim().length === 0) {
                 const elapsed = Date.now() - start;
-                this._log('findProjectByName', `SUCCESS { match: null, ${elapsed}ms }`);
-                return null;
+                this._log('findProjectByName', `SUCCESS { match: null, fallback: ${JSON.stringify(defaultProject ? { id: defaultProject.id, name: defaultProject.name } : null)}, reason: "empty_hint", ${elapsed}ms }`);
+                return defaultProject;
             }
 
-            const projects = await this.listProjects();
-            const lowerHint = nameHint.toLowerCase();
-
-            let exactMatch = null;
-            let startsWithMatches = [];
-            let containsMatches = [];
+            const lowerHint = this._normalizeProjectName(nameHint);
+            const exactMatches = [];
+            const startsWithMatches = [];
+            const containsMatches = [];
 
             for (const p of projects) {
-                const lowerName = p.name.toLowerCase();
-                if (lowerName === lowerHint) {
-                    if (!exactMatch || p.name.length < exactMatch.name.length) {
-                        exactMatch = p;
-                    }
-                } else if (lowerName.startsWith(lowerHint)) {
+                const normalizedName = this._normalizeProjectName(p.name);
+                if (!normalizedName) continue;
+                if (normalizedName === lowerHint) {
+                    exactMatches.push(p);
+                } else if (normalizedName.startsWith(lowerHint)) {
                     startsWithMatches.push(p);
-                } else if (lowerName.includes(lowerHint)) {
+                } else if (normalizedName.includes(lowerHint)) {
                     containsMatches.push(p);
                 }
             }
 
-            let match = null;
-            if (exactMatch) {
-                match = exactMatch;
-            } else if (startsWithMatches.length > 0) {
-                startsWithMatches.sort((a, b) => a.name.length - b.name.length);
-                match = startsWithMatches[0];
-            } else if (containsMatches.length > 0) {
-                containsMatches.sort((a, b) => a.name.length - b.name.length);
-                match = containsMatches[0];
+            const pickSingle = (matches) => {
+                if (matches.length === 0) return { match: null, ambiguous: false };
+                if (matches.length === 1) return { match: matches[0], ambiguous: false };
+                return { match: null, ambiguous: true };
+            };
+
+            const exactResult = pickSingle(exactMatches);
+            const startsWithResult = !exactResult.match && !exactResult.ambiguous ? pickSingle(startsWithMatches) : { match: null, ambiguous: false };
+            const containsResult = !exactResult.match && !exactResult.ambiguous && !startsWithResult.match && !startsWithResult.ambiguous
+                ? pickSingle(containsMatches)
+                : { match: null, ambiguous: false };
+
+            const match = exactResult.match || startsWithResult.match || containsResult.match || null;
+            const ambiguous = exactResult.ambiguous || startsWithResult.ambiguous || containsResult.ambiguous;
+
+            const result = match
+                ? { id: match.id, name: match.name, reason: 'matched' }
+                : defaultProject
+                    ? {
+                        id: defaultProject.id,
+                        name: defaultProject.name,
+                        reason: ambiguous ? 'ambiguous_fallback' : 'unresolved_fallback',
+                    }
+                    : null;
+
+            if (!match) {
+                this._log('findProjectByName', {
+                    warning: 'project_resolution_fallback',
+                    reason: ambiguous ? 'ambiguous' : 'unresolved',
+                    nameHint,
+                    candidates: ambiguous
+                        ? [...exactMatches, ...startsWithMatches, ...containsMatches].map((p) => ({ id: p.id, name: p.name }))
+                        : [],
+                    fallback: defaultProject ? { id: defaultProject.id, name: defaultProject.name } : null,
+                }, true);
             }
 
-            const result = match ? { id: match.id, name: match.name } : null;
             const elapsed = Date.now() - start;
             this._log('findProjectByName', `SUCCESS { match: ${JSON.stringify(result)}, ${elapsed}ms }`);
-            return match;
+            return match || defaultProject;
         } catch (error) {
             const elapsed = Date.now() - start;
             const classified = this._classifyError(error, 'findProjectByName');
             this._log('findProjectByName', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
             throw classified;
         }
+    }
+
+    _normalizeProjectName(name) {
+        if (typeof name !== 'string') return '';
+        return name.trim().toLowerCase().replace(/\s+/g, ' ');
+    }
+
+    _getSafeDefaultProject(projects = []) {
+        if (!Array.isArray(projects) || projects.length === 0) return null;
+
+        const inbox = projects.find((project) => this._normalizeProjectName(project?.name) === 'inbox');
+        if (inbox) return inbox;
+
+        const sorted = [...projects].sort((a, b) => {
+            const nameCompare = String(a?.name || '').localeCompare(String(b?.name || ''));
+            if (nameCompare !== 0) return nameCompare;
+            return String(a?.id || '').localeCompare(String(b?.id || ''));
+        });
+        return sorted[0] || null;
+    }
+
+    _mergeTaskContent(existingContent, incomingContent, mergeContent = true) {
+        const oldContent = typeof existingContent === 'string' ? existingContent : '';
+        const newContent = incomingContent === null || incomingContent === undefined ? '' : String(incomingContent);
+
+        if (!mergeContent) {
+            return { shouldUpdate: true, content: newContent, strategy: 'replace' };
+        }
+
+        if (newContent.trim().length === 0) {
+            return { shouldUpdate: false, content: oldContent, strategy: 'preserve_empty_incoming' };
+        }
+
+        if (!oldContent) {
+            return { shouldUpdate: true, content: newContent, strategy: 'set_new_on_empty' };
+        }
+
+        if (newContent === oldContent) {
+            return { shouldUpdate: false, content: oldContent, strategy: 'preserve_identical' };
+        }
+
+        if (oldContent.includes(newContent)) {
+            return { shouldUpdate: false, content: oldContent, strategy: 'preserve_existing_superset' };
+        }
+
+        if (newContent.startsWith(`${oldContent}${CONTENT_MERGE_SEPARATOR}`)) {
+            const appended = newContent.slice((`${oldContent}${CONTENT_MERGE_SEPARATOR}`).length).trim();
+            if (!appended || oldContent.includes(appended)) {
+                return { shouldUpdate: false, content: oldContent, strategy: 'preserve_premerged_duplicate' };
+            }
+            return {
+                shouldUpdate: true,
+                content: `${oldContent}${CONTENT_MERGE_SEPARATOR}${appended}`,
+                strategy: 'merge_premerged_append',
+            };
+        }
+
+        if (newContent.includes(oldContent) && newContent.includes(CONTENT_MERGE_SEPARATOR)) {
+            const separatorIndex = newContent.indexOf(CONTENT_MERGE_SEPARATOR);
+            const appended = newContent.slice(separatorIndex + CONTENT_MERGE_SEPARATOR.length).trim();
+            if (!appended || oldContent.includes(appended)) {
+                return { shouldUpdate: false, content: oldContent, strategy: 'preserve_premerged_contains_duplicate' };
+            }
+            return {
+                shouldUpdate: true,
+                content: `${oldContent}${CONTENT_MERGE_SEPARATOR}${appended}`,
+                strategy: 'merge_premerged_contains_append',
+            };
+        }
+
+        return {
+            shouldUpdate: true,
+            content: `${oldContent}${CONTENT_MERGE_SEPARATOR}${newContent}`,
+            strategy: 'merge_append',
+        };
     }
 
     /**
@@ -642,31 +743,22 @@ export class TickTickAdapter {
             if (targetProjectId !== undefined && targetProjectId !== null) updatePayload.projectId = targetProjectId;
             if (normalizedAction.repeatFlag !== undefined) updatePayload.repeatFlag = normalizedAction.repeatFlag;
 
-            // Handle content merge with mergeContent flag
-            if (normalizedAction.content !== undefined) {
-                const newContent = normalizedAction.content || '';
-                const oldContent = existingTask.content || '';
-                const shouldMerge = normalizedAction.mergeContent !== false; // Default to true
-
-                if (!shouldMerge) {
-                    // Replace content entirely
-                    updatePayload.content = newContent;
-                } else if (oldContent) {
-                    if (oldContent === newContent || newContent === '') {
-                        // No change or clearing content
-                    } else if (newContent.includes(oldContent)) {
-                        // Already merged by normalizer or caller
-                        updatePayload.content = newContent;
-                    } else if (oldContent.includes(newContent)) {
-                        // New content already part of old content - keep old
-                        updatePayload.content = oldContent;
-                    } else {
-                        // Append new content with standard separator
-                        updatePayload.content = `${oldContent}\n---\n${newContent}`;
-                    }
-                } else {
-                    updatePayload.content = newContent;
+            // Handle content merge with adapter-owned single merge path
+            if (Object.prototype.hasOwnProperty.call(normalizedAction, 'content')) {
+                const contentMerge = this._mergeTaskContent(
+                    existingTask.content,
+                    normalizedAction.content,
+                    normalizedAction.mergeContent !== false,
+                );
+                if (contentMerge.shouldUpdate) {
+                    updatePayload.content = contentMerge.content;
                 }
+                this._log('updateTask.contentMerge', {
+                    taskId,
+                    strategy: contentMerge.strategy,
+                    mergeContent: normalizedAction.mergeContent !== false,
+                    updated: contentMerge.shouldUpdate,
+                });
             }
 
             if (sourceProjectId && targetProjectId && targetProjectId !== sourceProjectId) {

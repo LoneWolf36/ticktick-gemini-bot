@@ -21,7 +21,7 @@ export function taskReviewKeyboard(taskId) {
 
 // ─── Register Callback Handlers ─────────────────────────────
 
-export function registerCallbacks(bot, ticktick, gemini, adapter, pipeline) {
+export function registerCallbacks(bot, adapter, pipeline) {
 
     // ─── Approve: move pending → processed, update TickTick ───
     // RETAINED BOUNDARY: inline review callbacks apply precomputed review edits

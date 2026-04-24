@@ -83,7 +83,11 @@ export function createPipelineHarness({
     const adapter = { ...baseAdapter, ...adapterOverrides };
 
     const normalizerImpl = useRealNormalizer
-        ? { normalizeActions: (input, options) => normalizer.normalizeActions(input, options) }
+        ? {
+            normalizeActions: (input, options) => normalizer.normalizeActions(input, options),
+            normalizeActionBatch: (input, options) => normalizer.normalizeActionBatch(input, options),
+            validateMutationBatch: (actions) => normalizer.validateMutationBatch(actions),
+        }
         : { normalizeActions: () => normalizedActions ?? [] };
 
     const pipeline = createPipeline({

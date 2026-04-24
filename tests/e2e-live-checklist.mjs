@@ -442,7 +442,7 @@ async function main() {
       autoApplyDrops: false,
       autoApplyMode: 'metadata-only',
     });
-    registerCallbacks(bot, ticktick, gemini, adapter);
+    registerCallbacks(bot, adapter, pipeline);
 
     await bot.init();
     const mk = createUpdateFactory(CHAT_ID);

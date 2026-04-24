@@ -8,8 +8,8 @@ An AI-powered Telegram bot that connects to TickTick and acts as a proactive acc
 *   **Core Purpose:** Automates task management by parsing natural language intents from Telegram, normalizing them into structured TickTick operations, and applying them via a dedicated adapter.
 *   **Architecture:**
     *   **Bot Layer:** Handles Telegram commands (`/scan`, `/briefing`, `/reorg`, etc.) and free-form messages.
-    *   **Pipeline Layer:** Orchestrates `Intent Extraction (AX)` -> `Normalization` -> `Execution (Adapter)`.
-    *   **Service Layer:** Interfaces with Gemini AI, TickTick API, and persistence (Redis/File).
+    *   **Write Pipeline:** `AX Intent Extraction` -> `Deterministic Normalization` -> `TickTick Adapter Execution`.
+    *   **Summary Surfaces:** Scheduler/briefing/weekly paths are read-only and do not mutate TickTick.
 
 ## Building and Running
 
@@ -25,6 +25,8 @@ npm install
 cp .env.example .env
 cp services/user_context.example.js services/user_context.js
 ```
+
+Required envs at startup: `TICKTICK_CLIENT_ID`, `TICKTICK_CLIENT_SECRET`, `TICKTICK_REDIRECT_URI`, `TELEGRAM_BOT_TOKEN`, `TELEGRAM_CHAT_ID`, and `GEMINI_API_KEYS` (or fallback `GEMINI_API_KEY`).
 
 ### Running
 *   **Development:** `npm run dev` (uses `--watch`)
@@ -46,6 +48,10 @@ The project uses **Cavekit** for spec-driven development. Domain kits are in `co
 *   **Deterministic Normalization:** All AI outputs from `ax-intent.js` MUST pass through `normalizer.js` to ensure clean titles, suppressed noise, and resolved project IDs.
 *   **Adapter Pattern:** All TickTick write operations MUST flow through `services/ticktick-adapter.js`. Read-only display/status paths may use the low-level client where the repository guidelines explicitly allow it, but bot write flows must not bypass the adapter/pipeline.
 *   **Error Handling:** Use the `QuotaExhaustedError` for AI key rotation and ensure the pipeline handles TickTick API unavailability gracefully (cavekit-pipeline-hardening R12).
+
+### Command Surface Integration
+*   Write commands (`/scan`, `/review`, `/reorg`, free-form mutation intents) must route through `services/pipeline.js`.
+*   Read/summarization commands (`/briefing`, `/weekly`, `/pending`, `/status`) remain non-write surfaces.
 
 ## Project Structure
 *   `server.js`: Main entry point and Express server.

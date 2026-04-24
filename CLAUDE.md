@@ -24,3 +24,7 @@ Read `.codex/skills/karpathy-guardrails/SKILL.md` for behavioral guardrails.
 - Define success criteria, then verify against them.
 - For multi-step work, provide a brief numbered plan and a verification loop.
 - Avoid creating runtime agent folders or committing secrets.
+
+## Command Integration Map
+- Write-path command surfaces (`/scan`, `/review`, `/reorg`, free-form mutations): route through `services/pipeline.js` -> `services/normalizer.js` -> `services/ticktick-adapter.js`.
+- Read/summarization surfaces (`/briefing`, `/weekly`, `/status`, `/pending`, scheduler summaries): no direct TickTick mutation.

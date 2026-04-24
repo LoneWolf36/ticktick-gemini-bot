@@ -99,6 +99,104 @@ test('TickTickAdapter includes the existing projectId when updating only a due d
   assert.equal(Object.hasOwn(updatePayload, 'originalProjectId'), false);
 });
 
+test('TickTickAdapter findProjectByName resolves exact project deterministically', async () => {
+  const client = Object.create(TickTickClient.prototype);
+  client.getProjects = async () => ([
+    { id: 'p-work', name: 'Work' },
+    { id: 'p-personal', name: 'Personal' },
+    { id: 'p-health', name: 'Health' },
+  ]);
+
+  const adapter = new TickTickAdapter(client);
+  const project = await adapter.findProjectByName('Work');
+
+  assert.ok(project);
+  assert.equal(project.id, 'p-work');
+  assert.equal(project.name, 'Work');
+});
+
+test('TickTickAdapter findProjectByName falls back to safe default for ambiguous hints', async () => {
+  const client = Object.create(TickTickClient.prototype);
+  client.getProjects = async () => ([
+    { id: 'p-inbox', name: 'Inbox' },
+    { id: 'p-work', name: 'Work' },
+    { id: 'p-work-admin', name: 'Work Admin' },
+  ]);
+
+  const adapter = new TickTickAdapter(client);
+  const project = await adapter.findProjectByName('wor');
+
+  assert.ok(project);
+  assert.equal(project.id, 'p-inbox');
+  assert.equal(project.name, 'Inbox');
+});
+
+test('TickTickAdapter findProjectByName falls back to default for unknown hint', async () => {
+  const client = Object.create(TickTickClient.prototype);
+  client.getProjects = async () => ([
+    { id: 'p-inbox', name: 'Inbox' },
+    { id: 'p-work', name: 'Work' },
+    { id: 'p-personal', name: 'Personal' },
+  ]);
+
+  const adapter = new TickTickAdapter(client);
+  const project = await adapter.findProjectByName('does-not-exist');
+
+  assert.ok(project);
+  assert.equal(project.id, 'p-inbox');
+  assert.equal(project.name, 'Inbox');
+});
+
+test('TickTickAdapter updateTask preserves existing notes on due-date-only mutation payloads', async () => {
+  let updatePayload = null;
+  const client = Object.create(TickTickClient.prototype);
+  client.getTask = async () => ({
+    id: 'task-preserve-notes',
+    projectId: 'proj-notes',
+    content: 'Original notes\nline 2',
+    priority: 0,
+    status: 0,
+  });
+  client.updateTask = async (_taskId, payload) => {
+    updatePayload = payload;
+    return { id: 'task-preserve-notes', ...payload };
+  };
+
+  const adapter = new TickTickAdapter(client);
+  await adapter.updateTask('task-preserve-notes', {
+    originalProjectId: 'proj-notes',
+    dueDate: '2026-03-11T09:30:00.000+0000',
+    content: '',
+  });
+
+  assert.equal(updatePayload.dueDate, '2026-03-11T09:30:00.000+0000');
+  assert.equal(Object.hasOwn(updatePayload, 'content'), false);
+});
+
+test('TickTickAdapter updateTask appends genuinely new notes once with separator', async () => {
+  let updatePayload = null;
+  const client = Object.create(TickTickClient.prototype);
+  client.getTask = async () => ({
+    id: 'task-merge-notes',
+    projectId: 'proj-notes',
+    content: 'Original notes',
+    priority: 0,
+    status: 0,
+  });
+  client.updateTask = async (_taskId, payload) => {
+    updatePayload = payload;
+    return { id: 'task-merge-notes', ...payload };
+  };
+
+  const adapter = new TickTickAdapter(client);
+  await adapter.updateTask('task-merge-notes', {
+    originalProjectId: 'proj-notes',
+    content: 'Original notes\n---\nCall vendor at 5',
+  });
+
+  assert.equal(updatePayload.content, 'Original notes\n---\nCall vendor at 5');
+});
+
 test('TickTickAdapter createTask includes items when checklistItems provided', async () => {
   let createPayload = null;
   const client = Object.create(TickTickClient.prototype);

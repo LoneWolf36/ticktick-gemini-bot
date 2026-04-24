@@ -527,6 +527,18 @@ function _convertRepeatHint(repeatHint) {
     return null;
 }
 
+function _resolveRepeatFlag(intentAction = {}) {
+    if (typeof intentAction.repeatHint === 'string' && intentAction.repeatHint.trim()) {
+        return _convertRepeatHint(intentAction.repeatHint);
+    }
+
+    if (typeof intentAction.repeatFlag === 'string' && intentAction.repeatFlag.trim()) {
+        return intentAction.repeatFlag.trim();
+    }
+
+    return null;
+}
+
 /**
  * Resolves a project hint string to a concrete TickTick project ID.
  * Expects a list of projects from the TickTick API.
@@ -859,7 +871,7 @@ export function normalizeAction(intentAction, options = {}) {
         originalPriority: originalPriority,  // Keep for validation
         projectId: _resolveProject(intentAction.projectHint, projects, defaultProjectId),
         dueDate: _expandDueDate(intentAction.dueDate, options),
-        repeatFlag: _convertRepeatHint(intentAction.repeatHint),
+        repeatFlag: _resolveRepeatFlag(intentAction),
         splitStrategy: intentAction.splitStrategy || 'single',
         valid: true,
         validationErrors: []
@@ -888,7 +900,15 @@ export function normalizeActions(intentActions, options = {}) {
             _index: Number.isInteger(intent?._index) ? intent._index : intentIndex,
         };
 
-        if (intent.splitStrategy === 'multi-day' && intent.dueDate) {
+        const parsedDates = _parseDateList(intent.dueDate);
+        const hasMultipleNamedDays = parsedDates.length > 1;
+        const hasRecurringHint = typeof intent.repeatHint === 'string' && intent.repeatHint.trim().length > 0;
+        const shouldSplitMultiDay = intent.type === 'create'
+            && intent.dueDate
+            && !hasRecurringHint
+            && (intent.splitStrategy === 'multi-day' || hasMultipleNamedDays);
+
+        if (shouldSplitMultiDay) {
             const dates = _parseDateList(intent.dueDate);
             for (const date of dates) {
                 const cloned = { ...indexedIntent, dueDate: date, splitStrategy: 'single' };

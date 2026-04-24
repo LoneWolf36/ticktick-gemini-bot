@@ -57,7 +57,7 @@ import {
 // ─── Helper: registerCallbacks without TickTick client ───────
 async function registerCallbacksForTest(bot, ticktickMock, pipeline) {
   const { registerCallbacks } = await import('../bot/callbacks.js');
-  registerCallbacks(bot, ticktickMock, {}, {
+  registerCallbacks(bot, {
     ...ticktickMock,
     listProjects: ticktickMock.listProjects || (async () => []),
     listActiveTasks: ticktickMock.listActiveTasks || (async () => []),

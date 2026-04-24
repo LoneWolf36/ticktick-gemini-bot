@@ -1,1 +1,0 @@
-/home/lonewolf09/.agents/skills/ad-hoc-profile-load/SKILL.md

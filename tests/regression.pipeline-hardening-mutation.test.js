@@ -499,8 +499,6 @@ test('registerCallbacks wires mut:pick and mut:cancel callback families', async 
 
   registerCallbacks(
     bot,
-    { isAuthenticated: () => true, getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
-    { isQuotaExhausted: () => false },
     {},
     { processMessage: async () => ({ type: 'non-task', confirmationText: 'Got it' }) },
   );
@@ -558,7 +556,7 @@ test('mut:pick resumes through pipeline with resolved task context', async () =>
     },
   };
 
-  registerCallbacks(bot, ticktick, { isQuotaExhausted: () => false }, adapter, pipeline);
+  registerCallbacks(bot, adapter, pipeline);
 
   // Find the mut:pick handler
   const pickHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:pick'))?.handler;
@@ -618,8 +616,6 @@ test('mut:pick rejects cross-user selections', async () => {
 
   registerCallbacks(
     bot,
-    { isAuthenticated: () => true, getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
-    { isQuotaExhausted: () => false },
     {},
     { processMessage: async () => { throw new Error('should not be called'); } },
   );
@@ -671,8 +667,6 @@ test('mut:pick rejects expired clarifications', async () => {
 
   registerCallbacks(
     bot,
-    { isAuthenticated: () => true, getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
-    { isQuotaExhausted: () => false },
     {},
     { processMessage: async () => { throw new Error('should not be called'); } },
   );
@@ -723,8 +717,6 @@ test('mut:cancel clears pending state safely', async () => {
 
   registerCallbacks(
     bot,
-    { isAuthenticated: () => true, getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
-    { isQuotaExhausted: () => false },
     {},
     {},
   );
@@ -766,8 +758,6 @@ test('mut:pick fails safely when no pending state exists', async () => {
 
   registerCallbacks(
     bot,
-    { isAuthenticated: () => true, getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
-    { isQuotaExhausted: () => false },
     {},
     { processMessage: async () => { throw new Error('should not be called'); } },
   );
@@ -1311,7 +1301,7 @@ test('WP07 T072: mixed create+mutation request is rejected', async () => {
   assert.equal(harness.adapterCalls.update.length, 0);
 });
 
-test('WP07 T072: multi-mutation request reaches execution when pre-normalized actions are supplied', async () => {
+test('WP07 T072: multi-mutation request is rejected by single-target boundary', async () => {
   const harness = createPipelineHarness({
     intents: [
       { type: 'complete', title: 'Task A', targetQuery: 'task A', confidence: 0.9 },
@@ -1325,9 +1315,29 @@ test('WP07 T072: multi-mutation request reaches execution when pre-normalized ac
 
   const result = await harness.processMessage('complete both tasks');
 
-  assert.equal(result.type, 'task');
-  assert.equal(harness.adapterCalls.complete.length, 2);
-  assert.match(result.confirmationText, /Completed 2 task\(s\)/);
+  assert.equal(result.type, 'error');
+  assert.equal(result.failure.class, 'validation');
+  assert.equal(harness.adapterCalls.complete.length, 0);
+  assert.match(result.confirmationText, /one task per request|one target/i);
+});
+
+test('WP07 T072: batch-style mutation phrasing is rejected with single-target guidance', async () => {
+  const harness = createPipelineHarness({
+    intents: [
+      { type: 'update', title: null, targetQuery: 'all gym tasks', dueDate: 'next week', confidence: 0.9 },
+    ],
+    activeTasks: [
+      { id: 'task-gym-01', title: 'Gym mon', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
+      { id: 'task-gym-02', title: 'Gym wed', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
+    ],
+  });
+
+  const result = await harness.processMessage('move all gym tasks to next week');
+
+  assert.equal(result.type, 'error');
+  assert.equal(result.failure.class, 'validation');
+  assert.equal(harness.adapterCalls.update.length, 0);
+  assert.match(result.confirmationText, /one task per request|single task|one target/i);
 });
 
 test('WP07 T072: pronoun-only underspecified target — verify resolution behavior', async () => {

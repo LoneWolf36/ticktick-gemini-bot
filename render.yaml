@@ -17,10 +17,13 @@ services:
         sync: false
       - key: TICKTICK_REDIRECT_URI
         sync: false
-      # Required — TickTick access token (obtain by running OAuth locally first,
-      # then copy the token printed to console)
+      # Optional — TickTick OAuth tokens (can also be bootstrapped via / OAuth flow)
       - key: TICKTICK_ACCESS_TOKEN
         sync: false
+        required: false
+      - key: TICKTICK_REFRESH_TOKEN
+        sync: false
+        required: false
       # Required — Telegram credentials
       - key: TELEGRAM_BOT_TOKEN
         sync: false
@@ -69,3 +72,22 @@ services:
         value: "0"
       - key: POLL_INTERVAL_MINUTES
         value: "5"
+      # Optional — behavioral memory retention windows
+      - key: BEHAVIORAL_SIGNAL_RETENTION_DAYS
+        value: "30"
+      - key: BEHAVIORAL_SIGNAL_ARCHIVE_DAYS
+        value: "90"
+      # Optional — pipeline transient retry tuning
+      - key: PIPELINE_TRANSIENT_MAX_RETRIES
+        value: "1"
+      - key: PIPELINE_TRANSIENT_BASE_DELAY_MS
+        value: "250"
+      - key: PIPELINE_TRANSIENT_MAX_DELAY_MS
+        value: "4000"
+      # Optional — TickTick rate-limit retry tuning
+      - key: TICKTICK_RATE_LIMIT_MAX_RETRIES
+        value: "3"
+      - key: TICKTICK_RATE_LIMIT_BASE_DELAY_MS
+        value: "1000"
+      - key: TICKTICK_RATE_LIMIT_MAX_DELAY_MS
+        value: "30000"
