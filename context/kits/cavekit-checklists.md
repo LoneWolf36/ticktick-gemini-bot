@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-24T12:20:00Z"
+last_edited: "2026-04-24T14:20:00Z"
 source_specs: ["005-checklist-subtask-support"]
 complexity: "medium"
 ---
@@ -62,11 +62,11 @@ Checklist/subtask extraction, creation, and clarification for create-time task o
 ### R7: Regression Coverage
 **Description:** Checklist flows have dedicated test coverage in the pipeline harness.
 **Acceptance Criteria:**
-- [ ] Test: checklist intent creates parent task with items
-- [ ] Test: multi-task intent creates separate tasks (not checklist)
-- [ ] Test: ambiguous intent triggers clarification
-- [ ] Test: over-limit checklist items are truncated
-- [ ] Existing pipeline tests continue to pass
+- [x] Test: checklist intent creates parent task with items
+- [x] Test: multi-task intent creates separate tasks (not checklist)
+- [x] Test: ambiguous intent triggers clarification
+- [x] Test: over-limit checklist items are truncated
+- [x] Existing pipeline tests continue to pass
 **Dependencies:** cavekit-pipeline-hardening R6
 
 ## Out of Scope
@@ -88,11 +88,12 @@ Checklist/subtask extraction, creation, and clarification for create-time task o
 - [x] Audit R3 (Checklist Item Normalization): `services/normalizer.js` cleans checklist item titles independently, flattens to one checklist level, caps items at 30 with warnings, and normalizes status/sortOrder; `tests/normalizer.test.js` covers trimming, truncation, invalid-item dropping, and over-limit behavior.
 - [x] Audit R4 (Adapter Checklist Creation): `services/ticktick-adapter.js` maps optional `checklistItems` into TickTick payload `items`, assigns stable sort order, and drops malformed items safely; `tests/regression.adapter-execution-reorg.test.js` verifies payload mapping directly.
 - [x] `tests/e2e-live-checklist.mjs` excluded from drift checks — it is a mocked logic validator redundant with `tests/regression.checklist-clarification.test.js`, kept only for interactive debugging.
-- [ ] Keep R7 unchecked pending direct evidence for the dedicated pipeline-harness regression requirement wording.
+- [x] Audit R7 (Regression Coverage): `tests/regression.checklist-clarification.test.js` now provides dedicated pipeline-harness coverage for parent-task checklist creation, separate multi-task creation, and ambiguous clarification, `tests/regression.checklist-r7-truncation.test.js` adds the missing over-limit truncation proof through the same harness path, and the focused/full regression suites remain green.
 - [x] Audit R5 (Terse Checklist Confirmations): `services/pipeline.js` now keeps single checklist-create confirmations terse by appending only the checklist item count, and `tests/regression.checklist-clarification.test.js` verifies both standard and urgent responses stay compact without listing sub-items.
 - [x] Audit R6 (Checklist Pipeline Logging): `services/pipeline.js` now emits privacy-safe checklist count/shape metadata at AX extraction and normalization stages, `services/ticktick-adapter.js` logs structured checklist payload-mapping counts at create time, and `tests/regression.checklist-r6-logging.test.js` verifies the extracted → normalized → adapter chain without leaking raw checklist titles or message text.
 
 ## Changelog
+- 2026-04-24: R7 completed — checklist flows now have dedicated pipeline-harness regression coverage for parent creation, separate multi-task creation, ambiguity clarification, and over-limit truncation, with checklist suites and full regression remaining green.
 - 2026-04-24: R5 completed — single checklist creates now confirm tersely with an item count instead of dumping checklist sub-items, with standard and urgent-mode regression coverage.
 - 2026-04-24: R6 completed — checklist pipeline telemetry now records extracted checklist counts, normalized checklist counts after cleaning, and adapter payload-mapping counts with focused regression coverage and privacy-safe logging boundaries.
 - 2026-04-22: R1-R4 completed — checklist extraction, disambiguation, normalization, and adapter payload mapping now have direct code and regression evidence.

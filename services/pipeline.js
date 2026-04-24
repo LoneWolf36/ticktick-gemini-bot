@@ -49,6 +49,21 @@ const USER_FAILURE_MESSAGES = {
     [FAILURE_CLASSES.UNEXPECTED]: '⚠️ An unexpected error occurred while processing your request.',
 };
 
+function parseNonNegativeIntEnv(value, fallback) {
+    const parsed = Number.parseInt(value ?? '', 10);
+    return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
+}
+
+function getPipelineRetryConfig() {
+    const maxRetries = parseNonNegativeIntEnv(process.env.PIPELINE_TRANSIENT_MAX_RETRIES, 1);
+    const baseDelayMs = parseNonNegativeIntEnv(process.env.PIPELINE_TRANSIENT_BASE_DELAY_MS, 250);
+    const maxDelayMs = Math.max(
+        baseDelayMs,
+        parseNonNegativeIntEnv(process.env.PIPELINE_TRANSIENT_MAX_DELAY_MS, 4000),
+    );
+    return { maxRetries, baseDelayMs, maxDelayMs };
+}
+
 function normalizeRetryDelayMs(retryAfterMs, retryAt) {
     if (Number.isFinite(retryAfterMs) && retryAfterMs >= 0) {
         return Math.floor(retryAfterMs);
@@ -84,6 +99,12 @@ function extractAdapterErrorMeta(errorOrMessage) {
 
 function classifyAdapterFailureCategory(errorOrMessage = '') {
     const meta = extractAdapterErrorMeta(errorOrMessage);
+    if (meta.code === 'PERMISSION_DENIED' || meta.code === 'AUTH_ERROR' || meta.code === 'NOT_FOUND' || meta.code === 'ALREADY_COMPLETED') {
+        return FAILURE_CATEGORIES.PERMANENT;
+    }
+    if (meta.code === 'NETWORK_ERROR' || meta.code === 'SERVER_ERROR') {
+        return FAILURE_CATEGORIES.TRANSIENT;
+    }
     if (meta.isQuotaExhausted || meta.code === 'RATE_LIMIT_QUOTA_EXHAUSTED' || meta.code === 'QUOTA_EXHAUSTED') {
         return FAILURE_CATEGORIES.PERMANENT;
     }
@@ -131,10 +152,18 @@ function buildUserFailureMessage({ failureClass, failureCategory, details, rolle
         const summary = successCount !== null && failureCount !== null
             ? `${successCount} succeeded, ${failureCount} failed.`
             : 'Some tasks succeeded and some failed.';
+        const succeededTitles = Array.isArray(details?.succeededTitles) ? details.succeededTitles.filter(Boolean) : [];
+        const failedTitles = Array.isArray(details?.failedTitles) ? details.failedTitles.filter(Boolean) : [];
+        const succeededHint = succeededTitles.length > 0
+            ? (rolledBack
+                ? ` Rolled back: ${succeededTitles.slice(0, 2).join(', ')}.`
+                : ` Success: ${succeededTitles.slice(0, 2).join(', ')}.`)
+            : '';
+        const failedHint = failedTitles.length > 0 ? ` Failed: ${failedTitles.slice(0, 2).join(', ')}.` : '';
 
         return rolledBack
-            ? `⚠️ Task updates partially failed: ${summary} Earlier successful changes were rolled back.`
-            : `⚠️ Task updates partially failed: ${summary} Please review your tasks.`;
+            ? `⚠️ Task updates partially failed: ${summary}${succeededHint}${failedHint} Earlier successful changes were rolled back.`
+            : `⚠️ Task updates partially failed: ${summary}${succeededHint}${failedHint} Please review your tasks.`;
     }
 
     if (failureClass === FAILURE_CLASSES.ADAPTER && failureCategory === FAILURE_CATEGORIES.TRANSIENT) {
@@ -156,6 +185,15 @@ function buildUserFailureMessage({ failureClass, failureCategory, details, rolle
             return eta
                 ? `⚠️ TickTick quota is exhausted. Please retry in about ${eta}.`
                 : '⚠️ TickTick quota is exhausted right now. Please retry later.';
+        }
+        if (adapterError.code === 'PERMISSION_DENIED' || adapterError.code === 'AUTH_ERROR') {
+            return '⚠️ Permission denied for this task action.';
+        }
+        if (adapterError.code === 'NOT_FOUND') {
+            return '⚠️ Target task not found. It may have been removed already.';
+        }
+        if (adapterError.code === 'ALREADY_COMPLETED') {
+            return '⚠️ Task is already completed.';
         }
         return '⚠️ Task update could not be applied. Please correct the task details and retry.';
     }
@@ -607,6 +645,46 @@ function buildExecutionFailure(action, message, attempt, adapterError = null) {
         retryAt: meta.retryAt,
         isQuotaExhausted: meta.isQuotaExhausted,
     };
+}
+
+function appendUnexecutedActionsAsFailures({
+    actions,
+    startIndex,
+    results,
+    errors,
+    failures,
+    failedActionLabels,
+}) {
+    for (let pendingIndex = startIndex; pendingIndex < actions.length; pendingIndex++) {
+        const pendingAction = actions[pendingIndex];
+        const pendingRecord = createExecutionRecord(pendingAction, pendingIndex);
+        pendingRecord.status = 'failed';
+        pendingRecord.failureClass = ACTION_FAILURE_CLASSES.ADAPTER;
+        pendingRecord.errorMessage = 'Not executed due to earlier failure in this request.';
+        pendingRecord.attempts = 0;
+        results.push(pendingRecord);
+        errors.push(`${pendingAction.type} failed: Not executed due to earlier failure in this request.`);
+        failures.push(buildExecutionFailure(pendingAction, pendingRecord.errorMessage, 0));
+        failedActionLabels.push(getActionLabel(pendingAction));
+    }
+}
+
+function getActionLabel(action) {
+    if (!action || typeof action !== 'object') return 'task';
+    if (typeof action.title === 'string' && action.title.trim()) return action.title.trim();
+    if (typeof action.taskId === 'string' && action.taskId.trim()) return `task ${action.taskId.trim()}`;
+    return action.type || 'task';
+}
+
+function calculatePipelineBackoffMs(attempt, retryConfig) {
+    const base = retryConfig.baseDelayMs * (2 ** Math.max(0, attempt - 1));
+    return Math.min(base, retryConfig.maxDelayMs);
+}
+
+async function sleep(ms) {
+    const wait = Number.isFinite(ms) ? Math.max(0, ms) : 0;
+    if (wait <= 0) return;
+    await new Promise((resolve) => setTimeout(resolve, wait));
 }
 
 /**
@@ -1214,6 +1292,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     userMessage: executionResult.terminalFailure.userMessage,
                     developerMessage: executionResult.terminalFailure.developerMessage,
                     details: {
+                        ...(executionResult.terminalFailure.details || {}),
                         failures: executionResult.failures,
                         rollbackFailures: executionResult.rollbackFailures,
                     },
@@ -1326,6 +1405,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
 
     async function _executeActions(actions, adapter, context, telemetry) {
         const executeStartedAt = Date.now();
+        const retryConfig = getPipelineRetryConfig();
         const results = [];
         const errors = [];
         const failures = [];
@@ -1333,14 +1413,15 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
         const successfulRecords = [];
         const executionRequests = [];
         const executionResults = [];
-        const allowRetry = actions.length > 1;
+        const succeededActionLabels = [];
+        const failedActionLabels = [];
+        const maxAttempts = retryConfig.maxRetries + 1;
 
         console.log(`[Pipeline:${context.requestId}] Executing ${actions.length} valid action(s).`);
 
         for (let index = 0; index < actions.length; index++) {
             const action = actions[index];
             const record = createExecutionRecord(action, index);
-            const maxAttempts = 2;
 
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                 record.attempts = attempt;
@@ -1368,6 +1449,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     record.failureClass = ACTION_FAILURE_CLASSES.NONE;
                     record.errorMessage = null;
                     successfulRecords.push(record);
+                    succeededActionLabels.push(getActionLabel(action));
 
                     console.log(`[Pipeline:${context.requestId}] ✅ ${action.type.toUpperCase()} successful: taskId=${result?.id || action.taskId || 'n/a'}`);
                     await telemetry.emit(context, {
@@ -1433,13 +1515,24 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     });
 
                     if (adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT && attempt < maxAttempts && !isAdapterRateLimited) {
+                        await sleep(calculatePipelineBackoffMs(attempt, retryConfig));
                         continue;
                     }
 
                     record.status = 'failed';
                     errors.push(`${action.type} failed: ${message}`);
                     failures.push(buildExecutionFailure(action, message, attempt, err));
+                    failedActionLabels.push(getActionLabel(action));
                     results.push(record);
+
+                    appendUnexecutedActionsAsFailures({
+                        actions,
+                        startIndex: index + 1,
+                        results,
+                        errors,
+                        failures,
+                        failedActionLabels,
+                    });
 
                     if (successfulRecords.length === 0) {
                         return {
@@ -1465,6 +1558,8 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                                         successCount: 0,
                                         failureCount: failures.length,
                                         adapterError,
+                                        succeededTitles: succeededActionLabels,
+                                        failedTitles: failedActionLabels,
                                     },
                                     rolledBack: false,
                                 }),
@@ -1477,6 +1572,8 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                                 failureCount: failures.length,
                                 details: {
                                     adapterError,
+                                    succeededTitles: succeededActionLabels,
+                                    failedTitles: failedActionLabels,
                                 },
                             },
                         };
@@ -1516,6 +1613,8 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                                         partialFailure: true,
                                         successCount: rollbackResult.recordsInOriginalOrder.length,
                                         failureCount: failures.length,
+                                        succeededTitles: succeededActionLabels,
+                                        failedTitles: failedActionLabels,
                                     },
                                     rolledBack: true,
                                 }),
@@ -1526,6 +1625,10 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                                 attempts: attempt,
                                 successCount: rollbackResult.recordsInOriginalOrder.length,
                                 failureCount: failures.length,
+                                details: {
+                                    succeededTitles: succeededActionLabels,
+                                    failedTitles: failedActionLabels,
+                                },
                             },
                         };
                     }
@@ -1553,6 +1656,8 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                                     partialFailure: true,
                                     successCount: rollbackResult.recordsInOriginalOrder.length,
                                     failureCount: failures.length,
+                                    succeededTitles: succeededActionLabels,
+                                    failedTitles: failedActionLabels,
                                 },
                                 rolledBack: false,
                             }),
@@ -1563,6 +1668,10 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                             attempts: attempt,
                             successCount: rollbackResult.recordsInOriginalOrder.length,
                             failureCount: failures.length,
+                            details: {
+                                succeededTitles: succeededActionLabels,
+                                failedTitles: failedActionLabels,
+                            },
                         },
                     };
                 }

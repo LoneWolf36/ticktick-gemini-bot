@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-22T16:30:00Z"
+last_edited: "2026-04-24T14:20:00Z"
 source_specs: ["003-pipeline-hardening-and-regression"]
 complexity: "complex"
 ---
@@ -53,9 +53,9 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 ### R5: Retry and Rollback
 **Description:** Transient failures trigger automatic retry with rollback for partially completed multi-task operations.
 **Acceptance Criteria:**
-- [ ] Single-task transient failures retry up to configured max with exponential backoff
-- [ ] Multi-task operations that partially succeed report which tasks were created and which failed
-- [ ] No silent data loss — every parsed intent is either executed, retried, or surfaced to the user as failed
+- [x] Single-task transient failures retry up to configured max with exponential backoff
+- [x] Multi-task operations that partially succeed report which tasks were created and which failed
+- [x] No silent data loss — every parsed intent is either executed, retried, or surfaced to the user as failed
 **Dependencies:** R3, R4
 
 ### R6: Direct Pipeline Harness
@@ -104,8 +104,8 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 ### R11: Adapter Failure Surfacing
 **Description:** When an adapter operation fails (target already deleted externally, permission error), the failure is surfaced clearly.
 **Acceptance Criteria:**
-- [ ] Adapter returns typed error objects distinguishing "not found", "already completed", "permission denied", "network error"
-- [ ] Pipeline translates adapter errors to user-friendly messages without exposing API internals
+- [x] Adapter returns typed error objects distinguishing "not found", "already completed", "permission denied", "network error"
+- [x] Pipeline translates adapter errors to user-friendly messages without exposing API internals
 **Dependencies:** R3
 
 ### R12: Graceful Degradation Under API Unavailability
@@ -140,14 +140,16 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 - [ ] R2 remains unchecked: entry points consistently pass pipeline options, but handlers do not themselves construct the full canonical context object before the pipeline call.
 - [x] R3 audited directly against `services/pipeline.js`, `tests/regression.pipeline-hardening-mutation.test.js`, and `tests/regression.adapter-execution-reorg.test.js`: pipeline failures now classify deterministic transient/permanent/partial categories, transient adapter failures retry once automatically, permanent failures surface corrective user-safe messaging, and partial failures report success/failure counts without exposing internal details.
 - [x] R4 audited directly against `services/ticktick.js`, `services/ticktick-adapter.js`, `services/pipeline.js`, `tests/regression.adapter-execution-reorg.test.js`, and `tests/regression.pipeline-hardening-mutation.test.js`: TickTick 429 responses now retry with configurable exponential backoff, preserve `Retry-After`/`retry_after` ETA metadata, fail fast on oversized retry windows, surface ETA-aware user messaging, and distinguish quota exhaustion from transient rate limiting.
-- [ ] R5 remains unchecked: current execution retry logic is limited and does not satisfy the single-task exponential-backoff AC.
+- [x] R5 audited directly against `services/pipeline.js` and `tests/regression.pipeline-hardening-r5-r11.test.js`: pipeline retry/rollback now uses configurable exponential backoff for transient non-429 single-task failures, partial multi-task failures surface rolled-back and failed task labels clearly, and pending parsed actions are surfaced explicitly instead of dropping silently.
 - [ ] R7 remains unchecked: regression coverage is broad, but this pass did not prove every cavekit-task-pipeline story maps cleanly to at least one automated regression.
 - [ ] R8 remains unchecked: burst isolation is tested, but this pass did not prove the full no-race-condition write-path claim strictly enough to close the requirement.
 - [ ] R10 remains unchecked: `context/refs/acceptance-matrix.json` exists, but it does not yet provide full FR-to-test-case tracking.
-- [ ] R11 remains unchecked: adapter errors are classified, but the AC's exact typed surface (`not found`, `already completed`, `permission denied`, `network error`) is not fully implemented.
+- [x] R11 audited directly against `services/ticktick-adapter.js`, `services/pipeline.js`, and `tests/regression.pipeline-hardening-r5-r11.test.js`: adapter failures now normalize to typed `NOT_FOUND`, `ALREADY_COMPLETED`, `PERMISSION_DENIED`, and `NETWORK_ERROR` codes, and pipeline surfacing turns them into user-safe messages without leaking API internals.
 - [ ] R12 remains unchecked: parsed intents are not persisted for deferred retry/manual recovery under full API unavailability.
 
 ## Changelog
+- 2026-04-24: R11 completed — adapter failures now normalize to typed not-found, already-completed, permission-denied, and network-error codes, and pipeline surfacing translates them into safe user messages without leaking API internals.
+- 2026-04-24: R5 completed — transient non-429 adapter failures now retry with configurable exponential backoff, partial failures surface rolled-back and failed task labels clearly, and execution accounting prevents silent drops for remaining parsed actions.
 - 2026-04-18: Migrated from kitty-specs 003-pipeline-hardening-and-regression
 - 2026-04-20: R6 and R9 completed — offline harness behavior and telemetry contract now have direct code + regression evidence.
 - 2026-04-21: R1 completed — canonical immutable pipeline context now persists across request, AX, normalization, execution, and result stages with observability access.

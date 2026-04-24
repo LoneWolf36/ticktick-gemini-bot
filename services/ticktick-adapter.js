@@ -6,6 +6,43 @@ import { appendBehavioralSignals, DEFAULT_BEHAVIORAL_USER_ID } from './store.js'
 const PROJECT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
 const VALID_PRIORITIES = [0, 1, 3, 5]; // TickTick valid priority values
 const ACTION_VERB_REGEX = /^(call|email|pay|book|write|draft|review|ship|send|apply|buy|clean|fix|prepare|schedule|plan|submit|update|organize|finish|confirm|get|set|message|follow|protect)\b/i;
+
+const ERROR_CODES = {
+    VALIDATION: 'VALIDATION_ERROR',
+    PERMISSION_DENIED: 'PERMISSION_DENIED',
+    NOT_FOUND: 'NOT_FOUND',
+    ALREADY_COMPLETED: 'ALREADY_COMPLETED',
+    NETWORK_ERROR: 'NETWORK_ERROR',
+    RATE_LIMITED: 'RATE_LIMITED',
+    SERVER_ERROR: 'SERVER_ERROR',
+    AUTH_ERROR: 'AUTH_ERROR',
+    API_ERROR: 'API_ERROR',
+};
+
+const NETWORK_ERROR_CODES = new Set([
+    'ECONNRESET',
+    'ETIMEDOUT',
+    'ECONNABORTED',
+    'ENOTFOUND',
+    'EAI_AGAIN',
+    'ECONNREFUSED',
+]);
+
+const TYPED_ERROR_CODES = new Set(Object.values(ERROR_CODES));
+
+function buildErrorText(error) {
+    const chunks = [];
+    if (typeof error?.message === 'string') chunks.push(error.message);
+    const responseData = error?.response?.data;
+    if (typeof responseData === 'string') {
+        chunks.push(responseData);
+    } else if (responseData && typeof responseData === 'object') {
+        for (const key of ['message', 'msg', 'error', 'detail', 'reason', 'error_description']) {
+            if (typeof responseData[key] === 'string') chunks.push(responseData[key]);
+        }
+    }
+    return chunks.join(' ').toLowerCase();
+}
 /**
  * TickTick Adapter - Narrow interface for all TickTick REST API interactions.
  * Wraps TickTickClient with validation, error classification, and structured logging.
@@ -77,7 +114,7 @@ export class TickTickAdapter {
      */
     _classifyError(error, operation) {
         const classified = new Error(error.message);
-        classified.code = error.code || this._getErrorCode(error);
+        classified.code = TYPED_ERROR_CODES.has(error?.code) ? error.code : this._getErrorCode(error);
         classified.operation = operation;
         classified.statusCode = error.statusCode || error.response?.status;
         if (error.retryAfterMs !== undefined) classified.retryAfterMs = error.retryAfterMs;
@@ -96,12 +133,23 @@ export class TickTickAdapter {
      */
     _getErrorCode(error) {
         const status = error.statusCode || error.response?.status;
-        if (status === 401 || status === 403) return 'AUTH_ERROR';
-        if (status === 404) return 'NOT_FOUND';
-        if (status === 429) return 'RATE_LIMITED';
-        if (status >= 500) return 'SERVER_ERROR';
-        if (error.code === 'ECONNRESET' || error.code === 'ETIMEDOUT') return 'NETWORK_ERROR';
-        return 'API_ERROR';
+        const normalizedMessage = buildErrorText(error);
+
+        if (status === 403) return ERROR_CODES.PERMISSION_DENIED;
+        if (status === 401) return ERROR_CODES.AUTH_ERROR;
+        if (status === 404) return ERROR_CODES.NOT_FOUND;
+
+        if (/(already\s+completed|already\s+done|task\s+is\s+completed|cannot\s+complete\s+completed|completed\s+already)/i.test(normalizedMessage)) {
+            return ERROR_CODES.ALREADY_COMPLETED;
+        }
+
+        if (status === 429) return ERROR_CODES.RATE_LIMITED;
+        if (status >= 500) return ERROR_CODES.SERVER_ERROR;
+        if (NETWORK_ERROR_CODES.has(error.code)) return ERROR_CODES.NETWORK_ERROR;
+        if (/(network\s+error|timed\s+out|timeout|socket\s+hang\s+up|connection\s+(reset|refused|closed))/i.test(normalizedMessage)) {
+            return ERROR_CODES.NETWORK_ERROR;
+        }
+        return ERROR_CODES.API_ERROR;
     }
 
     /**
@@ -447,14 +495,13 @@ export class TickTickAdapter {
             return createdTask;
         } catch (error) {
             const elapsed = Date.now() - start;
-            // Skip classification for validation errors (already classified)
-            if (!error.code) {
-                const classified = this._classifyError(error, 'createTask');
-                this._log('createTask', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
-                throw classified;
+            if (error.code === ERROR_CODES.VALIDATION) {
+                this._log('createTask', `FAILED { error: "${error.message}", code: "${error.code}", ${elapsed}ms }`, true);
+                throw error;
             }
-            this._log('createTask', `FAILED { error: "${error.message}", code: "${error.code}", ${elapsed}ms }`, true);
-            throw error;
+            const classified = this._classifyError(error, 'createTask');
+            this._log('createTask', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            throw classified;
         }
     }
 
