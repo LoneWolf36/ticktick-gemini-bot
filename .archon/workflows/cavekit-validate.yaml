@@ -45,6 +45,20 @@ nodes:
 
       Use `$KITS_DIR` for all subsequent kit file paths.
 
+      ## Step 0.5: Bootstrap a Cold Worktree Before Runtime Validation
+
+      If this Archon worktree does not have dependencies installed yet, bootstrap it before you run any repo tests or runtime checks:
+
+      ```bash
+      if [ -f package-lock.json ] && [ ! -d node_modules ]; then
+        npm ci
+      elif [ -f package.json ] && [ ! -d node_modules ]; then
+        npm install
+      fi
+      ```
+
+      Do this once near the start of the run so missing `node_modules` does not create false-negative validation failures.
+
       ## Step 1: Read Overview
 
       ```bash
@@ -129,6 +143,16 @@ nodes:
       ---
 
       ## Step 1: Spot-Check Completed Requirements
+
+      If you plan to run any repo tests in this node and `node_modules` is still missing, bootstrap first:
+
+      ```bash
+      if [ -f package-lock.json ] && [ ! -d node_modules ]; then
+        npm ci
+      elif [ -f package.json ] && [ ! -d node_modules ]; then
+        npm install
+      fi
+      ```
 
       For each `[x]` requirement, do a quick grep to verify the implementation exists:
 
