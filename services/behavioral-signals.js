@@ -30,9 +30,9 @@ export const SignalType = Object.freeze({
     POSTPONE: 'postpone',
     /** Task description or checklist size changed materially — planning churn */
     SCOPE_CHANGE: 'scope_change',
-    /** Subtasks added or task split — decomposition / over-planning */
+    /** Subtasks added or task split — decomposition activity */
     DECOMPOSITION: 'decomposition',
-    /** Heavy planning activity detected without execution — avoidance */
+    /** Heavy planning activity detected without matching execution */
     PLANNING_HEAVY: 'planning_heavy',
     /** Task marked complete — execution signal */
     COMPLETION: 'completion',

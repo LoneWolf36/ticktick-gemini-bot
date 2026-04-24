@@ -493,6 +493,52 @@ test('behavioral pattern notices omit low-confidence ambiguous patterns', () => 
   assert.equal(notice, null);
 });
 
+test('behavioral pattern notices stay silent until repeated evidence threshold is met', () => {
+  const notice = buildBehavioralPatternNotice([
+    {
+      type: 'planning_without_execution_type_a',
+      confidence: 'standard',
+      eligibleForSurfacing: true,
+      signalCount: 2,
+      windowStart: '2026-04-20T08:00:00Z',
+      windowEnd: '2026-04-22T10:00:00Z',
+    },
+  ], { nowIso: '2026-04-22T12:00:00Z' });
+
+  assert.equal(notice, null);
+});
+
+test('weekly summary urgent mode does not lower behavioral callout threshold', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const processedHistory = buildSummaryProcessedHistoryFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = {
+    ...buildSummaryResolvedStateFixture({ urgentMode: true }),
+    kind: 'weekly',
+    generatedAtIso: '2026-04-22T12:00:00Z',
+  };
+
+  const result = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory,
+    historyAvailable: true,
+    rankingResult,
+    behavioralPatterns: [{
+      type: 'planning_without_execution_type_b',
+      confidence: 'high',
+      eligibleForSurfacing: true,
+      signalCount: 3,
+      uniqueDomains: 3,
+      windowStart: '2026-04-20T08:00:00Z',
+      windowEnd: '2026-04-22T10:00:00Z',
+    }],
+  });
+
+  assert.equal(result.summary.notices.some((item) => item.code === 'behavioral_pattern'), false);
+  assert.equal(result.summary.notices.some((item) => item.code === 'urgent_mode_active'), true);
+});
+
 test('composeWeeklySummary stays observational and scannable', () => {
   const activeTasks = buildSummaryActiveTasksFixture();
   const processedHistory = buildSummaryProcessedHistoryFixture({ variant: 'repeated_ignored' });
@@ -861,7 +907,7 @@ test('behavioral pattern notices stay observational across surfaced pattern type
       signalCount: 12,
       windowStart: '2026-04-20T08:00:00Z',
       windowEnd: '2026-04-22T10:00:00Z',
-      expectedCue: /capture|completion|focus/i,
+      expectedCue: /completion|plan|finish|focus/i,
     },
   ];
 

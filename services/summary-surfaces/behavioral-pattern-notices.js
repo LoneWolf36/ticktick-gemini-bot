@@ -25,6 +25,28 @@ function isFreshPattern(pattern, nowMs = Date.now()) {
     return windowEndMs >= nowMs - (RETENTION_DAYS * DAY_MS);
 }
 
+function isSupportedPatternType(type) {
+    return type === BehavioralPatternType.SNOOZE_SPIRAL
+        || type === BehavioralPatternType.PLANNING_TYPE_A
+        || type === BehavioralPatternType.PLANNING_TYPE_B;
+}
+
+function hasRepeatedEvidence(pattern) {
+    const count = Number.isFinite(pattern?.signalCount) ? pattern.signalCount : 0;
+
+    if (pattern?.type === BehavioralPatternType.SNOOZE_SPIRAL) {
+        return count >= 3;
+    }
+    if (pattern?.type === BehavioralPatternType.PLANNING_TYPE_A) {
+        return count >= 3;
+    }
+    if (pattern?.type === BehavioralPatternType.PLANNING_TYPE_B) {
+        return count >= 10;
+    }
+
+    return false;
+}
+
 function describePattern(pattern) {
     if (pattern?.type === BehavioralPatternType.SNOOZE_SPIRAL) {
         const count = Number.isFinite(pattern?.signalCount) ? pattern.signalCount : 'multiple';
@@ -32,12 +54,12 @@ function describePattern(pattern) {
     }
     if (pattern?.type === BehavioralPatternType.PLANNING_TYPE_A) {
         const count = Number.isFinite(pattern?.signalCount) ? pattern.signalCount : 'multiple';
-        return `Detailed planning changes stacked up ${count} times without matching completion, so bias today toward execution over more breakdown.`;
+        return `Detailed planning changes stacked up ${count} times without matching completion, so keep planning lightweight and pair it with one executable step today.`;
     }
     if (pattern?.type === BehavioralPatternType.PLANNING_TYPE_B) {
         const count = Number.isFinite(pattern?.signalCount) ? pattern.signalCount : 'multiple';
         const domains = Number.isFinite(pattern?.uniqueDomains) ? pattern.uniqueDomains : 'multiple';
-        return `${count} new tasks landed across ${domains} domain${domains === 1 ? '' : 's'} before completion caught up, so keep focus narrow before adding more.`;
+        return `${count} new tasks landed across ${domains} domain${domains === 1 ? '' : 's'} before completion caught up, so plan in smaller batches and finish one before adding the next.`;
     }
     return 'Recent behavioral signals stayed mixed, so keep the next step concrete without over-interpreting the pattern.';
 }
@@ -46,8 +68,10 @@ export function selectBehavioralPatternsForSummary(patterns = [], { nowIso = nul
     const nowMs = parsePatternTime(nowIso) ?? Date.now();
     return toArray(patterns)
         .filter((pattern) => pattern && typeof pattern === 'object')
+        .filter((pattern) => isSupportedPatternType(pattern.type))
         .filter((pattern) => pattern.eligibleForSurfacing === true)
         .filter((pattern) => pattern.confidence === 'standard' || pattern.confidence === 'high')
+        .filter((pattern) => hasRepeatedEvidence(pattern))
         .filter((pattern) => isFreshPattern(pattern, nowMs))
         .sort((left, right) => {
             const leftWeight = confidenceWeight(left.confidence);

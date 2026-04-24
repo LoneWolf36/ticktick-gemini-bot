@@ -324,6 +324,34 @@ test('classifyTaskEvent emits classifier core patterns from derived metadata onl
   }
 });
 
+test('planning-without-execution signal remains metadata-only with no surfacing language', () => {
+  const signal = classifyTaskEvent({
+    eventType: 'update',
+    taskId: 't-plan-language',
+    category: 'career',
+    projectId: 'career',
+    checklistCountBefore: 0,
+    checklistCountAfter: 7,
+    descriptionLengthBefore: 20,
+    descriptionLengthAfter: 280,
+    subtaskCountBefore: 0,
+    subtaskCountAfter: 6,
+    planningComplexityScore: 8,
+    completionRateWindow: 0.1,
+    planningSubtypeA: true,
+    timestamp: '2026-04-14T10:00:00Z',
+  }).find((item) => item.type === SignalType.PLANNING_WITHOUT_EXECUTION);
+
+  assert.ok(signal);
+  assert.equal(typeof signal.type, 'string');
+  assert.equal(signal.type, SignalType.PLANNING_WITHOUT_EXECUTION);
+  assert.equal(typeof signal.metadata, 'object');
+  assert.equal(signal.metadata.message, undefined);
+  assert.equal(signal.metadata.notice, undefined);
+  assert.equal(signal.metadata.guidance, undefined);
+  assert.equal(signal.metadata.summary, undefined);
+});
+
 test('behavioral signals NEVER contain raw titles or message text', () => {
   const events = [
     { eventType: 'create', taskId: 't1', category: 'work', projectId: 'p1', timestamp: '2026-04-14T10:00:00Z' },

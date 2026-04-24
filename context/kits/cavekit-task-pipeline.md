@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-23T18:20:00Z"
+last_edited: "2026-04-24T11:15:00Z"
 source_specs: ["001-task-operations-pipeline", "002-natural-language-task-mutations"]
 complexity: "complex"
 ---
@@ -75,10 +75,10 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 ### R8: Terse Responses
 **Description:** User-facing responses for task operations are terse confirmations. No verbose analysis output.
 **Acceptance Criteria:**
-- [ ] Clear single-task creates return "Created: {title}"
-- [ ] Multi-task creates return "Created {N} tasks"
-- [ ] Response verbosity respects current work-style state (see cavekit-work-style)
-- [ ] Clarification prompts are narrow and specific — never multi-paragraph
+- [x] Clear single-task creates return "Created: {title}"
+- [x] Multi-task creates return "Created {N} tasks"
+- [x] Response verbosity respects current work-style state (see cavekit-work-style)
+- [x] Clarification prompts are narrow and specific — never multi-paragraph
 **Dependencies:** none
 
 ### R9: Free-Form Mutation Intent
@@ -183,6 +183,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - [x] R2 (Multi-Task Parsing): `services/pipeline.js` now preserves canonical multi-create execution, splits clear create intents from ambiguous create fragments, executes only the clear creates, and surfaces the remaining focused clarification through both pipeline and bot command flows; `tests/regression.pipeline-multi-create-clarification.test.js` plus `tests/regression.work-style-commands-scheduler.test.js` cover canonical multi-create, mixed clear+ambiguous fragments, pure ambiguous clarification, and checklist non-regression.
 - [x] R3 (Deterministic Normalization): `services/normalizer.js` deterministically strips title noise, normalizes repeat/project/date fields, suppresses filler content, and rejects malformed data paths; `tests/normalizer.test.js` covers title, content, checklist, recurrence, and truncation behavior directly.
 - [x] R4 (Single TickTick Adapter): all 3 ACs implemented and verified. All production writes route through adapter, read-only display flows remain allowed per repo guidance, live harnesses were updated, and adapter failure preserves parsed intent with `intents` + `normalizedActions` in failure result.
+- [x] R8 (Terse Responses): `services/pipeline.js` now uses exact terse create confirmations (`Created: {title}` and `Created {N} tasks`), urgent mode continues to compress output without skipping content, and `tests/regression.adapter-execution-reorg.test.js` plus `tests/regression.pipeline-multi-create-clarification.test.js` cover single-create, multi-create, work-style verbosity, and narrow clarification behavior.
 - [x] R15 (Command Surfaces): `/scan`, `/pending`, `/review`, `/undo`, `/menu`, `/status`, and `/reset` are implemented in `bot/commands.js` and now checked explicitly.
 - [x] R10 (Conservative Target Resolution): `services/task-resolver.js` resolves exact/prefix/contains/fuzzy matches conservatively, `services/pipeline.js` routes mutation intents through clarification/not-found handling before execution, `tests/task-resolver.test.js` covers fail-closed ambiguity cases, and `tests/regression.pipeline-hardening-mutation.test.js` covers pronoun references, exact-match wins, not-found, and delete safety.
 - [x] R12 (Privacy-Aware Pipeline Logging): `services/pipeline.js`, `services/pipeline-context.js`, and `services/pipeline-observability.js` now keep request/intent/action tracing while redacting raw user messages, task titles, task descriptions, and target queries from lifecycle snapshots, observability sink contexts, and console/telemetry metadata; `tests/regression.pipeline-logging-privacy.test.js` plus `tests/pipeline-context.test.js` cover telemetry, lifecycle, and console privacy boundaries.
@@ -192,6 +193,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - [x] Validation-facing comments in live harnesses and reorg services were updated to reflect their final Cavekit ownership/exclusion status.
 
 ## Changelog
+- 2026-04-24: R8 completed — task-operation confirmations now use exact terse create copy, urgent mode keeps the shorter variant, and clarification prompts remain narrow without drifting into multi-paragraph output.
 - 2026-04-23: R2 completed — the pipeline now executes clear create actions from multi-task input while surfacing focused clarification for ambiguous create fragments, preserves canonical multi-create parsing, and keeps checklist clarification behavior fail-closed.
 - 2026-04-23: R12 completed — pipeline diagnostics now preserve request/intent/action tracing while redacting raw user messages, raw task titles, raw task descriptions, and target queries from lifecycle snapshots, observability sink contexts, and console telemetry.
 - 2026-04-22: R3 completed — deterministic normalization now has direct code and regression evidence for title cleanup, filler suppression, project/date/repeat handling, and malformed-input rejection.

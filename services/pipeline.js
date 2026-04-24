@@ -1707,7 +1707,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                 : `✅ Created: ${created[0].action.title}`;
         } else {
             const parts = [];
-            if (created.length > 0) parts.push(urgentMode ? `Created ${created.length}` : `Created ${created.length} task(s)`);
+            if (created.length > 0) parts.push(urgentMode ? `Created ${created.length}` : `Created ${created.length} tasks`);
             if (updated.length > 0) parts.push(urgentMode ? `Updated ${updated.length}` : `Updated ${updated.length} task(s)`);
             if (completed.length > 0) parts.push(urgentMode ? `Completed ${completed.length}` : `Completed ${completed.length} task(s)`);
             if (deleted.length > 0) parts.push(urgentMode ? `Deleted ${deleted.length}` : `Deleted ${deleted.length} task(s)`);

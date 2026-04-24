@@ -1149,6 +1149,22 @@ test('pipeline shortens urgent confirmations and clarification prompts while kee
   assert.equal(standardTask.confirmationText, '✅ Created: Buy groceries');
   assert.equal(urgentTask.confirmationText, '✅ Buy groceries');
 
+  const multiCreateHarness = createPipelineHarness({
+    intents: [
+      { type: 'create', title: 'Book flight', confidence: 0.9 },
+      { type: 'create', title: 'Pack bag', confidence: 0.9 },
+    ],
+  });
+  const standardMultiCreate = await multiCreateHarness.processMessage('book flight and pack bag', {
+    workStyleMode: store.MODE_STANDARD,
+  });
+  const urgentMultiCreate = await multiCreateHarness.processMessage('book flight and pack bag', {
+    workStyleMode: store.MODE_URGENT,
+  });
+
+  assert.equal(standardMultiCreate.confirmationText, '✅ Created 2 tasks');
+  assert.equal(urgentMultiCreate.confirmationText, '✅ Done. Created 2');
+
   const clarificationHarness = createPipelineHarness({
     intents: [{ type: 'update', title: 'Weekly update', confidence: 0.9, targetQuery: 'weekly' }],
     activeTasks: [
@@ -1168,6 +1184,7 @@ test('pipeline shortens urgent confirmations and clarification prompts while kee
   assert.match(standardClarification.confirmationText, /Write weekly report/);
   assert.match(standardClarification.confirmationText, /Review weekly metrics/);
   assert.match(urgentClarification.confirmationText, /^Which task\?/);
+  assert.doesNotMatch(urgentClarification.confirmationText, /\n\n/);
   assert.match(urgentClarification.confirmationText, /Write weekly report/);
   assert.match(urgentClarification.confirmationText, /Review weekly metrics/);
 

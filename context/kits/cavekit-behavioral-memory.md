@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-23T18:20:00Z"
+last_edited: "2026-04-24T11:15:00Z"
 source_specs: ["009-behavioral-signals-and-memory"]
 complexity: "complex"
 ---
@@ -115,17 +115,17 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 ### R12: Passive-by-Default Anti-Procrastination
 **Description:** Anti-procrastination support remains passive by default in v1.
 **Acceptance Criteria:**
-- [ ] System captures signals but does not proactively intervene in v1 unless surfacing rules allow it
-- [ ] Intervention graduation follows cavekit-work-style R7: silent signals first, direct call-outs only with repeated evidence
-- [ ] Pattern surfacing delegates to weak-inference rules in cavekit-work-style
+- [x] System captures signals but does not proactively intervene in v1 unless surfacing rules allow it
+- [x] Intervention graduation follows cavekit-work-style R7: silent signals first, direct call-outs only with repeated evidence
+- [x] Pattern surfacing delegates to weak-inference rules in cavekit-work-style
 **Dependencies:** R1, cavekit-work-style R7
 
 ### R13: Over-Planning Detection
 **Description:** System detects over-planning as a specific behavioral signal.
 **Acceptance Criteria:**
-- [ ] Planning-Without-Execution signal is captured without surfacing language
-- [ ] Pattern surfacing respects cavekit-work-style rules for weak inference
-- [ ] System balances planning with execution guidance rather than prohibiting planning entirely
+- [x] Planning-Without-Execution signal is captured without surfacing language
+- [x] Pattern surfacing respects cavekit-work-style rules for weak inference
+- [x] System balances planning with execution guidance rather than prohibiting planning entirely
 **Dependencies:** R1, R3
 
 ### R14: Testing and Privacy Audit
@@ -177,9 +177,13 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 - [x] Audit R8 (User Inspection Controls): `bot/commands.js` now exposes `/memory`, formats a plain-language summary from retained behavioral patterns, shows the retention window and last retained signal date, omits raw task text, and `tests/regression.behavioral-signals.test.js` covers populated, empty, and fail-open command paths.
 - [x] Audit R9 (User Reset Controls): `bot/commands.js` now exposes `/forget`, routes reset through deterministic `store.deleteBehavioralSignals(userId)` deletion, confirms how many retained signals were removed, and `tests/regression.behavioral-signals.test.js` verifies empty-state deletion plus that `/memory` no longer surfaces patterns after reset.
 - [x] Audit R11 (Recomputable Reflections): `services/summary-surfaces/reflection-recompute.js` now derives an explicit recomputation seam from live active tasks plus retained behavioral aggregates, `weekly-summary.js` and `daily-close-summary.js` surface recomputed context when processed history is missing or sparse, and `tests/regression.summary-surfaces.test.js` covers both weekly and daily-close reconstruction paths without requiring any permanent archive.
+- [x] Audit R12 (Passive-by-Default Anti-Procrastination): `services/summary-surfaces/behavioral-pattern-notices.js` now keeps behavioral surfacing passive-by-default by requiring supported fresh standard/high-confidence patterns plus repeated evidence before any callout appears, urgent mode does not lower that threshold, and `tests/regression.summary-surfaces.test.js` locks the silent-signals-first behavior.
+- [x] Audit R13 (Over-Planning Detection): `services/behavioral-signals.js` continues to capture `PLANNING_WITHOUT_EXECUTION` as metadata-only signal output with no surfacing copy, while `services/summary-surfaces/behavioral-pattern-notices.js` balances planning-with-execution guidance for Type A/B patterns and `tests/regression.behavioral-signals.test.js` plus `tests/regression.summary-surfaces.test.js` cover both the signal-only boundary and surfaced over-planning guidance.
 - [x] Validation traceability: behavioral-signal coverage is also tracked in `tests/regression.behavioral-signals.test.js` (classifier, storage/privacy boundaries, retention/query behavior, and pattern detection paths tied to this kit's implemented requirements).
 
 ## Changelog
+- 2026-04-24: R13 completed — planning-without-execution remains a metadata-only signal in the classifier, and surfaced over-planning guidance now stays observational, weak-inference-safe, and explicitly execution-balancing rather than anti-planning.
+- 2026-04-24: R12 completed — behavioral callouts now stay passive-by-default in v1 by requiring repeated evidence before surfacing, preserving silent-signal-first behavior, and keeping urgent mode from lowering behavioral inference thresholds.
 - 2026-04-23: R11 completed — weekly and daily-close reflections now recompute useful context from live active tasks plus retained 30-day behavioral aggregates when processed history is missing or sparse, without introducing any permanent behavioral archive.
 - 2026-04-23: R9 completed — `/forget` now clears retained behavioral signals deterministically, confirms removal count, and ensures future memory summaries stop surfacing previously stored patterns after reset.
 - 2026-04-23: R8 completed — `/memory` now surfaces a plain-language behavioral memory summary with active patterns, retention window, and last signal date while failing open when lookup is unavailable.
