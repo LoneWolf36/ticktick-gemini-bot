@@ -20,6 +20,8 @@ const LEADING_ARTICLES = /^(a|an|the)\s+/i;
 const VERB_PATTERNS = /^(add|book|buy|call|cancel|check|clean|complete|create|delete|do|download|draft|email|exercise|fetch|file|finish|fix|get|go|have|join|learn|make|meet|organize|pay|plan|prepare|practice|read|register|remove|reply|review|schedule|send|set|setup|start|study|submit|take|talk|test|update|upload|verify|visit|wait|walk|watch|write)\b/i;
 
 // Content normalization constants
+const DEFAULT_MAX_CONTENT_LENGTH = 4000;
+
 const FILLER_PATTERNS = [
     /you('ve| have) got this!?/gi,
     /stay (focused|motivated|on track)!?/gi,
@@ -286,6 +288,23 @@ function _normalizeContent(rawContent, existingContent) {
     }
 
     return newContent;
+}
+
+/**
+ * Truncates content to a max length at a word boundary.
+ * Adds ellipsis when truncation occurs.
+ *
+ * @param {string|null} content - Content to truncate
+ * @param {number} maxLength - Maximum character length
+ * @returns {string|null} Truncated content or null
+ */
+function _truncateContent(content, maxLength = DEFAULT_MAX_CONTENT_LENGTH) {
+    if (!content || typeof content !== 'string') return content;
+    if (content.length <= maxLength) return content;
+
+    const truncated = content.substring(0, maxLength);
+    const lastWhitespace = truncated.lastIndexOf(' ');
+    return (lastWhitespace > 0 ? truncated.substring(0, lastWhitespace) : truncated) + '…';
 }
 
 /**
@@ -797,6 +816,7 @@ function _resolveActionType(intentAction, existingTask) {
 export function normalizeAction(intentAction, options = {}) {
     const {
         maxTitleLength = 80,
+        maxContentLength = DEFAULT_MAX_CONTENT_LENGTH,
         existingTaskContent = null,
         projects = [],
         defaultProjectId = null,
@@ -825,6 +845,7 @@ export function normalizeAction(intentAction, options = {}) {
         : undefined;
 
     const normalized = {
+        _index: Number.isInteger(intentAction._index) ? intentAction._index : null,
         type: _resolveActionType(intentAction, options.existingTask),
         confidence: intentAction.confidence !== undefined ? intentAction.confidence : 1.0,
         taskId: resolvedTaskId,
@@ -833,7 +854,7 @@ export function normalizeAction(intentAction, options = {}) {
         title: isMutation && !intentAction.title
             ? (resolvedTask?.title || _normalizeTitle(intentAction.title, maxTitleLength))
             : _normalizeTitle(intentAction.title, maxTitleLength),
-        content: mutationContent,
+        content: _truncateContent(mutationContent, maxContentLength),
         priority: normalizedPriority,
         originalPriority: originalPriority,  // Keep for validation
         projectId: _resolveProject(intentAction.projectHint, projects, defaultProjectId),
@@ -861,15 +882,20 @@ export function normalizeAction(intentAction, options = {}) {
 export function normalizeActions(intentActions, options = {}) {
     const results = [];
 
-    for (const intent of intentActions) {
+    for (const [intentIndex, intent] of intentActions.entries()) {
+        const indexedIntent = {
+            ...intent,
+            _index: Number.isInteger(intent?._index) ? intent._index : intentIndex,
+        };
+
         if (intent.splitStrategy === 'multi-day' && intent.dueDate) {
             const dates = _parseDateList(intent.dueDate);
             for (const date of dates) {
-                const cloned = { ...intent, dueDate: date, splitStrategy: 'single' };
+                const cloned = { ...indexedIntent, dueDate: date, splitStrategy: 'single' };
                 results.push(normalizeAction(cloned, options));
             }
         } else {
-            results.push(normalizeAction(intent, options));
+            results.push(normalizeAction(indexedIntent, options));
         }
     }
 

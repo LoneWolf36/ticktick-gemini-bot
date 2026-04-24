@@ -415,7 +415,17 @@ export class TickTickAdapter {
             if (normalizedAction.repeatFlag !== undefined && normalizedAction.repeatFlag !== null) taskData.repeatFlag = normalizedAction.repeatFlag;
 
             // Map checklist items to TickTick items payload
+            const checklistInputCount = Array.isArray(normalizedAction.checklistItems) ? normalizedAction.checklistItems.length : 0;
             const mappedItems = this._mapChecklistItems(normalizedAction.checklistItems);
+            const checklistPayloadCount = Array.isArray(mappedItems) ? mappedItems.length : 0;
+            const checklistDroppedCount = Math.max(0, checklistInputCount - checklistPayloadCount);
+            this._log('createTask.checklistMapping', {
+                hasChecklistInput: checklistInputCount > 0,
+                checklistInputCount,
+                checklistPayloadCount,
+                checklistDroppedCount,
+            });
+
             if (mappedItems) {
                 taskData.items = mappedItems;
                 this._log('createTask', `CHECKLIST { items: ${mappedItems.length} }`);

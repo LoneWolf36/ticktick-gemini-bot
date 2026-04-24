@@ -762,6 +762,12 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     intentCount: intents.length,
                     checklistIntentCount: intents.filter(i => Array.isArray(i.checklistItems) && i.checklistItems.length > 0).length,
                     totalExtractedChecklistItems: intents.reduce((sum, i) => sum + (Array.isArray(i.checklistItems) ? i.checklistItems.length : 0), 0),
+                    checklistIntentShape: intents
+                        .map((intent, intentIndex) => ({
+                            intentIndex,
+                            checklistItemCount: Array.isArray(intent?.checklistItems) ? intent.checklistItems.length : 0,
+                        }))
+                        .filter((entry) => entry.checklistItemCount > 0),
                 },
             });
 
@@ -1096,6 +1102,13 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                     invalidCount: invalidActions.length,
                     checklistActionCount: validActions.filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0).length,
                     totalNormalizedChecklistItems: validActions.reduce((sum, a) => sum + (Array.isArray(a.checklistItems) ? a.checklistItems.length : 0), 0),
+                    checklistActionShape: validActions
+                        .map((action, actionIndex) => ({
+                            actionIndex,
+                            sourceIntentIndex: Number.isInteger(action?._index) ? action._index : null,
+                            checklistItemCount: Array.isArray(action?.checklistItems) ? action.checklistItems.length : 0,
+                        }))
+                        .filter((entry) => entry.checklistItemCount > 0),
                 },
             });
 
@@ -1367,6 +1380,9 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
                         metadata: {
                             actionIndex: index,
                             checklistItemCount: Array.isArray(action.checklistItems) ? action.checklistItems.length : null,
+                            adapterChecklistPayloadCount: Array.isArray(action.checklistItems)
+                                ? action.checklistItems.length
+                                : null,
                         },
                     });
                     break;
