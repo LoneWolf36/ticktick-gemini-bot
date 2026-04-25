@@ -15,7 +15,7 @@
         "lint:duplicates": "jscpd",
         "lint:duplicates:fix": "jscpd --mode strict",
         "lint": "npm run check:duplicates",
-        "docs:typedoc": "typedoc --entryPointStrategy expand ./services ./bot server.js --out docs",
+        "docs:typedoc": "typedoc --entryPointStrategy expand ./services ./bot server.js --out docs/api",
         "docs:map": "jsdoc2md 'services/**/*.js' 'bot/**/*.js' server.js > context/refs/codebase-function-map.md"
     },
     "dependencies": {
