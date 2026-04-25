@@ -13,7 +13,17 @@ const RATE_LIMIT_MAX_RETRIES = Math.max(0, Number.parseInt(process.env.TICKTICK_
 const RATE_LIMIT_BASE_DELAY_MS = Math.max(100, Number.parseInt(process.env.TICKTICK_RATE_LIMIT_BASE_DELAY_MS || '1000', 10) || 1000);
 const RATE_LIMIT_MAX_DELAY_MS = Math.max(RATE_LIMIT_BASE_DELAY_MS, Number.parseInt(process.env.TICKTICK_RATE_LIMIT_MAX_DELAY_MS || '30000', 10) || 30000);
 
+/**
+ * Entry point for TickTick API client.
+ */
 export class TickTickClient {
+    /**
+     * Creates a new TickTickClient instance.
+     * @param {Object} options - Client configuration
+     * @param {string} options.clientId - OAuth2 client ID
+     * @param {string} options.clientSecret - OAuth2 client secret
+     * @param {string} options.redirectUri - OAuth2 redirect URI
+     */
     constructor({ clientId, clientSecret, redirectUri }) {
         this.clientId = clientId;
         this.clientSecret = clientSecret;
@@ -27,6 +37,10 @@ export class TickTickClient {
 
     // ─── OAuth2 Flow ───────────────────────────────────────────
 
+    /**
+     * Generates the OAuth2 authorization URL.
+     * @returns {string} Authorization URL
+     */
     getAuthUrl() {
         const params = new URLSearchParams({
             client_id: this.clientId,
@@ -38,6 +52,11 @@ export class TickTickClient {
         return `${OAUTH_BASE}/authorize?${params.toString()}`;
     }
 
+    /**
+     * Exchanges an authorization code for access and refresh tokens.
+     * @param {string} code - Authorization code from redirect
+     * @returns {Promise<Object>} Token response data
+     */
     async exchangeCode(code) {
         const credentials = Buffer.from(`${this.clientId}:${this.clientSecret}`).toString('base64');
         const resp = await axios.post(
@@ -66,31 +85,61 @@ export class TickTickClient {
         return resp.data;
     }
 
+    /**
+     * Checks if the client has an access token.
+     * @returns {boolean} True if authenticated
+     */
     isAuthenticated() {
         return !!this.accessToken;
     }
 
     // ─── Projects ──────────────────────────────────────────────
 
+    /**
+     * Fetches all projects for the authenticated user.
+     * @returns {Promise<Array<Object>>} List of projects
+     */
     async getProjects() {
         return this._get('/project');
     }
 
+    /**
+     * Fetches a project including its tasks.
+     * @param {string} projectId - 24-char project ID
+     * @returns {Promise<Object>} Project data with tasks array
+     */
     async getProjectWithTasks(projectId) {
         return this._get(`/project/${projectId}/data`);
     }
 
     // ─── Tasks ─────────────────────────────────────────────────
 
+    /**
+     * Fetches a single task by ID.
+     * @param {string} projectId - Project ID containing the task
+     * @param {string} taskId - 24-char task ID
+     * @returns {Promise<Object>} Task data
+     */
     async getTask(projectId, taskId) {
         return this._get(`/project/${projectId}/task/${taskId}`);
     }
 
+    /**
+     * Creates a new task.
+     * @param {Object} taskData - Task attributes
+     * @returns {Promise<Object>} Created task data
+     */
     async createTask(taskData) {
         this._invalidateCache();
         return this._post('/task', taskData);
     }
 
+    /**
+     * Updates an existing task. Handles project moves via recreation.
+     * @param {string} taskId - 24-char task ID
+     * @param {Object} taskData - Task attributes to update
+     * @returns {Promise<Object>} Updated/new task data
+     */
     async updateTask(taskId, taskData) {
         this._invalidateCache();
 
@@ -147,17 +196,32 @@ export class TickTickClient {
         return this._post(`/task/${taskId}`, payload);
     }
 
+    /**
+     * Marks a task as complete.
+     * @param {string} projectId - Project ID containing the task
+     * @param {string} taskId - 24-char task ID
+     * @returns {Promise<Object>} Completion confirmation
+     */
     async completeTask(projectId, taskId) {
         this._invalidateCache();
         return this._post(`/project/${projectId}/task/${taskId}/complete`);
     }
 
+    /**
+     * Permanently deletes a task.
+     * @param {string} projectId - Project ID containing the task
+     * @param {string} taskId - 24-char task ID
+     * @returns {Promise<Object>} Deletion confirmation
+     */
     async deleteTask(projectId, taskId) {
         this._invalidateCache();
         return this._requestWithRetry('DELETE', `/project/${projectId}/task/${taskId}`);
     }
 
-    /** Returns cache age in seconds, or null if empty/invalidated */
+    /**
+     * Returns cache age in seconds, or null if empty/invalidated.
+     * @returns {number|null} Cache age in seconds
+     */
     getCacheAgeSeconds() {
         if (!this._tasksCache || !this._cacheTime) return null;
         return Math.floor((Date.now() - this._cacheTime) / 1000);
@@ -165,6 +229,11 @@ export class TickTickClient {
 
     // ─── Fetch ALL uncompleted tasks across all projects ──────
 
+    /**
+     * Fetches all active tasks with optional TTL-based caching.
+     * @param {number} [ttlMs=60000] - Cache TTL in milliseconds
+     * @returns {Promise<Array<Object>>} List of all active tasks
+     */
     async getAllTasksCached(ttlMs = 60000) {
         if (this._tasksCache && (Date.now() - this._cacheTime) < ttlMs) {
             return this._tasksCache;
@@ -174,6 +243,10 @@ export class TickTickClient {
         return this._tasksCache;
     }
 
+    /**
+     * Fetches all active tasks across all accessible projects.
+     * @returns {Promise<Array<Object>>} List of all active tasks
+     */
     async getAllTasks() {
         const projects = await this.getProjects();
         this._cachedProjects = projects;
@@ -205,16 +278,39 @@ export class TickTickClient {
         return allTasks;
     }
 
-    /** Returns project list from the last getAllTasks() call — no extra API call needed */
+    /**
+     * Returns project list from the last getAllTasks() call — no extra API call needed.
+     * @returns {Array<Object>} Cached project list
+     */
     getLastFetchedProjects() {
         return this._cachedProjects;
     }
 
     // ─── Internal ──────────────────────────────────────────────
 
+    /**
+     * Helper for GET requests.
+     * @param {string} endpoint - API endpoint path
+     * @returns {Promise<any>} Response data
+     * @private
+     */
     async _get(endpoint) { return this._requestWithRetry('GET', endpoint); }
+
+    /**
+     * Helper for POST requests.
+     * @param {string} endpoint - API endpoint path
+     * @param {Object} [data={}] - Request body
+     * @returns {Promise<any>} Response data
+     * @private
+     */
     async _post(endpoint, data = {}) { return this._requestWithRetry('POST', endpoint, data); }
 
+    /**
+     * Refreshes the access token using the refresh token.
+     * @returns {Promise<string>} New access token
+     * @throws {Error} If refresh fails or refresh token is missing
+     * @private
+     */
     async _refreshAccessToken() {
         if (!this.refreshToken) {
             console.error('🔑 Refresh attempted but no refresh_token exists locally.');
@@ -260,6 +356,14 @@ export class TickTickClient {
         }
     }
 
+    /**
+     * Executes an API request with OAuth2 recovery (refresh) and rate-limit retries.
+     * @param {string} method - HTTP method
+     * @param {string} endpoint - API endpoint path
+     * @param {Object} [data=null] - Request body
+     * @returns {Promise<any>} Response data
+     * @private
+     */
     async _requestWithRetry(method, endpoint, data = null) {
         const makeReq = async () => {
             const config = {
@@ -348,11 +452,23 @@ export class TickTickClient {
         }
     }
 
+    /**
+     * Calculates exponential backoff delay for rate limiting.
+     * @param {number} attempt - Current retry attempt index
+     * @returns {number} Wait time in milliseconds
+     * @private
+     */
     _calculateExponentialBackoffMs(attempt) {
         const exp = RATE_LIMIT_BASE_DELAY_MS * (2 ** Math.max(0, attempt - 1));
         return Math.min(exp, RATE_LIMIT_MAX_DELAY_MS);
     }
 
+    /**
+     * Extracts rate limit metadata from an error response.
+     * @param {Error} error - The error to inspect
+     * @returns {Object} Metadata with retryAfterMs and retryAt ISO string
+     * @private
+     */
     _extractRateLimitMeta(error) {
         const retryAfterHeader = error?.response?.headers?.['retry-after'];
         const bodyRetryAfter = error?.response?.data?.retry_after;
@@ -368,6 +484,14 @@ export class TickTickClient {
         };
     }
 
+    /**
+     * Parses a Retry-After value from headers or body.
+     * @param {string|number} value - Raw value
+     * @param {Object} options - Parse options
+     * @param {boolean} options.treatNumericAsSeconds - Whether numbers are seconds or milliseconds
+     * @returns {number|null} Delay in milliseconds
+     * @private
+     */
     _parseRetryAfterValue(value, { treatNumericAsSeconds } = {}) {
         if (value === null || value === undefined) return null;
         const raw = String(value).trim();
@@ -387,6 +511,12 @@ export class TickTickClient {
         return null;
     }
 
+    /**
+     * Checks if a 429 error is specifically due to daily quota exhaustion.
+     * @param {Error} error - The error to inspect
+     * @returns {boolean} True if quota is exhausted
+     * @private
+     */
     _isQuotaExhausted(error) {
         const chunks = [];
         const body = error?.response?.data;
@@ -405,22 +535,41 @@ export class TickTickClient {
         return /(quota|exhaust|limit reached|per day|daily|day limit|billing|insufficient)/i.test(text);
     }
 
+    /**
+     * Promise-based sleep helper.
+     * @param {number} ms - Sleep duration in milliseconds
+     * @returns {Promise<void>}
+     * @private
+     */
     async _sleep(ms) {
         const wait = Number.isFinite(ms) ? Math.max(0, ms) : 0;
         if (wait <= 0) return;
         await new Promise((resolve) => setTimeout(resolve, wait));
     }
 
+    /**
+     * Invalidates the task cache.
+     * @private
+     */
     _invalidateCache() {
         this._tasksCache = null;
         this._cacheTime = 0;
     }
 
+    /**
+     * Persists token data to local file.
+     * @param {Object} tokenData - Token response data
+     * @private
+     */
     _saveToken(tokenData) {
         fs.writeFileSync(TOKEN_FILE, JSON.stringify(tokenData, null, 2));
         this._invalidateCache(); // Clear cache on new auth
     }
 
+    /**
+     * Loads tokens from environment or local file.
+     * @private
+     */
     _loadToken() {
         // Priority 1: Environment variable (for cloud deployments with ephemeral FS)
         if (process.env.TICKTICK_ACCESS_TOKEN) {

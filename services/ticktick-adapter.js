@@ -3,11 +3,34 @@ import { validateChecklistItem } from './shared-utils.js';
 import { classifyTaskEvent } from './behavioral-signals.js';
 import { appendBehavioralSignals, DEFAULT_BEHAVIORAL_USER_ID } from './store.js';
 
+/**
+ * Project cache TTL in milliseconds.
+ * @type {number}
+ */
 const PROJECT_CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+
+/**
+ * Valid priority values for TickTick API.
+ * @type {number[]}
+ */
 const VALID_PRIORITIES = [0, 1, 3, 5]; // TickTick valid priority values
+
+/**
+ * Regex for detecting action verbs at the start of a task title.
+ * @type {RegExp}
+ */
 const ACTION_VERB_REGEX = /^(call|email|pay|book|write|draft|review|ship|send|apply|buy|clean|fix|prepare|schedule|plan|submit|update|organize|finish|confirm|get|set|message|follow|protect)\b/i;
+
+/**
+ * Separator used when merging task content.
+ * @type {string}
+ */
 const CONTENT_MERGE_SEPARATOR = '\n---\n';
 
+/**
+ * Standard error codes used across the adapter and pipeline.
+ * @enum {string}
+ */
 const ERROR_CODES = {
     VALIDATION: 'VALIDATION_ERROR',
     PERMISSION_DENIED: 'PERMISSION_DENIED',
@@ -20,6 +43,10 @@ const ERROR_CODES = {
     API_ERROR: 'API_ERROR',
 };
 
+/**
+ * Node.js network error codes to be classified as NETWORK_ERROR.
+ * @type {Set<string>}
+ */
 const NETWORK_ERROR_CODES = new Set([
     'ECONNRESET',
     'ETIMEDOUT',
@@ -29,8 +56,17 @@ const NETWORK_ERROR_CODES = new Set([
     'ECONNREFUSED',
 ]);
 
+/**
+ * Set of all valid typed error codes.
+ * @type {Set<string>}
+ */
 const TYPED_ERROR_CODES = new Set(Object.values(ERROR_CODES));
 
+/**
+ * Extracts and concatenates error message chunks from an error object or API response.
+ * @param {Error|object} error - The error object to parse
+ * @returns {string} Concatenated error text in lowercase
+ */
 function buildErrorText(error) {
     const chunks = [];
     if (typeof error?.message === 'string') chunks.push(error.message);
@@ -274,6 +310,13 @@ export class TickTickAdapter {
         return validItems;
     }
 
+    /**
+     * Derives behavioral metadata for task creation events.
+     * @param {Object} normalizedAction - Normalized action object
+     * @param {Array<Object>|null} mappedItems - Mapped checklist items
+     * @returns {Object} Behavioral metadata
+     * @private
+     */
     _deriveBehavioralCreateMetadata(normalizedAction, mappedItems) {
         const title = typeof normalizedAction.title === 'string' ? normalizedAction.title.trim() : '';
         const titleWordCount = title ? title.split(/\s+/).filter(Boolean).length : 0;
@@ -438,11 +481,23 @@ export class TickTickAdapter {
         }
     }
 
+    /**
+     * Normalizes a project name for comparison.
+     * @param {string} name - Raw project name
+     * @returns {string} Normalized project name
+     * @private
+     */
     _normalizeProjectName(name) {
         if (typeof name !== 'string') return '';
         return name.trim().toLowerCase().replace(/\s+/g, ' ');
     }
 
+    /**
+     * Identifies a safe default project from a list (Inbox preferred).
+     * @param {Array<Object>} [projects=[]] - List of projects
+     * @returns {Object|null} Default project or null
+     * @private
+     */
     _getSafeDefaultProject(projects = []) {
         if (!Array.isArray(projects) || projects.length === 0) return null;
 
@@ -457,6 +512,14 @@ export class TickTickAdapter {
         return sorted[0] || null;
     }
 
+    /**
+     * Merges incoming task content with existing content using defined strategies.
+     * @param {string|null} existingContent - Current task description
+     * @param {string|null} incomingContent - New task description
+     * @param {boolean} [mergeContent=true] - Whether to merge or replace
+     * @returns {{shouldUpdate: boolean, content: string, strategy: string}} Merge result
+     * @private
+     */
     _mergeTaskContent(existingContent, incomingContent, mergeContent = true) {
         const oldContent = typeof existingContent === 'string' ? existingContent : '';
         const newContent = incomingContent === null || incomingContent === undefined ? '' : String(incomingContent);

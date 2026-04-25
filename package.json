@@ -14,7 +14,9 @@
         "check:jscpd": "jscpd --threshold 5",
         "lint:duplicates": "jscpd",
         "lint:duplicates:fix": "jscpd --mode strict",
-        "lint": "npm run check:duplicates"
+        "lint": "npm run check:duplicates",
+        "docs:typedoc": "typedoc --entryPointStrategy expand ./services ./bot server.js --out docs",
+        "docs:map": "jsdoc2md 'services/**/*.js' 'bot/**/*.js' server.js > context/refs/codebase-function-map.md"
     },
     "dependencies": {
         "@ax-llm/ax": "^19.0.13",
@@ -30,6 +32,9 @@
         "node-cron": "^3.0.3"
     },
     "devDependencies": {
-        "jscpd": "^4.0.8"
+        "jscpd": "^4.0.8",
+        "jsdoc-to-markdown": "^9.1.3",
+        "typedoc": "^0.28.19",
+        "typescript": "^6.0.3"
     }
 }

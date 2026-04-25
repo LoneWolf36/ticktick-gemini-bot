@@ -13,7 +13,10 @@
 import { SchemaType } from '@google/generative-ai';
 
 
-// Cavekit ownership: Task Pipeline R16 (Guided Reorg).
+/**
+ * Gemini response schema for reorganization proposals.
+ * Cavekit ownership: Task Pipeline R16 (Guided Reorg).
+ */
 export const reorgSchema = {
     type: SchemaType.OBJECT,
     properties: {
@@ -50,6 +53,10 @@ export const reorgSchema = {
     required: ["summary", "actions"]
 };
 
+/**
+ * Section keys for daily briefing summaries.
+ * @type {string[]}
+ */
 export const BRIEFING_SUMMARY_SECTION_KEYS = Object.freeze([
     'focus',
     'priorities',
@@ -58,6 +65,10 @@ export const BRIEFING_SUMMARY_SECTION_KEYS = Object.freeze([
     'notices',
 ]);
 
+/**
+ * Section keys for weekly summaries.
+ * @type {string[]}
+ */
 export const WEEKLY_SUMMARY_SECTION_KEYS = Object.freeze([
     'progress',
     'carry_forward',
@@ -66,6 +77,10 @@ export const WEEKLY_SUMMARY_SECTION_KEYS = Object.freeze([
     'notices',
 ]);
 
+/**
+ * Section keys for daily close summaries.
+ * @type {string[]}
+ */
 export const DAILY_CLOSE_SUMMARY_SECTION_KEYS = Object.freeze([
     'stats',
     'reflection',
@@ -73,6 +88,10 @@ export const DAILY_CLOSE_SUMMARY_SECTION_KEYS = Object.freeze([
     'notices',
 ]);
 
+/**
+ * Valid codes for summary notices.
+ * @type {string[]}
+ */
 export const SUMMARY_NOTICE_CODES = Object.freeze([
     'sparse_tasks',
     'sparse_day',
@@ -86,8 +105,16 @@ export const SUMMARY_NOTICE_CODES = Object.freeze([
     'delivery_context',
 ]);
 
+/**
+ * Severity levels for summary notices.
+ * @type {string[]}
+ */
 export const SUMMARY_NOTICE_SEVERITIES = Object.freeze(['info', 'warning']);
 
+/**
+ * Evidence sources for summary notices.
+ * @type {string[]}
+ */
 export const SUMMARY_NOTICE_EVIDENCE_SOURCES = Object.freeze([
     'tasks',
     'processed_history',
@@ -97,6 +124,10 @@ export const SUMMARY_NOTICE_EVIDENCE_SOURCES = Object.freeze([
     'system',
 ]);
 
+/**
+ * Evidence sources for weekly watchouts.
+ * @type {string[]}
+ */
 export const WEEKLY_WATCHOUT_EVIDENCE_SOURCES = Object.freeze([
     'current_tasks',
     'processed_history',
@@ -170,6 +201,9 @@ const weeklyWatchoutSchema = {
     required: ['label', 'evidence', 'evidence_source'],
 };
 
+/**
+ * Gemini response schema for briefing summaries.
+ */
 export const briefingSummarySchema = {
     type: SchemaType.OBJECT,
     properties: {
@@ -182,6 +216,9 @@ export const briefingSummarySchema = {
     required: BRIEFING_SUMMARY_SECTION_KEYS,
 };
 
+/**
+ * Gemini response schema for weekly summaries.
+ */
 export const weeklySummarySchema = {
     type: SchemaType.OBJECT,
     properties: {
@@ -194,6 +231,9 @@ export const weeklySummarySchema = {
     required: WEEKLY_SUMMARY_SECTION_KEYS,
 };
 
+/**
+ * Gemini response schema for daily close summaries.
+ */
 export const dailyCloseSummarySchema = {
     type: SchemaType.OBJECT,
     properties: {

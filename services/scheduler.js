@@ -4,6 +4,10 @@ import * as store from './store.js';
 import { buildAutoApplyNotification, userTimeString, filterProcessedThisWeek, sendWithMarkdown } from './shared-utils.js';
 import { logSummarySurfaceEvent } from './summary-surfaces/index.js';
 
+/**
+ * Enum for scheduler notification types to manage suppression and logging.
+ * @enum {string}
+ */
 export const SCHEDULER_NOTIFICATION_TYPES = Object.freeze({
     DAILY_BRIEFING: 'daily_briefing',
     WEEKLY_DIGEST: 'weekly_digest',
@@ -25,9 +29,16 @@ const FOCUS_SUPPRESSED_NOTIFICATION_TYPES = new Set([
     SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY,
 ]);
 
+/**
+ * Determines if a notification should be suppressed based on current work-style mode.
+ * @param {string} workStyleMode - Current mode (standard/focus/urgent)
+ * @param {string} notificationType - Type from SCHEDULER_NOTIFICATION_TYPES
+ * @returns {boolean} True if suppressed
+ */
 export function shouldSuppressScheduledNotification(workStyleMode, notificationType) {
     return workStyleMode === store.MODE_FOCUS && FOCUS_SUPPRESSED_NOTIFICATION_TYPES.has(notificationType);
 }
+
 
 /**
  * Check if a scheduled delivery should be sent based on last delivery time and grace window
@@ -106,7 +117,18 @@ function computeCatchupScheduledForIso({ scheduleKind, dailyHour = 8, weeklyDay 
     return new Date(now.getTime() - (diffMinutes * 60 * 1000)).toISOString();
 }
 
+/**
+ * Executes the daily briefing job, including task fetch, Gemini summary, and notification.
+ * @param {Object} deps
+ * @param {Object} deps.bot - Bot instance
+ * @param {Object} deps.ticktick - TickTick client
+ * @param {Object} deps.gemini - Gemini service
+ * @param {Object} deps.adapter - TickTick adapter
+ * @param {Object} [deps.config={}] - Job configuration
+ * @returns {Promise<boolean>} True if successful
+ */
 export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter, config = {} }) {
+
     if (!ticktick.isAuthenticated()) return false;
     const chatId = store.getChatId();
     if (!chatId) return false;
@@ -184,7 +206,19 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter, conf
     }
 }
 
+/**
+ * Executes the weekly digest job, analyzing processed tasks from the past week.
+ * @param {Object} deps
+ * @param {Object} deps.bot - Bot instance
+ * @param {Object} deps.ticktick - TickTick client
+ * @param {Object} deps.gemini - Gemini service
+ * @param {Object} deps.adapter - TickTick adapter
+ * @param {Object} [deps.processedTasks] - Map of processed tasks (defaults to store)
+ * @param {Object} [deps.config={}] - Job configuration
+ * @returns {Promise<boolean>} True if successful
+ */
 export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, processedTasks = store.getProcessedTasks(), config = {} }) {
+
     if (!ticktick.isAuthenticated()) return false;
     const chatId = store.getChatId();
     if (!chatId) return false;
@@ -348,11 +382,14 @@ export async function retryDeferredIntents({ adapter, pipeline, bot } = {}, opti
 }
 
 /**
- * Handle missed scheduled deliveries on startup
+ * Orchestrates catch-up jobs on startup for any missed scheduled deliveries.
  * @param {Object} services - Service dependencies
- * @param {Object} config - Scheduler configuration
+ * @param {Object} [config={}] - Scheduler configuration
+ * @param {Object} [options] - Optional timing overrides for testing
+ * @returns {Promise<{daily: boolean, weekly: boolean}>} Results of catch-up attempts
  */
 export async function runStartupCatchupJobs({ bot, ticktick, gemini, adapter, processedTasks = store.getProcessedTasks() }, config = {}, { now = new Date() } = {}) {
+
     const {
         dailyHour = 8,
         weeklyDay = 0,
@@ -423,7 +460,18 @@ export async function runStartupCatchupJobs({ bot, ticktick, gemini, adapter, pr
     return results;
 }
 
+/**
+ * Initializes and starts the cron-based scheduler.
+ * @param {Object} bot - Bot instance
+ * @param {Object} ticktick - TickTick client
+ * @param {Object} gemini - Gemini service
+ * @param {Object} adapter - TickTick adapter
+ * @param {Object} pipeline - Pipeline instance
+ * @param {Object} config - Scheduler configuration
+ * @returns {Promise<void>}
+ */
 export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, config) {
+
     const {
         dailyHour = 8,
         weeklyDay = 0,

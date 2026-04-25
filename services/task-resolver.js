@@ -13,13 +13,46 @@
  * }
  */
 
-// Matching thresholds — named constants, not magic numbers
+/**
+ * Match score for an exact string match.
+ * @type {number}
+ */
 const EXACT_SCORE = 100;
+
+/**
+ * Match score for a prefix match.
+ * @type {number}
+ */
 const PREFIX_SCORE = 80;
+
+/**
+ * Match score for a "contains" match.
+ * @type {number}
+ */
 const CONTAINS_SCORE = 60;
+
+/**
+ * Minimum score for a fuzzy match to be considered.
+ * @type {number}
+ */
 const FUZZY_SCORE_MIN = 30;
+
+/**
+ * Maximum score for a fuzzy match.
+ * @type {number}
+ */
 const FUZZY_SCORE_MAX = 55;
+
+/**
+ * Minimum score gap required to avoid clarification when multiple matches exist.
+ * @type {number}
+ */
 const CLARIFICATION_GAP = 15; // minimum score gap to avoid clarification
+
+/**
+ * Regex for detecting underspecified pronoun queries.
+ * @type {RegExp}
+ */
 const UNDERSPECIFIED_PRONOUN_QUERY = /^(it|this|that|them|these|those|this one|that one|this task|that task)$/;
 
 /**

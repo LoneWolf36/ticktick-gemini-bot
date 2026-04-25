@@ -218,6 +218,12 @@ function emitPatternSignal(type, event, confidence, metadata = {}) {
     }, event);
 }
 
+/**
+ * Derives a stable subject key from a task ID.
+ *
+ * @param {string} taskId - Raw task identifier
+ * @returns {string|null} SHA-256 hash slice or null if invalid
+ */
 export function deriveSubjectKey(taskId) {
     if (typeof taskId !== 'string' || taskId.trim() === '') {
         return null;
@@ -271,6 +277,12 @@ function buildMetadata(event) {
     return meta;
 }
 
+/**
+ * Detects a snooze spiral pattern (repeated postponement).
+ *
+ * @param {TaskMutationEvent} event - Task mutation event
+ * @returns {BehavioralSignal|null}
+ */
 export function detectSnoozeSpiral(event) {
     const postpone = detectPostpone(event);
     if (!postpone) return null;
@@ -280,6 +292,12 @@ export function detectSnoozeSpiral(event) {
     });
 }
 
+/**
+ * Detects commitment overloading (creation volume exceeds completion).
+ *
+ * @param {TaskMutationEvent} event - Task mutation event
+ * @returns {BehavioralSignal|null}
+ */
 export function detectCommitmentOverloader(event) {
     const ratio = Number(event.creationCompletionRatio);
     const created = Number(event.recentCreatedCount);
@@ -311,6 +329,12 @@ export function detectCommitmentOverloader(event) {
     );
 }
 
+/**
+ * Detects stale tasks (old tasks lingering without progress).
+ *
+ * @param {TaskMutationEvent} event - Task mutation event
+ * @returns {BehavioralSignal|null}
+ */
 export function detectStaleTaskMuseum(event) {
     const taskAgeDays = Number(event.taskAgeDays);
     if (!Number.isFinite(taskAgeDays) || taskAgeDays < 30) {
@@ -325,6 +349,12 @@ export function detectStaleTaskMuseum(event) {
     );
 }
 
+/**
+ * Detects quick-win addiction (dominance of easy/small tasks).
+ *
+ * @param {TaskMutationEvent} event - Task mutation event
+ * @returns {BehavioralSignal|null}
+ */
 export function detectQuickWinAddiction(event) {
     const completionLeadTimeHours = Number(event.completionLeadTimeHours);
     const smallTaskCandidate = event.smallTaskCandidate === true;
@@ -349,6 +379,12 @@ export function detectQuickWinAddiction(event) {
     );
 }
 
+/**
+ * Detects vague task writing (low-actionability titles).
+ *
+ * @param {TaskMutationEvent} event - Task mutation event
+ * @returns {BehavioralSignal|null}
+ */
 export function detectVagueTaskWriter(event) {
     const titleWordCount = Number(event.titleWordCount);
     const hasActionVerb = event.hasActionVerb;
@@ -378,6 +414,12 @@ export function detectVagueTaskWriter(event) {
     );
 }
 
+/**
+ * Detects deadline daredevil behavior (completion at the edge).
+ *
+ * @param {TaskMutationEvent} event - Task mutation event
+ * @returns {BehavioralSignal|null}
+ */
 export function detectDeadlineDaredevil(event) {
     const completionLeadTimeHours = Number(event.completionLeadTimeHours);
     if (!Number.isFinite(completionLeadTimeHours)) {
@@ -396,6 +438,12 @@ export function detectDeadlineDaredevil(event) {
     );
 }
 
+/**
+ * Detects category avoidance (sustained neglect of a category).
+ *
+ * @param {TaskMutationEvent} event - Task mutation event
+ * @returns {BehavioralSignal|null}
+ */
 export function detectCategoryAvoidance(event) {
     const overdueCount = Number(event.categoryOverdueCount);
     const stalenessDays = Number(event.categoryStalenessDays);
@@ -417,6 +465,12 @@ export function detectCategoryAvoidance(event) {
     );
 }
 
+/**
+ * Detects planning without execution (heavy planning, low completion).
+ *
+ * @param {TaskMutationEvent} event - Task mutation event
+ * @returns {BehavioralSignal|null}
+ */
 export function detectPlanningWithoutExecution(event) {
     const planningComplexityScore = Number(event.planningComplexityScore);
     const completionRateWindow = Number(event.completionRateWindow);

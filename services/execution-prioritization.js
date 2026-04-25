@@ -683,6 +683,14 @@ function assessCandidate(candidate, context) {
     };
 }
 
+/**
+ * Creates a goal theme profile from raw context.
+ *
+ * @param {string} rawContext - Raw text context containing GOALS section
+ * @param {object} [options={}] - Profile options
+ * @param {string} [options.source='fallback'] - Data source identifier
+ * @returns {object} Goal theme profile
+ */
 export function createGoalThemeProfile(rawContext = '', options = {}) {
     const goals = extractGoalSection(rawContext);
     const themes = goals.map((label, index) => ({
@@ -701,6 +709,12 @@ export function createGoalThemeProfile(rawContext = '', options = {}) {
     };
 }
 
+/**
+ * Normalizes a TickTick task into a priority candidate.
+ *
+ * @param {object} task - Raw TickTick task object
+ * @returns {object} Normalized candidate
+ */
 export function normalizePriorityCandidate(task = {}) {
     const createdAt = task.createdTime ?? task.createdAt ?? null;
     const createdAtMs = typeof createdAt === 'string' ? Date.parse(createdAt) : NaN;
@@ -724,6 +738,12 @@ export function normalizePriorityCandidate(task = {}) {
     };
 }
 
+/**
+ * Builds a ranking context from options.
+ *
+ * @param {object} [options={}] - Ranking options
+ * @returns {object} Ranking context
+ */
 export function buildRankingContext(options = {}) {
     return {
         goalThemeProfile: options.goalThemeProfile || createGoalThemeProfile('', { source: 'fallback' }),
@@ -743,6 +763,13 @@ export function buildRankingContext(options = {}) {
     };
 }
 
+/**
+ * Infers a priority label (e.g., 'career-critical') from a task.
+ *
+ * @param {object} task - Normalized task or candidate
+ * @param {object} [options={}] - Ranking options
+ * @returns {string} Priority label
+ */
 export function inferPriorityLabelFromTask(task, options = {}) {
     const normalizedCandidate = task?.taskId ? task : normalizePriorityCandidate(task);
     const ranking = rankPriorityCandidates([normalizedCandidate], {
@@ -794,6 +821,13 @@ export function inferPriorityLabelFromTask(task, options = {}) {
     return 'important';
 }
 
+/**
+ * Infers a TickTick priority value (1, 3, 5) from a task.
+ *
+ * @param {object} task - Normalized task or candidate
+ * @param {object} [options={}] - Ranking options
+ * @returns {number} Priority value
+ */
 export function inferPriorityValueFromTask(task, options = {}) {
     const label = inferPriorityLabelFromTask(task, options);
 
@@ -802,6 +836,14 @@ export function inferPriorityValueFromTask(task, options = {}) {
     return 3;
 }
 
+/**
+ * Infers a project ID for a task from available projects.
+ *
+ * @param {object} task - Normalized task or candidate
+ * @param {object[]} projects - List of available projects
+ * @param {object} [options={}] - Ranking options
+ * @returns {string|null} Project ID or null
+ */
 export function inferProjectIdFromTask(task, projects = [], options = {}) {
     if (!Array.isArray(projects) || projects.length === 0) {
         return null;
@@ -834,6 +876,12 @@ export function inferProjectIdFromTask(task, projects = [], options = {}) {
     return findProjectIdByFragments(projects, ['admin', 'personal']);
 }
 
+/**
+ * Creates a ranking decision object.
+ *
+ * @param {object} [decision={}] - Raw decision properties
+ * @returns {object} Ranking decision
+ */
 export function createRankingDecision(decision = {}) {
     return {
         taskId: decision.taskId || '',
@@ -848,6 +896,12 @@ export function createRankingDecision(decision = {}) {
     };
 }
 
+/**
+ * Builds a recommendation result object.
+ *
+ * @param {object} [params={}] - Result parameters
+ * @returns {object} Recommendation result
+ */
 export function buildRecommendationResult({ ranked = [], degradedReason = 'none', context = null } = {}) {
     const normalizedRanked = ranked.map((decision, index) => createRankingDecision({
         ...decision,
@@ -891,6 +945,13 @@ export function buildRecommendationResult({ ranked = [], degradedReason = 'none'
     };
 }
 
+/**
+ * Ranks candidates based on goal alignment and urgency.
+ *
+ * @param {object|object[]} input - List of candidates or input object with context
+ * @param {object} [maybeContext] - Ranking context if input is a list
+ * @returns {object} Recommendation result
+ */
 export function rankPriorityCandidates(input, maybeContext) {
     const rawCandidates = Array.isArray(input) ? input : (input?.candidates || []);
     const context = buildRankingContext(Array.isArray(input) ? maybeContext : input?.context);

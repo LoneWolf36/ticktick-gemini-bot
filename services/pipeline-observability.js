@@ -1,5 +1,9 @@
 import { sanitizePipelineContextForDiagnostics } from './pipeline-context.js';
 
+/**
+ * Aliases for mapping internal entry point names to display names.
+ * @type {Record<string, string>}
+ */
 const ENTRY_POINT_ALIASES = {
     telegram: 'telegram_message',
     telegram_message: 'telegram_message',
@@ -8,6 +12,12 @@ const ENTRY_POINT_ALIASES = {
     manual_command: 'manual_command',
 };
 
+/**
+ * Normalizes an entry point name based on the execution mode.
+ * @param {string} entryPoint - Raw entry point name
+ * @param {string} mode - Execution mode (e.g., 'scan', 'review')
+ * @returns {string} Normalized entry point name
+ */
 function normalizeEntryPoint(entryPoint, mode) {
     if (entryPoint === 'telegram') {
         if (mode === 'scan' || mode === 'review') return 'telegram_review';
@@ -17,6 +27,11 @@ function normalizeEntryPoint(entryPoint, mode) {
     return ENTRY_POINT_ALIASES[entryPoint] || 'manual_command';
 }
 
+/**
+ * Emits an event to the console logger.
+ * @param {Object} logger - Logger instance with log/error methods
+ * @param {Object} event - The event object to log
+ */
 function emitConsole(logger, event) {
     if (!logger) return;
 
@@ -30,6 +45,13 @@ function emitConsole(logger, event) {
     }
 }
 
+/**
+ * Emits an event to a sink (function or object with method).
+ * @param {Function|Object} sink - The destination sink
+ * @param {string} methodName - Method to call on the sink object
+ * @param {...*} args - Arguments to pass to the sink
+ * @returns {Promise<void>}
+ */
 async function emitToSink(sink, methodName, ...args) {
     if (!sink) return;
 
@@ -43,6 +65,16 @@ async function emitToSink(sink, methodName, ...args) {
     }
 }
 
+/**
+ * Creates a pipeline observability instance for emitting telemetry.
+ * @param {Object} [options]
+ * @param {Function|Object} [options.eventSink] - Sink for full events
+ * @param {Function|Object} [options.metricSink] - Sink for metrics
+ * @param {Function|Object} [options.traceSink] - Sink for traces
+ * @param {Object} [options.logger=console] - Console logger instance
+ * @param {Function} [options.now] - Function returning current Date
+ * @returns {{ emit: Function, normalizeEntryPoint: Function }}
+ */
 export function createPipelineObservability({
     eventSink = null,
     metricSink = null,
@@ -50,6 +82,12 @@ export function createPipelineObservability({
     logger = console,
     now = () => new Date(),
 } = {}) {
+    /**
+     * Emits a telemetry event for a pipeline step.
+     * @param {Object} context - Pipeline request context
+     * @param {Object} payload - Event data
+     * @returns {Promise<Object>} The emitted event object
+     */
     async function emit(context, payload) {
         const diagnosticContext = sanitizePipelineContextForDiagnostics(context);
         const event = {

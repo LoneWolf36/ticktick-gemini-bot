@@ -22,10 +22,18 @@ if (existsSync(USER_CONTEXT_FILE)) {
     }
 }
 
+/**
+ * Fetches the user's timezone from user_context, environment, or default.
+ * @returns {string} Timezone string (e.g., 'Europe/Dublin')
+ */
 export function getUserTimezone() {
     return userContextTimezone || process.env.USER_TIMEZONE || DEFAULT_TIMEZONE;
 }
 
+/**
+ * Identifies the source of the resolved user timezone.
+ * @returns {'user_context'|'env'|'default'} Timezone source
+ */
 export function getUserTimezoneSource() {
     if (userContextTimezone) return userContextSource;
     return process.env.USER_TIMEZONE ? 'env' : 'default';

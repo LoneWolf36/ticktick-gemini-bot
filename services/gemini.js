@@ -118,6 +118,11 @@ Output constraints:
 - Return compact plain JSON only (no markdown, no code fences, no prose).
 `;
 
+/**
+ * Builds a prompt note based on the active work style mode.
+ * @param {string} [workStyleMode=store.MODE_STANDARD] - The active work style mode
+ * @returns {string} Prompt augmentation string
+ */
 export function buildWorkStylePromptNote(workStyleMode = store.MODE_STANDARD) {
     if (workStyleMode === store.MODE_FOCUS) {
         return 'FOCUS MODE is active. Minimize interruptions. Keep responses short. Surface only critical items. Frame guidance as crisp next steps without extra commentary. Do not imply urgency unless the user explicitly activated urgent mode. When confidence is low, label uncertainty, ask, or stay quiet; never present weak behavioral or priority inference as fact. Use silent signals first. Direct call-outs only when repeated evidence justifies them. If guidance is ignored repeatedly, adapt or back off instead of escalating.';
@@ -130,7 +135,15 @@ export function buildWorkStylePromptNote(workStyleMode = store.MODE_STANDARD) {
     return 'STANDARD MODE is active. Use a balanced tone, normal verbosity, and frame suggestions as options. Do not imply urgency unless the user explicitly activated urgent mode. When confidence is low, label uncertainty, ask, or stay quiet; never present weak behavioral or priority inference as fact. Use silent signals first. Direct call-outs only when repeated evidence justifies them. If guidance is ignored repeatedly, adapt or back off instead of escalating.';
 }
 
+/**
+ * Gemini AI analysis and generation engine.
+ * Handles model initialization, API key rotation, and summary generation.
+ */
 export class GeminiAnalyzer {
+    /**
+     * Creates a new GeminiAnalyzer instance.
+     * @param {string|string[]} apiKeys - One or more Gemini API keys
+     */
     constructor(apiKeys) {
         const keys = Array.isArray(apiKeys) ? apiKeys : [apiKeys];
         this._keys = keys.filter(k => k && k !== 'YOUR_GEMINI_API_KEY_HERE');
@@ -146,6 +159,13 @@ export class GeminiAnalyzer {
         this._initModelsForActiveKey();
     }
 
+    /**
+     * Prepares tasks for briefing by filtering and ranking.
+     * @param {Array<Object>} tasks - Raw tasks
+     * @param {Object} options - Preparation options
+     * @returns {Object} { goalThemeProfile, ranking, orderedTasks }
+     * @private
+     */
     _prepareBriefingTasks(tasks = [], options = {}) {
         const activeTasks = (Array.isArray(tasks) ? tasks : [])
             .filter((task) => task && (task.status === 0 || task.status === undefined));
@@ -172,6 +192,12 @@ export class GeminiAnalyzer {
         return { goalThemeProfile, ranking, orderedTasks };
     }
 
+    /**
+     * Detects behavioral patterns for summaries.
+     * @param {Object} options - Resolution options
+     * @returns {Promise<Array<Object>>} List of detected patterns
+     * @private
+     */
     async _resolveBehavioralPatterns(options = {}) {
         const userId = options.userId ?? options.chatId ?? store.getChatId();
         if (userId == null) {
@@ -188,14 +214,33 @@ export class GeminiAnalyzer {
         }
     }
 
+    /**
+     * Fetches behavioral signals for a user.
+     * @param {string} userId - Target user ID
+     * @returns {Promise<Array<Object>>} List of signals
+     * @private
+     */
     async _getBehavioralSignalsForSummary(userId) {
         return store.getBehavioralSignals(userId);
     }
 
+    /**
+     * Internal pattern detection logic.
+     * @param {Array<Object>} signals - User signals
+     * @param {Object} options - Detection options
+     * @returns {Array<Object>} Detected patterns
+     * @private
+     */
     _detectBehavioralPatternsForSummary(signals, options = {}) {
         return detectBehavioralPatterns(signals, options);
     }
 
+    /**
+     * Resolves the current work style and urgent mode state.
+     * @param {Object} options - Resolution options
+     * @returns {Promise<Object>} { workStyleMode, urgentMode, stateSource }
+     * @private
+     */
     async _resolveRecommendationState(options = {}) {
         const workStyleMode = options.workStyleMode || store.MODE_STANDARD;
         if (options.urgentMode === true || options.urgentMode === false) {
@@ -223,6 +268,10 @@ export class GeminiAnalyzer {
         }
     }
 
+    /**
+     * Initializes Gemini models for the currently active API key.
+     * @private
+     */
     _initModelsForActiveKey() {
         const genAI = new GoogleGenerativeAI(this._keys[this._activeKeyIndex]);
 
@@ -267,6 +316,10 @@ export class GeminiAnalyzer {
         });
     }
 
+    /**
+     * Returns info about the active API key index and total count.
+     * @returns {{index: number, total: number}}
+     */
     activeKeyInfo() {
         return { index: this._activeKeyIndex + 1, total: this._keys.length };
     }
@@ -338,6 +391,11 @@ export class GeminiAnalyzer {
         return -1;
     }
 
+    /**
+     * Rotates to the next available API key if possible.
+     * @returns {Promise<boolean>} True if rotation was successful
+     * @private
+     */
     async _rotateToNextKeyIfAvailable() {
         if (this._rotationPromise) {
             await this._rotationPromise;
@@ -364,7 +422,10 @@ export class GeminiAnalyzer {
         }
     }
 
-    /** Returns the Date when quota will reset (null if not exhausted) */
+    /**
+     * Returns the Date when quota will reset (null if not exhausted).
+     * @returns {Date|null} Quota reset time
+     */
     quotaResumeTime() {
         if (!this.isQuotaExhausted()) return null;
         const nonNulls = this._exhaustedUntilByKey.filter(
@@ -373,7 +434,10 @@ export class GeminiAnalyzer {
         return nonNulls.length ? new Date(Math.min(...nonNulls)) : null;
     }
 
-    /** Check if we've hit the daily quota wall */
+    /**
+     * Checks if all available API keys have hit their daily quota.
+     * @returns {boolean} True if quota is exhausted
+     */
     isQuotaExhausted() {
         for (let i = 0; i < this._keys.length; i++) {
             const until = this._exhaustedUntilByKey[i];
@@ -383,6 +447,14 @@ export class GeminiAnalyzer {
         return true;
     }
 
+    /**
+     * Executes a model generation request with automatic failover and retries.
+     * @param {Function} getModelFn - Function that returns the model to use
+     * @param {string} prompt - Prompt text
+     * @param {Object} options - Generation options
+     * @returns {Promise<Object>} Model generation result
+     * @private
+     */
     async _generateWithFailover(getModelFn, prompt, { transientBaseMs = 15 } = {}) {
         if (this.isQuotaExhausted()) {
             throw new Error('QUOTA_EXHAUSTED');
@@ -473,6 +545,12 @@ export class GeminiAnalyzer {
 
     // ─── Generate daily briefing ──────────────────────────────
 
+    /**
+     * Generates structured model summary for a daily briefing.
+     * @param {Array<Object>} tasks - List of active tasks
+     * @param {Object} [options={}] - Generation options
+     * @returns {Promise<Object>} Result with modelSummary, ranking, orderedTasks, and recommendationState
+     */
     async generateDailyBriefingModelSummary(tasks, options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
         const { ranking, orderedTasks } = this._prepareBriefingTasks(tasks, {
@@ -522,6 +600,12 @@ export class GeminiAnalyzer {
         };
     }
 
+    /**
+     * Generates a fully composed daily briefing summary message.
+     * @param {Array<Object>} tasks - List of active tasks
+     * @param {Object} [options={}] - Generation options
+     * @returns {Promise<string>} Composed summary text
+     */
     async generateDailyBriefingSummary(tasks, options = {}) {
         const {
             modelSummary,
@@ -551,6 +635,13 @@ export class GeminiAnalyzer {
 
     // ─── Generate weekly digest ───────────────────────────────
 
+    /**
+     * Generates a fully composed weekly accountability summary.
+     * @param {Array<Object>} allTasks - Current active tasks
+     * @param {Object} processedThisWeek - History of processed tasks
+     * @param {Object} [options={}] - Generation options
+     * @returns {Promise<string>} Composed digest text
+     */
     async generateWeeklyDigestSummary(allTasks, processedThisWeek, options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
         const { ranking, orderedTasks } = this._prepareBriefingTasks(allTasks, {
@@ -601,6 +692,13 @@ export class GeminiAnalyzer {
         });
     }
 
+    /**
+     * Generates a fully composed daily close reflection summary.
+     * @param {Array<Object>} allTasks - Current active tasks
+     * @param {Array<Object>|Object} processedTasks - History of processed tasks
+     * @param {Object} [options={}] - Generation options
+     * @returns {Promise<string>} Composed reflection text
+     */
     async generateDailyCloseSummary(allTasks, processedTasks, options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
         const { ranking, orderedTasks } = this._prepareBriefingTasks(allTasks, {
@@ -631,7 +729,15 @@ export class GeminiAnalyzer {
         });
     }
 
-    // Cavekit ownership: Task Pipeline R16 (Guided Reorg).
+    /**
+     * Generates a reorganization proposal for tasks and projects.
+     * @param {Array<Object>} [tasks=[]] - List of tasks
+     * @param {Array<Object>} [projects=[]] - List of projects
+     * @param {string|null} [refinement=null] - User refinement request
+     * @param {Array<Object>} [existingActions=[]] - Existing proposal actions
+     * @param {Object} [options={}] - Generation options
+     * @returns {Promise<Object>} Normalized reorg proposal
+     */
     async generateReorgProposal(tasks = [], projects = [], refinement = null, existingActions = [], options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
         const compactTasks = this._compactReorgTasks(tasks, recommendationState);
@@ -671,6 +777,12 @@ export class GeminiAnalyzer {
         return this._safeNormalizeReorgProposal(this._buildFallbackReorgProposal(tasks, projects, recommendationState), tasks, projects);
     }
 
+    /**
+     * Safely parses JSON with multiple retry strategies for model output.
+     * @param {string} [raw=''] - Raw text to parse
+     * @returns {Object|null} Parsed object or null
+     * @private
+     */
     _safeParseJson(raw = '') {
         if (!raw || typeof raw !== 'string') return null;
         const attempts = [];
@@ -771,17 +883,27 @@ export class GeminiAnalyzer {
         }
     }
 
+    /**
+     * Compacts task list for reorg context to stay within token limits.
+     * @param {Array<Object>} [tasks=[]] - Raw tasks
+     * @param {Object} [options={}] - Options
+     * @param {number} [limit=80] - Maximum number of tasks
+     * @returns {Array<Object>} Compacted tasks
+     * @private
+     */
     _compactReorgTasks(tasks = [], options = {}, limit = 80) {
         const { orderedTasks } = this._prepareBriefingTasks(tasks, options);
         return orderedTasks.slice(0, limit);
     }
 
-    // RETAINED SCOPE: _normalizeReorgProposal sanitizes and deduplicates
-    // raw reorg proposals from Gemini or the fallback builder. It is called
-    // by _safeNormalizeReorgProposal and generateReorgProposal.
-    //
-    // This is NOT a primary task-writing path. It exists to ensure reorg
-    // proposals are well-structured before being sent to the user via /reorg.
+    /**
+     * Normalizes and deduplicates a reorg proposal.
+     * @param {Object} [proposal={}] - Raw proposal
+     * @param {Array<Object>} [tasks=[]] - Reference tasks
+     * @param {Array<Object>} [projects=[]] - Reference projects
+     * @returns {Object} Normalized proposal
+     * @private
+     */
     _normalizeReorgProposal(proposal = {}, tasks = [], projects = []) {
         const cleaned = {
             summary: typeof proposal.summary === 'string' && proposal.summary.trim()

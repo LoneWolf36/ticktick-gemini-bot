@@ -15,6 +15,10 @@ import { createPipelineObservability } from './pipeline-observability.js';
 import { QuotaExhaustedError } from './ax-intent.js';
 import { resolveTarget, buildClarificationPrompt } from './task-resolver.js';
 
+/**
+ * Failure classes for pipeline errors.
+ * @type {Record<string, string>}
+ */
 const FAILURE_CLASSES = {
     QUOTA: 'quota',
     MALFORMED_AX: 'malformed_ax',
@@ -24,12 +28,20 @@ const FAILURE_CLASSES = {
     UNEXPECTED: 'unexpected',
 };
 
+/**
+ * Failure categories for classifying error severity and retryability.
+ * @type {Record<string, string>}
+ */
 const FAILURE_CATEGORIES = {
     TRANSIENT: 'transient',
     PERMANENT: 'permanent',
     PARTIAL: 'partial',
 };
 
+/**
+ * Failure classes for individual action execution.
+ * @type {Record<string, string>}
+ */
 const ACTION_FAILURE_CLASSES = {
     NONE: 'none',
     VALIDATION: 'validation',
@@ -37,10 +49,18 @@ const ACTION_FAILURE_CLASSES = {
     ROLLBACK: 'rollback',
 };
 
+/**
+ * Reasons for a request being classified as non-task.
+ * @type {Record<string, string>}
+ */
 const NON_TASK_REASONS = {
     EMPTY_INTENTS: 'empty_intents',
 };
 
+/**
+ * User-facing messages for different failure classes.
+ * @type {Record<string, string>}
+ */
 const USER_FAILURE_MESSAGES = {
     [FAILURE_CLASSES.QUOTA]: '⚠️ AI quota exhausted. Try again shortly.',
     [FAILURE_CLASSES.MALFORMED_AX]: '⚠️ I could not understand that request. Please rephrase.',
@@ -50,11 +70,21 @@ const USER_FAILURE_MESSAGES = {
     [FAILURE_CLASSES.UNEXPECTED]: '⚠️ An unexpected error occurred while processing your request.',
 };
 
+/**
+ * Parses a non-negative integer from an environment variable with a fallback.
+ * @param {string|undefined} value - Raw string value
+ * @param {number} fallback - Fallback value
+ * @returns {number} Parsed integer or fallback
+ */
 function parseNonNegativeIntEnv(value, fallback) {
     const parsed = Number.parseInt(value ?? '', 10);
     return Number.isFinite(parsed) && parsed >= 0 ? parsed : fallback;
 }
 
+/**
+ * Gets the retry configuration for the pipeline from environment variables.
+ * @returns {{ maxRetries: number, baseDelayMs: number, maxDelayMs: number }}
+ */
 function getPipelineRetryConfig() {
     const maxRetries = parseNonNegativeIntEnv(process.env.PIPELINE_TRANSIENT_MAX_RETRIES, 1);
     const baseDelayMs = parseNonNegativeIntEnv(process.env.PIPELINE_TRANSIENT_BASE_DELAY_MS, 250);
@@ -65,6 +95,12 @@ function getPipelineRetryConfig() {
     return { maxRetries, baseDelayMs, maxDelayMs };
 }
 
+/**
+ * Normalizes retry delay to milliseconds.
+ * @param {number|undefined} retryAfterMs - Delay in milliseconds
+ * @param {string|undefined} retryAt - ISO date string
+ * @returns {number|null} Delay in milliseconds or null
+ */
 function normalizeRetryDelayMs(retryAfterMs, retryAt) {
     if (Number.isFinite(retryAfterMs) && retryAfterMs >= 0) {
         return Math.floor(retryAfterMs);
@@ -76,6 +112,12 @@ function normalizeRetryDelayMs(retryAfterMs, retryAt) {
     return null;
 }
 
+/**
+ * Formats a retry delay as a human-readable ETA (e.g., "5s", "2m", "1h").
+ * @param {number|undefined} retryAfterMs - Delay in milliseconds
+ * @param {string|undefined} retryAt - ISO date string
+ * @returns {string|null} Formatted ETA or null
+ */
 function formatRetryEta(retryAfterMs, retryAt) {
     const ms = normalizeRetryDelayMs(retryAfterMs, retryAt);
     if (!Number.isFinite(ms)) return null;
@@ -87,6 +129,11 @@ function formatRetryEta(retryAfterMs, retryAt) {
     return `${hours}h`;
 }
 
+/**
+ * Extracts structured metadata from an adapter error.
+ * @param {Error|string|null} errorOrMessage - The error to extract from
+ * @returns {{ code: string|null, statusCode: number|null, retryAfterMs?: number, retryAt?: string, isQuotaExhausted: boolean }}
+ */
 function extractAdapterErrorMeta(errorOrMessage) {
     if (!errorOrMessage || typeof errorOrMessage === 'string') return {};
     return {
@@ -98,6 +145,11 @@ function extractAdapterErrorMeta(errorOrMessage) {
     };
 }
 
+/**
+ * Classifies an adapter failure into a failure category (transient vs permanent).
+ * @param {Error|string} errorOrMessage - The error to classify
+ * @returns {string} Failure category
+ */
 function classifyAdapterFailureCategory(errorOrMessage = '') {
     const meta = extractAdapterErrorMeta(errorOrMessage);
     if (meta.code === 'PERMISSION_DENIED' || meta.code === 'AUTH_ERROR' || meta.code === 'NOT_FOUND' || meta.code === 'ALREADY_COMPLETED') {
@@ -126,6 +178,16 @@ function classifyAdapterFailureCategory(errorOrMessage = '') {
     return FAILURE_CATEGORIES.TRANSIENT;
 }
 
+/**
+ * Derives the overall failure category from pipeline state.
+ * @param {Object} params
+ * @param {string} params.failureClass - Primary failure class
+ * @param {string} [params.failureCategory] - Explicitly provided category
+ * @param {Object} [params.details] - Additional failure details
+ * @param {boolean} [params.rolledBack] - Whether changes were rolled back
+ * @param {boolean} [params.retryable] - Whether the failure is retryable
+ * @returns {string} Resolved failure category
+ */
 function deriveFailureCategory({ failureClass, failureCategory, details, rolledBack = false, retryable = true }) {
     if (failureCategory) return failureCategory;
     if (rolledBack || details?.partialFailure || failureClass === FAILURE_CLASSES.ROLLBACK) {
@@ -146,6 +208,15 @@ function deriveFailureCategory({ failureClass, failureCategory, details, rolledB
     }
 }
 
+/**
+ * Builds a user-facing failure message from pipeline failure state.
+ * @param {Object} params
+ * @param {string} params.failureClass - Primary failure class
+ * @param {string} params.failureCategory - Resolved failure category
+ * @param {Object} [params.details] - Additional failure details
+ * @param {boolean} params.rolledBack - Whether changes were rolled back
+ * @returns {string} User-facing confirmation text
+ */
 function buildUserFailureMessage({ failureClass, failureCategory, details, rolledBack }) {
     if (failureCategory === FAILURE_CATEGORIES.PARTIAL) {
         const successCount = Number.isInteger(details?.successCount) ? details.successCount : null;
@@ -202,12 +273,23 @@ function buildUserFailureMessage({ failureClass, failureCategory, details, rolle
     return USER_FAILURE_MESSAGES[failureClass] || USER_FAILURE_MESSAGES[FAILURE_CLASSES.UNEXPECTED];
 }
 
+/**
+ * Resolves whether dev/debug mode is active from context or environment.
+ * @param {Object} context - Pipeline request context
+ * @returns {boolean}
+ */
 function resolveDevMode(context) {
     const mode = (context?.mode || '').toLowerCase();
     if (['dev', 'development', 'debug', 'diagnostic', 'test'].includes(mode)) return true;
     return process.env.NODE_ENV !== 'production';
 }
 
+/**
+ * Builds a structured pipeline failure result object.
+ * @param {Object} context - Pipeline request context
+ * @param {Object} params - Failure parameters
+ * @returns {Object} Pipeline result of type 'error'
+ */
 function buildFailureResult(context, {
     failureClass,
     failureCategory = null,

@@ -4,6 +4,10 @@ import { InlineKeyboard } from 'grammy';
 
 // ─── Priority Map (Gemini label → TickTick priority number) ─
 
+/**
+ * Priority map from Gemini labels to TickTick priority integers.
+ * @type {Object<string, number>}
+ */
 export const PRIORITY_MAP = {
     'career-critical': 5,   // 🔴 High (red)
     'important': 3,         // 🟡 Medium (yellow)
@@ -11,10 +15,16 @@ export const PRIORITY_MAP = {
     'consider-dropping': 0, // None
 };
 
-// TickTick number → emoji (for task list formatting)
+/**
+ * Mapping of TickTick priority numbers to emoji representations.
+ * @type {Object<number, string>}
+ */
 export const PRIORITY_EMOJI = { 5: '🔴', 3: '🟡', 1: '🔵', 0: '⚪' };
 
-// TickTick number → display label (for user-facing messages)
+/**
+ * Mapping of TickTick priority numbers to user-facing labels.
+ * @type {Object<number, string>}
+ */
 export const PRIORITY_LABEL = {
     5: '🔴 career-critical',
     3: '🟡 important',
@@ -24,15 +34,29 @@ export const PRIORITY_LABEL = {
 
 // ─── Access Control (single source of truth) ────────────────
 
+/**
+ * The authorized Telegram chat ID from environment variables.
+ * @type {number|null}
+ */
 export const AUTHORIZED_CHAT_ID = process.env.TELEGRAM_CHAT_ID
     ? parseInt(process.env.TELEGRAM_CHAT_ID)
     : null;
 
+/**
+ * Checks if a Telegram context originates from the authorized chat.
+ * @param {Object} ctx - Telegram context object
+ * @returns {boolean} True if authorized or no restriction set
+ */
 export function isAuthorized(ctx) {
     if (!AUTHORIZED_CHAT_ID) return true;
     return ctx.chat?.id === AUTHORIZED_CHAT_ID;
 }
 
+/**
+ * Guards access to bot commands, replying with a lock message if unauthorized.
+ * @param {Object} ctx - Telegram context object
+ * @returns {Promise<boolean>} True if authorized, false otherwise
+ */
 export async function guardAccess(ctx) {
     if (!isAuthorized(ctx)) {
         await ctx.reply('🔒 Unauthorized. This bot is private.');
@@ -43,6 +67,15 @@ export async function guardAccess(ctx) {
 
 // ─── Undo Entry Builder ─────────────────────────────────────
 
+/**
+ * Builds an undo entry for the state store to allow reverting mutations.
+ * @param {Object} params
+ * @param {Object} params.source - The original task or state before mutation
+ * @param {string} params.action - The type of action performed (e.g., 'update', 'move')
+ * @param {Object} [params.applied={}] - The specific fields applied during mutation
+ * @param {string|null} [params.appliedTaskId=null] - The ID of the task after mutation (if different)
+ * @returns {Object} A structured undo log entry
+ */
 export function buildUndoEntry({ source, action, applied = {}, appliedTaskId = null }) {
     return {
         taskId: appliedTaskId || source.id || source.taskId,
@@ -65,9 +98,16 @@ export function buildUndoEntry({ source, action, applied = {}, appliedTaskId = n
 // ALL date formatting in the entire app must use these helpers.
 // Never call new Date().toLocaleDateString() without passing USER_TZ.
 
+/**
+ * The user's timezone from environment variables or default.
+ * @type {string}
+ */
 export const USER_TZ = process.env.USER_TIMEZONE || 'Europe/Dublin';
 
-/** Get the user's "now" as date components in their timezone */
+/**
+ * Get the user's current time as date components in their timezone.
+ * @returns {{year: number, month: number, day: number, hour: number, dayOfWeek: number}}
+ */
 export function userNow() {
     const parts = new Intl.DateTimeFormat('en-CA', {
         timeZone: USER_TZ,
@@ -97,12 +137,19 @@ export function userTodayFormatted() {
     });
 }
 
-/** Format a Date for display in the user's timezone (e.g. stats) */
+/**
+ * Formats a Date object as a localized string in the user's timezone.
+ * @param {Date|string|number} date - The date to format
+ * @returns {string} Formatted locale string
+ */
 export function userLocaleString(date) {
     return new Date(date).toLocaleString('en-IE', { timeZone: USER_TZ });
 }
 
-/** Format time only in user's timezone (for logs) */
+/**
+ * Returns the current time formatted for logs in the user's timezone.
+ * @returns {string} Formatted time string
+ */
 export function userTimeString() {
     return new Date().toLocaleTimeString('en-IE', { timeZone: USER_TZ });
 }
@@ -164,7 +211,11 @@ export function parseDateStringToTickTickISO(dateStr, options = {}) {
     return endOfDayISO(year, month, day);
 }
 
-/** Conservative sensitive-content detector to prevent destructive rewrites */
+/**
+ * Conservative sensitive-content detector to prevent destructive rewrites.
+ * @param {string} text - The text to check
+ * @returns {boolean} True if text likely contains secrets or sensitive info
+ */
 export function containsSensitiveContent(text = '') {
     if (!text || typeof text !== 'string') return false;
     const probes = [
@@ -175,7 +226,13 @@ export function containsSensitiveContent(text = '') {
     return probes.some((re) => re.test(text));
 }
 
-/** Slot-based scheduling for better day planning (instead of default end-of-day) */
+/**
+ * Maps a scheduling bucket (e.g., 'today') to an ISO datetime string.
+ * @param {string} bucket - The scheduling bucket ('today', 'tomorrow', 'this-week', 'next-week')
+ * @param {Object} [options]
+ * @param {string} [options.priorityLabel='important'] - Priority label to determine time slot
+ * @returns {string|null} ISO datetime string for TickTick or null
+ */
 export function scheduleToDateTime(bucket, { priorityLabel = 'important' } = {}) {
     if (!bucket || bucket === 'someday' || bucket === 'null') return null;
     const now = userNow();
@@ -210,6 +267,12 @@ export function scheduleToDateTime(bucket, { priorityLabel = 'important' } = {})
     }
 }
 
+/**
+ * Alias for scheduleToDateTime that returns a TickTick ISO string.
+ * @param {string} bucket - Scheduling bucket
+ * @param {Object} [options] - Options passed to scheduleToDateTime
+ * @returns {string|null}
+ */
 export function scheduleToDate(bucket, options = {}) {
     return scheduleToDateTime(bucket, { priorityLabel: options.priorityLabel || 'important' });
 }
@@ -225,10 +288,14 @@ function scheduleLabel(bucket) {
     return labels[bucket] || null;
 }
 
-// ─── TickTick update object builder ─────────────────────────
-// Used by BOTH callbacks.js (manual ✅ Approve) and autoApply().
-// Single source of truth for what gets written to TickTick.
-
+/**
+ * Builds a TickTick update object for mutations.
+ * @param {Object} data - The source data for update
+ * @param {Object} [options]
+ * @param {string} [options.applyMode='full'] - Mutation mode ('full' or 'metadata-only')
+ * @param {string} [options.priorityLabel='important'] - Priority label for scheduling
+ * @returns {Object} Structured TickTick update payload
+ */
 export function buildTickTickUpdate(data, options = {}) {
     const { applyMode = 'full', priorityLabel = 'important' } = options;
     const update = {
@@ -254,8 +321,12 @@ export function buildTickTickUpdate(data, options = {}) {
     return update;
 }
 
-// ─── Task Card (for Telegram display) ───────────────────────
-
+/**
+ * Builds a descriptive task card for Telegram display.
+ * @param {Object} task - Original TickTick task object
+ * @param {Object} analysis - Gemini analysis object
+ * @returns {string} Formatted Telegram message string
+ */
 export function buildTaskCard(task, analysis) {
     const lines = [];
     lines.push(`🔍 New Task Detected\n`);
@@ -312,8 +383,11 @@ export function buildTaskCard(task, analysis) {
     return truncateMessage(lines.join('\n'));
 }
 
-// ─── Improved Content (stored in TickTick description) ──────
-
+/**
+ * Builds the improved task description content from analysis results.
+ * @param {Object} analysis - Gemini analysis object
+ * @returns {string} Formatted content string
+ */
 export function buildImprovedContent(analysis) {
     let content = '';
     if (analysis.analysis) content += `📊 ${analysis.analysis}\n\n`;
@@ -333,9 +407,13 @@ export function buildImprovedContent(analysis) {
     return content;
 }
 
-// ─── Pending Data (stored in store.json) ────────────────────
-// Single source for both commands.js/analyzeAndSend and scheduler.js
-
+/**
+ * Normalizes task and analysis into a pending task record for the store.
+ * @param {Object} task - Original TickTick task
+ * @param {Object} analysis - Gemini analysis
+ * @param {Array} [projects=[]] - List of available TickTick projects
+ * @returns {Object} Structured pending task record
+ */
 export function buildPendingData(task, analysis, projects = []) {
     let suggestedProjectId = null;
     if (analysis.suggested_project) {
@@ -369,8 +447,11 @@ export function buildPendingData(task, analysis, projects = []) {
     };
 }
 
-// ─── Reconstruct analysis object from stored pending data ───
-
+/**
+ * Maps a stored pending record back to an analysis object shape.
+ * @param {Object} data - Stored pending task data
+ * @returns {Object} Reconstructed Gemini analysis object
+ */
 export function pendingToAnalysis(data) {
     return {
         improved_title: data.improvedTitle,
@@ -388,8 +469,11 @@ export function pendingToAnalysis(data) {
     };
 }
 
-// ─── Auto-apply notification builder ────────────────────────
-
+/**
+ * Builds a notification message for auto-applied task updates.
+ * @param {Array<Object>} results - List of auto-applied results
+ * @returns {string|null} Formatted notification or null if no results
+ */
 export function buildAutoApplyNotification(results) {
     if (results.length === 0) return null;
     const lines = [`⚡ **Auto-applied ${results.length} task(s):**`];
@@ -404,20 +488,31 @@ export function buildAutoApplyNotification(results) {
     return lines.join('\n');
 }
 
-// ─── Helpers ────────────────────────────────────────────────
-
+/**
+ * Utility to pause execution for a given duration.
+ * @param {number} ms - Milliseconds to sleep
+ * @returns {Promise<void>}
+ */
 export function sleep(ms) {
     return new Promise(r => setTimeout(r, ms));
 }
 
-/** Truncate message to stay under Telegram's 4096 char limit */
+/**
+ * Truncates a message to stay under Telegram's character limit.
+ * @param {string} text - Text to truncate
+ * @param {number} [limit=3800] - Character limit
+ * @returns {string} Truncated text
+ */
 export function truncateMessage(text, limit = 3800) {
     if (text.length <= limit) return text;
     return text.slice(0, limit) + '\n\n... (truncated)';
 }
 
-// ─── Formatting Helpers ─────────────────────────────────────
-
+/**
+ * Escapes HTML special characters for safe inclusion in Telegram HTML messages.
+ * @param {string} str - String to escape
+ * @returns {string} Escaped string
+ */
 export function escapeHTML(str) {
     if (!str) return '';
     return str
@@ -426,6 +521,11 @@ export function escapeHTML(str) {
         .replace(/>/g, '&gt;');
 }
 
+/**
+ * Parses basic Telegram Markdown into HTML tags supported by Telegraf/Telegram.
+ * @param {string} text - Markdown text
+ * @returns {string} HTML formatted text
+ */
 export function parseTelegramMarkdownToHTML(text) {
     if (!text) return '';
     let normalized = text.replace(/\r\n/g, '\n');
@@ -438,25 +538,57 @@ export function parseTelegramMarkdownToHTML(text) {
     return escaped;
 }
 
-// ─── Semantic Telegram Output Wrappers ──────────────────────
-
+/**
+ * Sends a reply using HTML parse mode, converting Markdown input.
+ * @param {Object} ctx - Telegram context
+ * @param {string} text - Markdown text
+ * @param {Object} [extra={}] - Additional message options
+ * @returns {Promise<Object>}
+ */
 export async function replyWithMarkdown(ctx, text, extra = {}) {
     return ctx.reply(parseTelegramMarkdownToHTML(text), { ...extra, parse_mode: 'HTML' });
 }
 
+/**
+ * Edits a message using HTML parse mode, converting Markdown input.
+ * @param {Object} ctx - Telegram context
+ * @param {string} text - Markdown text
+ * @param {Object} [extra={}] - Additional message options
+ * @returns {Promise<Object>}
+ */
 export async function editWithMarkdown(ctx, text, extra = {}) {
     return ctx.editMessageText(parseTelegramMarkdownToHTML(text), { ...extra, parse_mode: 'HTML' });
 }
 
+/**
+ * Sends a message via Bot API using HTML parse mode, converting Markdown input.
+ * @param {Object} api - Telegraf/Grammy API instance
+ * @param {number|string} chatId - Target chat ID
+ * @param {string} text - Markdown text
+ * @param {Object} [extra={}] - Additional message options
+ * @returns {Promise<Object>}
+ */
 export async function sendWithMarkdown(api, chatId, text, extra = {}) {
     return api.sendMessage(chatId, parseTelegramMarkdownToHTML(text), { ...extra, parse_mode: 'HTML' });
 }
 
+/**
+ * Appends an urgent mode reminder to the text if urgent mode is active.
+ * @param {string} text - Original message text
+ * @param {boolean} urgentMode - Whether urgent mode is active
+ * @returns {string}
+ */
 export function appendUrgentModeReminder(text, urgentMode) {
     if (urgentMode !== true) return text;
     return `${text}\n\n**Urgent mode is currently active.**`;
 }
 
+/**
+ * Formats a briefing header for various summary surfaces.
+ * @param {Object} params
+ * @param {string} params.kind - Briefing kind ('daily', 'daily_close', 'weekly')
+ * @returns {string} Formatted header
+ */
 export function formatBriefingHeader({ kind }) {
     if (kind === 'daily') {
         return `**🌅 MORNING BRIEFING**\n${userTodayFormatted()}\n${'─'.repeat(24)}\n\n`;
@@ -470,6 +602,12 @@ export function formatBriefingHeader({ kind }) {
     return '';
 }
 
+/**
+ * Filters processed tasks to include only those from the last 7 days.
+ * @param {Object} processedTasks - Map of processed tasks
+ * @param {Array<string>} [fallbackKeys=[]] - Keys to check for date if reviewedAt is missing
+ * @returns {Object} Filtered map
+ */
 export function filterProcessedThisWeek(processedTasks, fallbackKeys = []) {
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const thisWeek = {};
@@ -482,6 +620,11 @@ export function filterProcessedThisWeek(processedTasks, fallbackKeys = []) {
     return thisWeek;
 }
 
+/**
+ * Builds a user-friendly message when Gemini AI quota is exhausted.
+ * @param {Object} gemini - Gemini service instance
+ * @returns {string}
+ */
 export function buildQuotaExhaustedMessage(gemini) {
     const resumeTime = gemini.quotaResumeTime();
     if (resumeTime) {
@@ -493,6 +636,11 @@ export function buildQuotaExhaustedMessage(gemini) {
     return `⚠️ AI quota exhausted. Try again in ~2 hours or after midnight PT.`;
 }
 
+/**
+ * Formats a single processed task for summary displays.
+ * @param {Object} task - Processed task record
+ * @returns {string} Formatted line
+ */
 export function formatProcessedTask(task) {
     const action = task.approved ? '✅ Approved' : task.skipped ? '⏭ Skipped' : task.dropped ? '⚪ Dropped' : '⏳ Pending';
 
@@ -510,12 +658,25 @@ export function formatProcessedTask(task) {
 
 const MAX_CANDIDATE_LABEL = 30;
 
+/**
+ * Truncates a task candidate label for inline keyboard display.
+ * @param {string} title - Task title
+ * @returns {string} Truncated title
+ */
 function truncateCandidateLabel(title) {
     if (!title) return '(untitled)';
     if (title.length <= MAX_CANDIDATE_LABEL) return title;
     return title.slice(0, MAX_CANDIDATE_LABEL - 1) + '…';
 }
 
+/**
+ * Builds an inline keyboard for selecting mutation candidates.
+ * @param {Array<Object>} candidates - List of task candidates
+ * @param {Object} [options]
+ * @param {string|null} [options.intentSummary=null] - Optional summary of the user intent
+ * @param {boolean} [options.includeCancel=true] - Whether to include a cancel button
+ * @returns {InlineKeyboard}
+ */
 export function buildMutationCandidateKeyboard(candidates, { intentSummary = null, includeCancel = true } = {}) {
     const keyboard = new InlineKeyboard();
     candidates.slice(0, 6).forEach((candidate, idx) => {
@@ -529,6 +690,15 @@ export function buildMutationCandidateKeyboard(candidates, { intentSummary = nul
     return keyboard;
 }
 
+/**
+ * Builds a clarification message for ambiguous task mutations.
+ * @param {string} reason - The reason clarification is needed
+ * @param {Array<Object>} candidates - The task candidates found
+ * @param {string|null} intentSummary - Summary of what the user wants to do
+ * @param {Object} [options]
+ * @param {string} [options.workStyleMode='standard'] - Current work-style mode
+ * @returns {string} Formatted message
+ */
 export function buildMutationClarificationMessage(reason, candidates, intentSummary, { workStyleMode = 'standard' } = {}) {
     const lines = [];
     const urgentMode = workStyleMode === 'urgent';
