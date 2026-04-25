@@ -775,14 +775,14 @@ test('GeminiAnalyzer rotates to next key on invalid-key errors', async () => {
           err.status = 400;
           throw err;
         }
-        return { response: { usageMetadata: null, text: () => '{}' } };
+        return { usageMetadata: null, text: '{}' };
       },
     }),
     'noop prompt'
   );
 
   assert.equal(analyzer._activeKeyIndex, 1);
-  assert.ok(result?.response);
+  assert.ok(result?.text);
 });
 
 test('runDailyBriefingJob suppresses scheduled briefings in focus mode', async () => {

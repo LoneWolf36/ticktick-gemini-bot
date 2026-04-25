@@ -568,24 +568,22 @@ test('buildSummaryLogPayload normalizes diagnostics field names and delivery sta
 test('GeminiAnalyzer generateDailyBriefingSummary matches manual and scheduler output for the same inputs', async () => {
   const analyzer = new GeminiAnalyzer(['dummy-key']);
   analyzer._generateWithFailover = async () => ({
-    response: {
-      text: () => JSON.stringify({
-        focus: 'Ship the architecture PR before lower-leverage work.',
-        priorities: [
-          {
-            task_id: 'task-focus',
-            title: 'Ship weekly architecture PR',
-            project_name: 'Career',
-            due_date: '2026-03-12',
-            priority_label: 'career-critical',
-            rationale_text: 'Directly moves the highest-priority goal.',
-          },
-        ],
-        why_now: ['Directly moves the highest-priority goal.'],
-        start_now: 'Open the PR checklist and draft the next commit.',
-        notices: [],
-      }),
-    },
+    text: JSON.stringify({
+      focus: 'Ship the architecture PR before lower-leverage work.',
+      priorities: [
+        {
+          task_id: 'task-focus',
+          title: 'Ship weekly architecture PR',
+          project_name: 'Career',
+          due_date: '2026-03-12',
+          priority_label: 'career-critical',
+          rationale_text: 'Directly moves the highest-priority goal.',
+        },
+      ],
+      why_now: ['Directly moves the highest-priority goal.'],
+      start_now: 'Open the PR checklist and draft the next commit.',
+      notices: [],
+    }),
   });
 
   const manual = await analyzer.generateDailyBriefingSummary(buildSummaryActiveTasksFixture(), {
@@ -611,15 +609,13 @@ test('GeminiAnalyzer generateDailyBriefingSummary matches manual and scheduler o
 test('GeminiAnalyzer generateWeeklyDigestSummary matches manual and scheduler output for the same snapshot', async () => {
   const analyzer = new GeminiAnalyzer(['dummy-key']);
   analyzer._generateWithFailover = async () => ({
-    response: {
-      text: () => JSON.stringify({
-        progress: ['Completed resume update'],
-        carry_forward: ['Reschedule mock interview'],
-        next_focus: ['Protect maker time'],
-        watchouts: ['Do not let admin work crowd out backend prep'],
-        notices: [],
-      }),
-    },
+    text: JSON.stringify({
+      progress: ['Completed resume update'],
+      carry_forward: ['Reschedule mock interview'],
+      next_focus: ['Protect maker time'],
+      watchouts: ['Do not let admin work crowd out backend prep'],
+      notices: [],
+    }),
   });
 
   const activeTasks = buildSummaryActiveTasksFixture();

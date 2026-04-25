@@ -20,7 +20,7 @@
     },
     "dependencies": {
         "@ax-llm/ax": "^19.0.13",
-        "@google/generative-ai": "^0.21.0",
+        "@google/genai": "^1.50.1",
         "ajv": "^8.18.0",
         "ajv-formats": "^3.0.1",
         "axios": "^1.7.0",

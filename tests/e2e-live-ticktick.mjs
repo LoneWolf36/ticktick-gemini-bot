@@ -56,29 +56,27 @@ function createDeterministicGemini() {
       const text = urgentMode
         ? '**Urgent Briefing**\n1. Handle the nearest deadline first.'
         : '**Standard Briefing**\n1. Start with the highest-value task.';
-      return { response: { usageMetadata: null, text: () => text } };
+      return { usageMetadata: null, text: text };
     }
 
     if (prompt.includes('Current active tasks') && prompt.includes('Tasks analyzed this week')) {
       gemini.capturedPrompts.weekly.push(prompt);
-      return { response: { usageMetadata: null, text: () => '**Weekly Digest**\n1. Review the biggest open loop.' } };
+      return { usageMetadata: null, text: '**Weekly Digest**\n1. Review the biggest open loop.' };
     }
 
     if (prompt.includes('Create a new reorganization proposal.') || prompt.includes('User refinement request:')) {
       gemini.capturedPrompts.reorg.push(prompt);
       return {
-        response: {
-          usageMetadata: null,
-          text: () => JSON.stringify({
-            summary: 'Deterministic live reorg proposal.',
-            questions: prompt.includes('User refinement request:') ? ['Which errands should be merged?'] : [],
-            actions: [],
-          }),
-        },
+        usageMetadata: null,
+        text: JSON.stringify({
+          summary: 'Deterministic live reorg proposal.',
+          questions: prompt.includes('User refinement request:') ? ['Which errands should be merged?'] : [],
+          actions: [],
+        }),
       };
     }
 
-    return { response: { usageMetadata: null, text: () => '{}' } };
+    return { usageMetadata: null, text: '{}' };
   };
   return gemini;
 }

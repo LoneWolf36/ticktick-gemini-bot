@@ -10,7 +10,7 @@
 //
 // These are NOT task-writing schemas. They govern summary/reorg output
 // from the briefing, weekly, and reorg commands only.
-import { SchemaType } from '@google/generative-ai';
+import { Type as SchemaType } from '@google/genai';
 
 
 /**

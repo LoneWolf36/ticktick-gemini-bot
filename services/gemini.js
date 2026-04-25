@@ -1,5 +1,5 @@
 // Gemini AI — goal-aware task analyzer and accountability engine
-import { GoogleGenerativeAI } from '@google/generative-ai';
+import { GoogleGenAI } from '@google/genai';
 import { fileURLToPath } from 'url';
 import { existsSync } from 'fs';
 import path from 'path';
@@ -273,47 +273,60 @@ export class GeminiAnalyzer {
      * @private
      */
     _initModelsForActiveKey() {
-        const genAI = new GoogleGenerativeAI(this._keys[this._activeKeyIndex]);
+        const ai = new GoogleGenAI({apiKey: this._keys[this._activeKeyIndex]});
 
-        this.briefingModel = genAI.getGenerativeModel({
-            model: 'gemini-2.5-flash',
-            systemInstruction: BRIEFING_PROMPT,
-            generationConfig: {
-                responseMimeType: "application/json",
-                responseSchema: briefingSummarySchema,
-                temperature: 0.8,
-                topP: 0.9,
-                maxOutputTokens: 4096,
-            },
-            thinkingConfig: { thinkingBudget: 1024 },
-        });
+        this.briefingModel = {
+            generateContent: async (prompt) => {
+                const response = await ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: prompt,
+                    config: {
+                        systemInstruction: BRIEFING_PROMPT,
+                        responseMimeType: "application/json",
+                        responseSchema: briefingSummarySchema,
+                        temperature: 0.8,
+                        topP: 0.9,
+                        maxOutputTokens: 4096,
+                    }
+                });
+                return response;
+            }
+        };
 
-        this.weeklyModel = genAI.getGenerativeModel({
-            model: 'gemini-2.5-flash',
-            systemInstruction: WEEKLY_SUMMARY_PROMPT,
-            generationConfig: {
-                responseMimeType: 'application/json',
-                responseSchema: weeklySummarySchema,
-                temperature: 0.4,
-                topP: 0.9,
-                maxOutputTokens: 4096,
-            },
-            thinkingConfig: { thinkingBudget: 1024 },
-        });
+        this.weeklyModel = {
+            generateContent: async (prompt) => {
+                const response = await ai.models.generateContent({
+                    model: 'gemini-2.5-flash',
+                    contents: prompt,
+                    config: {
+                        systemInstruction: WEEKLY_SUMMARY_PROMPT,
+                        responseMimeType: 'application/json',
+                        responseSchema: weeklySummarySchema,
+                        temperature: 0.4,
+                        topP: 0.9,
+                        maxOutputTokens: 4096,
+                    }
+                });
+                return response;
+            }
+        };
 
-
-
-        this.reorgModel = genAI.getGenerativeModel({
-            model: "gemini-2.5-flash",
-            systemInstruction: REORG_PROMPT,
-            generationConfig: {
-                responseMimeType: "application/json",
-                responseSchema: reorgSchema,
-                temperature: 0.2,
-                maxOutputTokens: 4096,
-            },
-            thinkingConfig: { thinkingBudget: 512 },
-        });
+        this.reorgModel = {
+            generateContent: async (prompt) => {
+                const response = await ai.models.generateContent({
+                    model: "gemini-2.5-flash",
+                    contents: prompt,
+                    config: {
+                        systemInstruction: REORG_PROMPT,
+                        responseMimeType: "application/json",
+                        responseSchema: reorgSchema,
+                        temperature: 0.2,
+                        maxOutputTokens: 4096,
+                    }
+                });
+                return response;
+            }
+        };
     }
 
     /**
@@ -472,15 +485,15 @@ export class GeminiAnalyzer {
         while (true) {
             try {
                 const model = getModelFn.call(this);
-                const result = await model.generateContent(prompt);
+                const response = await model.generateContent(prompt);
 
                 // Telemetry Interceptor for Architecture Observability
-                const usage = result.response.usageMetadata;
+                const usage = response.usageMetadata;
                 if (usage) {
                     console.log(`📊 [Gemini API] Tokens -> In: ${usage.promptTokenCount} | Out: ${usage.candidatesTokenCount} | Total: ${usage.totalTokenCount}`);
                 }
 
-                return result;
+                return response;
             } catch (err) {
                 const activeK = this._keys[this._activeKeyIndex];
                 const maskedKey = activeK ? `${activeK.slice(0, 4)}...${activeK.slice(-4)}` : 'undefined';
@@ -579,8 +592,8 @@ export class GeminiAnalyzer {
         const workStylePromptNote = buildWorkStylePromptNote(recommendationState.workStyleMode);
 
         const prompt = `${workStylePromptNote ? `${workStylePromptNote}\n\n` : ''}Today is ${today}.\n\nShared priority guidance:\n${rankedPreview || 'No ranked guidance available.'}\n\nActive tasks (${orderedTasks.length} total):\n${taskList}`;
-        const result = await this._generateWithFailover(() => this.briefingModel, prompt, { transientBaseMs: 15 });
-        const raw = result.response.text().trim();
+        const response = await this._generateWithFailover(() => this.briefingModel, prompt, { transientBaseMs: 15 });
+        const raw = response.text.trim();
         const parsed = this._safeParseJson(raw);
         const modelSummary = parsed && typeof parsed === 'object'
             ? parsed
@@ -667,8 +680,8 @@ export class GeminiAnalyzer {
 
         const workStylePromptNote = buildWorkStylePromptNote(recommendationState.workStyleMode);
         const prompt = `${workStylePromptNote ? `${workStylePromptNote}\n\n` : ''}Current active tasks (${orderedTasks.length}):\n${taskList || 'None'}\n\nProcessed tasks this week (${processedEntries.length}):\n${processed || 'None'}`;
-        const result = await this._generateWithFailover(() => this.weeklyModel, prompt, { transientBaseMs: 15 });
-        const raw = result.response.text().trim();
+        const response = await this._generateWithFailover(() => this.weeklyModel, prompt, { transientBaseMs: 15 });
+        const raw = response.text.trim();
         const parsed = this._safeParseJson(raw);
         const summaryPayload = parsed && typeof parsed === 'object' ? parsed : {};
 
@@ -766,8 +779,8 @@ export class GeminiAnalyzer {
             prompt += `\nCreate a new reorganization proposal.`;
         }
 
-        const result = await this._generateWithFailover(() => this.reorgModel, prompt, { transientBaseMs: 12 });
-        const raw = result.response.text().trim();
+        const response = await this._generateWithFailover(() => this.reorgModel, prompt, { transientBaseMs: 12 });
+        const raw = response.text.trim();
         const parsed = this._safeParseJson(raw);
         if (parsed) return this._safeNormalizeReorgProposal(parsed, tasks, projects);
         // Fallback: deterministic reorg proposal when model output is malformed.
