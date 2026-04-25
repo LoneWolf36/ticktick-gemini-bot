@@ -22,16 +22,10 @@ export function taskReviewKeyboard(taskId) {
 // ─── Register Callback Handlers ─────────────────────────────
 
 export function registerCallbacks(bot, adapter, pipeline) {
-    const processPipelineMessage = async (userMessage, options) => {
-        if (typeof pipeline?.createRequestContext !== 'function') {
-            return pipeline.processMessage(userMessage, options);
-        }
-        const requestContext = await pipeline.createRequestContext(userMessage, options);
-        return pipeline.processMessage(userMessage, {
-            ...options,
-            requestContext,
-        });
-    };
+    const processPipelineMessage = (userMessage, options) =>
+        typeof pipeline.processMessageWithContext === 'function'
+            ? pipeline.processMessageWithContext(userMessage, options)
+            : pipeline.processMessage(userMessage, options);
 
     // ─── Approve: move pending → processed, update TickTick ───
     // RETAINED BOUNDARY: inline review callbacks apply precomputed review edits

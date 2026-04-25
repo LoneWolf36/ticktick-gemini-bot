@@ -2091,8 +2091,20 @@ export function createPipeline({ axIntent, normalizer, adapter, observability, d
         return text;
     }
 
+    /**
+     * Builds a request context then runs processMessage — canonical
+     * context-wired entry point.  All bot handlers, callbacks, and
+     * scheduler poll paths should call this instead of duplicating
+     * the createRequestContext → processMessage dance locally.
+     */
+    async function processMessageWithContext(userMessage, options = {}) {
+        const requestContext = await contextBuilder.buildRequestContext(userMessage, options);
+        return processMessage(userMessage, { ...options, requestContext });
+    }
+
     return {
         processMessage,
+        processMessageWithContext,
         createRequestContext: (userMessage, options = {}) => contextBuilder.buildRequestContext(userMessage, options),
     };
 }

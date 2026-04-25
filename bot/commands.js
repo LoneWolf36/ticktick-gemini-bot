@@ -83,16 +83,10 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         generatedAtIso: new Date().toISOString(),
     });
 
-    const processPipelineMessage = async (userMessage, options) => {
-        if (typeof pipeline?.createRequestContext !== 'function') {
-            return pipeline.processMessage(userMessage, options);
-        }
-        const requestContext = await pipeline.createRequestContext(userMessage, options);
-        return pipeline.processMessage(userMessage, {
-            ...options,
-            requestContext,
-        });
-    };
+    const processPipelineMessage = (userMessage, options) =>
+        typeof pipeline.processMessageWithContext === 'function'
+            ? pipeline.processMessageWithContext(userMessage, options)
+            : pipeline.processMessage(userMessage, options);
 
     const describePatternForMemory = (pattern) => {
         switch (pattern?.type) {

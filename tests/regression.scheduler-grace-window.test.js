@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import * as store from '../services/store.js';
 import {
   buildSchedulingMetadata,
+  retryDeferredIntents,
   runDailyBriefingJob,
   runStartupCatchupJobs,
   runWeeklyDigestJob,
@@ -249,4 +250,255 @@ test('startup catch-up delivers daily and weekly as separate messages with non-d
   assert.match(sent[1], /WEEKLY ACCOUNTABILITY REVIEW/);
   assert.notEqual(sent[0], sent[1]);
   assert.deepEqual(weeklyContext.excludedTaskIds, ['task-focus', 'task-support']);
+});
+
+// ─── Deferred Pipeline Intents — Store CRUD (R12) ────────────
+
+test('store: appendDeferredPipelineIntent persists and returns entry with generated id', async () => {
+    await store.resetAll();
+    const entry = await store.appendDeferredPipelineIntent({
+        userMessage: 'Buy milk',
+        entryPoint: 'free-form',
+    });
+    assert.ok(entry.id.startsWith('dpi_'));
+    assert.equal(entry.userMessage, 'Buy milk');
+    assert.equal(entry.entryPoint, 'free-form');
+    assert.ok(entry.createdAt);
+
+    const all = store.getDeferredPipelineIntents();
+    assert.equal(all.length, 1);
+    assert.equal(all[0].id, entry.id);
+});
+
+test('store: appendDeferredPipelineIntent preserves explicit id', async () => {
+    await store.resetAll();
+    const entry = await store.appendDeferredPipelineIntent({
+        id: 'custom-id-1',
+        userMessage: 'Do laundry',
+    });
+    assert.equal(entry.id, 'custom-id-1');
+});
+
+test('store: removeDeferredPipelineIntent removes by id and returns removed entry', async () => {
+    await store.resetAll();
+    const e1 = await store.appendDeferredPipelineIntent({ userMessage: 'Task A' });
+    const e2 = await store.appendDeferredPipelineIntent({ userMessage: 'Task B' });
+
+    const removed = await store.removeDeferredPipelineIntent(e1.id);
+    assert.equal(removed.id, e1.id);
+    assert.equal(removed.userMessage, 'Task A');
+
+    const remaining = store.getDeferredPipelineIntents();
+    assert.equal(remaining.length, 1);
+    assert.equal(remaining[0].id, e2.id);
+});
+
+test('store: removeDeferredPipelineIntent returns null for unknown id', async () => {
+    await store.resetAll();
+    const result = await store.removeDeferredPipelineIntent('nonexistent');
+    assert.equal(result, null);
+});
+
+test('store: getDeferredPipelineIntents returns deep clone', async () => {
+    await store.resetAll();
+    await store.appendDeferredPipelineIntent({ userMessage: 'Cloneable' });
+    const a = store.getDeferredPipelineIntents();
+    const b = store.getDeferredPipelineIntents();
+    assert.notEqual(a, b);
+    assert.deepEqual(a, b);
+    a[0].userMessage = 'mutated';
+    assert.notEqual(store.getDeferredPipelineIntents()[0].userMessage, 'mutated');
+});
+
+// ─── retryDeferredIntents (R12) ──────────────────────────────
+
+test('retryDeferredIntents returns zeros when no deferred intents exist', async () => {
+    await store.resetAll();
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: { processMessage: async () => ({ type: 'task' }) },
+    });
+    assert.deepEqual(result, { retried: 0, failed: 0, remaining: 0 });
+});
+
+test('retryDeferredIntents skips retry when API health check fails', async () => {
+    await store.resetAll();
+    await store.appendDeferredPipelineIntent({ userMessage: 'Deferred task' });
+
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => { throw new Error('API down'); } },
+        pipeline: { processMessage: async () => ({ type: 'task' }) },
+    });
+    assert.equal(result.retried, 0);
+    assert.equal(result.remaining, 1);
+});
+
+test('retryDeferredIntents retries and removes successful intent', async () => {
+    await store.resetAll();
+    await store.setChatId('retry-test-user');
+    const entry = await store.appendDeferredPipelineIntent({
+        userMessage: 'Buy groceries',
+        entryPoint: 'free-form',
+    });
+
+    const processCalls = [];
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: {
+            processMessageWithContext: async (msg, opts) => {
+                processCalls.push({ msg, opts });
+                return { type: 'task', actions: [{ title: 'Buy groceries' }] };
+            },
+        },
+        bot: { api: { sendMessage: async () => {} } },
+    });
+
+    assert.equal(result.retried, 1);
+    assert.equal(result.failed, 0);
+    assert.equal(result.remaining, 0);
+    assert.equal(processCalls.length, 1);
+    assert.equal(processCalls[0].msg, 'Buy groceries');
+    assert.equal(store.getDeferredPipelineIntents().length, 0);
+});
+
+test('retryDeferredIntents leaves transient failures in queue', async () => {
+    await store.resetAll();
+    await store.appendDeferredPipelineIntent({ userMessage: 'Transient task' });
+
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: {
+            processMessage: async () => ({
+                type: 'error',
+                failure: { category: 'transient' },
+            }),
+        },
+    });
+
+    assert.equal(result.retried, 0);
+    assert.equal(result.failed, 1);
+    assert.equal(result.remaining, 1);
+});
+
+test('retryDeferredIntents removes permanent failures from queue', async () => {
+    await store.resetAll();
+    await store.setChatId('perm-fail-test');
+    await store.appendDeferredPipelineIntent({ userMessage: 'Permanent fail task' });
+
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: {
+            processMessage: async () => ({
+                type: 'error',
+                failure: { category: 'permanent' },
+            }),
+        },
+        bot: { api: { sendMessage: async () => {} } },
+    });
+
+    assert.equal(result.failed, 1);
+    assert.equal(result.remaining, 0);
+});
+
+test('retryDeferredIntents removes malformed entries without userMessage', async () => {
+    await store.resetAll();
+    await store.appendDeferredPipelineIntent({ entryPoint: 'orphan' });
+    await store.appendDeferredPipelineIntent({ userMessage: 'Valid task' });
+
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: {
+            processMessage: async () => ({ type: 'task', actions: [{ title: 'Valid task' }] }),
+        },
+    });
+
+    assert.equal(result.retried, 1);
+    assert.equal(result.remaining, 0);
+});
+
+test('retryDeferredIntents respects maxRetries batch limit', async () => {
+    await store.resetAll();
+    for (let i = 0; i < 8; i++) {
+        await store.appendDeferredPipelineIntent({ userMessage: `Task ${i}` });
+    }
+
+    let callCount = 0;
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: {
+            processMessage: async () => {
+                callCount++;
+                return { type: 'task', actions: [{ title: 'ok' }] };
+            },
+        },
+    }, { maxRetries: 3 });
+
+    assert.equal(callCount, 3);
+    assert.equal(result.retried, 3);
+    assert.equal(result.remaining, 5);
+});
+
+test('retryDeferredIntents sends notification to user on success', async () => {
+    await store.resetAll();
+    await store.setChatId('notify-test');
+    await store.appendDeferredPipelineIntent({ userMessage: 'Notify me' });
+
+    const sentMessages = [];
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: {
+            processMessage: async () => ({ type: 'task', actions: [{ title: 'Notify me' }] }),
+        },
+        bot: {
+            api: {
+                sendMessage: async (_chatId, msg) => { sentMessages.push(msg); },
+            },
+        },
+    });
+
+    assert.equal(result.retried, 1);
+    assert.equal(sentMessages.length, 1);
+    assert.match(sentMessages[0], /Deferred Intent Retry/);
+    assert.match(sentMessages[0], /Retried/);
+});
+
+test('retryDeferredIntents prefers processMessageWithContext over processMessage', async () => {
+    await store.resetAll();
+    await store.appendDeferredPipelineIntent({ userMessage: 'Context task' });
+
+    let usedWithContext = false;
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: {
+            processMessageWithContext: async () => {
+                usedWithContext = true;
+                return { type: 'task', actions: [{ title: 'ok' }] };
+            },
+            processMessage: async () => {
+                throw new Error('should not be called');
+            },
+        },
+    });
+
+    assert.equal(usedWithContext, true);
+    assert.equal(result.retried, 1);
+});
+
+test('retryDeferredIntents falls back to processMessage when processMessageWithContext absent', async () => {
+    await store.resetAll();
+    await store.appendDeferredPipelineIntent({ userMessage: 'Fallback task' });
+
+    let usedFallback = false;
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: {
+            processMessage: async () => {
+                usedFallback = true;
+                return { type: 'task', actions: [{ title: 'ok' }] };
+            },
+        },
+    });
+
+    assert.equal(usedFallback, true);
+    assert.equal(result.retried, 1);
 });

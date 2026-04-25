@@ -261,6 +261,93 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
 }
 
 /**
+ * Retry deferred pipeline intents that were saved when the TickTick API
+ * was unavailable (R12 graceful degradation).  Runs on startup and
+ * periodically during the poll cycle.
+ *
+ * @param {Object} deps
+ * @param {Object} deps.adapter - TickTick adapter (used to probe API health)
+ * @param {Object} deps.pipeline - Pipeline instance (processMessageWithContext)
+ * @param {Object} [deps.bot] - Bot instance for user notification
+ * @param {Object} [options]
+ * @param {number} [options.maxRetries=5] - Max intents to retry per invocation
+ * @returns {{ retried: number, failed: number, remaining: number }}
+ */
+export async function retryDeferredIntents({ adapter, pipeline, bot } = {}, options = {}) {
+    const { maxRetries = 5 } = options;
+    const deferred = store.getDeferredPipelineIntents();
+    if (deferred.length === 0) return { retried: 0, failed: 0, remaining: 0 };
+
+    // Quick health check — if the API is still down, skip retry entirely
+    try {
+        await adapter.listActiveTasks(false);
+    } catch {
+        console.log(`[DeferredRetry] API still unavailable — skipping ${deferred.length} deferred intent(s).`);
+        return { retried: 0, failed: 0, remaining: deferred.length };
+    }
+
+    const batch = deferred.slice(0, maxRetries);
+    let retried = 0;
+    let failed = 0;
+    const notifications = [];
+
+    for (const entry of batch) {
+        if (!entry.userMessage) {
+            // Malformed entry — remove silently
+            await store.removeDeferredPipelineIntent(entry.id);
+            continue;
+        }
+
+        try {
+            const processMessage = typeof pipeline.processMessageWithContext === 'function'
+                ? pipeline.processMessageWithContext
+                : pipeline.processMessage;
+
+            const result = await processMessage(entry.userMessage, {
+                entryPoint: entry.entryPoint || 'deferred-retry',
+                mode: entry.mode || 'interactive',
+                workStyleMode: entry.workStyleMode || undefined,
+            });
+
+            if (result.type === 'task') {
+                await store.removeDeferredPipelineIntent(entry.id);
+                retried++;
+                notifications.push(`✅ Retried: ${result.actions?.[0]?.title || entry.userMessage.slice(0, 40)}`);
+            } else if (result.type === 'error' && result.failure?.category === 'transient') {
+                // Still transient — leave in queue for next cycle
+                failed++;
+            } else {
+                // Permanent failure or non-task result — remove to avoid infinite retry
+                await store.removeDeferredPipelineIntent(entry.id);
+                failed++;
+                notifications.push(`❌ Failed permanently: ${entry.userMessage.slice(0, 40)}`);
+            }
+        } catch (err) {
+            console.error(`[DeferredRetry] Error retrying intent ${entry.id}:`, err.message);
+            failed++;
+        }
+    }
+
+    const remaining = store.getDeferredPipelineIntents().length;
+
+    if (notifications.length > 0 && bot) {
+        const chatId = store.getChatId();
+        if (chatId) {
+            try {
+                const msg = `🔄 *Deferred Intent Retry*\n${notifications.join('\n')}` +
+                    (remaining > 0 ? `\n\n${remaining} intent(s) still queued.` : '');
+                await sendWithMarkdown(bot.api, chatId, msg);
+            } catch {
+                // best effort
+            }
+        }
+    }
+
+    console.log(`[DeferredRetry] retried=${retried} failed=${failed} remaining=${remaining}`);
+    return { retried, failed, remaining };
+}
+
+/**
  * Handle missed scheduled deliveries on startup
  * @param {Object} services - Service dependencies
  * @param {Object} config - Scheduler configuration
@@ -361,21 +448,18 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
     // Handle missed scheduled deliveries on startup
     await runStartupCatchupJobs({ bot, ticktick, gemini, adapter }, schedulerConfig);
 
+    // Retry any deferred intents from previous API outages (R12)
+    await retryDeferredIntents({ adapter, pipeline, bot });
+
     // Task polling (every N minutes)
     let tokenExpiredNotified = false;
     let quotaNotificationSent = false;
     let pendingSuppressionSent = false;
 
-    const processPipelineMessage = async (userMessage, options) => {
-        if (typeof pipeline?.createRequestContext !== 'function') {
-            return pipeline.processMessage(userMessage, options);
-        }
-        const requestContext = await pipeline.createRequestContext(userMessage, options);
-        return pipeline.processMessage(userMessage, {
-            ...options,
-            requestContext,
-        });
-    };
+    const processPipelineMessage = (userMessage, options) =>
+        typeof pipeline.processMessageWithContext === 'function'
+            ? pipeline.processMessageWithContext(userMessage, options)
+            : pipeline.processMessage(userMessage, options);
 
     cron.schedule(`*/${pollMinutes} * * * *`, async () => {
         if (!ticktick.isAuthenticated()) {
@@ -403,6 +487,15 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
         const chatId = store.getChatId();
         if (!chatId) return;
         const workStyleMode = await store.getWorkStyleMode(chatId);
+
+        // Retry deferred intents before polling for new tasks (R12)
+        if (store.getDeferredPipelineIntents().length > 0) {
+            try {
+                await retryDeferredIntents({ adapter, pipeline, bot });
+            } catch (err) {
+                console.error('[DeferredRetry] Poll-cycle retry error:', err.message);
+            }
+        }
 
         console.log(`🔄 [${userTimeString()}] Polling for new tasks...`);
 
