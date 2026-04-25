@@ -132,7 +132,7 @@ function formatRetryEta(retryAfterMs, retryAt) {
 /**
  * Extracts structured metadata from an adapter error.
  * @param {Error|string|null} errorOrMessage - The error to extract from
- * @returns {{ code: string|null, statusCode: number|null, retryAfterMs?: number, retryAt?: string, isQuotaExhausted: boolean }}
+ * @returns {{ code: string|null, statusCode: number|null, retryAfterMs: number, retryAt: string, isQuotaExhausted: boolean }}
  */
 function extractAdapterErrorMeta(errorOrMessage) {
     if (!errorOrMessage || typeof errorOrMessage === 'string') return {};

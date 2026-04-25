@@ -125,7 +125,7 @@ export class QuotaExhaustedError extends Error {
  * Caps at MAX_CHECKLIST_ITEMS, validates each item has a title,
  * and strips invalid entries.
  * @param {Array} items - Raw checklist items from AX output
- * @returns {{valid: boolean, items?: Array, errors: string[], wasCapped: boolean}} Validation result
+ * @returns {{valid: boolean, items: Array, errors: string[], wasCapped: boolean}} Validation result
  */
 export function validateChecklistItems(items) {
     if (!Array.isArray(items)) {

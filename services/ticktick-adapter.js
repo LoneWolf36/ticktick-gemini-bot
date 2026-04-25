@@ -672,7 +672,7 @@ export class TickTickAdapter {
     /**
      * Creates multiple tasks sequentially with per-item failure tracking.
      * @param {Array<Object>} normalizedActions - Array of normalized action objects
-     * @returns {Promise<{created: Array<Object>, failed: Array<{action: Object, error: string, code?: string}>}>} Batch results
+     * @returns {Promise<{created: Array<Object>, failed: Array<{action: Object, error: string, code: string}>}>} Batch results
      * @throws {Error} Classified error with code if batch processing fails catastrophically
      * 
      * @example
