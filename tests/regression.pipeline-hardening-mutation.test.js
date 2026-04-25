@@ -351,6 +351,7 @@ test('createAxIntent rotates configured keys before final quota failure', async 
 
 test('burst pipeline requests remain isolated and deterministic', async () => {
   const telemetryEvents = [];
+  const adapterWriteTitles = [];
   const adapter = {
     listProjects: async () => DEFAULT_PROJECTS,
     listActiveTasks: async () => [],
@@ -366,6 +367,7 @@ test('burst pipeline requests remain isolated and deterministic', async () => {
     }),
     createTask: async (action) => {
       await new Promise((resolve) => setTimeout(resolve, 1));
+      adapterWriteTitles.push(action.title);
       if ((action.title || '').includes('FAIL')) {
         throw new Error('Simulated adapter failure');
       }
@@ -415,6 +417,7 @@ test('burst pipeline requests remain isolated and deterministic', async () => {
     requestId: `burst-${index}`,
   }));
 
+  const startedAtMs = Date.now();
   const results = await Promise.all(
     requests.map(({ message, requestId }) => pipeline.processMessage(message, {
       requestId,
@@ -423,12 +426,25 @@ test('burst pipeline requests remain isolated and deterministic', async () => {
       currentDate: '2026-03-10',
     })),
   );
+  const elapsedMs = Date.now() - startedAtMs;
 
   assert.equal(results.length, 24);
   assert.equal(new Set(results.map((result) => result.requestId)).size, 24);
   assert.equal(results.filter((result) => result.type === 'error').length, 4);
   assert.equal(results.filter((result) => result.type === 'task').length, 20);
   assert.ok(results.every((result, index) => result.requestId === `burst-${index}`));
+  assert.ok(elapsedMs < 2000, `expected burst run under 2s, got ${elapsedMs}ms`);
+  assert.equal(
+    new Set(adapterWriteTitles.filter((title) => title && !title.includes('FAIL'))).size,
+    20,
+    'expected each successful request to keep an isolated adapter write title',
+  );
+  for (const [index, result] of results.entries()) {
+    if (index % 6 !== 0) {
+      assert.equal(result.type, 'task');
+      assert.equal(result.actions[0]?.title, `OK-burst-${index}`);
+    }
+  }
   assert.equal(telemetryEvents.filter((event) => event.eventType === 'pipeline.request.received').length, 24);
   assert.equal(telemetryEvents.filter((event) => event.eventType === 'pipeline.request.failed').length, 4);
   assert.equal(telemetryEvents.filter((event) => event.eventType === 'pipeline.request.completed').length, 20);

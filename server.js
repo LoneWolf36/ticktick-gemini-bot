@@ -12,6 +12,7 @@ import { createAxIntent } from './services/ax-intent.js';
 import * as normalizer from './services/normalizer.js';
 import { createPipeline } from './services/pipeline.js';
 import { getUserTimezone } from './services/user-settings.js';
+import * as store from './services/store.js';
 
 const {
     TICKTICK_CLIENT_ID,
@@ -115,7 +116,12 @@ const keyManager = {
 };
 
 const axIntent = createAxIntent(keyManager);
-const pipeline = createPipeline({ axIntent, normalizer, adapter });
+const pipeline = createPipeline({
+    axIntent,
+    normalizer,
+    adapter,
+    deferIntent: (entry) => store.appendDeferredPipelineIntent(entry),
+});
 
 const bot = createBot(TELEGRAM_BOT_TOKEN, ticktick, gemini, adapter, pipeline, botConfig);
 const app = express();

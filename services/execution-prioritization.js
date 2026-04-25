@@ -286,6 +286,69 @@ function urgentModeWeight(candidate, urgency, context) {
     return boost;
 }
 
+function normalizeBehavioralCategory(category) {
+    const normalized = normalizeWhitespace(category).toLowerCase();
+    if (!normalized) return null;
+    if (normalized === 'career' || normalized === 'work' || normalized === 'study') return 'career';
+    if (normalized === 'financial' || normalized === 'finance' || normalized === 'admin') return 'financial';
+    if (normalized === 'health' || normalized === 'wellness') return 'health';
+    if (normalized === 'personal' || normalized === 'home') return 'personal';
+    return null;
+}
+
+function normalizeBehavioralSignals(signals = [], threshold = 'strong') {
+    const minConfidence = threshold === 'strong' ? 'high' : 'standard';
+    return (Array.isArray(signals) ? signals : [])
+        .map((signal) => {
+            if (!signal || typeof signal !== 'object') return null;
+            const type = normalizeWhitespace(signal.type).toLowerCase();
+            if (type !== 'category_avoidance' && type !== 'avoidance') return null;
+
+            const category = normalizeBehavioralCategory(signal.category || signal.domain || signal.kind);
+            if (!category) return null;
+
+            const confidence = normalizeWhitespace(signal.confidence).toLowerCase();
+            if (confidence !== 'high' && confidence !== 'standard') return null;
+            if (minConfidence === 'high' && confidence !== 'high') return null;
+
+            const rawCount = Number(signal.signalCount);
+            const signalCount = Number.isFinite(rawCount) ? rawCount : 0;
+            if (signalCount > 0 && signalCount < 3) return null;
+
+            return {
+                type: 'category_avoidance',
+                category,
+                confidence,
+                signalCount,
+            };
+        })
+        .filter(Boolean);
+}
+
+function inferCandidateCategory(candidate) {
+    const haystack = `${candidate.title} ${candidate.projectName || ''} ${candidate.content || ''}`.toLowerCase();
+    const kinds = inferCandidateKinds(haystack);
+    if (kinds.has('career')) return 'career';
+    if (kinds.has('financial')) return 'financial';
+    if (kinds.has('health')) return 'health';
+    if (kinds.has('personal')) return 'personal';
+    return null;
+}
+
+function behavioralAdjustment(candidate, context) {
+    const candidateCategory = inferCandidateCategory(candidate);
+    if (!candidateCategory) return { score: 0, confidence: null };
+
+    const match = (context.behavioralSignals || [])
+        .find((signal) => signal.type === 'category_avoidance' && signal.category === candidateCategory);
+    if (!match) return { score: 0, confidence: null };
+
+    return {
+        score: match.confidence === 'high' ? 12 : 6,
+        confidence: match.confidence,
+    };
+}
+
 function wordCount(text) {
     return normalizeWhitespace(text).split(/\s+/).filter(Boolean).length;
 }
@@ -363,6 +426,7 @@ function summarizeAssessmentForTelemetry(assessment) {
         fallbackUsed: assessment.fallbackUsed === true,
         urgency: assessment.urgency || 'low',
         goalMatchCount: Array.isArray(assessment.themeMatches) ? assessment.themeMatches.length : 0,
+        behavioralSignalApplied: assessment.behavioralSignalApplied === true,
         quickWinSuppressed: isQuickWinTask(assessment.candidate),
         planningHeavyWithoutExecution: isPlanningHeavyWithoutExecution(assessment.candidate),
     };
@@ -379,6 +443,7 @@ function buildRankingTelemetryPayload({ candidates, assessed, result, context })
             workStyleMode: context.workStyleMode || 'unknown',
             urgentMode: context.urgentMode === true,
             behavioralInferenceThreshold: context.behavioralInferenceThreshold || 'strong',
+            behavioralSignalCount: Array.isArray(context.behavioralSignals) ? context.behavioralSignals.length : 0,
             stateSource: context.stateSource || 'none',
             priorityOverrideCount: Array.isArray(context.priorityOverrides) ? context.priorityOverrides.length : 0,
             candidates: candidates.map(summarizeCandidateForTelemetry),
@@ -443,7 +508,7 @@ function findPriorityOverride(taskId, context) {
     return (context.priorityOverrides || []).find((override) => override.taskId === taskId) || null;
 }
 
-function inferInferenceConfidence({ rationaleCode, urgency, degraded, themeMatches, exceptionApplied }) {
+function inferInferenceConfidence({ rationaleCode, urgency, degraded, themeMatches, exceptionApplied, behavioralConfidence = null }) {
     if (exceptionApplied === true) {
         return 'strong';
     }
@@ -453,6 +518,10 @@ function inferInferenceConfidence({ rationaleCode, urgency, degraded, themeMatch
     }
 
     if (rationaleCode === 'urgency' && urgency === 'high') {
+        return 'strong';
+    }
+
+    if (rationaleCode === 'behavioral_signal' && behavioralConfidence === 'high') {
         return 'strong';
     }
 
@@ -489,6 +558,13 @@ function buildRationaleText(rationaleCode, candidate, themeMatches, inferenceCon
         return 'Time-sensitive work that should move now.';
     }
 
+    if (rationaleCode === 'behavioral_signal') {
+        if (inferenceConfidence === 'weak') {
+            return 'Behavioral evidence weakly suggests this category is being avoided, so one concrete step is surfaced.';
+        }
+        return 'Behavioral evidence suggests this category is being avoided, so one concrete step is surfaced.';
+    }
+
     if (isConsequentialAdmin(candidate)) {
         if (inferenceConfidence === 'weak') {
             return 'Potentially consequential admin surfaced under degraded goal context.';
@@ -520,6 +596,7 @@ function assessCandidate(candidate, context) {
     const capacityProtection = isCapacityProtection(candidate, context);
     const blockerRemoval = isBlockerRemoval(candidate);
     const consequentialAdmin = isConsequentialAdmin(candidate);
+    const behavioralBoost = behavioralAdjustment(candidate, context);
 
     let rationaleCode = 'fallback';
     let exceptionApplied = false;
@@ -560,6 +637,13 @@ function assessCandidate(candidate, context) {
             score += 12;
         }
 
+        if (behavioralBoost.score > 0) {
+            score += behavioralBoost.score;
+            if (rationaleCode === 'fallback') {
+                rationaleCode = 'behavioral_signal';
+            }
+        }
+
         score += urgentModeWeight(candidate, urgency, context);
         score -= quickWinPenalty(candidate, {
             themeMatches,
@@ -581,6 +665,7 @@ function assessCandidate(candidate, context) {
         degraded,
         themeMatches,
         exceptionApplied,
+        behavioralConfidence: behavioralBoost.confidence,
     });
 
     return {
@@ -591,6 +676,7 @@ function assessCandidate(candidate, context) {
         inferenceConfidence,
         themeMatches,
         urgency,
+        behavioralSignalApplied: behavioralBoost.score > 0,
         exceptionApplied,
         exceptionReason,
         fallbackUsed: degraded || rationaleCode === 'fallback',
@@ -645,6 +731,10 @@ export function buildRankingContext(options = {}) {
         workStyleMode: options.workStyleMode || 'unknown',
         urgentMode: options.urgentMode === true,
         behavioralInferenceThreshold: options.behavioralInferenceThreshold || 'strong',
+        behavioralSignals: normalizeBehavioralSignals(
+            options.behavioralSignals,
+            options.behavioralInferenceThreshold || 'strong',
+        ),
         priorityOverrides: resolvePriorityOverrides(options.priorityOverrides, options.nowIso),
         rankingTelemetrySink: typeof options.rankingTelemetrySink === 'function'
             ? options.rankingTelemetrySink
@@ -774,10 +864,15 @@ export function buildRecommendationResult({ ranked = [], degradedReason = 'none'
         ? 'high'
         : 'low';
     const shouldAskClarification = rankingConfidence === 'low' && finalDegradedReason !== 'no_candidates';
+    const allLowPriority = normalizedRanked.length > 0
+        && normalizedRanked.every((decision) => decision.rationaleCode === 'fallback' || decision.inferenceConfidence === 'weak');
     const uncertaintyLabel = rankingConfidence === 'low'
         ? (finalDegradedReason === 'unknown_goals'
             ? 'Ranking is uncertain because goal context is incomplete.'
             : 'Ranking is uncertain because some evidence is weak or conflicting.')
+        : null;
+    const nothingCriticalLabel = allLowPriority
+        ? 'Nothing critical stands out right now.'
         : null;
 
     return {
@@ -787,6 +882,7 @@ export function buildRecommendationResult({ ranked = [], degradedReason = 'none'
         degradedReason: finalDegradedReason,
         rankingConfidence,
         uncertaintyLabel,
+        nothingCriticalLabel,
         shouldAskClarification,
         clarificationReason: shouldAskClarification
             ? (finalDegradedReason === 'unknown_goals' ? 'missing_goal_context' : 'weak_inference')

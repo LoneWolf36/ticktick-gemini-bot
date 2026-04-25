@@ -400,6 +400,54 @@ test('behavioral signals ignore work-style metadata entirely', () => {
   }
 });
 
+test('behavioral signal payload stores only allowed persisted fields and no raw leaks', async () => {
+  const userId = `behavioral-allowed-fields-${Date.now()}`;
+  await store.deleteBehavioralSignals(userId);
+
+  const inputSignals = [
+    {
+      type: SignalType.CREATION,
+      category: 'work',
+      projectId: 'career',
+      confidence: 0.95,
+      subjectKey: 'safe-subject',
+      metadata: {
+        titleWordCount: 2,
+        checklistDelta: 3,
+        hasActionVerb: true,
+      },
+      timestamp: new Date().toISOString(),
+    },
+  ];
+
+  await store.appendBehavioralSignals(userId, inputSignals);
+  const stored = await store.getBehavioralSignals(userId, { includeExpired: true });
+
+  assert.equal(stored.length, 1);
+  const signal = stored[0];
+  assert.deepEqual(Object.keys(signal).sort(), ['category', 'confidence', 'metadata', 'projectId', 'subjectKey', 'timestamp', 'type']);
+  assert.equal(signal.type, SignalType.CREATION);
+  assert.equal(signal.category, 'work');
+  assert.equal(signal.projectId, 'career');
+  assert.equal(signal.subjectKey, 'safe-subject');
+  assert.equal(typeof signal.confidence, 'number');
+  assert.equal(typeof signal.timestamp, 'string');
+
+  assert.deepEqual(Object.keys(signal.metadata).sort(), [
+    'decompositionChange',
+    'planningSubtypeA',
+    'planningSubtypeB',
+    'scopeChange',
+    'wordingOnlyEdit',
+  ]);
+
+  assert.equal(signal.metadata.title, undefined);
+  assert.equal(signal.metadata.description, undefined);
+  assert.equal(signal.metadata.message, undefined);
+  assert.equal(signal.metadata.rawMessage, undefined);
+  assert.equal(signal.metadata.rawTaskTitle, undefined);
+});
+
 test('getSignalRegistry returns low-level and behavioral pattern signal types', () => {
   const registry = getSignalRegistry();
   assert.equal(registry.length, 15);
@@ -613,6 +661,29 @@ test('behavioral memory excludes expired signals from reads and pattern outputs'
   assert.equal(patterns.length, 0);
 });
 
+test('31-day-old signals are excluded from retention-window query results', async () => {
+  const userId = `behavioral-query-retention-${Date.now()}`;
+  await store.deleteBehavioralSignals(userId);
+
+  const oldTimestamp = new Date(Date.now() - (31 * 24 * 60 * 60 * 1000)).toISOString();
+  await store.appendBehavioralSignals(userId, [{
+    type: SignalType.POSTPONE,
+    category: 'work',
+    projectId: 'career',
+    confidence: 0.9,
+    subjectKey: 'old-query-postpone',
+    metadata: {},
+    timestamp: oldTimestamp,
+  }]);
+
+  const queried = await store.queryBehavioralSignalsByTimeRange(userId, {
+    from: new Date(Date.now() - (40 * 24 * 60 * 60 * 1000)).toISOString(),
+    to: new Date().toISOString(),
+  });
+
+  assert.equal(queried.length, 0);
+});
+
 test('ticktick adapter persists classified behavioral signals without blocking mutations', async () => {
   const userId = `behavioral-adapter-${Date.now()}`;
   const client = new TickTickClient({ accessToken: 'token', refreshToken: 'refresh', tokenExpiresAt: '2099-01-01T00:00:00Z' });
@@ -792,6 +863,58 @@ test('behavioral pattern engine detects planning overload aggregates and suppres
   assert.ok(lowConfidenceSnooze);
   assert.equal(lowConfidenceSnooze.confidence, PatternConfidence.LOW);
   assert.equal(lowConfidenceSnooze.eligibleForSurfacing, false);
+});
+
+test('planning pattern ambiguity downgrades confidence when replanning signals coexist', () => {
+  const sequence = [
+    {
+      type: SignalType.PLANNING_WITHOUT_EXECUTION,
+      category: 'career',
+      projectId: 'career',
+      confidence: 0.9,
+      subjectKey: 'p1',
+      metadata: { planningSubtypeA: true },
+      timestamp: '2026-04-01T09:00:00Z',
+    },
+    {
+      type: SignalType.PLANNING_WITHOUT_EXECUTION,
+      category: 'career',
+      projectId: 'career',
+      confidence: 0.9,
+      subjectKey: 'p2',
+      metadata: { planningSubtypeA: true },
+      timestamp: '2026-04-03T09:00:00Z',
+    },
+    {
+      type: SignalType.PLANNING_WITHOUT_EXECUTION,
+      category: 'career',
+      projectId: 'career',
+      confidence: 0.9,
+      subjectKey: 'p3',
+      metadata: { planningSubtypeA: true },
+      timestamp: '2026-04-05T09:00:00Z',
+    },
+    {
+      type: SignalType.SCOPE_CHANGE,
+      category: 'career',
+      projectId: 'career',
+      confidence: 0.8,
+      subjectKey: 'p2',
+      metadata: {},
+      timestamp: '2026-04-04T10:00:00Z',
+    },
+  ];
+
+  const patterns = detectBehavioralPatterns(sequence, {
+    nowMs: Date.parse('2026-04-06T12:00:00Z'),
+  });
+
+  const pattern = patterns.find((candidate) => candidate.type === BehavioralPatternType.PLANNING_TYPE_A);
+  assert.ok(pattern);
+  assert.equal(pattern.confidence, PatternConfidence.LOW);
+  assert.equal(pattern.eligibleForSurfacing, false);
+  assert.equal(pattern.ambiguousReplanning, true);
+  assert.equal(pattern.replanningSignalCount, 1);
 });
 
 test('GeminiAnalyzer _resolveBehavioralPatterns fails open when behavioral signal lookup throws', async () => {
@@ -974,6 +1097,16 @@ test('/forget command clears all behavioral signals for user', async () => {
   // Verify signals are deleted
   const signalsAfter = await store.getBehavioralSignals(userId);
   assert.equal(signalsAfter.length, 0);
+
+  const summaryReplies = [];
+  await handlers.commands.get('memory')({
+    chat: { id: userId },
+    from: { id: userId },
+    reply: async (message) => { summaryReplies.push(message); },
+  });
+
+  assert.equal(summaryReplies.length, 1);
+  assert.match(summaryReplies[0], /No active patterns in the last 30 days/i);
 });
 
 test('/forget command works when no signals exist', async () => {

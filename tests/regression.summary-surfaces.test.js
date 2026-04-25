@@ -1046,3 +1046,103 @@ test('daily-close formatter uses compact concrete non-judgmental copy', () => {
   assert.ok(formatted.includes('**Reflection**'));
   assert.ok(formatted.includes('**Reset cue**'));
 });
+
+test('briefing summary reports TickTick fetch failure and still delivers fallback output', () => {
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    ticktickFetchFailed: true,
+  };
+
+  const result = composeBriefingSummary({
+    context,
+    activeTasks: [],
+    rankingResult: null,
+  });
+
+  assert.equal(result.summary.focus, 'No active tasks right now.');
+  assert.ok(result.summary.notices.some((notice) => notice.code === 'delivery_context'));
+  assert.ok(result.formattedText.includes('MORNING BRIEFING'));
+});
+
+test('briefing summary keeps degraded recommendations intentionally minimal', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks, { degraded: true });
+  const context = buildSummaryResolvedStateFixture();
+
+  const result = composeBriefingSummary({
+    context,
+    activeTasks,
+    rankingResult,
+  });
+
+  assert.equal(result.summary.priorities.length, 1);
+});
+
+test('daily briefing output is deterministic for fixed input', () => {
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+  const context = buildSummaryResolvedStateFixture();
+
+  const first = composeBriefingSummary({ context, activeTasks, rankingResult });
+  const second = composeBriefingSummary({ context, activeTasks, rankingResult });
+
+  assert.deepEqual(second.summary, first.summary);
+  assert.equal(second.formattedText, first.formattedText);
+});
+
+test('weekly summary handles empty partial and full week scenarios', () => {
+  const context = {
+    ...buildSummaryResolvedStateFixture(),
+    kind: 'weekly',
+  };
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+
+  const emptyWeek = composeWeeklySummary({
+    context,
+    activeTasks: [],
+    processedHistory: [],
+    historyAvailable: true,
+    rankingResult: { ranked: [] },
+  });
+  const partialWeek = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory: buildSummaryProcessedHistoryFixture({ variant: 'sparse' }),
+    historyAvailable: true,
+    rankingResult,
+  });
+  const fullWeek = composeWeeklySummary({
+    context,
+    activeTasks,
+    processedHistory: buildSummaryProcessedHistoryFixture(),
+    historyAvailable: true,
+    rankingResult,
+  });
+
+  assert.equal(Array.isArray(emptyWeek.summary.progress), true);
+  assert.ok(partialWeek.summary.carry_forward.length >= 1);
+  assert.ok(fullWeek.summary.progress.length >= partialWeek.summary.progress.length);
+});
+
+test('daily close handles zero-activity and high-activity days', () => {
+  const context = buildSummaryResolvedStateFixture({ kind: 'daily_close' });
+  const activeTasks = buildSummaryActiveTasksFixture();
+  const rankingResult = buildSummaryRankingFixture(activeTasks);
+
+  const zeroActivity = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory: [],
+    rankingResult,
+  });
+  const highActivity = composeDailyCloseSummary({
+    context,
+    activeTasks,
+    processedHistory: buildDailyCloseProcessedHistoryFixture({ variant: 'meaningful' }),
+    rankingResult,
+  });
+
+  assert.equal(typeof zeroActivity.summary.reflection, 'string');
+  assert.match(highActivity.summary.reflection, /meaningful work/i);
+});

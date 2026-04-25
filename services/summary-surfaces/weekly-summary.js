@@ -211,11 +211,13 @@ function buildDeferredCarryForward(processedHistory = [], activeTasks = []) {
     return deferred;
 }
 
-function buildNextFocus(activeTasks = [], rankingResult = null) {
+function buildNextFocus(activeTasks = [], rankingResult = null, excludedTaskIds = []) {
+    const excluded = new Set(Array.isArray(excludedTaskIds) ? excludedTaskIds : []);
     const ranked = Array.isArray(rankingResult?.ranked) ? rankingResult.ranked : [];
     if (ranked.length > 0) {
         const byTaskId = new Map(activeTasks.map((task) => [task.id || task.taskId, task]));
         const fromRanking = ranked
+            .filter((decision) => !excluded.has(decision.taskId))
             .map((decision) => byTaskId.get(decision.taskId))
             .filter(Boolean)
             .map((task) => task.title || 'Untitled task')
@@ -223,7 +225,10 @@ function buildNextFocus(activeTasks = [], rankingResult = null) {
         if (fromRanking.length > 0) return fromRanking;
     }
 
-    return activeTasks.slice(0, 3).map((task) => task.title || 'Untitled task');
+    return activeTasks
+        .filter((task) => !excluded.has(task.id || task.taskId))
+        .slice(0, 3)
+        .map((task) => task.title || 'Untitled task');
 }
 
 function buildWatchouts({ activeTasks = [], processedHistory = [], historyAvailable = true, context = {} }) {
@@ -329,6 +334,15 @@ function buildNotices({
         });
     }
 
+    if (context.ticktickFetchFailed === true) {
+        notices.push({
+            code: 'delivery_context',
+            message: 'TickTick fetch failed, so this weekly review uses partial local context only.',
+            severity: 'warning',
+            evidence_source: 'system',
+        });
+    }
+
     const rankingTrendNotice = buildRankingTrendNotice(rankingResult);
     if (rankingTrendNotice) {
         notices.push(rankingTrendNotice);
@@ -407,7 +421,7 @@ export function composeWeeklySummarySections({
     const carryForward = normalizedModel.carry_forward.length > 0
         ? normalizedModel.carry_forward
         : buildDeferredCarryForward(normalizedHistory, normalizedTasks);
-    const nextFocus = buildNextFocus(normalizedTasks, rankingResult);
+    const nextFocus = buildNextFocus(normalizedTasks, rankingResult, context.excludedTaskIds || []);
     const watchouts = mergeWatchouts(
         normalizedModel.watchouts,
         buildWatchouts({

@@ -1164,9 +1164,9 @@ test('composeBriefingSummary says no relevant tasks concisely instead of inventi
   });
 
   assert.equal(result.summary.priorities.length, 0);
-  assert.equal(result.summary.focus, 'No relevant tasks need attention right now.');
-  assert.equal(result.summary.start_now, 'No briefing actions. Check back after new tasks land.');
-  assert.match(result.formattedText, /No relevant tasks need attention right now\./);
+  assert.equal(result.summary.focus, 'No active tasks right now.');
+  assert.equal(result.summary.start_now, 'No briefing actions right now.');
+  assert.match(result.formattedText, /No active tasks right now\./);
   assert.doesNotMatch(result.formattedText, /Pick one concrete task/i);
 });
 

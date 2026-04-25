@@ -83,6 +83,17 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         generatedAtIso: new Date().toISOString(),
     });
 
+    const processPipelineMessage = async (userMessage, options) => {
+        if (typeof pipeline?.createRequestContext !== 'function') {
+            return pipeline.processMessage(userMessage, options);
+        }
+        const requestContext = await pipeline.createRequestContext(userMessage, options);
+        return pipeline.processMessage(userMessage, {
+            ...options,
+            requestContext,
+        });
+    };
+
     const describePatternForMemory = (pattern) => {
         switch (pattern?.type) {
             case 'snooze_spiral':
@@ -448,7 +459,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     // Pass to pipeline with existing task context so it emits an 'update'
                     const userMessage = task.title + (task.content ? `\n${task.content}` : '');
 
-                    const result = await pipeline.processMessage(userMessage, {
+                    const result = await processPipelineMessage(userMessage, {
                         existingTask: task,
                         entryPoint: 'telegram:scan',
                         mode: 'scan',
@@ -782,7 +793,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             for (const task of batch) {
                 try {
                     const userMessage = task.title + (task.content ? `\n${task.content}` : '');
-                    const result = await pipeline.processMessage(userMessage, {
+                    const result = await processPipelineMessage(userMessage, {
                         existingTask: task,
                         entryPoint: 'telegram:review',
                         mode: 'review',
@@ -914,7 +925,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
                 if (resolvedMode === 'skip') {
                     console.log('[ChecklistClarification] User skipped — creating plain parent task only');
-                    const result = await pipeline.processMessage(pendingChecklist.originalMessage, {
+                    const result = await processPipelineMessage(pendingChecklist.originalMessage, {
                         entryPoint: 'telegram:checklist-clarification-skip',
                         mode: 'interactive',
                         skipChecklist: true,
@@ -933,7 +944,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
                 if (resolvedMode === 'checklist' || resolvedMode === 'separate') {
                     console.log('[ChecklistClarification] Resuming pipeline with mode:', resolvedMode);
-                    const result = await pipeline.processMessage(pendingChecklist.originalMessage, {
+                    const result = await processPipelineMessage(pendingChecklist.originalMessage, {
                         entryPoint: 'telegram:checklist-clarification-resume',
                         mode: 'interactive',
                         checklistPreference: resolvedMode,
@@ -952,7 +963,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
                 // Ambiguous reply — conservative fallback (T054)
                 console.log('[ChecklistClarification] Ambiguous reply — falling back to plain parent task');
-                const result = await pipeline.processMessage(pendingChecklist.originalMessage, {
+                const result = await processPipelineMessage(pendingChecklist.originalMessage, {
                     entryPoint: 'telegram:checklist-clarification-fallback',
                     mode: 'interactive',
                     skipChecklist: true, // Never create inferred checklist after ignored clarification
@@ -969,7 +980,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 return;
             }
 
-            const result = await pipeline.processMessage(userMessage, {
+            const result = await processPipelineMessage(userMessage, {
                 entryPoint: 'telegram:freeform',
                 mode: 'interactive',
                 workStyleMode: await resolveCurrentWorkStyleMode(ctx),

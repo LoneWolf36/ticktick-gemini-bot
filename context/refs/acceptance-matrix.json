@@ -3,7 +3,63 @@
   "mission_number": "003",
   "mission_type": "software-dev",
   "feature_slug": "003-pipeline-hardening-and-regression",
+  "matrix_version": "2026-04-25",
+  "coverage_scope": [
+    "context/kits/cavekit-task-pipeline.md",
+    "context/kits/cavekit-pipeline-hardening.md"
+  ],
+  "kits": {
+    "cavekit-task-pipeline": {
+      "R1": ["tests/regression.pipeline-hardening-mutation.test.js::pipeline context resolves dentist Thursday through the normalizer path"],
+      "R2": ["tests/regression.pipeline-multi-create-clarification.test.js::R2: canonical multi-create executes independent create actions"],
+      "R3": ["tests/normalizer.test.js::Title Normalization (FR-006)", "tests/normalizer.test.js::Content Normalization (FR-007)"],
+      "R4": ["tests/regression.adapter-execution-reorg.test.js::TickTickAdapter exposes the required task operation surface"],
+      "R5": ["tests/normalizer.test.js::should handle recurring task creation"],
+      "R6": ["tests/normalizer.test.js::should handle multi-day split strategy", "tests/normalizer.test.js::should auto-split multi-day dueDate without explicit splitStrategy"],
+      "R7": ["tests/regression.adapter-execution-reorg.test.js::TickTickAdapter findProjectByName resolves exact project deterministically", "tests/regression.adapter-execution-reorg.test.js::TickTickAdapter findProjectByName falls back to safe default for ambiguous hints"],
+      "R8": ["tests/regression.adapter-execution-reorg.test.js::pipeline shortens urgent confirmations and clarification prompts while keeping errors clear"],
+      "R9": ["tests/regression.pipeline-hardening-mutation.test.js::WP07 T071: update mutation happy path — change due date", "tests/regression.pipeline-hardening-mutation.test.js::WP07 T071: complete mutation happy path — exact match", "tests/regression.pipeline-hardening-mutation.test.js::WP07 T071: delete mutation happy path — exact match"],
+      "R10": ["tests/task-resolver.test.js::conservative resolution suite", "tests/regression.pipeline-hardening-mutation.test.js::WP07 T072: ambiguous matches require clarification instead of mutation"],
+      "R11": ["tests/regression.adapter-execution-reorg.test.js::TickTickAdapter updateTask preserves existing notes on due-date-only mutation payloads"],
+      "R12": ["tests/regression.pipeline-logging-privacy.test.js::privacy-aware logging suite", "tests/pipeline-context.test.js::redacted lifecycle snapshots"],
+      "R13": ["tests/regression.long-message-handling.test.js::long message extraction and normalization limits"],
+      "R14": ["tests/regression.pipeline-hardening-mutation.test.js::WP07 T072: batch-style mutation phrasing is rejected with single-target guidance"],
+      "R15": ["tests/regression.work-style-commands-scheduler.test.js::registerCommands uses shared briefing surface and preserves urgent reminder"],
+      "R16": ["tests/regression.adapter-execution-reorg.test.js::GeminiAnalyzer fallback reorg routes recovery inbox work into Health"],
+      "R17": ["tests/regression.work-style-commands-scheduler.test.js::focus mode suppresses non-critical scheduler notifications but allows critical alerts"]
+    },
+    "cavekit-pipeline-hardening": {
+      "R1": ["tests/pipeline-context.test.js::pipeline context contract suite"],
+      "R2": ["tests/regression.pipeline-hardening-mutation.test.js::pipeline context resolves dentist Thursday through the normalizer path"],
+      "R3": ["tests/regression.pipeline-hardening-mutation.test.js::WP06 T020: fail-closed — adapter failure returns generic retry message"],
+      "R4": ["tests/regression.adapter-execution-reorg.test.js::TickTickClient retries 429 with bounded attempts and backoff without real sleep", "tests/regression.pipeline-hardening-mutation.test.js::WP06 R4: pipeline surfaces rate-limit ETA in user message when adapter provides retry metadata"],
+      "R5": ["tests/regression.adapter-execution-reorg.test.js::pipeline retries once and rolls back earlier successful writes", "tests/regression.pipeline-hardening-r5-r11.test.js::R5/R11 combined rollback and failure-class coverage"],
+      "R6": ["tests/pipeline-harness.js::createPipelineHarness", "context/refs/pipeline-harness.js::reference harness"],
+      "R7": ["tests/regression.pipeline-hardening-mutation.test.js::pipeline context resolves dentist Thursday through the normalizer path", "tests/regression.pipeline-multi-create-clarification.test.js::R2: canonical multi-create executes independent create actions", "tests/normalizer.test.js::should handle recurring task creation", "tests/normalizer.test.js::should handle multi-day split strategy", "tests/regression.pipeline-hardening-mutation.test.js::WP07 T072: ambiguous matches require clarification instead of mutation", "tests/regression.pipeline-hardening-mutation.test.js::WP06 T020: fail-closed — validation failure returns user-safe message"],
+      "R8": ["tests/regression.pipeline-hardening-mutation.test.js::burst pipeline requests remain isolated and deterministic"],
+      "R9": ["tests/regression.pipeline-hardening-mutation.test.js::WP06 T017: observability events expose stable contract fields", "tests/regression.pipeline-observability-mutation.test.js::mutation observability contract suite"],
+      "R10": ["context/refs/acceptance-matrix.json::kits.cavekit-task-pipeline", "context/refs/acceptance-matrix.json::kits.cavekit-pipeline-hardening"],
+      "R11": ["tests/regression.pipeline-hardening-r5-r11.test.js::adapter typed failure surface suite"],
+      "R12": ["tests/regression.behavioral-signals.test.js::adapter failure preserves parsed intent and normalized action for retry"]
+    }
+  },
   "acceptance_runs": [
+    {
+      "run_id": "r7-r8-r10-hardening-2026-04-25",
+      "actor": "implementation",
+      "timestamp": "2026-04-25T12:05:00Z",
+      "test_commands": [
+        "node --test tests/regression.pipeline-hardening-mutation.test.js",
+        "node --test tests/regression.pipeline-multi-create-clarification.test.js",
+        "node --test tests/normalizer.test.js"
+      ],
+      "test_results": {
+        "exit_code": 0,
+        "total_pass": 170,
+        "total_fail": 0,
+        "summary": "Focused R7/R8/R10 verification: story-level coverage, burst isolation, and acceptance-matrix traceability checks passed"
+      }
+    },
     {
       "run_id": "reconciliation-audit-2026-04-15",
       "actor": "audit",

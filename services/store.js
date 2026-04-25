@@ -67,6 +67,7 @@ const DEFAULT_STATE = {
     pendingReorg: null,  // Proposed global reorg plan awaiting apply/refine/cancel
     pendingMutationClarification: null, // Pending mutation clarification state for free-form handler
     pendingChecklistClarification: null, // Pending checklist vs separate-tasks clarification
+    deferredPipelineIntents: [], // Pending deferred pipeline intents for API-unavailable recovery
     behavioralSignals: {}, // R2: { [userId]: BehavioralSignal[] }
     processedTasks: {},  // User has clicked approve/skip/drop
     failedTasks: {},     // AI analysis failed (rate limit) — parked to prevent re-polling
@@ -139,6 +140,7 @@ async function loadFromRedis() {
                 pendingReorg: rest.pendingReorg || null,
                 pendingMutationClarification: rest.pendingMutationClarification || null,
                 pendingChecklistClarification: rest.pendingChecklistClarification || null,
+                deferredPipelineIntents: Array.isArray(rest.deferredPipelineIntents) ? rest.deferredPipelineIntents : [],
                 behavioralSignals: normalizeBehavioralSignalsMap(rest.behavioralSignals),
                 processedTasks: rest.processedTasks || {},
                 undoLog: rest.undoLog || [],
@@ -210,6 +212,7 @@ function loadFromFile() {
             pendingReorg: rest.pendingReorg || null,
             pendingMutationClarification: rest.pendingMutationClarification || null,
             pendingChecklistClarification: rest.pendingChecklistClarification || null,
+            deferredPipelineIntents: Array.isArray(rest.deferredPipelineIntents) ? rest.deferredPipelineIntents : [],
             behavioralSignals: normalizeBehavioralSignalsMap(rest.behavioralSignals),
             processedTasks: rest.processedTasks || {},
             undoLog: rest.undoLog || [],
@@ -819,6 +822,48 @@ export async function setPendingChecklistClarification(data) {
 export async function clearPendingChecklistClarification() {
     state.pendingChecklistClarification = null;
     await save();
+}
+
+// ─── Deferred Pipeline Intents (R12) ──────────────────────────
+
+const DEFERRED_PIPELINE_INTENT_LIMIT = 200;
+
+export function getDeferredPipelineIntents() {
+    return Array.isArray(state.deferredPipelineIntents)
+        ? structuredClone(state.deferredPipelineIntents)
+        : [];
+}
+
+export async function appendDeferredPipelineIntent(entry) {
+    if (!entry || typeof entry !== 'object') {
+        throw new Error('deferred pipeline intent entry must be an object');
+    }
+
+    const id = typeof entry.id === 'string' && entry.id.trim()
+        ? entry.id.trim()
+        : `dpi_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const record = {
+        id,
+        createdAt: entry.createdAt || new Date().toISOString(),
+        ...entry,
+        id,
+    };
+
+    const current = Array.isArray(state.deferredPipelineIntents) ? state.deferredPipelineIntents : [];
+    state.deferredPipelineIntents = [...current, record].slice(-DEFERRED_PIPELINE_INTENT_LIMIT);
+    await save();
+    return structuredClone(record);
+}
+
+export async function removeDeferredPipelineIntent(id) {
+    if (typeof id !== 'string' || !id.trim()) return null;
+    const current = Array.isArray(state.deferredPipelineIntents) ? state.deferredPipelineIntents : [];
+    const index = current.findIndex((entry) => entry?.id === id);
+    if (index === -1) return null;
+    const [removed] = current.splice(index, 1);
+    state.deferredPipelineIntents = current;
+    await save();
+    return structuredClone(removed);
 }
 
 // ─── Undo Log ────────────────────────────────────────────────

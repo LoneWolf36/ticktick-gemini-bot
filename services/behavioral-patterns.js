@@ -33,6 +33,12 @@ function withEligibility(pattern) {
     };
 }
 
+function downgradeConfidence(confidence) {
+    if (confidence === PatternConfidence.HIGH) return PatternConfidence.STANDARD;
+    if (confidence === PatternConfidence.STANDARD) return PatternConfidence.LOW;
+    return PatternConfidence.LOW;
+}
+
 function sortSignals(signals) {
     return [...signals].sort((left, right) => parseSignalTime(left) - parseSignalTime(right));
 }
@@ -132,12 +138,31 @@ function buildTypeAPattern(signals) {
         confidence = PatternConfidence.STANDARD;
     }
 
+    const bestWindowStartMs = parseSignalTime(best.windowSignals[0]);
+    const bestWindowEndMs = parseSignalTime(best.windowSignals[best.windowSignals.length - 1]);
+    const replanningSignalsInWindow = signals.filter((signal) => {
+        if (signal?.type !== SignalType.SCOPE_CHANGE && signal?.type !== SignalType.DECOMPOSITION) {
+            return false;
+        }
+        const signalMs = parseSignalTime(signal);
+        if (signalMs === null || bestWindowStartMs === null || bestWindowEndMs === null) {
+            return false;
+        }
+        return signalMs >= bestWindowStartMs && signalMs <= bestWindowEndMs;
+    });
+
+    if (replanningSignalsInWindow.length > 0) {
+        confidence = downgradeConfidence(confidence);
+    }
+
     return withEligibility({
         type: BehavioralPatternType.PLANNING_TYPE_A,
         confidence,
         signalCount: best.windowSignals.length,
         windowStart: best.windowSignals[0].timestamp,
         windowEnd: best.windowSignals[best.windowSignals.length - 1].timestamp,
+        replanningSignalCount: replanningSignalsInWindow.length,
+        ambiguousReplanning: replanningSignalsInWindow.length > 0,
     });
 }
 
@@ -219,29 +244,33 @@ function buildTypeBPattern(signals) {
 }
 
 export function detectBehavioralPatterns(signals = [], { nowMs = Date.now() } = {}) {
-    const validSignals = Array.isArray(signals)
-        ? signals.filter((signal) => signal && typeof signal === 'object' && typeof signal.type === 'string' && isWithinRetentionWindow(signal, nowMs))
-        : [];
+    try {
+        const validSignals = Array.isArray(signals)
+            ? signals.filter((signal) => signal && typeof signal === 'object' && typeof signal.type === 'string' && isWithinRetentionWindow(signal, nowMs))
+            : [];
 
-    const patterns = [
-        ...buildSnoozePatterns(validSignals),
-    ];
+        const patterns = [
+            ...buildSnoozePatterns(validSignals),
+        ];
 
-    const typeAPattern = buildTypeAPattern(validSignals);
-    if (typeAPattern) {
-        patterns.push(typeAPattern);
-    }
-
-    const typeBPattern = buildTypeBPattern(validSignals);
-    if (typeBPattern) {
-        patterns.push(typeBPattern);
-    }
-
-    return patterns.sort((left, right) => {
-        const weight = { high: 3, standard: 2, low: 1 };
-        if (weight[right.confidence] !== weight[left.confidence]) {
-            return weight[right.confidence] - weight[left.confidence];
+        const typeAPattern = buildTypeAPattern(validSignals);
+        if (typeAPattern) {
+            patterns.push(typeAPattern);
         }
-        return (right.signalCount || 0) - (left.signalCount || 0);
-    });
+
+        const typeBPattern = buildTypeBPattern(validSignals);
+        if (typeBPattern) {
+            patterns.push(typeBPattern);
+        }
+
+        return patterns.sort((left, right) => {
+            const weight = { high: 3, standard: 2, low: 1 };
+            if (weight[right.confidence] !== weight[left.confidence]) {
+                return weight[right.confidence] - weight[left.confidence];
+            }
+            return (right.signalCount || 0) - (left.signalCount || 0);
+        });
+    } catch {
+        return [];
+    }
 }

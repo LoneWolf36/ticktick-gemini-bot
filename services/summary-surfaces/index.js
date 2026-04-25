@@ -71,6 +71,8 @@ function normalizeSummaryRequestContext(kind, rawContext = {}) {
         deliveryChannel: DELIVERY_CHANNEL_VALUES.has(deliveryChannel) ? deliveryChannel : 'telegram',
         schedulingMetadata: normalizeScheduleMetadata(rawContext, normalizedEntryPoint),
         tonePolicy: TONE_POLICY_VALUES.has(tonePolicy) ? tonePolicy : 'preserve_existing',
+        ticktickFetchFailed: rawContext.ticktickFetchFailed === true,
+        excludedTaskIds: Array.isArray(rawContext.excludedTaskIds) ? rawContext.excludedTaskIds : [],
     };
 }
 

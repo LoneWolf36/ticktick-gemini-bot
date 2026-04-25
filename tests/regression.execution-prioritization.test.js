@@ -887,3 +887,193 @@ test('execution prioritization elevates recovery work when it protects execution
   assert.equal(result.topRecommendation.exceptionReason, 'capacity_protection');
   assert.equal(result.topRecommendation.rationaleCode, 'capacity_protection');
 });
+
+test('execution prioritization can factor high-confidence behavioral avoidance signals', () => {
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-career',
+      title: 'Apply to backend roles',
+      projectId: 'career',
+      projectName: 'Career',
+      priority: 1,
+      status: 0,
+    }),
+    normalizePriorityCandidate({
+      id: 'task-admin',
+      title: 'Buy groceries',
+      projectId: 'admin',
+      projectName: 'Admin',
+      priority: 3,
+      status: 0,
+    }),
+  ];
+
+  const result = rankPriorityCandidatesForTest(candidates, buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('', { source: 'fallback' }),
+    behavioralSignals: [{
+      type: 'category_avoidance',
+      category: 'career',
+      confidence: 'high',
+      signalCount: 4,
+    }],
+    behavioralInferenceThreshold: 'strong',
+  }));
+
+  assert.equal(result.topRecommendation.taskId, 'task-career');
+  assert.equal(result.context.behavioralSignals.length, 1);
+});
+
+test('execution prioritization behavioral signal input is optional and ranking still works', () => {
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-a',
+      title: 'Prepare backend interview notes',
+      projectId: 'career',
+      projectName: 'Career',
+      status: 0,
+    }),
+  ];
+
+  const result = rankPriorityCandidatesForTest(candidates, buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+  }));
+
+  assert.equal(result.topRecommendation.taskId, 'task-a');
+  assert.equal(Array.isArray(result.context.behavioralSignals), true);
+  assert.equal(result.context.behavioralSignals.length, 0);
+});
+
+test('execution prioritization ignores low-confidence behavioral signals', () => {
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-career',
+      title: 'Apply to backend roles',
+      projectId: 'career',
+      projectName: 'Career',
+      priority: 1,
+      status: 0,
+    }),
+    normalizePriorityCandidate({
+      id: 'task-admin',
+      title: 'Pay rent',
+      projectId: 'admin',
+      projectName: 'Admin',
+      priority: 3,
+      status: 0,
+    }),
+  ];
+
+  const result = rankPriorityCandidatesForTest(candidates, buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('', { source: 'fallback' }),
+    behavioralSignals: [{
+      type: 'category_avoidance',
+      category: 'career',
+      confidence: 'low',
+      signalCount: 10,
+    }],
+    behavioralInferenceThreshold: 'strong',
+  }));
+
+  assert.equal(result.context.behavioralSignals.length, 0);
+  assert.equal(result.topRecommendation.taskId, 'task-admin');
+});
+
+test('execution prioritization favors important work over merely urgent admin when both exist', () => {
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-important',
+      title: 'Prepare backend system design interview notes',
+      projectId: 'career',
+      projectName: 'Career',
+      priority: 5,
+      status: 0,
+    }),
+    normalizePriorityCandidate({
+      id: 'task-urgent',
+      title: 'Reply to package issue today',
+      projectId: 'admin',
+      projectName: 'Admin',
+      dueDate: '2026-03-10',
+      priority: 0,
+      status: 0,
+    }),
+  ];
+
+  const result = rankPriorityCandidatesForTest(candidates, buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+    nowIso: '2026-03-10T10:00:00Z',
+  }));
+
+  assert.equal(result.topRecommendation.taskId, 'task-important');
+});
+
+test('execution prioritization returns honest nothing-critical label when all signals are weak', () => {
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-1',
+      title: 'Organize desk drawer',
+      projectId: 'home',
+      projectName: 'Home',
+      priority: 0,
+      status: 0,
+    }),
+    normalizePriorityCandidate({
+      id: 'task-2',
+      title: 'Sort inbox emails',
+      projectId: 'home',
+      projectName: 'Home',
+      priority: 0,
+      status: 0,
+    }),
+  ];
+
+  const result = rankPriorityCandidatesForTest(candidates, buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('', { source: 'fallback' }),
+  }));
+
+  assert.equal(result.nothingCriticalLabel, 'Nothing critical stands out right now.');
+});
+
+test('execution prioritization is deterministic for identical input and context', () => {
+  const candidates = [
+    {
+      taskId: 'task-a',
+      title: 'Prepare backend interview notes',
+      content: '',
+      projectId: 'career',
+      projectName: 'Career',
+      priority: 3,
+      dueDate: null,
+      repeatFlag: null,
+      taskAgeDays: 5,
+      status: 0,
+      source: 'ticktick',
+      containsSensitiveContent: false,
+    },
+    {
+      taskId: 'task-b',
+      title: 'Buy groceries',
+      content: '',
+      projectId: 'admin',
+      projectName: 'Admin',
+      priority: 1,
+      dueDate: null,
+      repeatFlag: null,
+      taskAgeDays: 5,
+      status: 0,
+      source: 'ticktick',
+      containsSensitiveContent: false,
+    },
+  ];
+
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+    nowIso: '2026-03-10T10:00:00Z',
+  });
+
+  const first = rankPriorityCandidatesForTest(candidates, context);
+  const second = rankPriorityCandidatesForTest(candidates, context);
+
+  assert.deepEqual(second.ranked, first.ranked);
+  assert.equal(second.topRecommendation.taskId, first.topRecommendation.taskId);
+});

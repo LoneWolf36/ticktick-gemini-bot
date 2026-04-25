@@ -22,6 +22,16 @@ export function taskReviewKeyboard(taskId) {
 // ─── Register Callback Handlers ─────────────────────────────
 
 export function registerCallbacks(bot, adapter, pipeline) {
+    const processPipelineMessage = async (userMessage, options) => {
+        if (typeof pipeline?.createRequestContext !== 'function') {
+            return pipeline.processMessage(userMessage, options);
+        }
+        const requestContext = await pipeline.createRequestContext(userMessage, options);
+        return pipeline.processMessage(userMessage, {
+            ...options,
+            requestContext,
+        });
+    };
 
     // ─── Approve: move pending → processed, update TickTick ───
     // RETAINED BOUNDARY: inline review callbacks apply precomputed review edits
@@ -191,7 +201,7 @@ export function registerCallbacks(bot, adapter, pipeline) {
 
             // Re-enter the pipeline with the original message + resolved task context.
             // This ensures the same AX intent -> normalizer -> adapter safety path.
-            const result = await pipeline.processMessage(pending.originalMessage, {
+            const result = await processPipelineMessage(pending.originalMessage, {
                 existingTask: resolvedTask,
                 entryPoint: pending.entryPoint || 'telegram:clarification-resume',
                 mode: pending.mode || 'interactive',
@@ -281,7 +291,7 @@ export function registerCallbacks(bot, adapter, pipeline) {
         }
 
         try {
-            const result = await pipeline.processMessage(pending.originalMessage, pipelineOptions);
+            const result = await processPipelineMessage(pending.originalMessage, pipelineOptions);
 
             if (result.type === 'task') {
                 await editWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));

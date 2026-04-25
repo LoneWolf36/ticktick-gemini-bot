@@ -9,6 +9,7 @@ import {
     snapshotPrivacySafePipelineValue,
     sanitizePipelineContextForDiagnostics,
     updatePipelineContext,
+    validatePipelineContext,
 } from './pipeline-context.js';
 import { createPipelineObservability } from './pipeline-observability.js';
 import { QuotaExhaustedError } from './ax-intent.js';
@@ -731,16 +732,76 @@ async function sleep(ms) {
  *   - `processMessage(userMessage, options?)` → `{ type: 'task'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`
  *   - `getTelemetry()` → the observability instance for this pipeline
  */
-export function createPipeline({ axIntent, normalizer, adapter, observability } = {}) {
+export function createPipeline({ axIntent, normalizer, adapter, observability, deferIntent } = {}) {
     const contextBuilder = createPipelineContextBuilder({ adapter });
     const telemetry = observability || createPipelineObservability();
+
+    function buildContextValidationError(errors) {
+        const summary = 'Invalid pipeline request context';
+        const message = errors.length > 0 ? `${summary}: ${errors.join('; ')}` : summary;
+        const error = new Error(message);
+        error.code = 'PIPELINE_CONTEXT_INVALID';
+        error.details = { ok: false, errors };
+        return error;
+    }
+
+    function resolveProvidedContext(userMessage, options = {}) {
+        const providedContext = options.requestContext;
+        if (!providedContext) return null;
+        const validation = validatePipelineContext(providedContext);
+        if (!validation.ok) {
+            throw buildContextValidationError(validation.errors);
+        }
+        if (providedContext.userMessage !== userMessage) {
+            throw buildContextValidationError(['requestContext.userMessage must match processMessage userMessage']);
+        }
+        return providedContext;
+    }
+
+    function shouldDeferIntent(terminalFailure) {
+        if (!terminalFailure || typeof terminalFailure !== 'object') return false;
+        if (terminalFailure.failureClass !== FAILURE_CLASSES.ADAPTER) return false;
+        if (terminalFailure.failureCategory !== FAILURE_CATEGORIES.TRANSIENT) return false;
+        if (terminalFailure.rolledBack) return false;
+        if (Number.isInteger(terminalFailure.successCount) && terminalFailure.successCount > 0) return false;
+        return true;
+    }
+
+    async function persistDeferredIntent({ context, intents, normalizedActions, terminalFailure }) {
+        if (typeof deferIntent !== 'function') return null;
+        if (!shouldDeferIntent(terminalFailure)) return null;
+        const payload = {
+            requestId: context?.requestId || null,
+            entryPoint: context?.entryPoint || null,
+            mode: context?.mode || null,
+            workStyleMode: context?.workStyleMode || null,
+            userMessage: context?.userMessage || null,
+            intents: snapshotPipelineValue(intents),
+            normalizedActions: snapshotPipelineValue(normalizedActions),
+            failure: {
+                class: terminalFailure.failureClass,
+                category: terminalFailure.failureCategory,
+                stage: terminalFailure.stage || 'adapter',
+                summary: terminalFailure.summary || null,
+                adapterError: snapshotPipelineValue(terminalFailure.details?.adapterError || null),
+            },
+            deferredAt: new Date().toISOString(),
+        };
+        try {
+            return await deferIntent(payload);
+        } catch (error) {
+            console.error('[Pipeline] Failed to persist deferred intent:', error?.message || error);
+            return null;
+        }
+    }
 
     async function processMessage(userMessage, options = {}) {
         let context;
         let requestStartedAt = Date.now();
 
         try {
-            context = await contextBuilder.buildRequestContext(userMessage, options);
+            context = resolveProvidedContext(userMessage, options)
+                || await contextBuilder.buildRequestContext(userMessage, options);
             requestStartedAt = Date.now();
             context = updatePipelineContext(context, (draft) => {
                 draft.lifecycle.timing.requestStartedAt = new Date(requestStartedAt).toISOString();
@@ -1426,6 +1487,21 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
             });
 
             if (executionResult.terminalFailure) {
+                const deferredIntent = await persistDeferredIntent({
+                    context,
+                    intents,
+                    normalizedActions: validActions,
+                    terminalFailure: executionResult.terminalFailure,
+                });
+
+                if (deferredIntent) {
+                    executionResult.terminalFailure.details = {
+                        ...(executionResult.terminalFailure.details || {}),
+                        deferredIntent,
+                    };
+                    executionResult.terminalFailure.userMessage = '⚠️ TickTick API is unavailable right now. Parsed intent was saved for retry.';
+                }
+
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'error',
                     status: 'failure',
@@ -2017,5 +2093,6 @@ export function createPipeline({ axIntent, normalizer, adapter, observability } 
 
     return {
         processMessage,
+        createRequestContext: (userMessage, options = {}) => contextBuilder.buildRequestContext(userMessage, options),
     };
 }

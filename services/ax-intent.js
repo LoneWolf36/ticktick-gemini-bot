@@ -424,6 +424,12 @@ Mutation field semantics:
 - dueDate, priority, content = the new values the user wants
 - For "complete"/"delete": usually only targetQuery is needed
 
+FREE-FORM MUTATION INTENT MAPPING (R9):
+- "move buy groceries to tomorrow" => type "update", targetQuery "buy groceries", dueDate "tomorrow"
+- "done buy groceries" => type "complete", targetQuery "buy groceries"
+- "delete old wifi task" => type "delete", targetQuery "old wifi task"
+- "rename netflix task to finish system design notes" => type "update", targetQuery "netflix task", title "finish system design notes"
+
 Checklist item shape:
 { "title": "string (required)", "status": "completed|incomplete (optional)", "sortOrder": "number (optional)" }
 
@@ -541,12 +547,52 @@ Example output for mutation (update due date):
   }
 ]
 
+Example input: "move buy groceries to tomorrow"
+Expected output:
+[
+  {
+    "type": "update",
+    "targetQuery": "buy groceries",
+    "title": null,
+    "content": null,
+    "priority": null,
+    "projectHint": null,
+    "dueDate": "tomorrow",
+    "repeatHint": null,
+    "splitStrategy": null,
+    "checklistItems": null,
+    "clarification": null,
+    "clarificationQuestion": null,
+    "confidence": 0.9
+  }
+]
+
 Example output for mutation (rename):
 [
   {
     "type": "update",
     "targetQuery": "netflix task",
     "title": "Finish system design notes",
+    "content": null,
+    "priority": null,
+    "projectHint": null,
+    "dueDate": null,
+    "repeatHint": null,
+    "splitStrategy": null,
+    "checklistItems": null,
+    "clarification": null,
+    "clarificationQuestion": null,
+    "confidence": 0.85
+  }
+]
+
+Example input: "rename netflix task to finish system design notes"
+Expected output:
+[
+  {
+    "type": "update",
+    "targetQuery": "netflix task",
+    "title": "finish system design notes",
     "content": null,
     "priority": null,
     "projectHint": null,
@@ -579,7 +625,47 @@ Example output for mutation (complete):
   }
 ]
 
+Example input: "done buy groceries"
+Expected output:
+[
+  {
+    "type": "complete",
+    "targetQuery": "buy groceries",
+    "title": null,
+    "content": null,
+    "priority": null,
+    "projectHint": null,
+    "dueDate": null,
+    "repeatHint": null,
+    "splitStrategy": null,
+    "checklistItems": null,
+    "clarification": null,
+    "clarificationQuestion": null,
+    "confidence": 0.92
+  }
+]
+
 Example output for mutation (delete):
+[
+  {
+    "type": "delete",
+    "targetQuery": "old wifi task",
+    "title": null,
+    "content": null,
+    "priority": null,
+    "projectHint": null,
+    "dueDate": null,
+    "repeatHint": null,
+    "splitStrategy": null,
+    "checklistItems": null,
+    "clarification": null,
+    "clarificationQuestion": null,
+    "confidence": 0.88
+  }
+]
+
+Example input: "delete old wifi task"
+Expected output:
 [
   {
     "type": "delete",

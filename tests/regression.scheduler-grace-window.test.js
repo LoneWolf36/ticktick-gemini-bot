@@ -195,3 +195,58 @@ test('runStartupCatchupJobs sends missed weekly digest once when startup is insi
   assert.equal(result.weekly, true);
   assert.equal(weeklyCalls, 1);
 });
+
+test('startup catch-up delivers daily and weekly as separate messages with non-duplicated focus list', async () => {
+  await store.resetAll();
+  const userId = `scheduler-startup-both-${Date.now()}`;
+  await store.setChatId(userId);
+  await store.setWorkStyleMode(userId, store.MODE_STANDARD);
+
+  const sent = [];
+  let weeklyContext = null;
+
+  const result = await runStartupCatchupJobs({
+    bot: {
+      api: {
+        sendMessage: async (_chatId, message) => {
+          sent.push(message);
+        },
+      },
+    },
+    ticktick: { isAuthenticated: () => true },
+    adapter: { listActiveTasks: async () => buildSummaryActiveTasksFixture() },
+    gemini: {
+      isQuotaExhausted: () => false,
+      generateDailyBriefingSummary: async () => ({
+        summary: {
+          priorities: [
+            { task_id: 'task-focus' },
+            { task_id: 'task-support' },
+          ],
+        },
+        formattedText: '**🌅 MORNING BRIEFING**\n\n**Focus**: Daily focus',
+      }),
+      generateWeeklyDigestSummary: async (_tasks, _processed, context) => {
+        weeklyContext = context;
+        return {
+          formattedText: '**📊 WEEKLY ACCOUNTABILITY REVIEW**\n\n**Next focus**:\n1. Weekly focus task',
+        };
+      },
+    },
+  }, {
+    dailyHour: 20,
+    weeklyDay: 0,
+    timezone: 'UTC',
+    graceWindowMinutes: 15,
+  }, {
+    now: new Date('2026-03-15T20:10:00.000Z'),
+  });
+
+  assert.equal(result.daily, true);
+  assert.equal(result.weekly, true);
+  assert.equal(sent.length, 2);
+  assert.match(sent[0], /MORNING BRIEFING/);
+  assert.match(sent[1], /WEEKLY ACCOUNTABILITY REVIEW/);
+  assert.notEqual(sent[0], sent[1]);
+  assert.deepEqual(weeklyContext.excludedTaskIds, ['task-focus', 'task-support']);
+});

@@ -134,14 +134,32 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter, conf
         ...schedulingMetadata,
     };
     let briefing = null;
+    let tasks = [];
+    let ticktickFetchFailed = false;
     try {
         if (gemini.isQuotaExhausted()) {
             console.log('Skipping daily briefing - Gemini quota exhausted.');
             return false;
         }
 
-        const tasks = await adapter.listActiveTasks(true);
-        briefing = await gemini.generateDailyBriefingSummary(tasks, context);
+        try {
+            tasks = await adapter.listActiveTasks(true);
+        } catch (fetchErr) {
+            ticktickFetchFailed = true;
+            console.error('Daily briefing task fetch failed:', fetchErr.message);
+        }
+
+        briefing = await gemini.generateDailyBriefingSummary(tasks, {
+            ...context,
+            ticktickFetchFailed,
+        });
+        if (typeof config.captureTopPriorityTaskIds === 'function') {
+            const topIds = (Array.isArray(briefing?.summary?.priorities) ? briefing.summary.priorities : [])
+                .map((item) => item?.task_id)
+                .filter((value) => typeof value === 'string' && value.trim().length > 0)
+                .slice(0, 3);
+            config.captureTopPriorityTaskIds(topIds);
+        }
         logSummarySurfaceEvent({ context, result: briefing, deliveryStatus: 'ready' });
 
         let msg = briefing.formattedText;
@@ -194,19 +212,30 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
         ...schedulingMetadata,
     };
     let digest = null;
+    let tasks = [];
+    let ticktickFetchFailed = false;
     try {
         if (gemini.isQuotaExhausted()) {
             console.log('Skipping weekly digest - Gemini quota exhausted.');
             return false;
         }
 
-        const tasks = await adapter.listActiveTasks(true);
+        try {
+            tasks = await adapter.listActiveTasks(true);
+        } catch (fetchErr) {
+            ticktickFetchFailed = true;
+            console.error('Weekly digest task fetch failed:', fetchErr.message);
+        }
+
         const historyAvailable = typeof processedTasks === 'object' && processedTasks !== null && !Array.isArray(processedTasks);
         const processed = historyAvailable ? processedTasks : {};
         const thisWeek = filterProcessedThisWeek(processed, ['sentAt']);
+        const excludedTaskIds = config.excludedTaskIds || [];
         digest = await gemini.generateWeeklyDigestSummary(tasks, thisWeek, {
             ...context,
             historyAvailable,
+            ticktickFetchFailed,
+            excludedTaskIds,
         });
         logSummarySurfaceEvent({
             context,
@@ -247,6 +276,7 @@ export async function runStartupCatchupJobs({ bot, ticktick, gemini, adapter, pr
     const stats = store.getStats();
     const nowIso = now.toISOString();
     const results = { daily: false, weekly: false };
+    let dailyPriorityTaskIds = [];
 
     const dailyScheduledForIso = computeCatchupScheduledForIso({
         scheduleKind: 'daily',
@@ -262,7 +292,17 @@ export async function runStartupCatchupJobs({ bot, ticktick, gemini, adapter, pr
             ticktick,
             gemini,
             adapter,
-            config: { ...config, dailyHour, weeklyDay, timezone, graceWindowMinutes, scheduledForIso: dailyScheduledForIso },
+            config: {
+                ...config,
+                dailyHour,
+                weeklyDay,
+                timezone,
+                graceWindowMinutes,
+                scheduledForIso: dailyScheduledForIso,
+                captureTopPriorityTaskIds: (taskIds = []) => {
+                    dailyPriorityTaskIds = Array.isArray(taskIds) ? taskIds : [];
+                },
+            },
         });
     }
 
@@ -281,7 +321,15 @@ export async function runStartupCatchupJobs({ bot, ticktick, gemini, adapter, pr
             gemini,
             adapter,
             processedTasks,
-            config: { ...config, dailyHour, weeklyDay, timezone, graceWindowMinutes, scheduledForIso: weeklyScheduledForIso },
+            config: {
+                ...config,
+                dailyHour,
+                weeklyDay,
+                timezone,
+                graceWindowMinutes,
+                scheduledForIso: weeklyScheduledForIso,
+                excludedTaskIds: dailyPriorityTaskIds,
+            },
         });
     }
 
@@ -317,6 +365,17 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
     let tokenExpiredNotified = false;
     let quotaNotificationSent = false;
     let pendingSuppressionSent = false;
+
+    const processPipelineMessage = async (userMessage, options) => {
+        if (typeof pipeline?.createRequestContext !== 'function') {
+            return pipeline.processMessage(userMessage, options);
+        }
+        const requestContext = await pipeline.createRequestContext(userMessage, options);
+        return pipeline.processMessage(userMessage, {
+            ...options,
+            requestContext,
+        });
+    };
 
     cron.schedule(`*/${pollMinutes} * * * *`, async () => {
         if (!ticktick.isAuthenticated()) {
@@ -389,7 +448,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
             for (const task of batch) {
                 try {
                     const userMessage = task.title + (task.content ? `\n${task.content}` : '');
-                    const result = await pipeline.processMessage(userMessage, {
+                    const result = await processPipelineMessage(userMessage, {
                         existingTask: task,
                         entryPoint: 'scheduler:poll',
                         mode: 'poll',

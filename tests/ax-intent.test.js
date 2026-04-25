@@ -508,6 +508,222 @@ describe('AX Intent Extraction', () => {
                 AxGen.prototype.forward = originalForward;
             }
         });
+
+        it('extracts update mutation intent for moving due date from free-form message', async () => {
+            const originalForward = AxGen.prototype.forward;
+            AxGen.prototype.forward = async function forwardUpdateMutationIntent() {
+                return {
+                    actions: [
+                        {
+                            type: 'update',
+                            targetQuery: 'buy groceries',
+                            title: null,
+                            content: null,
+                            priority: null,
+                            projectHint: null,
+                            dueDate: 'tomorrow',
+                            repeatHint: null,
+                            splitStrategy: null,
+                            checklistItems: null,
+                            clarification: null,
+                            clarificationQuestion: null,
+                            confidence: 0.9,
+                        },
+                    ],
+                };
+            };
+
+            try {
+                const axIntent = createAxIntent(mockKeyManager);
+                const actions = await axIntent.extractIntents('move buy groceries to tomorrow', {
+                    currentDate: '2026-04-24',
+                    availableProjects: ['Inbox'],
+                    requestId: 'req-r9-update',
+                });
+
+                assert.deepEqual(actions, [
+                    {
+                        type: 'update',
+                        targetQuery: 'buy groceries',
+                        title: null,
+                        content: null,
+                        priority: null,
+                        projectHint: null,
+                        dueDate: 'tomorrow',
+                        repeatHint: null,
+                        splitStrategy: null,
+                        checklistItems: null,
+                        clarification: null,
+                        clarificationQuestion: null,
+                        confidence: 0.9,
+                    },
+                ]);
+            } finally {
+                AxGen.prototype.forward = originalForward;
+            }
+        });
+
+        it('extracts complete mutation intent from free-form done command', async () => {
+            const originalForward = AxGen.prototype.forward;
+            AxGen.prototype.forward = async function forwardCompleteMutationIntent() {
+                return {
+                    actions: [
+                        {
+                            type: 'complete',
+                            targetQuery: 'buy groceries',
+                            title: null,
+                            content: null,
+                            priority: null,
+                            projectHint: null,
+                            dueDate: null,
+                            repeatHint: null,
+                            splitStrategy: null,
+                            checklistItems: null,
+                            clarification: null,
+                            clarificationQuestion: null,
+                            confidence: 0.92,
+                        },
+                    ],
+                };
+            };
+
+            try {
+                const axIntent = createAxIntent(mockKeyManager);
+                const actions = await axIntent.extractIntents('done buy groceries', {
+                    currentDate: '2026-04-24',
+                    availableProjects: ['Inbox'],
+                    requestId: 'req-r9-complete',
+                });
+
+                assert.deepEqual(actions, [
+                    {
+                        type: 'complete',
+                        targetQuery: 'buy groceries',
+                        title: null,
+                        content: null,
+                        priority: null,
+                        projectHint: null,
+                        dueDate: null,
+                        repeatHint: null,
+                        splitStrategy: null,
+                        checklistItems: null,
+                        clarification: null,
+                        clarificationQuestion: null,
+                        confidence: 0.92,
+                    },
+                ]);
+            } finally {
+                AxGen.prototype.forward = originalForward;
+            }
+        });
+
+        it('extracts delete mutation intent from free-form delete command', async () => {
+            const originalForward = AxGen.prototype.forward;
+            AxGen.prototype.forward = async function forwardDeleteMutationIntent() {
+                return {
+                    actions: [
+                        {
+                            type: 'delete',
+                            targetQuery: 'old wifi task',
+                            title: null,
+                            content: null,
+                            priority: null,
+                            projectHint: null,
+                            dueDate: null,
+                            repeatHint: null,
+                            splitStrategy: null,
+                            checklistItems: null,
+                            clarification: null,
+                            clarificationQuestion: null,
+                            confidence: 0.88,
+                        },
+                    ],
+                };
+            };
+
+            try {
+                const axIntent = createAxIntent(mockKeyManager);
+                const actions = await axIntent.extractIntents('delete old wifi task', {
+                    currentDate: '2026-04-24',
+                    availableProjects: ['Inbox'],
+                    requestId: 'req-r9-delete',
+                });
+
+                assert.deepEqual(actions, [
+                    {
+                        type: 'delete',
+                        targetQuery: 'old wifi task',
+                        title: null,
+                        content: null,
+                        priority: null,
+                        projectHint: null,
+                        dueDate: null,
+                        repeatHint: null,
+                        splitStrategy: null,
+                        checklistItems: null,
+                        clarification: null,
+                        clarificationQuestion: null,
+                        confidence: 0.88,
+                    },
+                ]);
+            } finally {
+                AxGen.prototype.forward = originalForward;
+            }
+        });
+
+        it('extracts rename mutation intent with targetQuery and new title', async () => {
+            const originalForward = AxGen.prototype.forward;
+            AxGen.prototype.forward = async function forwardRenameMutationIntent() {
+                return {
+                    actions: [
+                        {
+                            type: 'update',
+                            targetQuery: 'netflix task',
+                            title: 'finish system design notes',
+                            content: null,
+                            priority: null,
+                            projectHint: null,
+                            dueDate: null,
+                            repeatHint: null,
+                            splitStrategy: null,
+                            checklistItems: null,
+                            clarification: null,
+                            clarificationQuestion: null,
+                            confidence: 0.85,
+                        },
+                    ],
+                };
+            };
+
+            try {
+                const axIntent = createAxIntent(mockKeyManager);
+                const actions = await axIntent.extractIntents('rename netflix task to finish system design notes', {
+                    currentDate: '2026-04-24',
+                    availableProjects: ['Inbox'],
+                    requestId: 'req-r9-rename',
+                });
+
+                assert.deepEqual(actions, [
+                    {
+                        type: 'update',
+                        targetQuery: 'netflix task',
+                        title: 'finish system design notes',
+                        content: null,
+                        priority: null,
+                        projectHint: null,
+                        dueDate: null,
+                        repeatHint: null,
+                        splitStrategy: null,
+                        checklistItems: null,
+                        clarification: null,
+                        clarificationQuestion: null,
+                        confidence: 0.85,
+                    },
+                ]);
+            } finally {
+                AxGen.prototype.forward = originalForward;
+            }
+        });
     });
 
     describe('keyManager method calls', () => {

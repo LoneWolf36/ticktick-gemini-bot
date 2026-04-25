@@ -74,6 +74,15 @@ function buildPriorityItems(activeTasks = [], ranking = []) {
     }));
 }
 
+function limitRecommendationsForConfidence(priorities = [], rankingResult = null) {
+    const normalized = Array.isArray(priorities) ? priorities.filter(Boolean) : [];
+    if (normalized.length === 0) return [];
+    if (rankingResult?.degraded === true) {
+        return normalized.slice(0, 1);
+    }
+    return normalized.slice(0, 3);
+}
+
 function ensureGoalAlignedPriority(priorities = [], fallbackPriorities = []) {
     const normalized = Array.isArray(priorities) ? priorities.filter(Boolean) : [];
     const goalCandidate = (Array.isArray(fallbackPriorities) ? fallbackPriorities : [])
@@ -107,6 +116,15 @@ function buildNotices({ activeTasks = [], behavioralPatterns = [], context = {},
         notices.push({
             code: 'degraded_ranking',
             message: rankingResult.degradedReason || 'Priority ranking confidence is degraded.',
+            severity: 'warning',
+            evidence_source: 'system',
+        });
+    }
+
+    if (context.ticktickFetchFailed === true) {
+        notices.push({
+            code: 'delivery_context',
+            message: 'TickTick fetch failed, so this briefing uses partial local context only.',
             severity: 'warning',
             evidence_source: 'system',
         });
@@ -243,19 +261,19 @@ export function composeBriefingSummarySections({
         : 'Review active tasks, select one high-impact action, and begin immediately.';
 
     const modelNormalized = normalizeModelSummary(modelSummary || {});
-    const priorities = ensureGoalAlignedPriority(mergePriorities({
+    const priorities = limitRecommendationsForConfidence(ensureGoalAlignedPriority(mergePriorities({
         modelPriorities: modelNormalized.priorities,
         fallbackPriorities,
         activeTasks: normalizedTasks,
-    }), fallbackPriorities);
+    }), fallbackPriorities), rankingResult);
     const topPriority = priorities[0];
 
     if (normalizedTasks.length === 0 || priorities.length === 0) {
         return {
-            focus: 'No relevant tasks need attention right now.',
+            focus: 'No active tasks right now.',
             priorities: [],
             why_now: [],
-            start_now: 'No briefing actions. Check back after new tasks land.',
+            start_now: 'No briefing actions right now.',
             notices: mergeNotices(
                 buildNotices({ activeTasks: normalizedTasks, behavioralPatterns, context, rankingResult }),
                 modelNormalized.notices,
