@@ -187,6 +187,15 @@ function buildRenderResult({ kind, body, context = {} }) {
     };
 }
 
+/**
+ * Format a structured summary object into a user-facing string.
+ *
+ * @param {Object} params - Formatting parameters.
+ * @param {string} params.kind - Summary kind (briefing, weekly, daily_close).
+ * @param {Object} [params.summary={}] - The structured summary object.
+ * @param {Object} [params.context={}] - Request context (for urgent mode reminders).
+ * @returns {Object} Formatted result containing `text` and metadata.
+ */
 export function formatSummary({ kind, summary = {}, context = {} } = {}) {
     if (kind === 'weekly') {
         const body = formatWeekly(summary, context);

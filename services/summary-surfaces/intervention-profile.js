@@ -9,6 +9,15 @@ function toTimestamp(entry = {}) {
     return Number.isFinite(parsed) ? parsed : 0;
 }
 
+/**
+ * Derive an intervention profile based on user's recent engagement with suggestions.
+ *
+ * @param {Object[]} [processedHistory=[]] - History of processed tasks.
+ * @param {Object} [options={}] - Options.
+ * @param {string} [options.generatedAtIso=null] - Reference timestamp.
+ * @param {number} [options.lookbackDays=7] - Days to look back.
+ * @returns {Object} Intervention profile object.
+ */
 export function deriveInterventionProfile(processedHistory = [], { generatedAtIso = null, lookbackDays = 7 } = {}) {
     const generatedAt = new Date(generatedAtIso || new Date().toISOString()).getTime();
     const cutoff = Number.isFinite(generatedAt)
@@ -48,6 +57,14 @@ export function deriveInterventionProfile(processedHistory = [], { generatedAtIs
     };
 }
 
+/**
+ * Build a summary notice based on the derived intervention profile.
+ *
+ * @param {Object} [profile={}] - Result from deriveInterventionProfile.
+ * @param {Object} [options={}] - Options.
+ * @param {string} [options.workStyleMode='standard'] - Current work style mode.
+ * @returns {Object|null} Notice object or null if no intervention is triggered.
+ */
 export function buildEngagementPatternNotice(profile = {}, { workStyleMode = 'standard' } = {}) {
     if (profile?.directCalloutAllowed !== true) return null;
 

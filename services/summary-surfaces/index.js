@@ -99,6 +99,12 @@ function isBehaviorLabel(label = '') {
     return DISALLOWED_WATCHOUT_LABELS.has(label.toLowerCase());
 }
 
+/**
+ * Normalizes weekly watchouts by filtering disallowed labels and missing data.
+ *
+ * @param {object[]} watchouts - Raw watchout items
+ * @returns {object[]} Normalized watchouts
+ */
 export function normalizeWeeklyWatchouts(watchouts = []) {
     return toArray(watchouts)
         .filter(hasWatchoutShape)
@@ -122,6 +128,12 @@ export function normalizeWeeklyWatchouts(watchouts = []) {
         .filter(Boolean);
 }
 
+/**
+ * Normalizes a briefing summary object.
+ *
+ * @param {object} summary - Raw summary
+ * @returns {object} Normalized briefing summary
+ */
 export function normalizeBriefingSummary(summary = {}) {
     return {
         focus: toString(summary.focus, ''),
@@ -139,6 +151,12 @@ export function normalizeBriefingSummary(summary = {}) {
     };
 }
 
+/**
+ * Normalizes a weekly summary object.
+ *
+ * @param {object} summary - Raw summary
+ * @returns {object} Normalized weekly summary
+ */
 export function normalizeWeeklySummary(summary = {}) {
     return {
         progress: toArray(summary.progress).map((item) => toString(item)).filter(Boolean),
@@ -153,6 +171,12 @@ export function normalizeWeeklySummary(summary = {}) {
     };
 }
 
+/**
+ * Normalizes a daily close summary object.
+ *
+ * @param {object} summary - Raw summary
+ * @returns {object} Normalized daily close summary
+ */
 export function normalizeDailyCloseSummary(summary = {}) {
     return {
         stats: toArray(summary.stats).map((item) => toString(item)).filter(Boolean),
@@ -221,6 +245,12 @@ function isTelegramSafe(text = '') {
     return !/(^|\n)\s*#{1,3}\s+/m.test(text);
 }
 
+/**
+ * Creates summary diagnostics for observability.
+ *
+ * @param {object} params - Diagnostic parameters
+ * @returns {object} Summary diagnostics
+ */
 export function createSummaryDiagnostics({
     context = {},
     activeTasks = [],
@@ -282,6 +312,12 @@ function summarizeLoggedOutput(summary = null) {
     };
 }
 
+/**
+ * Builds a summary log payload for telemetry.
+ *
+ * @param {object} params - Log parameters
+ * @returns {object} Log payload
+ */
 export function buildSummaryLogPayload({
     context = {},
     result = null,
@@ -316,6 +352,11 @@ export function buildSummaryLogPayload({
     };
 }
 
+/**
+ * Logs a summary surface event to the console.
+ *
+ * @param {object} params - Log parameters
+ */
 export function logSummarySurfaceEvent({
     context = {},
     result = null,
@@ -335,6 +376,9 @@ export function logSummarySurfaceEvent({
 
 /**
  * Stable summary-surface contract for daily briefing composition.
+ *
+ * @param {object} params - Briefing parameters
+ * @returns {object} Composed briefing result
  */
 export function composeBriefingSummary({
     context = {},
@@ -375,6 +419,9 @@ export function composeBriefingSummary({
 
 /**
  * Stable summary-surface contract for weekly review composition.
+ *
+ * @param {object} params - Weekly review parameters
+ * @returns {object} Composed weekly review result
  */
 export function composeWeeklySummary({
     context = {},
@@ -419,6 +466,9 @@ export function composeWeeklySummary({
 
 /**
  * Stable summary-surface contract for end-of-day reflection composition.
+ *
+ * @param {object} params - Daily close parameters
+ * @returns {object} Composed daily close result
  */
 export function composeDailyCloseSummary({
     context = {},

@@ -211,6 +211,18 @@ function mergeNotices(baseNotices = [], modelNotices = []) {
     return merged;
 }
 
+/**
+ * Compose the individual sections of a daily close (reflection) summary.
+ *
+ * @param {Object} params - Composition parameters.
+ * @param {Object} [params.context={}] - Request context.
+ * @param {Object[]} [params.activeTasks=[]] - Current active tasks.
+ * @param {Object[]} [params.behavioralPatterns=[]] - Behavioral patterns.
+ * @param {Object[]} [params.processedHistory=[]] - History of processed tasks.
+ * @param {Object|null} [params.rankingResult=null] - Prioritization results.
+ * @param {Object|null} [params.modelSummary=null] - Raw summary from Gemini.
+ * @returns {Object} Object containing stats, reflection, reset_cue, and notices sections.
+ */
 export function composeDailyCloseSummarySections({
     context = {},
     activeTasks = [],

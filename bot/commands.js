@@ -22,6 +22,17 @@ import { detectBehavioralPatterns } from '../services/behavioral-patterns.js';
 // Rate limiter removed 2026-04-19 (cavekit-validate Phase 3): YAGNI for 1-user MVP.
 // Heavy-command rate limiting listed as out-of-scope in cavekit-task-pipeline.md.
 
+/**
+ * Register all slash commands for the bot.
+ *
+ * @param {Bot} bot - Grammy bot instance.
+ * @param {TickTickClient} ticktick - TickTick client instance.
+ * @param {GeminiAnalyzer} gemini - Gemini client instance.
+ * @param {TickTickAdapter} adapter - TickTick adapter instance.
+ * @param {Object} pipeline - Pipeline instance.
+ * @param {Object} [config={}] - Bot configuration options.
+ * @description Registers operational commands (/start, /menu, /status, /reset) and product surface commands (/scan, /pending, /reorg, /undo, /briefing, /weekly, /daily_close, /memory, /forget, /urgent, /focus, /normal, /mode).
+ */
 export function registerCommands(bot, ticktick, gemini, adapter, pipeline, config = {}) {
     const {
         autoApplyLifeAdmin = false,
@@ -1076,6 +1087,15 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 // Do NOT call this from new bot handlers unless the action source is
 // a Gemini reorg proposal or a programmatic policy sweep.
 
+/**
+ * Execute a list of structured actions against TickTick.
+ *
+ * @param {Object[]} actions - Array of action objects (create, update, drop, complete).
+ * @param {TickTickAdapter} adapter - The adapter to execute writes.
+ * @param {Object[]} currentTasks - Snapshot of active tasks for lookup.
+ * @param {Object} [options={}] - Execution options.
+ * @returns {Promise<Object>} Object containing `outcomes` (string array) and `hasUndoableActions` (boolean).
+ */
 export async function executeActions(actions, adapter, currentTasks, options = {}) {
     const outcomes = [];
     let hasUndoableActions = false;

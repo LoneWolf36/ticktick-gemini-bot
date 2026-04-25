@@ -12,6 +12,18 @@ function asProcessedHistory(processedHistory = []) {
     return toArray(processedHistory).filter((entry) => entry && typeof entry === 'object');
 }
 
+/**
+ * Build context for determining if summary should be recomputed from live tasks.
+ *
+ * @param {Object} params - Context parameters.
+ * @param {Object[]} [params.activeTasks=[]] - List of active tasks.
+ * @param {Object[]} [params.behavioralPatterns=[]] - List of behavioral patterns.
+ * @param {Object[]} [params.processedHistory=[]] - History of processed tasks.
+ * @param {boolean} [params.historyAvailable=true] - Whether history is accessible.
+ * @param {Object} [params.context={}] - Request context.
+ * @param {number} [params.sparseHistoryThreshold=2] - Count below which history is considered sparse.
+ * @returns {Object} Recompute context object.
+ */
 export function buildReflectionRecomputeContext({
     activeTasks = [],
     behavioralPatterns = [],
@@ -39,6 +51,14 @@ export function buildReflectionRecomputeContext({
     };
 }
 
+/**
+ * Build a notice explaining if/why summary context was recomputed.
+ *
+ * @param {Object} [recomputeContext={}] - Result from buildReflectionRecomputeContext.
+ * @param {Object} [options={}] - Options.
+ * @param {string} [options.surface='weekly'] - Summary surface name.
+ * @returns {Object|null} Notice object or null if no recompute happened.
+ */
 export function buildReflectionRecomputeNotice(recomputeContext = {}, { surface = 'weekly' } = {}) {
     if (recomputeContext.needsRecompute !== true) {
         return null;

@@ -64,6 +64,14 @@ function describePattern(pattern) {
     return 'Recent behavioral signals stayed mixed, so keep the next step concrete without over-interpreting the pattern.';
 }
 
+/**
+ * Select the most relevant behavioral patterns for a summary surface.
+ *
+ * @param {Object[]} [patterns=[]] - List of raw behavioral patterns.
+ * @param {Object} [options={}] - Options.
+ * @param {string} [options.nowIso=null] - Current timestamp for freshness check.
+ * @returns {Object[]} Sorted and filtered patterns.
+ */
 export function selectBehavioralPatternsForSummary(patterns = [], { nowIso = null } = {}) {
     const nowMs = parsePatternTime(nowIso) ?? Date.now();
     return toArray(patterns)
@@ -81,6 +89,14 @@ export function selectBehavioralPatternsForSummary(patterns = [], { nowIso = nul
         });
 }
 
+/**
+ * Build a single summary notice from the most significant behavioral pattern.
+ *
+ * @param {Object[]} [patterns=[]] - List of raw behavioral patterns.
+ * @param {Object} [options={}] - Options.
+ * @param {string} [options.nowIso=null] - Current timestamp.
+ * @returns {Object|null} Notice object or null if no pattern is eligible.
+ */
 export function buildBehavioralPatternNotice(patterns = [], { nowIso = null } = {}) {
     const selected = selectBehavioralPatternsForSummary(patterns, { nowIso });
     const pattern = selected[0];

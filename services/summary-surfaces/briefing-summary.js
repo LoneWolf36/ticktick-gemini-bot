@@ -235,6 +235,17 @@ function mergePriorities({
     return merged.slice(0, 3);
 }
 
+/**
+ * Compose the individual sections of a daily briefing summary.
+ *
+ * @param {Object} params - Composition parameters.
+ * @param {Object[]} [params.activeTasks=[]] - Current active tasks.
+ * @param {Object[]} [params.behavioralPatterns=[]] - Behavioral patterns.
+ * @param {Object|null} [params.rankingResult=null] - Prioritization results.
+ * @param {Object} [params.context={}] - Request context.
+ * @param {Object|null} [params.modelSummary=null] - Raw summary from Gemini.
+ * @returns {Object} Object containing focus, priorities, why_now, start_now, and notices sections.
+ */
 export function composeBriefingSummarySections({
     activeTasks = [],
     behavioralPatterns = [],

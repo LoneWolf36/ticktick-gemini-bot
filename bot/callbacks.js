@@ -9,6 +9,12 @@ const MUTATION_CLARIFICATION_TTL_MS = 10 * 60 * 1000;
 
 // ─── Build Keyboard for Task Review ─────────────────────────
 
+/**
+ * Build an inline keyboard for task review.
+ *
+ * @param {string} taskId - The TickTick task ID.
+ * @returns {InlineKeyboard} Grammy inline keyboard instance.
+ */
 export function taskReviewKeyboard(taskId) {
     // Telegram callback_data has 64-byte limit — truncate if needed
     const id = taskId.length > 50 ? taskId.slice(0, 50) : taskId;
@@ -21,6 +27,13 @@ export function taskReviewKeyboard(taskId) {
 
 // ─── Register Callback Handlers ─────────────────────────────
 
+/**
+ * Register all inline keyboard callback handlers.
+ *
+ * @param {Bot} bot - Grammy bot instance.
+ * @param {TickTickAdapter} adapter - TickTick adapter instance.
+ * @param {Object} pipeline - Pipeline instance.
+ */
 export function registerCallbacks(bot, adapter, pipeline) {
     const processPipelineMessage = (userMessage, options) =>
         typeof pipeline.processMessageWithContext === 'function'
