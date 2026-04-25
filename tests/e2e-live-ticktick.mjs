@@ -49,7 +49,7 @@ function createDeterministicGemini() {
     weekly: [],
     reorg: [],
   };
-  gemini._generateWithFailover = async (_getModelFn, prompt) => {
+  gemini._executeWithFailover = async (prompt, _apiCallFn) => {
     if (prompt.includes('Today is ')) {
       gemini.capturedPrompts.daily.push(prompt);
       const urgentMode = /URGENT MODE is active/i.test(prompt);

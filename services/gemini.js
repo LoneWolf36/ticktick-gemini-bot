@@ -468,7 +468,7 @@ export class GeminiAnalyzer {
      * @returns {Promise<Object>} Model generation result
      * @private
      */
-    async _generateWithFailover(getModelFn, prompt, { transientBaseMs = 15 } = {}) {
+    async _executeWithFailover(prompt, apiCallFn, { transientBaseMs = 15 } = {}) {
         if (this.isQuotaExhausted()) {
             throw new Error('QUOTA_EXHAUSTED');
         }
@@ -484,8 +484,8 @@ export class GeminiAnalyzer {
 
         while (true) {
             try {
-                const model = getModelFn.call(this);
-                const response = await model.generateContent(prompt);
+                const ai = new GoogleGenAI({ apiKey: this._keys[this._activeKeyIndex] });
+                const response = await apiCallFn(ai, prompt);
 
                 // Telemetry Interceptor for Architecture Observability
                 const usage = response.usageMetadata;
@@ -592,7 +592,19 @@ export class GeminiAnalyzer {
         const workStylePromptNote = buildWorkStylePromptNote(recommendationState.workStyleMode);
 
         const prompt = `${workStylePromptNote ? `${workStylePromptNote}\n\n` : ''}Today is ${today}.\n\nShared priority guidance:\n${rankedPreview || 'No ranked guidance available.'}\n\nActive tasks (${orderedTasks.length} total):\n${taskList}`;
-        const response = await this._generateWithFailover(() => this.briefingModel, prompt, { transientBaseMs: 15 });
+        const response = await this._executeWithFailover(
+            prompt,
+            async (ai, p) => ai.models.generateContent({
+                model: "gemini-2.5-flash",
+                contents: p,
+                config: {
+                    systemInstruction: systemContext,
+                    responseMimeType: "application/json",
+                    responseSchema: briefingSummarySchema
+                }
+            }),
+            { transientBaseMs: 15 }
+        );
         const raw = response.text.trim();
         const parsed = this._safeParseJson(raw);
         const modelSummary = parsed && typeof parsed === 'object'
@@ -680,7 +692,19 @@ export class GeminiAnalyzer {
 
         const workStylePromptNote = buildWorkStylePromptNote(recommendationState.workStyleMode);
         const prompt = `${workStylePromptNote ? `${workStylePromptNote}\n\n` : ''}Current active tasks (${orderedTasks.length}):\n${taskList || 'None'}\n\nProcessed tasks this week (${processedEntries.length}):\n${processed || 'None'}`;
-        const response = await this._generateWithFailover(() => this.weeklyModel, prompt, { transientBaseMs: 15 });
+        const response = await this._executeWithFailover(
+            prompt,
+            async (ai, p) => ai.models.generateContent({
+                model: "gemini-2.5-pro",
+                contents: p,
+                config: {
+                    systemInstruction: systemContext,
+                    responseMimeType: "application/json",
+                    responseSchema: weeklySummarySchema
+                }
+            }),
+            { transientBaseMs: 15 }
+        );
         const raw = response.text.trim();
         const parsed = this._safeParseJson(raw);
         const summaryPayload = parsed && typeof parsed === 'object' ? parsed : {};
@@ -779,7 +803,19 @@ export class GeminiAnalyzer {
             prompt += `\nCreate a new reorganization proposal.`;
         }
 
-        const response = await this._generateWithFailover(() => this.reorgModel, prompt, { transientBaseMs: 12 });
+        const response = await this._executeWithFailover(
+            prompt,
+            async (ai, p) => ai.models.generateContent({
+                model: "gemini-2.5-pro",
+                contents: p,
+                config: {
+                    systemInstruction: `You are an organizational assistant...\\n\\nUser Context:\\n${USER_CONTEXT}`,
+                    responseMimeType: "application/json",
+                    responseSchema: reorgSchema
+                }
+            }),
+            { transientBaseMs: 12 }
+        );
         const raw = response.text.trim();
         const parsed = this._safeParseJson(raw);
         if (parsed) return this._safeNormalizeReorgProposal(parsed, tasks, projects);

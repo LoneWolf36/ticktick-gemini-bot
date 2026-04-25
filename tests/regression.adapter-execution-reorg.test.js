@@ -767,18 +767,16 @@ test('GeminiAnalyzer classifies invalid API key errors and repairs sloppy JSON',
 test('GeminiAnalyzer rotates to next key on invalid-key errors', async () => {
   const analyzer = new GeminiAnalyzer(['dummy-key-1', 'dummy-key-2']);
 
-  const result = await analyzer._generateWithFailover(
-    () => ({
-      generateContent: async () => {
-        if (analyzer._activeKeyIndex === 0) {
-          const err = new Error('API key expired. Please renew the API key.');
-          err.status = 400;
-          throw err;
-        }
-        return { usageMetadata: null, text: '{}' };
-      },
-    }),
-    'noop prompt'
+  const result = await analyzer._executeWithFailover(
+    'noop prompt',
+    async () => {
+      if (analyzer._activeKeyIndex === 0) {
+        const err = new Error('API key expired. Please renew the API key.');
+        err.status = 400;
+        throw err;
+      }
+      return { usageMetadata: null, text: '{}' };
+    }
   );
 
   assert.equal(analyzer._activeKeyIndex, 1);

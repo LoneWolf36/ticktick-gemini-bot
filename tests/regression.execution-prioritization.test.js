@@ -567,7 +567,7 @@ test('buildSummaryLogPayload normalizes diagnostics field names and delivery sta
 
 test('GeminiAnalyzer generateDailyBriefingSummary matches manual and scheduler output for the same inputs', async () => {
   const analyzer = new GeminiAnalyzer(['dummy-key']);
-  analyzer._generateWithFailover = async () => ({
+  analyzer._executeWithFailover = async () => ({
     text: JSON.stringify({
       focus: 'Ship the architecture PR before lower-leverage work.',
       priorities: [
@@ -608,7 +608,7 @@ test('GeminiAnalyzer generateDailyBriefingSummary matches manual and scheduler o
 
 test('GeminiAnalyzer generateWeeklyDigestSummary matches manual and scheduler output for the same snapshot', async () => {
   const analyzer = new GeminiAnalyzer(['dummy-key']);
-  analyzer._generateWithFailover = async () => ({
+  analyzer._executeWithFailover = async () => ({
     text: JSON.stringify({
       progress: ['Completed resume update'],
       carry_forward: ['Reschedule mock interview'],
