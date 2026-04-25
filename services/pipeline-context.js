@@ -1,6 +1,10 @@
 import crypto from 'crypto';
 import { getUserTimezone } from './user-settings.js';
 
+/**
+ * List of required fields for a valid pipeline request context.
+ * @type {string[]}
+ */
 const REQUIRED_FIELDS = [
     'requestId',
     'entryPoint',
@@ -12,10 +16,18 @@ const REQUIRED_FIELDS = [
     'existingTask',
 ];
 
+/** @type {string} */
 const DEFAULT_ENTRY_POINT = 'unknown';
+/** @type {string} */
 const DEFAULT_MODE = 'default';
+/** @type {string} */
 const DEFAULT_WORK_STYLE_MODE = 'standard';
 
+/**
+ * Clones a value using structuredClone or JSON fallback.
+ * @param {*} value - The value to clone
+ * @returns {*} Cloned value
+ */
 function cloneValue(value) {
     if (value === undefined) return undefined;
     if (typeof globalThis.structuredClone === 'function') {
@@ -24,6 +36,12 @@ function cloneValue(value) {
     return JSON.parse(JSON.stringify(value));
 }
 
+/**
+ * Recursively freezes an object and its nested properties.
+ * @param {*} value - The value to freeze
+ * @param {WeakSet} [seen] - Set to track visited objects for circular references
+ * @returns {*} Frozen value
+ */
 function deepFreeze(value, seen = new WeakSet()) {
     if (!value || typeof value !== 'object' || seen.has(value)) return value;
     seen.add(value);
@@ -35,6 +53,10 @@ function deepFreeze(value, seen = new WeakSet()) {
     return value;
 }
 
+/**
+ * Keys containing potentially sensitive user data that should be redacted in diagnostics.
+ * @type {Set<string>}
+ */
 const PRIVACY_REDACTION_KEYS = new Set([
     'userMessage',
     'title',
@@ -47,6 +69,11 @@ const PRIVACY_REDACTION_KEYS = new Set([
     'existingTaskContent',
 ]);
 
+/**
+ * Sanitizes an object for diagnostics by redacting sensitive keys.
+ * @param {*} value - The object to sanitize
+ * @returns {*} Sanitized object
+ */
 function sanitizePipelineDiagnosticValue(value) {
     if (Array.isArray(value)) {
         return value.map((entry) => sanitizePipelineDiagnosticValue(entry));
@@ -69,24 +96,50 @@ function sanitizePipelineDiagnosticValue(value) {
     return sanitized;
 }
 
+/**
+ * Creates a deep clone of a pipeline value.
+ * @param {*} value - Value to snapshot
+ * @returns {*} Cloned value
+ */
 export function snapshotPipelineValue(value) {
     return cloneValue(value);
 }
 
+/**
+ * Creates a redacted deep clone of a pipeline value for logging.
+ * @param {*} value - Value to snapshot
+ * @returns {*} Redacted clone
+ */
 export function snapshotPrivacySafePipelineValue(value) {
     return cloneValue(sanitizePipelineDiagnosticValue(value));
 }
 
+/**
+ * Redacts sensitive info and freezes a pipeline context for diagnostics.
+ * @param {Object} context - Pipeline context
+ * @returns {Object} Sanitized and frozen context
+ */
 export function sanitizePipelineContextForDiagnostics(context) {
     return deepFreeze(snapshotPrivacySafePipelineValue(context));
 }
 
+/**
+ * Updates a pipeline context using a draft/updater pattern and freezes the result.
+ * @param {Object} context - Current pipeline context
+ * @param {Function} updater - Function that receives a mutable draft
+ * @returns {Object} Updated and frozen context
+ */
 export function updatePipelineContext(context, updater) {
     const draft = cloneValue(context);
     updater(draft);
     return deepFreeze(draft);
 }
 
+/**
+ * Creates the initial lifecycle state for a new pipeline request.
+ * @param {Object} baseContext - The base request context
+ * @returns {Object} Initial lifecycle state
+ */
 function createLifecycleState(baseContext) {
     return {
         request: {
@@ -141,6 +194,11 @@ function createLifecycleState(baseContext) {
     };
 }
 
+/**
+ * Normalizes and validates checklist context metadata.
+ * @param {Object} value - Raw checklist context
+ * @returns {Object|null} Normalized checklist context or null
+ */
 function normalizeChecklistContext(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
 
@@ -160,6 +218,12 @@ function normalizeChecklistContext(value) {
     };
 }
 
+/**
+ * Coerces a value to a Date object.
+ * @param {*} value - Value to coerce
+ * @param {Date} fallback - Fallback Date if coercion fails
+ * @returns {Date}
+ */
 function coerceDate(value, fallback) {
     if (value instanceof Date) return value;
     if (typeof value === 'string' || typeof value === 'number') {
@@ -169,6 +233,12 @@ function coerceDate(value, fallback) {
     return fallback instanceof Date ? fallback : new Date();
 }
 
+/**
+ * Formats a Date as a YYYY-MM-DD string in a specific timezone.
+ * @param {Date} date - Date to format
+ * @param {string} timezone - Target IANA timezone
+ * @returns {string} Formatted date string
+ */
 function formatCurrentDate(date, timezone) {
     const parts = new Intl.DateTimeFormat('en-CA', {
         timeZone: timezone,
@@ -181,21 +251,41 @@ function formatCurrentDate(date, timezone) {
     return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
+/**
+ * Checks if a string is in YYYY-MM-DD format.
+ * @param {string} value - String to check
+ * @returns {boolean}
+ */
 function isDateOnlyString(value) {
     return typeof value === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(value);
 }
 
+/**
+ * Ensures projects value is an array.
+ * @param {*} projects - Raw projects value
+ * @returns {Array}
+ */
 function normalizeProjects(projects) {
     if (!Array.isArray(projects)) return [];
     return projects;
 }
 
+/**
+ * Extracts non-empty project names from an array of project objects.
+ * @param {Array} projects - Array of project objects
+ * @returns {string[]} Array of project names
+ */
 function deriveProjectNames(projects) {
     return projects
         .map((project) => project?.name)
         .filter((name) => typeof name === 'string' && name.trim());
 }
 
+/**
+ * Validates a pipeline context object against required fields and types.
+ * @param {Object} context - The context to validate
+ * @returns {{ ok: boolean, errors: string[] }} Validation result
+ */
 export function validatePipelineContext(context) {
     const errors = [];
     if (!context || typeof context !== 'object') {
@@ -292,6 +382,15 @@ export function validatePipelineContext(context) {
     return { ok: errors.length === 0, errors };
 }
 
+/**
+ * Creates a pipeline context builder for generating request contexts.
+ * @param {Object} options
+ * @param {TickTickAdapter} options.adapter - TickTick adapter instance
+ * @param {string} [options.timezone] - Default IANA timezone
+ * @param {Function} [options.now] - Function returning current Date
+ * @param {Function} [options.requestIdFactory] - Function generating unique request IDs
+ * @returns {{ buildRequestContext: Function }} Context builder instance
+ */
 export function createPipelineContextBuilder({
     adapter,
     timezone = getUserTimezone(),
@@ -302,6 +401,12 @@ export function createPipelineContextBuilder({
         throw new Error('Pipeline context builder requires a TickTick adapter');
     }
 
+    /**
+     * Builds a full request context for a pipeline execution.
+     * @param {string} userMessage - The user's input message
+     * @param {Object} [options] - Build options (mode, entryPoint, etc.)
+     * @returns {Promise<Object>} Frozen pipeline request context
+     */
     const buildRequestContext = async (userMessage, options = {}) => {
         if (options.timezone && options.timezone !== timezone) {
             console.warn(`[PipelineContext] Ignoring caller timezone "${options.timezone}" in favor of "${timezone}".`);
