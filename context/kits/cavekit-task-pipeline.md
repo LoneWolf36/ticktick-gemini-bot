@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-24T12:05:00Z"
+last_edited: "2026-04-25T12:10:00Z"
 source_specs: ["001-task-operations-pipeline", "002-natural-language-task-mutations"]
 complexity: "complex"
 ---
@@ -84,10 +84,10 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 ### R9: Free-Form Mutation Intent
 **Description:** System extracts mutation intent (update, complete, delete) from natural language using AX structured output.
 **Acceptance Criteria:**
-- [ ] Given "move buy groceries to tomorrow", system extracts update intent with target "buy groceries" and new due date
-- [ ] Given "done buy groceries", system extracts completion intent
-- [ ] Given "delete old wifi task", system extracts deletion intent
-- [ ] Given "rename netflix task to finish system design notes", system extracts title-update intent
+- [x] Given "move buy groceries to tomorrow", system extracts update intent with target "buy groceries" and new due date
+- [x] Given "done buy groceries", system extracts completion intent
+- [x] Given "delete old wifi task", system extracts deletion intent
+- [x] Given "rename netflix task to finish system design notes", system extracts title-update intent
 **Dependencies:** R1
 
 ### R10: Conservative Target Resolution
@@ -187,6 +187,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - [x] R13 (Extremely Long Message Handling): `services/normalizer.js` now enforces a bounded content cap in addition to existing title limits, `tests/regression.long-message-handling.test.js` proves the AX extraction seam still accepts 500+ word input, and the same focused suite verifies normalized title/content stay within enforced limits.
 - [x] R15 (Command Surfaces): `/scan`, `/pending`, `/review`, `/undo`, `/menu`, `/status`, and `/reset` are implemented in `bot/commands.js` and now checked explicitly.
 - [x] R10 (Conservative Target Resolution): `services/task-resolver.js` resolves exact/prefix/contains/fuzzy matches conservatively, `services/pipeline.js` routes mutation intents through clarification/not-found handling before execution, `tests/task-resolver.test.js` covers fail-closed ambiguity cases, and `tests/regression.pipeline-hardening-mutation.test.js` covers pronoun references, exact-match wins, not-found, and delete safety.
+- [x] R9 (Free-Form Mutation Intent): `services/ax-intent.js` now includes explicit free-form mutation mapping guidance/examples for update/complete/delete/rename phrasing, and `tests/ax-intent.test.js` covers extraction-shape regressions for "move buy groceries to tomorrow", "done buy groceries", "delete old wifi task", and "rename netflix task to finish system design notes".
 - [x] R12 (Privacy-Aware Pipeline Logging): `services/pipeline.js`, `services/pipeline-context.js`, and `services/pipeline-observability.js` now keep request/intent/action tracing while redacting raw user messages, task titles, task descriptions, and target queries from lifecycle snapshots, observability sink contexts, and console/telemetry metadata; `tests/regression.pipeline-logging-privacy.test.js` plus `tests/pipeline-context.test.js` cover telemetry, lifecycle, and console privacy boundaries.
 - [x] Drift rate limiter: removed 2026-04-19 (YAGNI for 1-user MVP; listed as out-of-scope here).
 - [x] R16 (Guided Reorg): `/reorg` fetch/refine/apply/cancel flow, schema-backed actions, and policy sweep are implemented and now checked explicitly.
@@ -194,6 +195,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - [x] Validation-facing comments in live harnesses and reorg services were updated to reflect their final Cavekit ownership/exclusion status.
 
 ## Changelog
+- 2026-04-25: R9 completed — AX mutation extraction guidance now includes canonical free-form update/complete/delete/rename examples and focused AX-intent regression coverage verifies expected structured shapes for all four R9 acceptance prompts.
 - 2026-04-24: R13 completed — long-message intake now keeps AX extraction intact for 500+ word inputs while the normalizer enforces bounded title and content lengths via focused regression coverage.
 - 2026-04-24: R8 completed — task-operation confirmations now use exact terse create copy, urgent mode keeps the shorter variant, and clarification prompts remain narrow without drifting into multi-paragraph output.
 - 2026-04-23: R2 completed — the pipeline now executes clear create actions from multi-task input while surfacing focused clarification for ambiguous create fragments, preserves canonical multi-create parsing, and keeps checklist clarification behavior fail-closed.

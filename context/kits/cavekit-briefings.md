@@ -113,10 +113,10 @@ See `context/refs/summary-surfaces.openapi.yaml` for API contracts.
 ### R12: Summary Delivery Edge Cases
 **Description:** Edge cases in summary delivery are handled gracefully.
 **Acceptance Criteria:**
-- [ ] If TickTick data fetch fails, summary reports the fetch failure and delivers what it can
-- [ ] If user has zero tasks, summary says so concisely
-- [ ] If multiple summaries queue (e.g., daily + weekly on same morning), they are delivered as separate messages
-- [ ] Summary does not duplicate content between daily and weekly when delivered on the same day
+- [x] If TickTick data fetch fails, summary reports the fetch failure and delivers what it can
+- [x] If user has zero tasks, summary says so concisely
+- [x] If multiple summaries queue (e.g., daily + weekly on same morning), they are delivered as separate messages
+- [x] Summary does not duplicate content between daily and weekly when delivered on the same day
 **Dependencies:** R6
 
 ### R13: Work-Style Awareness
@@ -129,18 +129,18 @@ See `context/refs/summary-surfaces.openapi.yaml` for API contracts.
 ### R14: Summary Content Quality
 **Description:** All summary surfaces maintain the product vision's content quality standards.
 **Acceptance Criteria:**
-- [ ] Summaries prefer fewer correct recommendations over many plausible ones
-- [ ] Summaries do not optimize for motion, task count, or planning volume
-- [ ] Summaries do not present weak inference as certainty
+- [x] Summaries prefer fewer correct recommendations over many plausible ones
+- [x] Summaries do not optimize for motion, task count, or planning volume
+- [x] Summaries do not present weak inference as certainty
 **Dependencies:** none
 
 ### R15: Regression Stabilization
 **Description:** Summary surfaces have dedicated regression tests.
 **Acceptance Criteria:**
-- [ ] Daily summary produces deterministic output for fixed input data
-- [ ] Weekly summary handles empty-week, full-week, and partial-week scenarios
-- [ ] End-of-day reflection handles zero-activity and high-activity days
-- [ ] Scheduler missed-window recovery is tested
+- [x] Daily summary produces deterministic output for fixed input data
+- [x] Weekly summary handles empty-week, full-week, and partial-week scenarios
+- [x] End-of-day reflection handles zero-activity and high-activity days
+- [x] Scheduler missed-window recovery is tested
 **Dependencies:** R6, R7
 
 ## Out of Scope
@@ -171,10 +171,13 @@ See `context/refs/summary-surfaces.openapi.yaml` for API contracts.
 - [x] Audit R10 (Summary Prioritization): `services/gemini.js` ranks active tasks before composing the briefing surface, `services/summary-surfaces/briefing-summary.js` consumes ranked tasks when available, and `tests/regression.summary-surfaces.test.js` covers both ranking-backed task selection and due-date fallback when ranking is unavailable.
 - [x] Audit R11 (Ignored Guidance Adaptation): `services/summary-surfaces/intervention-profile.js` derives repeated-ignore/backoff profiles from processed-history signals, summary surfaces consume those notices, and `tests/regression.adapter-execution-reorg.test.js` covers both repeated-ignore callouts and daily-close backoff behavior without escalating urgency.
 - [x] Audit R13 (Work-Style Awareness): `formatSummary(...)` shortens briefing, weekly, and daily-close outputs in urgent mode while preserving the standard compact default style.
-- [ ] Keep R12, R14, and R15 unchecked pending edge-case and regression evidence.
+- [x] Audit R12 (Summary Delivery Edge Cases): scheduler catch-up now delivers daily and weekly as separate messages, weekly receives daily-priority exclusions on same-window delivery to reduce overlap, and summary surfaces add fetch-failure delivery-context notices while still producing fallback output.
+- [x] Audit R14 (Summary Content Quality): briefing now reduces recommendations under degraded ranking to prioritize precision over volume, existing anti-busywork checks remain enforced, and weak-inference phrasing remains hedged rather than asserted.
+- [x] Audit R15 (Regression Stabilization): regression coverage now includes daily determinism, weekly empty/partial/full scenarios, daily-close zero/high-activity scenarios, and startup missed-window dual-summary recovery behavior.
 
 ## Changelog
 - 2026-04-23: R8 completed — summary-surface telemetry now records type, trigger, input shape, render time, and delivery status with explicit failure reasons while omitting raw summary/task content from logged payloads.
+- 2026-04-25: R12, R14, and R15 completed — summary delivery now handles TickTick fetch failures with fallback notices, same-window daily+weekly deliveries stay separate with reduced overlap, and new regression cases cover deterministic daily output, weekly scenario variants, daily-close activity extremes, and startup catch-up behavior.
 - 2026-04-23: R10 completed — briefing task selection now explicitly consumes ranking output when available and falls back to due-date ordering when ranking is unavailable, with direct regression evidence.
 - 2026-04-23: R6 completed — scheduled daily and weekly summaries now carry scheduler metadata through the shared rendering path, and startup grace-window catch-up is covered by dedicated scheduler regression tests.
 - 2026-04-22: R11 completed — repeated ignored guidance now triggers smaller-step or backoff messaging instead of escalating urgency, with regression coverage across weekly and daily-close summary surfaces.

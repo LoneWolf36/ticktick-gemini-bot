@@ -50,9 +50,9 @@ Post-migration cleanup: dead code removal, documentation alignment, env-var stan
 ### R5: Full Regression Verification
 **Description:** Full regression suite passes after all cleanup changes.
 **Acceptance Criteria:**
-- [ ] All existing tests pass with no skip or xfail additions
-- [ ] Pipeline harness tests from cavekit-pipeline-hardening pass
-- [ ] No new test failures introduced by cleanup
+- [x] All existing tests pass with no skip or xfail additions
+- [x] Pipeline harness tests from cavekit-pipeline-hardening pass
+- [x] No new test failures introduced by cleanup
 - [ ] Manual smoke test of core create/update/complete/delete flows passes
 **Dependencies:** R1, R2, R3, R4
 
@@ -78,5 +78,6 @@ Post-migration cleanup: dead code removal, documentation alignment, env-var stan
 - [x] Audit R1 (Dead Code Removal): legacy prompt-driven task-writing paths are gone; retained direct adapter calls in `bot/commands.js` (`/undo`, `executeActions`) and `bot/callbacks.js` (approve/drop callbacks) are explicitly documented operational or reorg boundaries rather than orphaned legacy writers, and no orphaned imports or dead helper exports were introduced by the pipeline migration.
 
 ## Changelog
+- 2026-04-25: R5 partially completed — all 555 automated tests pass (no skips, no xfails, no new failures). Manual smoke test remains pending.
 - 2026-04-18: Migrated from kitty-specs 004-post-migration-cleanup
 - 2026-04-22: R1 completed — legacy prompt-writing paths are removed, retained operational mutation boundaries are documented, and cleanup validation no longer treats them as orphaned drift.

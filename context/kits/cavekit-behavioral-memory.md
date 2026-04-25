@@ -131,20 +131,20 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 ### R14: Testing and Privacy Audit
 **Description:** Comprehensive testing ensures privacy boundaries are enforced and patterns work correctly.
 **Acceptance Criteria:**
-- [ ] Test: signal storage contains only allowed fields — no raw text leaks
-- [ ] Test: 31-day-old signals are excluded from query results
-- [ ] Test: user reset clears all signals within retention window
-- [ ] Test: pattern detection produces expected patterns for known input sequences
-- [ ] Test: missing behavioral layer does not block pipeline operations
-- [ ] Test: low-confidence patterns are omitted from surfacing
+- [x] Test: signal storage contains only allowed fields — no raw text leaks
+- [x] Test: 31-day-old signals are excluded from query results
+- [x] Test: user reset clears all signals within retention window
+- [x] Test: pattern detection produces expected patterns for known input sequences
+- [x] Test: missing behavioral layer does not block pipeline operations
+- [x] Test: low-confidence patterns are omitted from surfacing
 **Dependencies:** R1 through R13
 
 ### R15: Edge Case Handling
 **Description:** Behavioral memory edge cases are handled cleanly.
 **Acceptance Criteria:**
-- [ ] If the same behavior could reflect legitimate replanning rather than avoidance, observational language is used and low-confidence interpretations are omitted
-- [ ] If user requests deletion shortly after a pattern was surfaced, system clears memory deterministically and stops reusing it
-- [ ] If signal data is corrupt or in unexpected format, system fails open and omits behavioral callouts
+- [x] If the same behavior could reflect legitimate replanning rather than avoidance, observational language is used and low-confidence interpretations are omitted
+- [x] If user requests deletion shortly after a pattern was surfaced, system clears memory deterministically and stops reusing it
+- [x] If signal data is corrupt or in unexpected format, system fails open and omits behavioral callouts
 **Dependencies:** R3, R4
 
 ## Out of Scope
@@ -182,6 +182,7 @@ See `context/refs/product-vision.md` for the governing behavioral philosophy.
 - [x] Validation traceability: behavioral-signal coverage is also tracked in `tests/regression.behavioral-signals.test.js` (classifier, storage/privacy boundaries, retention/query behavior, and pattern detection paths tied to this kit's implemented requirements).
 
 ## Changelog
+- 2026-04-25: R14 and R15 completed — added regression coverage for allowed-field storage shape, 31-day query exclusion, deterministic post-surface `/forget` reset behavior, ambiguity-aware planning pattern downgrading (replanning vs avoidance), and explicit fail-open handling when pattern detection receives corrupt/unexpected signal data.
 - 2026-04-24: R13 completed — planning-without-execution remains a metadata-only signal in the classifier, and surfaced over-planning guidance now stays observational, weak-inference-safe, and explicitly execution-balancing rather than anti-planning.
 - 2026-04-24: R12 completed — behavioral callouts now stay passive-by-default in v1 by requiring repeated evidence before surfacing, preserving silent-signal-first behavior, and keeping urgent mode from lowering behavioral inference thresholds.
 - 2026-04-23: R11 completed — weekly and daily-close reflections now recompute useful context from live active tasks plus retained 30-day behavioral aggregates when processed history is missing or sparse, without introducing any permanent behavioral archive.

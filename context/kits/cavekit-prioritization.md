@@ -80,9 +80,9 @@ See `context/refs/evidence-log.csv` for evidence tracking.
 ### R8: Behavioral Signal Consumption
 **Description:** Ranking engine can optionally consume behavioral signals from cavekit-behavioral-memory for pattern-informed prioritization.
 **Acceptance Criteria:**
-- [ ] If behavioral data shows a task category is consistently avoided, ranking can factor this in
-- [ ] Behavioral signal consumption is optional — ranking works without it
-- [ ] Low-confidence behavioral signals are not used for ranking adjustments
+- [x] If behavioral data shows a task category is consistently avoided, ranking can factor this in
+- [x] Behavioral signal consumption is optional — ranking works without it
+- [x] Low-confidence behavioral signals are not used for ranking adjustments
 **Dependencies:** cavekit-behavioral-memory R1
 
 ### R9: Anti-Busywork Guardrails
@@ -96,10 +96,10 @@ See `context/refs/evidence-log.csv` for evidence tracking.
 ### R10: Regression Coverage
 **Description:** Ranking engine has automated tests for core scenarios.
 **Acceptance Criteria:**
-- [ ] Test: mix of urgent and important tasks produces important-first ranking
-- [ ] Test: all low-priority tasks produces honest "nothing critical" output
-- [ ] Test: override forces specific task to top
-- [ ] Test: determinism — same input produces same output on repeated runs
+- [x] Test: mix of urgent and important tasks produces important-first ranking
+- [x] Test: all low-priority tasks produces honest "nothing critical" output
+- [x] Test: override forces specific task to top
+- [x] Test: determinism — same input produces same output on repeated runs
 **Dependencies:** R2
 
 ### R11: MVP Scope Boundary
@@ -143,12 +143,14 @@ See `context/refs/evidence-log.csv` for evidence tracking.
 - [x] Audit R9 (Anti-Busywork Guardrails): `services/execution-prioritization.js` now applies explicit quick-win and planning-heavy penalties without using task count as a ranking signal, and `tests/regression.execution-prioritization.test.js` covers quick-win suppression, count invariance, and planning-heavy deprioritization.
 - [x] Audit R5 (Integration Seam: Briefing Surfaces): `services/summary-surfaces/briefing-summary.js` now uses ranking output directly for briefing task selection and falls back to due-date ordering when ranking is unavailable, while `services/summary-surfaces/weekly-summary.js` emits ranking-trend notices from current ranked rationale patterns.
 - [x] Audit R7 (Ranking Observability): `services/execution-prioritization.js` now emits sanitized ranking telemetry for every computation with input-state summaries, computed scores, final ordering, and rationale, while `context/refs/evidence-log.csv` and `tests/regression.execution-prioritization.test.js` track traceability evidence without logging raw task content.
-- [ ] Keep R8 and R10 unchecked pending behavioral-input and full regression evidence.
+- [x] Audit R8 (Behavioral Signal Consumption): `services/execution-prioritization.js` now accepts optional normalized behavioral signals, applies only high-confidence category-avoidance boosts under strong threshold, and ignores low-confidence/insufficient signals without degrading baseline ranking.
+- [x] Audit R10 (Regression Coverage): `tests/regression.execution-prioritization.test.js` now covers important-vs-urgent ordering, honest nothing-critical labeling for weak-signal sets, explicit override precedence, optional behavioral input handling, low-confidence signal rejection, and deterministic repeated-run ranking output.
 
 ## Changelog
 - 2026-04-21: R4 completed — ranking now supports explicit time-bounded task overrides while preserving rationale for every ranked item.
 - 2026-04-21: R9 completed — anti-busywork guardrails now suppress shallow quick wins, ignore raw task count, and deprioritize planning-heavy tasks without execution evidence.
 - 2026-04-21: R5 completed — briefing surfaces now consume ranking output directly, weekly summaries can reference ranking trends, and briefing fallback ordering degrades to due-date ordering when ranking is unavailable.
+- 2026-04-25: R8 and R10 completed — ranking now supports optional high-confidence behavioral avoidance inputs with low-confidence filtering, and regression coverage now includes important-vs-urgent ordering, nothing-critical labeling, override priority, and deterministic repeatability.
 - 2026-04-22: R7 completed — ranking telemetry now logs sanitized input state, computed scores, final ordering, and rationale with evidence tracked in refs and regression coverage.
 - 2026-04-21: R3 completed — ranking output now carries explicit confidence, uncertainty labels, and clarification flags for weak or degraded results.
 - 2026-04-20: R2, R6, R11, and R12 completed — ranking now has audited leverage scoring, project-resolution integration, explicit MVP boundaries, and declared-goal awareness.
