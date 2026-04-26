@@ -412,7 +412,7 @@ test('T003: pipeline passes canonical context fields to normalizer', async () =>
     // Replace normalizer with wrapped version
     const { createPipeline } = await import('../services/pipeline.js');
     const pipeline = createPipeline({
-        axIntent: { extractIntents: async () => [{ type: 'create', title: 'Test', confidence: 0.9 }] },
+        intentExtractor: { extractIntents: async () => [{ type: 'create', title: 'Test', confidence: 0.9 }] },
         normalizer: wrappedNormalizer,
         adapter: harness.adapter,
     });

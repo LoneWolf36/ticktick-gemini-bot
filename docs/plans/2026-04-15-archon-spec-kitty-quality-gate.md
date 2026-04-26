@@ -350,7 +350,7 @@ Expected:
 Run:
 
 ```bash
-node --test tests/task-resolver.test.js tests/ax-intent.test.js tests/normalizer.test.js tests/pipeline-context.test.js
+node --test tests/task-resolver.test.js tests/intent-extraction.test.js tests/normalizer.test.js tests/pipeline-context.test.js
 npm run test:regression
 ```
 

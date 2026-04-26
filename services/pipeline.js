@@ -1,7 +1,7 @@
 /**
  * services/pipeline.js
  * Orchestrates the full task processing flow:
- * Message -> AX Intent Extraction -> Normalization -> TickTick Adapter Execution
+ * Message -> Intent Extraction -> Normalization -> TickTick Adapter Execution
  */
 import {
     createPipelineContextBuilder,
@@ -12,7 +12,7 @@ import {
     validatePipelineContext,
 } from './pipeline-context.js';
 import { createPipelineObservability } from './pipeline-observability.js';
-import { QuotaExhaustedError } from './ax-intent.js';
+import { QuotaExhaustedError } from './intent-extraction.js';
 import { resolveTarget, buildClarificationPrompt } from './task-resolver.js';
 
 /**
@@ -806,7 +806,7 @@ async function sleep(ms) {
  * and TickTick adapter execution.
  *
  * @param {Object} options
- * @param {Object} options.axIntent - Intent extractor with `extractIntents(message, opts)` method
+ * @param {Object} options.intentExtractor - Intent extractor with `extractIntents(message, opts)` method
  * @param {Object} options.normalizer - Normalizer module with `normalize(action, tasks, projects, opts)` method
  * @param {TickTickAdapter} options.adapter - TickTick adapter instance
  * @param {Object} [options.observability] - Optional observability emitter (see createPipelineObservability)
@@ -814,7 +814,7 @@ async function sleep(ms) {
  *   - `processMessage(userMessage, options?)` → `{ type: 'task'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`
  *   - `getTelemetry()` → the observability instance for this pipeline
  */
-export function createPipeline({ axIntent, normalizer, adapter, observability, deferIntent } = {}) {
+export function createPipeline({ intentExtractor, normalizer, adapter, observability, deferIntent } = {}) {
     const contextBuilder = createPipelineContextBuilder({ adapter });
     const telemetry = observability || createPipelineObservability();
 
@@ -909,7 +909,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability, d
             let intents;
 
             try {
-                intents = await axIntent.extractIntents(context.userMessage, {
+                intents = await intentExtractor.extractIntents(context.userMessage, {
                     currentDate: context.currentDate,
                     availableProjects: context.availableProjectNames,
                     requestId: context.requestId,
@@ -929,8 +929,8 @@ export function createPipeline({ axIntent, normalizer, adapter, observability, d
                     };
                 });
                 await telemetry.emit(context, {
-                    eventType: 'pipeline.ax.failed',
-                    step: 'ax',
+                    eventType: 'pipeline.intent.failed',
+                    step: 'intent',
                     status: 'failure',
                     durationMs: Date.now() - axStartedAt,
                     failureClass,
@@ -974,7 +974,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability, d
                 });
 
                 await telemetry.emit(context, {
-                    eventType: 'pipeline.ax.failed',
+                    eventType: 'pipeline.intent.failed',
                     step: 'ax',
                     status: 'failure',
                     durationMs: Date.now() - axStartedAt,
@@ -1006,7 +1006,7 @@ export function createPipeline({ axIntent, normalizer, adapter, observability, d
             });
 
             await telemetry.emit(context, {
-                eventType: 'pipeline.ax.completed',
+                eventType: 'pipeline.intent.completed',
                 step: 'ax',
                 status: 'success',
                 durationMs: Date.now() - axStartedAt,

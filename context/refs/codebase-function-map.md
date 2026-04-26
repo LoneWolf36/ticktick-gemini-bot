@@ -15,12 +15,12 @@ derived metadata only — never raw titles, descriptions, or message text.</p>
 ## Classes
 
 <dl>
-<dt><a href="#QuotaExhaustedError">QuotaExhaustedError</a></dt>
-<dd><p>Error thrown when all API keys have been exhausted due to daily quota limits.</p>
-</dd>
 <dt><a href="#GeminiAnalyzer">GeminiAnalyzer</a></dt>
 <dd><p>Gemini AI analysis and generation engine.
 Handles model initialization, API key rotation, and summary generation.</p>
+</dd>
+<dt><a href="#QuotaExhaustedError">QuotaExhaustedError</a></dt>
+<dd><p>Error thrown when all API keys have been exhausted due to daily quota limits.</p>
 </dd>
 <dt><a href="#TickTickAdapter">TickTickAdapter</a></dt>
 <dd><p>TickTick Adapter - Narrow interface for all TickTick REST API interactions.
@@ -34,6 +34,14 @@ Wraps TickTickClient with validation, error classification, and structured loggi
 ## Constants
 
 <dl>
+<dt><a href="#INTENT_EXTRACTION_PROMPT">INTENT_EXTRACTION_PROMPT</a></dt>
+<dd><p>System prompt for Gemini-based intent extraction.
+This prompt was preserved from the AX framework instruction text.</p>
+</dd>
+<dt><a href="#intentActionSchema">intentActionSchema</a></dt>
+<dd><p>Response schema for Gemini intent extraction.
+Uses Google GenAI schema format.</p>
+</dd>
 <dt><a href="#REQUIRED_FIELDS">REQUIRED_FIELDS</a> : <code>Array.&lt;string&gt;</code></dt>
 <dd><p>List of required fields for a valid pipeline request context.</p>
 </dd>
@@ -168,24 +176,6 @@ Used by validateIntentAction to check checklistItems arrays.</p>
 ## Functions
 
 <dl>
-<dt><a href="#detectWorkStyleModeIntent">detectWorkStyleModeIntent(userMessage)</a> ⇒ <code>Object</code> | <code>Object</code> | <code>Object</code> | <code>null</code></dt>
-<dd><p>Detects work-style mode intents from user messages.</p>
-</dd>
-<dt><a href="#validateChecklistItems">validateChecklistItems(items)</a> ⇒ <code>Object</code></dt>
-<dd><p>Validates and normalizes checklist items from AX intent output.
-Caps at MAX_CHECKLIST_ITEMS, validates each item has a title,
-and strips invalid entries.</p>
-</dd>
-<dt><a href="#validateIntentAction">validateIntentAction(action, index, [options])</a> ⇒ <code>Object</code></dt>
-<dd><p>Validates an intent action object at runtime (defense in depth).
-Exported for testing purposes.</p>
-</dd>
-<dt><a href="#isDailyQuotaError">isDailyQuotaError(error)</a> ⇒ <code>boolean</code></dt>
-<dd><p>Detects if an error is a daily quota exceeded error (not transient rate limits).</p>
-</dd>
-<dt><a href="#createAxIntent">createAxIntent(keyManager, [config])</a> ⇒ <code>Object</code></dt>
-<dd><p>Creates an AX intent extraction service with quota-aware key rotation.</p>
-</dd>
 <dt><a href="#createGoalThemeProfile">createGoalThemeProfile(rawContext, [options])</a> ⇒ <code>object</code></dt>
 <dd><p>Creates a goal theme profile from raw context.</p>
 </dd>
@@ -216,6 +206,26 @@ Exported for testing purposes.</p>
 <dt><a href="#buildWorkStylePromptNote">buildWorkStylePromptNote([workStyleMode])</a> ⇒ <code>string</code></dt>
 <dd><p>Builds a prompt note based on the active work style mode.</p>
 </dd>
+<dt><a href="#detectWorkStyleModeIntent">detectWorkStyleModeIntent(userMessage)</a> ⇒ <code>Object</code> | <code>Object</code> | <code>Object</code> | <code>null</code></dt>
+<dd><p>Detects work-style mode intents from user messages.</p>
+</dd>
+<dt><a href="#validateChecklistItems">validateChecklistItems(items)</a> ⇒ <code>Object</code></dt>
+<dd><p>Validates and normalizes checklist items from AX intent output.
+Caps at MAX_CHECKLIST_ITEMS, validates each item has a title,
+and strips invalid entries.</p>
+</dd>
+<dt><a href="#validateIntentAction">validateIntentAction(action, index, [options])</a> ⇒ <code>Object</code></dt>
+<dd><p>Validates an intent action object at runtime (defense in depth).
+Exported for testing purposes.</p>
+</dd>
+<dt><a href="#extractIntentsWithGemini">extractIntentsWithGemini(gemini, userMessage, [options])</a> ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code></dt>
+<dd><p>Extracts structured intent actions from a user message using Gemini.</p>
+</dd>
+<dt><a href="#createIntentExtractor">createIntentExtractor(gemini)</a> ⇒ <code>Object</code></dt>
+<dd><p>Creates a Gemini-based intent extraction service.</p>
+</dd>
+<dt><del><a href="#createAxIntent">createAxIntent()</a></del></dt>
+<dd></dd>
 <dt><a href="#_coerceDate">_coerceDate()</a></dt>
 <dd><p>Gets local current date components formatted by the system timezone.</p>
 </dd>
@@ -1097,6 +1107,20 @@ Standard error codes used across the adapter and pipeline.
 | AUTH_ERROR | <code>string</code> | <code>&quot;AUTH_ERROR&quot;</code> | 
 | API_ERROR | <code>string</code> | <code>&quot;API_ERROR&quot;</code> | 
 
+<a name="INTENT_EXTRACTION_PROMPT"></a>
+
+## INTENT\_EXTRACTION\_PROMPT
+System prompt for Gemini-based intent extraction.
+This prompt was preserved from the AX framework instruction text.
+
+**Kind**: global constant  
+<a name="intentActionSchema"></a>
+
+## intentActionSchema
+Response schema for Gemini intent extraction.
+Uses Google GenAI schema format.
+
+**Kind**: global constant  
 <a name="REQUIRED_FIELDS"></a>
 
 ## REQUIRED\_FIELDS : <code>Array.&lt;string&gt;</code>
@@ -1349,102 +1373,6 @@ Node.js network error codes to be classified as NETWORK_ERROR.
 Set of all valid typed error codes.
 
 **Kind**: global constant  
-<a name="detectWorkStyleModeIntent"></a>
-
-## detectWorkStyleModeIntent(userMessage) ⇒ <code>Object</code> \| <code>Object</code> \| <code>Object</code> \| <code>null</code>
-Detects work-style mode intents from user messages.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| userMessage | <code>string</code> | The user's message text |
-
-<a name="validateChecklistItems"></a>
-
-## validateChecklistItems(items) ⇒ <code>Object</code>
-Validates and normalizes checklist items from AX intent output.
-Caps at MAX_CHECKLIST_ITEMS, validates each item has a title,
-and strips invalid entries.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - Validation result  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| items | <code>Array</code> | Raw checklist items from AX output |
-
-<a name="validateIntentAction"></a>
-
-## validateIntentAction(action, index, [options]) ⇒ <code>Object</code>
-Validates an intent action object at runtime (defense in depth).
-Exported for testing purposes.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - Validation result with error messages  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| action | <code>object</code> | The action object to validate |
-| index | <code>number</code> | The index of the action in the array |
-| [options] | <code>object</code> | Validation options |
-| [options.requireR1Fields] | <code>boolean</code> | Whether to require the R1 action field set |
-
-<a name="isDailyQuotaError"></a>
-
-## isDailyQuotaError(error) ⇒ <code>boolean</code>
-Detects if an error is a daily quota exceeded error (not transient rate limits).
-
-**Kind**: global function  
-**Returns**: <code>boolean</code> - True if this is a daily quota error  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| error | <code>Error</code> \| <code>object</code> | The error object to check |
-
-<a name="createAxIntent"></a>
-
-## createAxIntent(keyManager, [config]) ⇒ <code>Object</code>
-Creates an AX intent extraction service with quota-aware key rotation.
-
-**Kind**: global function  
-**Returns**: <code>Object</code> - Intent extraction service  
-**Throws**:
-
-- <code>Error</code> If keyManager doesn't implement required methods
-
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| keyManager | <code>object</code> |  | Key manager interface for API key rotation |
-| keyManager.getActiveKey | <code>function</code> |  | Returns the current active API key |
-| keyManager.markKeyUnavailable | <code>function</code> |  | Marks a key as unavailable due to quota |
-| keyManager.rotateKey | <code>function</code> |  | Rotates to the next available key |
-| [keyManager.getKeyCount] | <code>function</code> |  | Returns the total number of keys (optional) |
-| [config] | <code>Object</code> | <code>{}</code> | Configuration options |
-| [config.model] | <code>string</code> | <code>&quot;&#x27;gemini-2.5-flash&#x27;&quot;</code> | Model for intent extraction |
-
-<a name="createAxIntent..extractIntents"></a>
-
-### createAxIntent~extractIntents(userMessage, [options]) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
-Extracts structured intent actions from a user message.
-
-**Kind**: inner method of [<code>createAxIntent</code>](#createAxIntent)  
-**Returns**: <code>Promise.&lt;Array.&lt;object&gt;&gt;</code> - Array of validated intent actions  
-**Throws**:
-
-- [<code>QuotaExhaustedError</code>](#QuotaExhaustedError) When all API keys are exhausted
-- <code>Error</code> When AX generation fails or validation fails
-
-
-| Param | Type | Description |
-| --- | --- | --- |
-| userMessage | <code>string</code> | The user's natural language message |
-| [options] | <code>object</code> | Extraction options |
-| [options.currentDate] | <code>string</code> | Current date for context (e.g., "2026-03-31") |
-| [options.availableProjects] | <code>Array.&lt;string&gt;</code> | List of available project names |
-| [options.requestId] | <code>string</code> | Optional request ID for logging |
-
 <a name="createGoalThemeProfile"></a>
 
 ## createGoalThemeProfile(rawContext, [options]) ⇒ <code>object</code>
@@ -1572,6 +1500,87 @@ Builds a prompt note based on the active work style mode.
 | --- | --- | --- | --- |
 | [workStyleMode] | <code>string</code> | <code>&quot;store.MODE_STANDARD&quot;</code> | The active work style mode |
 
+<a name="detectWorkStyleModeIntent"></a>
+
+## detectWorkStyleModeIntent(userMessage) ⇒ <code>Object</code> \| <code>Object</code> \| <code>Object</code> \| <code>null</code>
+Detects work-style mode intents from user messages.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| userMessage | <code>string</code> | The user's message text |
+
+<a name="validateChecklistItems"></a>
+
+## validateChecklistItems(items) ⇒ <code>Object</code>
+Validates and normalizes checklist items from AX intent output.
+Caps at MAX_CHECKLIST_ITEMS, validates each item has a title,
+and strips invalid entries.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - Validation result  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| items | <code>Array</code> | Raw checklist items from AX output |
+
+<a name="validateIntentAction"></a>
+
+## validateIntentAction(action, index, [options]) ⇒ <code>Object</code>
+Validates an intent action object at runtime (defense in depth).
+Exported for testing purposes.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - Validation result with error messages  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| action | <code>object</code> | The action object to validate |
+| index | <code>number</code> | The index of the action in the array |
+| [options] | <code>object</code> | Validation options |
+| [options.requireR1Fields] | <code>boolean</code> | Whether to require the R1 action field set |
+
+<a name="extractIntentsWithGemini"></a>
+
+## extractIntentsWithGemini(gemini, userMessage, [options]) ⇒ <code>Promise.&lt;Array.&lt;object&gt;&gt;</code>
+Extracts structured intent actions from a user message using Gemini.
+
+**Kind**: global function  
+**Returns**: <code>Promise.&lt;Array.&lt;object&gt;&gt;</code> - Array of validated intent actions  
+**Throws**:
+
+- [<code>QuotaExhaustedError</code>](#QuotaExhaustedError) When all API keys are exhausted
+- <code>Error</code> When generation fails or validation fails
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| gemini | [<code>GeminiAnalyzer</code>](#GeminiAnalyzer) | GeminiAnalyzer instance |
+| userMessage | <code>string</code> | The user's natural language message |
+| [options] | <code>object</code> | Extraction options |
+| [options.currentDate] | <code>string</code> | Current date for context (e.g., "2026-03-31") |
+| [options.availableProjects] | <code>Array.&lt;string&gt;</code> | List of available project names |
+| [options.requestId] | <code>string</code> | Optional request ID for logging |
+
+<a name="createIntentExtractor"></a>
+
+## createIntentExtractor(gemini) ⇒ <code>Object</code>
+Creates a Gemini-based intent extraction service.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - Intent extraction service  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| gemini | [<code>GeminiAnalyzer</code>](#GeminiAnalyzer) | GeminiAnalyzer instance |
+
+<a name="createAxIntent"></a>
+
+## ~~createAxIntent()~~
+***Use createIntentExtractor instead***
+
+**Kind**: global function  
 <a name="_coerceDate"></a>
 
 ## \_coerceDate()
@@ -2226,7 +2235,7 @@ Create a pipeline instance that orchestrates intent extraction, normalization,a
 | Param | Type | Description |
 | --- | --- | --- |
 | options | <code>Object</code> |  |
-| options.axIntent | <code>Object</code> | Intent extractor with `extractIntents(message, opts)` method |
+| options.intentExtractor | <code>Object</code> | Intent extractor with `extractIntents(message, opts)` method |
 | options.normalizer | <code>Object</code> | Normalizer module with `normalize(action, tasks, projects, opts)` method |
 | options.adapter | [<code>TickTickAdapter</code>](#TickTickAdapter) | TickTick adapter instance |
 | [options.observability] | <code>Object</code> | Optional observability emitter (see createPipelineObservability) |

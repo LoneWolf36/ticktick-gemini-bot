@@ -4,11 +4,11 @@ An AI-powered Telegram bot that connects to TickTick and acts as a proactive acc
 
 ## Project Overview
 
-*   **Technologies:** Node.js (ESM), Express, Grammy (Telegram Bot Framework), Gemini AI (via `@google/generative-ai` and `@ax-llm/ax`), Redis (ioredis), node-cron.
+*   **Technologies:** Node.js (ESM), Express, Grammy (Telegram Bot Framework), Gemini AI (via `@google/genai`), Redis (ioredis), node-cron.
 *   **Core Purpose:** Automates task management by parsing natural language intents from Telegram, normalizing them into structured TickTick operations, and applying them via a dedicated adapter.
 *   **Architecture:**
     *   **Bot Layer:** Handles Telegram commands (`/scan`, `/briefing`, `/reorg`, etc.) and free-form messages.
-    *   **Write Pipeline:** `AX Intent Extraction` -> `Deterministic Normalization` -> `TickTick Adapter Execution`.
+    *   **Write Pipeline:** `Intent Extraction` -> `Deterministic Normalization` -> `TickTick Adapter Execution`.
     *   **Summary Surfaces:** Scheduler/briefing/weekly paths are read-only and do not mutate TickTick.
 
 ## Building and Running
@@ -45,7 +45,7 @@ The project uses **Cavekit** for spec-driven development. Domain kits are in `co
     4.  **Git Discipline:** Never commit agent directories (`.claude/`, `.gemini/`, `.codex/`) or secrets.
 
 ### Implementation Patterns
-*   **Deterministic Normalization:** All AI outputs from `ax-intent.js` MUST pass through `normalizer.js` to ensure clean titles, suppressed noise, and resolved project IDs.
+*   **Deterministic Normalization:** All AI outputs from `intent-extraction.js` MUST pass through `normalizer.js` to ensure clean titles, suppressed noise, and resolved project IDs.
 *   **Adapter Pattern:** All TickTick write operations MUST flow through `services/ticktick-adapter.js`. Read-only display/status paths may use the low-level client where the repository guidelines explicitly allow it, but bot write flows must not bypass the adapter/pipeline.
 *   **Error Handling:** Use the `QuotaExhaustedError` for AI key rotation and ensure the pipeline handles TickTick API unavailability gracefully (cavekit-pipeline-hardening R12).
 

@@ -41,7 +41,7 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 
 **Redis**: Kept for Render deployment (ephemeral filesystem). For local dev or VPS hosting, JSON file fallback works. Future simplification: remove dual-backend code, commit to one backend, remove separate `user:{userId}:urgent_mode` keys.
 
-**AX Framework (@ax-llm/ax)**: Currently used for structured intent extraction in `services/ax-intent.js`. Analysis shows Gemini's native `responseSchema` provides stronger guarantees than AX's text-based schema instructions. **Future action**: Replace AX with direct Gemini calls using `responseSchema`. Estimated effort: ~100-150 lines replacement code. Not urgent — the current implementation works.
+**Intent Extraction (@ax-llm/ax successor)**: Direct Gemini API calls using `responseSchema`. The implementation uses `GeminiAnalyzer._executeWithFailover` with structured JSON schema output, giving intent extraction access to model fallback chains and eliminating the dual rotation system.
 
 **TickTick Checklist API**: Expected to be supported. Task creation endpoint (`POST /task`) accepts `items` array with `{title, status}` objects based on API structure analysis. No documented item limit. `desc` field provides checklist-level context. No separate checklist endpoint exists — checklists are inline in the task object. **Note**: Not yet used in production code; verify with a live API call before building checklist features (spec 005).
 
@@ -49,7 +49,7 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 
 ### Service modules (source of truth for business logic)
 - `services/pipeline.js` — Orchestrates the structured write path: message → AX intent extraction → deterministic normalization → TickTick adapter execution. Exposes `processMessageWithContext()` for callers that need automatic context construction. This is the **only** path for new task-writing flows.
-- `services/ax-intent.js` — Extracts structured `Intent Action` objects from natural language using Gemini via the AX framework (@ax-llm/ax).
+- `services/intent-extraction.js` — Extracts structured `Intent Action` objects from natural language using Gemini via direct `responseSchema` API calls.
 - `services/normalizer.js` — Deterministic cleaner that maps intent actions to TickTick-compatible fields (title truncation, filler stripping, repeatHint → RRULE, projectHint → project ID).
 - `services/ticktick-adapter.js` — Executes normalized actions against the TickTick REST API (create/update/complete/delete). Handles retries, OAuth refresh, and project-move rollback.
 - `services/ticktick.js` — Low-level TickTick API client with OAuth2 token management and CRUD operations.

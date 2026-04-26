@@ -5,7 +5,8 @@ description: |
   Output: Gap analysis report showing which requirements are done, pending, and blocked
 
   Read-only analysis of source code — no source files are modified.
-  Writing the report to `$ARTIFACTS_DIR/gap-analysis.md` is expected.
+  Writing the gap-analysis report to `$ARTIFACTS_DIR/gap-analysis.md` is expected and allowed.
+  Do NOT modify any files under the project source tree.
   Equivalent to /ck:check but with Archon's structured output.
 
 nodes:
@@ -18,7 +19,7 @@ nodes:
     prompt: |
       # Cavekit Validate — Scan Domain Kits
 
-      **CONSTRAINT: Do NOT modify any source code files. Writing the report to `$ARTIFACTS_DIR/gap-analysis.md` IS expected.**
+      **CONSTRAINT: Do NOT modify any source code files. Writing the report to `$ARTIFACTS_DIR/gap-analysis.md` IS expected and allowed.**
 
       **Focus**: $ARGUMENTS (empty = all kits)
 
@@ -29,16 +30,31 @@ nodes:
       The Archon worktree may not contain `context/kits/`. Find the kits:
 
       ```bash
-      # Try worktree first
+      # Try worktree first, then main checkout, then search
       if [ -d context/kits ]; then
         KITS_DIR="context/kits"
       else
-        # Fall back to the main checkout (parent of worktree or known path)
-        KITS_DIR=$(git rev-parse --show-toplevel 2>/dev/null)/context/kits
-        if [ ! -d "$KITS_DIR" ]; then
-          # Last resort: search upward from cwd
-          KITS_DIR=$(find "$(pwd)" -maxdepth 4 -type d -name kits 2>/dev/null | head -1)
+        # Archon worktrees are typically inside .archon/worktrees/ under the main repo
+        REPO_ROOT=$(git rev-parse --show-toplevel 2>/dev/null)
+        if [ -d "$REPO_ROOT/context/kits" ]; then
+          KITS_DIR="$REPO_ROOT/context/kits"
+        else
+          # Walk up from cwd to find context/kits
+          KITS_DIR=""
+          dir="$(pwd)"
+          for i in $(seq 1 5); do
+            if [ -d "$dir/context/kits" ]; then
+              KITS_DIR="$dir/context/kits"
+              break
+            fi
+            dir="$(dirname "$dir")"
+          done
         fi
+      fi
+
+      if [ -z "$KITS_DIR" ] || [ ! -f "$KITS_DIR/cavekit-overview.md" ]; then
+        echo "ERROR: Could not locate context/kits/ directory. Aborting." >&2
+        exit 1
       fi
       echo "KITS_DIR=$KITS_DIR"
       ```
@@ -136,7 +152,7 @@ nodes:
     prompt: |
       # Cavekit Validate — Verify Implementation
 
-      **CONSTRAINT: Do NOT modify any source code files. Appending to `$ARTIFACTS_DIR/gap-analysis.md` IS expected.**
+      **CONSTRAINT: Do NOT modify any source code files. Appending to `$ARTIFACTS_DIR/gap-analysis.md` IS expected and allowed.**
 
       Read `$ARTIFACTS_DIR/gap-analysis.md` for the status matrix.
 

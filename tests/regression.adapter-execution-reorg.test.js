@@ -1,13 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { AxGen } from '@ax-llm/ax';
 import axios from 'axios';
 
 import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../services/shared-utils.js';
 import { executeActions, registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer, buildWorkStylePromptNote } from '../services/gemini.js';
-import { createAxIntent, detectWorkStyleModeIntent, QuotaExhaustedError } from '../services/ax-intent.js';
+import { createIntentExtractor, detectWorkStyleModeIntent, QuotaExhaustedError } from '../services/intent-extraction.js';
 import { createPipeline } from '../services/pipeline.js';
 import { createPipelineObservability } from '../services/pipeline-observability.js';
 import { TickTickAdapter } from '../services/ticktick-adapter.js';
@@ -493,7 +492,7 @@ test('pipeline retries once and rolls back earlier successful writes', async () 
   };
 
   const pipeline = createPipeline({
-    axIntent: {
+    intentExtractor: {
       extractIntents: async () => [{ type: 'create' }, { type: 'create' }],
     },
     normalizer: {
@@ -589,7 +588,7 @@ test('pipeline classifies rollback failures when compensation is unsupported', a
   };
 
   const pipeline = createPipeline({
-    axIntent: {
+    intentExtractor: {
       extractIntents: async () => [{ type: 'complete' }],
     },
     normalizer: {
@@ -766,11 +765,13 @@ test('GeminiAnalyzer classifies invalid API key errors and repairs sloppy JSON',
 
 test('GeminiAnalyzer rotates to next key on invalid-key errors', async () => {
   const analyzer = new GeminiAnalyzer(['dummy-key-1', 'dummy-key-2']);
+  let callCount = 0;
 
   const result = await analyzer._executeWithFailover(
     'noop prompt',
-    async () => {
-      if (analyzer._activeKeyIndex === 0) {
+    async (ai, prompt, model) => {
+      callCount++;
+      if (callCount === 1) {
         const err = new Error('API key expired. Please renew the API key.');
         err.status = 400;
         throw err;
@@ -781,6 +782,7 @@ test('GeminiAnalyzer rotates to next key on invalid-key errors', async () => {
 
   assert.equal(analyzer._activeKeyIndex, 1);
   assert.ok(result?.text);
+  assert.equal(callCount, 2, 'Should have tried 2 keys before succeeding');
 });
 
 test('runDailyBriefingJob suppresses scheduled briefings in focus mode', async () => {

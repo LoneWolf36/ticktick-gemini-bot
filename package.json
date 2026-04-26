@@ -19,7 +19,6 @@
         "docs:map": "jsdoc2md 'services/**/*.js' 'bot/**/*.js' server.js > context/refs/codebase-function-map.md"
     },
     "dependencies": {
-        "@ax-llm/ax": "^19.0.13",
         "@google/genai": "^1.50.1",
         "ajv": "^8.18.0",
         "ajv-formats": "^3.0.1",

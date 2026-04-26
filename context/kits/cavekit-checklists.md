@@ -83,7 +83,7 @@ Checklist/subtask extraction, creation, and clarification for create-time task o
 
 ## Validation Action Items — 2026-04-19
 
-- [x] Audit R1 (Checklist Intent Extraction): `tests/ax-intent.test.js` verifies AX emits one create action with structured `checklistItems`, preserving a single parent objective plus ordered sub-steps without changing mutation intent shapes.
+- [x] Audit R1 (Checklist Intent Extraction): `tests/intent-extraction.test.js` verifies AX emits one create action with structured `checklistItems`, preserving a single parent objective plus ordered sub-steps without changing mutation intent shapes.
 - [x] Audit R2 (Checklist vs Multi-Task Disambiguation): `tests/regression.checklist-clarification.test.js` verifies one-parent checklist creation, separate multi-task creation, and clarification / conservative fallback when phrasing is ambiguous.
 - [x] Audit R3 (Checklist Item Normalization): `services/normalizer.js` cleans checklist item titles independently, flattens to one checklist level, caps items at 30 with warnings, and normalizes status/sortOrder; `tests/normalizer.test.js` covers trimming, truncation, invalid-item dropping, and over-limit behavior.
 - [x] Audit R4 (Adapter Checklist Creation): `services/ticktick-adapter.js` maps optional `checklistItems` into TickTick payload `items`, assigns stable sort order, and drops malformed items safely; `tests/regression.adapter-execution-reorg.test.js` verifies payload mapping directly.

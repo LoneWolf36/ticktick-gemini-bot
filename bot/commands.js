@@ -16,7 +16,7 @@ import {
 } from './utils.js';
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
-import { detectWorkStyleModeIntent } from '../services/ax-intent.js';
+import { detectWorkStyleModeIntent } from '../services/intent-extraction.js';
 import { detectBehavioralPatterns } from '../services/behavioral-patterns.js';
 
 // Rate limiter removed 2026-04-19 (cavekit-validate Phase 3): YAGNI for 1-user MVP.

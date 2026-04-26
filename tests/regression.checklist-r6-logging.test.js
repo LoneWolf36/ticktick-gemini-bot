@@ -35,7 +35,7 @@ test('R6: checklist telemetry shows extracted->normalized->adapter mapping with 
   });
 
   const pipeline = createPipeline({
-    axIntent: {
+    intentExtractor: {
       extractIntents: async () => ([
         {
           type: 'create',
@@ -76,15 +76,15 @@ test('R6: checklist telemetry shows extracted->normalized->adapter mapping with 
   assert.ok(Array.isArray(createPayload.items));
   assert.equal(createPayload.items.length, 2, 'adapter payload should contain only valid checklist items');
 
-  const axEvent = observed.find((entry) => entry.event.eventType === 'pipeline.ax.completed');
+  const intentEvent = observed.find((entry) => entry.event.eventType === 'pipeline.intent.completed');
   const normalizeEvent = observed.find((entry) => entry.event.eventType === 'pipeline.normalize.completed');
   const executeEvent = observed.find((entry) => entry.event.eventType === 'pipeline.execute.succeeded');
 
-  assert.ok(axEvent, 'ax event should exist');
+  assert.ok(intentEvent, 'intent event should exist');
   assert.ok(normalizeEvent, 'normalize event should exist');
   assert.ok(executeEvent, 'execute event should exist');
 
-  assert.deepEqual(axEvent.event.metadata.checklistIntentShape, [{ intentIndex: 0, checklistItemCount: 3 }]);
+  assert.deepEqual(intentEvent.event.metadata.checklistIntentShape, [{ intentIndex: 0, checklistItemCount: 3 }]);
   assert.deepEqual(normalizeEvent.event.metadata.checklistActionShape, [{ actionIndex: 0, sourceIntentIndex: 0, checklistItemCount: 2 }]);
   assert.equal(executeEvent.event.metadata.checklistItemCount, 2);
   assert.equal(executeEvent.event.metadata.adapterChecklistPayloadCount, 2);

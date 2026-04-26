@@ -62,14 +62,14 @@ source: "archon workflow run cavekit-validate"
 
 ## Execution Plan
 
-### Phase 1 — Fix validation signal quality
-1. Update `.archon/workflows/cavekit-validate.yaml` so output behavior matches read-only semantics and kit lookup uses the intended checkout path.
-2. Decide how validation should classify `.archon/` tooling files.
+### Phase 1 — Fix validation signal quality ✅ COMPLETED
+1. ✅ Updated `.archon/workflows/cavekit-validate.yaml` — clarified read-only vs artifact-write constraint, improved kit path resolution with validation and abort-on-failure.
+2. ✅ `.archon/` tooling classification decided in Phase 3 (excluded from product drift checks).
 
-### Phase 2 — Reconcile spec status
-1. Audit current implementation against `cavekit-task-pipeline R1`, `R4`, and `cavekit-work-style R1`.
-2. Mark completed acceptance criteria in the relevant kits.
-3. Reconcile `cavekit-overview.md` with per-requirement dependency declarations.
+### Phase 2 — Reconcile spec status ✅ COMPLETED
+1. ✅ Audited implementation against `cavekit-task-pipeline R1`, `R4`, and `cavekit-work-style R1` — all acceptance criteria confirmed with code evidence.
+2. ✅ All 95/96 acceptance criteria already marked `[x]` in kits. Only unchecked box is Cleanup R5 manual smoke test.
+3. ✅ `cavekit-overview.md` dependency graph reconciled — shows root-requirement tiers, mismatch resolved.
 
 ### Phase 3 — Resolve drift ✅ COMPLETED
 

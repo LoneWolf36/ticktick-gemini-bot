@@ -49,7 +49,7 @@ Alternatives considered:
 ### 3. The pipeline needs one canonical request context assembled before AX runs
 
 Decision:
-- Standardize a single pipeline context object assembled at every entry point before `axIntent.extractIntents()` is called.
+- Standardize a single pipeline context object assembled at every entry point before `intentExtractor.extractIntents()` is called.
 - The context should include `requestId`, `entryPoint`, `userMessage`, `currentDate`, canonical timezone from stored user context, available projects, optional existing task snapshot, and the caller-supplied execution mode string (`interactive`, `scan`, `review`, `poll`, or dev/debug aliases).
 
 Rationale:
@@ -80,7 +80,7 @@ Alternatives considered:
 ### 5. Regression coverage should move to direct pipeline doubles and burst tests
 
 Decision:
-- Add direct tests around `createPipeline()` with mocked `axIntent`, `normalizer`, and `TickTickAdapter`.
+- Add direct tests around `createPipeline()` with mocked `intentExtractor`, `normalizer`, and `TickTickAdapter`.
 - Cover create, update, complete, delete, non-task, malformed AX output, validation failure, adapter failure, retry/rollback, and quota rotation through the pipeline surface itself.
 - Add a mocked burst-concurrency regression that exercises tens of requests and verifies deterministic outcomes without live API calls.
 

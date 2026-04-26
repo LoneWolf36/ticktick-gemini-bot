@@ -16,9 +16,9 @@ Core inputs today:
 - optional timezone or date context
 - adapter project lookup results
 
-### AX Intent Action
+### Intent Extraction Action
 
-Observed in `services/ax-intent.js`.
+Observed in `services/intent-extraction.js`.
 
 Current extracted fields:
 - `type`
@@ -225,14 +225,14 @@ Fields:
 
 Request lifecycle:
 1. `received`
-2. `ax_extracted` or `non_task`
+2. `intent_extracted` or `non_task`
 3. `normalized`
 4. `executing`
 5. `completed`
 
 Failure lifecycle:
 1. `received`
-2. `ax_failed` or `execution_failed`
+2. `intent_failed` or `execution_failed`
 3. optional `retrying`
 4. optional `rollback_in_progress`
 5. `rollback_completed` or `rollback_failed`

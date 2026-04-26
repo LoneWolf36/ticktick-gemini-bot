@@ -28,7 +28,7 @@ Telegram Message
        │
        ▼
 ┌─────────────────────┐
-│  AX Intent Extract  │  Gemini 2.5 Flash → structured Intent Action
+│  Intent Extract  │  Gemini 2.5 Flash → structured Intent Action
 │  (Structured LLM)   │  type, title, content, projectHint, dueDate, …
 └────────┬────────────┘
          │ Intent Action (JSON)
@@ -193,7 +193,7 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 │   ├── callbacks.js             # Inline keyboard handlers (approve/skip/drop/reorg)
 │   └── utils.js                 # Card builders, formatters, priority map, schedule logic
 ├── services/
-│   ├── ax-intent.js             # AX structured intent extraction (Gemini-backed)
+│   ├── intent-extraction.js        # Structured intent extraction (Gemini-backed)
 │   ├── normalizer.js            # Deterministic normalizer (intent → TickTick fields)
 │   ├── ticktick-adapter.js      # TickTick REST API adapter (create/update/complete/delete)
 │   ├── ticktick.js              # Low-level TickTick API client (OAuth2 + CRUD)

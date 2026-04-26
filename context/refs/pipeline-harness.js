@@ -33,7 +33,7 @@ export function createPipelineHarness({
         delete: [],
     };
 
-    const axIntent = {
+    const intentExtractor = {
         extractIntents: async (userMessage, options = {}) => {
             axCalls.push({ userMessage, options });
             if (typeof intents === 'function') {
@@ -87,7 +87,7 @@ export function createPipelineHarness({
         : { normalizeActions: () => normalizedActions ?? [] };
 
     const pipeline = createPipeline({
-        axIntent,
+        intentExtractor,
         normalizer: normalizerImpl,
         adapter,
         ...(observability ? { observability } : {}),

@@ -1,12 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { AxGen } from '@ax-llm/ax';
 
 import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../services/shared-utils.js';
 import { executeActions, registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer, buildWorkStylePromptNote } from '../services/gemini.js';
-import { createAxIntent, detectWorkStyleModeIntent, QuotaExhaustedError } from '../services/ax-intent.js';
+import { createIntentExtractor, detectWorkStyleModeIntent, QuotaExhaustedError } from '../services/intent-extraction.js';
 import { createPipeline } from '../services/pipeline.js';
 import { createPipelineObservability } from '../services/pipeline-observability.js';
 import { TickTickAdapter } from '../services/ticktick-adapter.js';
@@ -491,7 +490,7 @@ test('adapter failure preserves parsed intent and normalized action for retry', 
   };
 
   const pipeline = createPipeline({
-    axIntent: {
+    intentExtractor: {
       extractIntents: async () => [
         { type: 'create', title: 'Test task', content: 'test content', priority: 3 },
       ],

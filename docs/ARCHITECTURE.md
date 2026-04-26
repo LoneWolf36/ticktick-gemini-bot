@@ -14,7 +14,7 @@ Domain kits live in `context/kits/`. See `context/kits/cavekit-overview.md` for 
 Telegram Message
     → Bot Handler (bot/commands.js, bot/callbacks.js)
     → Pipeline (services/pipeline.js)
-    → AX Intent Extraction (services/ax-intent.js)
+    → Intent Extraction (services/intent-extraction.js)
     → Normalizer (services/normalizer.js)
     → TickTick Adapter (services/ticktick-adapter.js)
     → TickTick REST API

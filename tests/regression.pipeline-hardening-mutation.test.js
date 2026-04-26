@@ -1,12 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
-import { AxGen } from '@ax-llm/ax';
 
 import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../services/shared-utils.js';
 import { executeActions, registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer, buildWorkStylePromptNote } from '../services/gemini.js';
-import { createAxIntent, detectWorkStyleModeIntent, QuotaExhaustedError } from '../services/ax-intent.js';
+import { createIntentExtractor, detectWorkStyleModeIntent, QuotaExhaustedError } from '../services/intent-extraction.js';
 import { createPipeline } from '../services/pipeline.js';
 import { createPipelineObservability } from '../services/pipeline-observability.js';
 import { TickTickAdapter } from '../services/ticktick-adapter.js';
@@ -244,7 +243,7 @@ test('pipeline returns validation failure when all normalized actions are invali
 
 test('pipeline classifies quota failures from AX extraction', async () => {
   const quotaError = new QuotaExhaustedError('All API keys exhausted');
-  const axIntent = {
+  const intentExtractor = {
     extractIntents: async () => {
       throw quotaError;
     },
@@ -254,7 +253,7 @@ test('pipeline classifies quota failures from AX extraction', async () => {
     listActiveTasks: async () => [],
   };
   const pipeline = createPipeline({
-    axIntent,
+    intentExtractor,
     normalizer: { normalizeActions: () => [] },
     adapter,
     observability: createPipelineObservability({ logger: null }),
@@ -279,7 +278,7 @@ test('pipeline classifies unexpected normalization errors', async () => {
     listActiveTasks: async () => [],
   };
   const pipeline = createPipeline({
-    axIntent: {
+    intentExtractor: {
       extractIntents: async () => [{ type: 'create', title: 'Boom' }],
     },
     normalizer: {
@@ -304,49 +303,97 @@ test('pipeline classifies unexpected normalization errors', async () => {
   assert.equal(result.requestId, 'req-unexpected');
 });
 
-test('createAxIntent rotates configured keys before final quota failure', async () => {
-  const originalForward = AxGen.prototype.forward;
-  let forwardCalls = 0;
-  const keyManager = {
-    activeIndex: 0,
-    markedReasons: [],
-    rotationCount: 0,
-    getActiveKey() {
-      return `key-${this.activeIndex}`;
+test('createIntentExtractor propagates QuotaExhaustedError when all models exhausted', async () => {
+  // Mock GeminiAnalyzer that throws quota errors
+  let callCount = 0;
+  const mockGemini = {
+    _keys: ['key-0', 'key-1'],
+    _activeKeyIndex: 0,
+    _modelTiers: { fast: ['gemini-2.5-flash'] },
+    _exhaustedUntilByKey: [null, null],
+    _keyUnavailableReason: [null, null],
+    _modelKeyExhaustion: new Map(),
+
+    _isKeyAvailable(index) {
+      const until = this._exhaustedUntilByKey[index];
+      if (!until) return true;
+      if (Date.now() > until) {
+        this._exhaustedUntilByKey[index] = null;
+        this._keyUnavailableReason[index] = null;
+        return true;
+      }
+      return false;
     },
-    getKeyCount() {
-      return 2;
+
+    _areAllKeysUnavailable() {
+      for (let i = 0; i < this._keys.length; i++) {
+        if (this._isKeyAvailable(i)) return false;
+      }
+      return true;
     },
-    markKeyUnavailable(reason) {
-      this.markedReasons.push(reason);
+
+    _getQuotaResetMs() {
+      return 24 * 60 * 60 * 1000;
     },
-    async rotateKey() {
-      this.rotationCount += 1;
-      this.activeIndex += 1;
-      return this.activeIndex < this.getKeyCount();
+
+    _markActiveKeyUnavailable(reason, untilMs) {
+      this._exhaustedUntilByKey[this._activeKeyIndex] = untilMs;
+      this._keyUnavailableReason[this._activeKeyIndex] = reason;
+    },
+
+    _markModelKeyExhausted(model, keyIndex, reason, untilMs) {
+      if (!this._modelKeyExhaustion.has(model)) {
+        this._modelKeyExhaustion.set(model,
+          new Array(this._keys.length).fill(null).map(() => ({ until: null, reason: null }))
+        );
+      }
+      this._modelKeyExhaustion.get(model)[keyIndex] = { until: untilMs, reason };
+    },
+
+    _findNextAvailableKeyForModel(model, afterIndex) {
+      for (let i = 1; i <= this._keys.length; i++) {
+        const idx = (afterIndex + i) % this._keys.length;
+        const state = this._modelKeyExhaustion.get(model)?.[idx];
+        if (state?.until && Date.now() < state.until) continue;
+        return idx;
+      }
+      return -1;
+    },
+
+    _areAllKeysExhaustedForModel(model) {
+      if (!this._modelKeyExhaustion.has(model)) return false;
+      for (let i = 0; i < this._keys.length; i++) {
+        const state = this._modelKeyExhaustion.get(model)[i];
+        if (!state?.until || Date.now() >= state.until) return false;
+      }
+      return true;
+    },
+
+    isTierExhausted(modelTier) {
+      const chain = this._modelTiers[modelTier];
+      for (const model of chain) {
+        if (!this._areAllKeysExhaustedForModel(model)) return false;
+      }
+      return true;
+    },
+
+    async _executeWithFailover(prompt, apiCallFn) {
+      callCount += 1;
+      // Throw QUOTA_EXHAUSTED which will be caught and converted to QuotaExhaustedError
+      const error = new Error('QUOTA_EXHAUSTED');
+      error.status = 429;
+      throw error;
     },
   };
 
-  AxGen.prototype.forward = async function forwardQuotaError() {
-    forwardCalls += 1;
-    const error = new Error('RESOURCE_EXHAUSTED: quota exceeded per day');
-    error.status = 429;
-    throw error;
-  };
+  const intentExtractor = createIntentExtractor(mockGemini);
+  await assert.rejects(
+    () => intentExtractor.extractIntents('schedule rent', { currentDate: '2026-03-10', availableProjects: ['Inbox'], requestId: 'req-ax-quota' }),
+    QuotaExhaustedError,
+  );
 
-  try {
-    const axIntent = createAxIntent(keyManager);
-    await assert.rejects(
-      () => axIntent.extractIntents('schedule rent', { currentDate: '2026-03-10', availableProjects: ['Inbox'], requestId: 'req-ax-quota' }),
-      QuotaExhaustedError,
-    );
-  } finally {
-    AxGen.prototype.forward = originalForward;
-  }
-
-  assert.equal(forwardCalls, 2);
-  assert.equal(keyManager.rotationCount, 1);
-  assert.deepEqual(keyManager.markedReasons, ['daily_quota', 'daily_quota']);
+  // Should have called _executeWithFailover at least once before throwing QuotaExhaustedError
+  assert.ok(callCount >= 1, `Expected at least 1 call, got ${callCount}`);
 });
 
 test('burst pipeline requests remain isolated and deterministic', async () => {
@@ -389,7 +436,7 @@ test('burst pipeline requests remain isolated and deterministic', async () => {
   };
 
   const pipeline = createPipeline({
-    axIntent: {
+    intentExtractor: {
       extractIntents: async (userMessage) => ([{
         type: 'create',
         title: userMessage.includes('fail') ? `FAIL-${userMessage}` : `OK-${userMessage}`,
@@ -898,7 +945,7 @@ test('WP06 T017: observability failure events include failureClass and rolledBac
 
 test('WP06 T020: fail-closed — malformed AX returns user-safe message without leaking diagnostics', async () => {
   const pipeline = createPipeline({
-    axIntent: {
+    intentExtractor: {
       extractIntents: async () => 'garbage: <html>error page</html>',
     },
     normalizer: {
@@ -928,7 +975,7 @@ test('WP06 T020: fail-closed — malformed AX returns user-safe message without 
 
 test('WP06 T020: fail-closed — validation failure returns user-safe message', async () => {
   const pipeline = createPipeline({
-    axIntent: {
+    intentExtractor: {
       extractIntents: async () => [{ type: 'create', title: '' }],
     },
     normalizer: {
@@ -961,7 +1008,7 @@ test('WP06 T020: fail-closed — validation failure returns user-safe message', 
 test('WP06 T020: fail-closed — adapter failure returns generic retry message', async () => {
   let createAttempts = 0;
   const pipeline = createPipeline({
-    axIntent: {
+    intentExtractor: {
       extractIntents: async () => [{ type: 'create', title: 'Test task' }],
     },
     normalizer: {
@@ -1002,7 +1049,7 @@ test('WP06 T020: fail-closed — adapter failure returns generic retry message',
 test('WP06 T020: permanent adapter failures do not retry and ask for correction', async () => {
   let createAttempts = 0;
   const pipeline = createPipeline({
-    axIntent: {
+    intentExtractor: {
       extractIntents: async () => [{ type: 'create', title: 'Test task' }],
     },
     normalizer: {
@@ -1040,7 +1087,7 @@ test('WP06 T020: permanent adapter failures do not retry and ask for correction'
 
 test('WP06 T020: fail-closed — quota exhaustion returns user-safe message', async () => {
   const pipeline = createPipeline({
-    axIntent: {
+    intentExtractor: {
       extractIntents: async () => { throw new QuotaExhaustedError('All API keys exhausted'); },
     },
     normalizer: { normalizeActions: () => [] },
@@ -1064,7 +1111,7 @@ test('WP06 T020: fail-closed — quota exhaustion returns user-safe message', as
 test('WP06 R4: pipeline surfaces rate-limit ETA in user message when adapter provides retry metadata', async () => {
   let createAttempts = 0;
   const pipeline = createPipeline({
-    axIntent: {
+    intentExtractor: {
       extractIntents: async () => [{ type: 'create', title: 'Rate limited task' }],
     },
     normalizer: {
@@ -1114,7 +1161,7 @@ test('WP06 R4: pipeline surfaces rate-limit ETA in user message when adapter pro
 
 test('WP06 R4: pipeline distinguishes quota exhaustion from transient rate limiting', async () => {
   const makePipeline = (errorFactory) => createPipeline({
-    axIntent: {
+    intentExtractor: {
       extractIntents: async () => [{ type: 'create', title: 'Task' }],
     },
     normalizer: {
@@ -1176,7 +1223,7 @@ test('WP06 R4: pipeline distinguishes quota exhaustion from transient rate limit
 
 test('WP06 T012: pipeline classifies malformed AX output when extractIntents returns non-array', async () => {
   const pipeline = createPipeline({
-    axIntent: {
+    intentExtractor: {
       extractIntents: async () => ({ not: 'an array' }),
     },
     normalizer: { normalizeActions: () => [] },
@@ -1198,7 +1245,7 @@ test('WP06 T012: pipeline classifies malformed AX output when extractIntents ret
 
 test('WP06 T012: pipeline handles AX returning null intents', async () => {
   const pipeline = createPipeline({
-    axIntent: {
+    intentExtractor: {
       extractIntents: async () => null,
     },
     normalizer: { normalizeActions: () => [] },

@@ -1,4 +1,5 @@
-import { AxAI, AxGen } from '@ax-llm/ax';
+import { GeminiAnalyzer } from './gemini.js';
+import { Type as SchemaType } from '@google/genai';
 import { MAX_CHECKLIST_ITEMS, CHECKLIST_ITEM_SHAPE } from './schemas.js';
 import { MODE_FOCUS, MODE_STANDARD, MODE_URGENT } from './store.js';
 
@@ -285,79 +286,13 @@ export function validateIntentAction(action, index, { requireR1Fields = false } 
     return { valid: errors.length === 0, errors };
 }
 
-/**
- * Detects if an error is a daily quota exceeded error (not transient rate limits).
- * @param {Error|object} error - The error object to check
- * @returns {boolean} True if this is a daily quota error
- */
-function isDailyQuotaError(error) {
-    if (!error) return false;
-
-    const status = error?.status;
-    const isRateLimit =
-        status === 429 ||
-        error.message?.includes('RESOURCE_EXHAUSTED') ||
-        error.message?.includes('429');
-
-    if (!isRateLimit) return false;
-
-    const msg = (error.message || '').toLowerCase();
-    const errorBody = error?.error?.message?.toLowerCase() || '';
-
-    // Comprehensive daily quota detection
-    const dailyQuotaIndicators = [
-        'per day',
-        'perday',
-        'daily quota',
-        'daily limit',
-        'quota exceeded',
-        'quota exhausted',
-        'rate limit exceeded',
-    ];
-
-    const isDailyQuota = dailyQuotaIndicators.some(
-        (indicator) => msg.includes(indicator) || errorBody.includes(indicator)
-    );
-
-    // Exclude transient rate limits (per minute, per second)
-    const isTransient = msg.includes('per minute') || msg.includes('per second');
-
-    return isDailyQuota && !isTransient;
-}
+// ─── Intent Extraction Prompt ─────────────────────────────────────
 
 /**
- * Creates an AX intent extraction service with quota-aware key rotation.
- * @param {object} keyManager - Key manager interface for API key rotation
- * @param {Function} keyManager.getActiveKey - Returns the current active API key
- * @param {Function} keyManager.markKeyUnavailable - Marks a key as unavailable due to quota
- * @param {Function} keyManager.rotateKey - Rotates to the next available key
- * @param {Function} [keyManager.getKeyCount] - Returns the total number of keys (optional)
- * @param {Object} [config={}] - Configuration options
- * @param {string} [config.model='gemini-2.5-flash'] - Model for intent extraction
- * @returns {{extractIntents: Function}} Intent extraction service
- * @throws {Error} If keyManager doesn't implement required methods
+ * System prompt for Gemini-based intent extraction.
+ * This prompt was preserved from the AX framework instruction text.
  */
-export function createAxIntent(keyManager, config = {}) {
-    // Validate keyManager interface
-    const requiredMethods = ['getActiveKey', 'markKeyUnavailable', 'rotateKey'];
-    for (const method of requiredMethods) {
-        if (typeof keyManager?.[method] !== 'function') {
-            throw new Error(
-                `keyManager must implement ${method}(). Provided: ${typeof keyManager?.[method]}`
-            );
-        }
-    }
-
-    const ai = new AxAI({
-        name: 'google-gemini',
-        apiKey: () => keyManager.getActiveKey(),
-        config: { model: config.model || 'gemini-2.5-flash' },
-    });
-
-    // AX signature-based generation with detailed instructions for structured output
-    const gen = new AxGen(`userMessage: string, currentDate: string, availableProjects: string[] -> actions: json`);
-
-    gen.setInstruction(`Extract structured task/intent actions from the user's message.
+const INTENT_EXTRACTION_PROMPT = `Extract structured task/intent actions from the user's message.
 
 Instructions:
 - Extract one action per distinct user intent.
@@ -379,7 +314,15 @@ CHECKLIST vs MULTI-TASK DISCRIMINATION:
 ACTION TYPES AND REQUIRED FIELDS:
 
 Every action object MUST include these R1 fields, using null when a value does not apply:
-${R1_INTENT_ACTION_FIELDS.map((field) => `- "${field}"`).join('\n')}
+- "type"
+- "title"
+- "content"
+- "priority"
+- "projectHint"
+- "dueDate"
+- "repeatHint"
+- "splitStrategy"
+- "confidence"
 
 For type "create":
 - "title" is REQUIRED (non-empty string describing the new task)
@@ -692,79 +635,173 @@ Example output for non-task conversational input:
 OUT-OF-SCOPE EXAMPLES (should return low confidence or unsupported):
 - Mixed create+mutation: "add buy milk and move groceries to tomorrow" — do not split into create + mutation
 - Underspecified pronouns: "move that one to Friday" — should have low confidence (<0.5)
-- Reschedule as a separate type: do NOT emit type "reschedule"; use "update" with dueDate instead`);
+- Reschedule as a separate type: do NOT emit type "reschedule"; use "update" with dueDate instead`;
 
-    /**
-     * Extracts structured intent actions from a user message.
-     * @param {string} userMessage - The user's natural language message
-     * @param {object} [options] - Extraction options
-     * @param {string} [options.currentDate] - Current date for context (e.g., "2026-03-31")
-     * @param {string[]} [options.availableProjects] - List of available project names
-     * @param {string} [options.requestId] - Optional request ID for logging
-     * @returns {Promise<object[]>} Array of validated intent actions
-     * @throws {QuotaExhaustedError} When all API keys are exhausted
-     * @throws {Error} When AX generation fails or validation fails
-     */
-    async function extractIntents(userMessage, { currentDate, availableProjects, requestId } = {}) {
-        const input = {
-            userMessage,
-            currentDate,
-            availableProjects: Array.isArray(availableProjects) ? availableProjects : [],
-        };
+// ─── Intent Action Response Schema ─────────────────────────────────────
 
-        const tryGenerate = async () => {
-            const res = await gen.forward(ai, input);
-            // AX returns an object matching the output signature.
-            // We return res.actions directly to match the Intent Action spec pipeline shape.
-            const actions = res.actions || [];
+/**
+ * Response schema for Gemini intent extraction.
+ * Uses Google GenAI schema format.
+ */
+const intentActionSchema = {
+    type: SchemaType.OBJECT,
+    properties: {
+        actions: {
+            type: SchemaType.ARRAY,
+            items: {
+                type: SchemaType.OBJECT,
+                properties: {
+                    type: { type: SchemaType.STRING, enum: ['create', 'update', 'complete', 'delete'], description: 'Action type' },
+                    targetQuery: { type: SchemaType.STRING, nullable: true, description: 'Target task reference for mutations' },
+                    title: { type: SchemaType.STRING, nullable: true, description: 'Short, verb-led task title' },
+                    content: { type: SchemaType.STRING, nullable: true, description: 'Additional context or notes' },
+                    priority: { type: SchemaType.INTEGER, nullable: true, description: 'Priority: 0 (none), 1 (low), 3 (medium), 5 (high)' },
+                    projectHint: { type: SchemaType.STRING, nullable: true, description: 'Project name hint' },
+                    dueDate: { type: SchemaType.STRING, nullable: true, description: 'Due date in natural language or ISO format' },
+                    repeatHint: { type: SchemaType.STRING, nullable: true, description: 'Recurrence pattern' },
+                    splitStrategy: { type: SchemaType.STRING, nullable: true, description: 'How to split: multi-task, multi-day, or null' },
+                    confidence: { type: SchemaType.NUMBER, nullable: true, description: 'Confidence score 0.0 to 1.0' },
+                    checklistItems: {
+                        type: SchemaType.ARRAY,
+                        nullable: true,
+                        items: {
+                            type: SchemaType.OBJECT,
+                            properties: {
+                                title: { type: SchemaType.STRING, description: 'Checklist item title' },
+                                status: { type: SchemaType.STRING, description: 'Item status: completed or incomplete', nullable: true },
+                                sortOrder: { type: SchemaType.NUMBER, description: 'Display order', nullable: true },
+                            },
+                            required: ['title'],
+                        },
+                    },
+                    clarification: { type: SchemaType.BOOLEAN, nullable: true, description: 'True when intent is ambiguous' },
+                    clarificationQuestion: { type: SchemaType.STRING, nullable: true, description: 'Question to ask user' },
+                },
+                required: ['type', 'title', 'content', 'priority', 'projectHint', 'dueDate', 'repeatHint', 'splitStrategy', 'confidence'],
+            },
+        },
+    },
+    required: ['actions'],
+};
 
-            // Runtime validation (defense in depth)
-            const validationErrors = [];
-            for (let i = 0; i < actions.length; i++) {
-                const validation = validateIntentAction(actions[i], i, { requireR1Fields: true });
-                if (!validation.valid) {
-                    validationErrors.push(...validation.errors);
-                }
-            }
+// ─── Intent Extraction via Gemini ─────────────────────────────────────
 
-            if (validationErrors.length > 0) {
-                throw new Error(`AX output validation failed: ${validationErrors.join('; ')}`);
-            }
+/**
+ * Extracts structured intent actions from a user message using Gemini.
+ * @param {GeminiAnalyzer} gemini - GeminiAnalyzer instance
+ * @param {string} userMessage - The user's natural language message
+ * @param {object} [options] - Extraction options
+ * @param {string} [options.currentDate] - Current date for context (e.g., "2026-03-31")
+ * @param {string[]} [options.availableProjects] - List of available project names
+ * @param {string} [options.requestId] - Optional request ID for logging
+ * @returns {Promise<object[]>} Array of validated intent actions
+ * @throws {QuotaExhaustedError} When all API keys are exhausted
+ * @throws {Error} When generation fails or validation fails
+ */
+async function extractIntentsWithGemini(gemini, userMessage, { currentDate, availableProjects, requestId } = {}) {
+    const projects = Array.isArray(availableProjects) ? availableProjects : [];
 
-            return actions;
-        };
+    // Build context for the prompt
+    let contextSection = '';
+    if (currentDate) {
+        contextSection += `Current date: ${currentDate}\n`;
+    }
+    if (projects.length > 0) {
+        contextSection += `Available projects: ${projects.join(', ')}\n`;
+    }
 
-        const keyCount =
-            typeof keyManager.getKeyCount === 'function' ? keyManager.getKeyCount() : 1;
-        const maxRotations = Math.max(0, keyCount - 1);
-        let rotations = 0;
+    const fullPrompt = contextSection
+        ? `${contextSection}\nUser message:\n${userMessage}`
+        : `User message:\n${userMessage}`;
 
-        while (true) {
-            try {
-                return await tryGenerate();
-            } catch (err) {
-                if (isDailyQuotaError(err)) {
-                    keyManager.markKeyUnavailable('daily_quota');
-                    const rotated =
-                        rotations < maxRotations ? await keyManager.rotateKey() : false;
+    const apiCallFn = async (ai, prompt, model) => {
+        return ai.models.generateContent({
+            model,
+            contents: prompt,
+            config: {
+                systemInstruction: INTENT_EXTRACTION_PROMPT,
+                responseMimeType: 'application/json',
+                responseSchema: intentActionSchema,
+            },
+        });
+    };
 
-                    if (rotated) {
-                        rotations++;
-                        const prefix = requestId ? `[AX:${requestId}]` : '[AX]';
-                        console.warn(
-                            `${prefix} Daily quota hit; rotated key (${rotations}/${maxRotations}).`
-                        );
-                        continue;
-                    }
+    let response;
+    try {
+        response = await gemini._executeWithFailover(fullPrompt, apiCallFn, { modelTier: 'fast' });
+    } catch (err) {
+        const errMsg = err.message || '';
+        // _executeWithFailover throws 'QUOTA_EXHAUSTED' or 'API_KEYS_UNAVAILABLE' when all models/keys are exhausted
+        if (errMsg === 'QUOTA_EXHAUSTED' || errMsg === 'API_KEYS_UNAVAILABLE') {
+            throw new QuotaExhaustedError('All API keys exhausted');
+        }
+        // Check for daily quota errors that would cause _executeWithFailover to exhaust all models
+        const isDailyQuota = errMsg.includes('per day') || errMsg.includes('perday') || errMsg.includes('quota exceeded');
+        const isRateLimit = err?.status === 429 || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('429');
+        if (isDailyQuota || (isRateLimit && errMsg.includes('quota'))) {
+            throw new QuotaExhaustedError('All API keys exhausted');
+        }
+        throw err;
+    }
 
-                    throw new QuotaExhaustedError('All API keys exhausted');
-                }
-                throw err;
-            }
+    const raw = response.text.trim();
+    // Strip markdown code fences if present (e.g., ```json ... ```)
+    const jsonStr = raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?\s*```$/i, '').trim();
+    let parsed;
+    try {
+        parsed = JSON.parse(jsonStr);
+    } catch {
+        throw new Error(`Failed to parse Gemini intent response as JSON: ${jsonStr.slice(0, 200)}`);
+    }
+
+    const actions = parsed?.actions || [];
+    if (!Array.isArray(actions)) {
+        throw new Error(`Expected actions array, got ${typeof actions}`);
+    }
+
+    // Runtime validation (defense in depth)
+    const validationErrors = [];
+    for (let i = 0; i < actions.length; i++) {
+        const validation = validateIntentAction(actions[i], i, { requireR1Fields: true });
+        if (!validation.valid) {
+            validationErrors.push(...validation.errors);
         }
     }
 
+    if (validationErrors.length > 0) {
+        throw new Error(`Intent validation failed: ${validationErrors.join('; ')}`);
+    }
+
+    return actions;
+}
+
+/**
+ * Creates a Gemini-based intent extraction service.
+ * @param {GeminiAnalyzer} gemini - GeminiAnalyzer instance
+ * @returns {{extractIntents: Function}} Intent extraction service
+ */
+export function createIntentExtractor(gemini) {
+    // Validate gemini interface - use duck typing for testing flexibility
+    if (!gemini || typeof gemini !== 'object') {
+        throw new Error(
+            `createIntentExtractor requires a GeminiAnalyzer instance. Got: ${typeof gemini}`
+        );
+    }
+
+    if (typeof gemini._executeWithFailover !== 'function') {
+        throw new Error(
+            `createIntentExtractor requires a GeminiAnalyzer instance with _executeWithFailover method. Got: ${typeof gemini}`
+        );
+    }
+
     return {
-        extractIntents,
+        extractIntents: (userMessage, options) => extractIntentsWithGemini(gemini, userMessage, options),
     };
+}
+
+/**
+ * @deprecated Use createIntentExtractor instead
+ */
+export function createAxIntent(gemini) {
+    return createIntentExtractor(gemini);
 }

@@ -8,7 +8,7 @@ import { GeminiAnalyzer } from './services/gemini.js';
 import { startScheduler } from './services/scheduler.js';
 import { createBot } from './bot/index.js';
 import { TickTickAdapter } from './services/ticktick-adapter.js';
-import { createAxIntent } from './services/ax-intent.js';
+import { createIntentExtractor } from './services/intent-extraction.js';
 import * as normalizer from './services/normalizer.js';
 import { createPipeline } from './services/pipeline.js';
 import { getUserTimezone } from './services/user-settings.js';
@@ -34,6 +34,8 @@ const {
     AUTO_APPLY_MODE = 'metadata-only',
     GEMINI_MODEL_FAST = 'gemini-2.5-flash',
     GEMINI_MODEL_ADVANCED = 'gemini-2.5-pro',
+    GEMINI_MODEL_FAST_FALLBACKS = '',
+    GEMINI_MODEL_ADVANCED_FALLBACKS = '',
     // TICKTICK_ACCESS_TOKEN is loaded by dotenv and used by TickTickClient internally
     // (validated at first API call, not at startup — the OAuth flow sets it)
 } = process.env;
@@ -45,6 +47,8 @@ const REQUIRED_VARS = {
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
 };
+
+const parseModelList = (val) => val.split(',').map(s => s.trim()).filter(Boolean);
 
 // Startup validation: REQUIRED_VARS are checked first (hard failure if missing).
 // GEMINI_API_KEYS is validated next (hard failure if no keys available).
@@ -84,6 +88,8 @@ try {
     gemini = new GeminiAnalyzer(geminiKeys, {
         modelFast: GEMINI_MODEL_FAST,
         modelAdvanced: GEMINI_MODEL_ADVANCED,
+        modelFastFallbacks: parseModelList(GEMINI_MODEL_FAST_FALLBACKS),
+        modelAdvancedFallbacks: parseModelList(GEMINI_MODEL_ADVANCED_FALLBACKS),
     });
 } catch (err) {
     console.error(chalk.red(err.message));
@@ -99,31 +105,10 @@ const botConfig = {
 // Initialize new pipeline context
 const adapter = new TickTickAdapter(ticktick);
 
-// KeyManager adapter — bridges GeminiAnalyzer's internal key rotation into
-// the { getActiveKey, markKeyUnavailable, rotateKey } interface AX expects.
-const keyManager = {
-    getActiveKey() {
-        if (gemini._areAllKeysUnavailable()) {
-            throw new Error('All API keys exhausted');
-        }
-        return gemini._keys[gemini._activeKeyIndex];
-    },
-    getKeyCount() {
-        return Array.isArray(gemini._keys) ? gemini._keys.length : 0;
-    },
-    markKeyUnavailable(reason) {
-        const resetMs = gemini._getQuotaResetMs();
-        gemini._markActiveKeyUnavailable(reason, Date.now() + resetMs);
-    },
-    async rotateKey() {
-        return gemini._rotateToNextKeyIfAvailable();
-    }
-};
-
-const axIntent = createAxIntent(keyManager, { model: GEMINI_MODEL_FAST });
+const intentExtractor = createIntentExtractor(gemini);
 const pipeline = createPipeline({
 
-    axIntent,
+    intentExtractor,
     normalizer,
     adapter,
     deferIntent: (entry) => store.appendDeferredPipelineIntent(entry),

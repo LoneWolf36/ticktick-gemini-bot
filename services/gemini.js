@@ -162,9 +162,16 @@ export class GeminiAnalyzer {
         this._activeKeyIndex = 0;
         this._exhaustedUntilByKey = new Array(this._keys.length).fill(null);
         this._keyUnavailableReason = new Array(this._keys.length).fill(null);
-        this._rotationPromise = null;
 
-        this._initModelsForActiveKey();
+        // Model fallback chains per tier
+        this._modelTiers = {
+            fast: this._buildTierChain(config.modelFast, config.modelFastFallbacks),
+            advanced: this._buildTierChain(config.modelAdvanced, config.modelAdvancedFallbacks),
+        };
+
+        // Per-model+key exhaustion tracking
+        // Map<modelName, Array<{ until: number|null, reason: string|null }>>
+        this._modelKeyExhaustion = new Map();
     }
 
     /**
@@ -277,67 +284,6 @@ export class GeminiAnalyzer {
     }
 
     /**
-     * Initializes Gemini models for the currently active API key.
-     * @private
-     */
-    _initModelsForActiveKey() {
-        const ai = new GoogleGenAI({apiKey: this._keys[this._activeKeyIndex]});
-
-        this.briefingModel = {
-            generateContent: async (prompt) => {
-                const response = await ai.models.generateContent({
-                    model: this._config.modelFast,
-                    contents: prompt,
-                    config: {
-                        systemInstruction: BRIEFING_PROMPT,
-                        responseMimeType: "application/json",
-                        responseSchema: briefingSummarySchema,
-                        temperature: 0.8,
-                        topP: 0.9,
-                        maxOutputTokens: 4096,
-                    }
-                });
-                return response;
-            }
-        };
-
-        this.weeklyModel = {
-            generateContent: async (prompt) => {
-                const response = await ai.models.generateContent({
-                    model: this._config.modelFast,
-                    contents: prompt,
-                    config: {
-                        systemInstruction: WEEKLY_SUMMARY_PROMPT,
-                        responseMimeType: 'application/json',
-                        responseSchema: weeklySummarySchema,
-                        temperature: 0.4,
-                        topP: 0.9,
-                        maxOutputTokens: 4096,
-                    }
-                });
-                return response;
-            }
-        };
-
-        this.reorgModel = {
-            generateContent: async (prompt) => {
-                const response = await ai.models.generateContent({
-                    model: this._config.modelFast,
-                    contents: prompt,
-                    config: {
-                        systemInstruction: REORG_PROMPT,
-                        responseMimeType: "application/json",
-                        responseSchema: reorgSchema,
-                        temperature: 0.2,
-                        maxOutputTokens: 4096,
-                    }
-                });
-                return response;
-            }
-        };
-    }
-
-    /**
      * Returns info about the active API key index and total count.
      * @returns {{index: number, total: number}}
      */
@@ -402,45 +348,70 @@ export class GeminiAnalyzer {
         return true;
     }
 
-    _findNextAvailableKeyIndex() {
-        for (let i = 1; i <= this._keys.length; i++) {
-            const idx = (this._activeKeyIndex + i) % this._keys.length;
-            if (this._isKeyAvailable(idx)) {
-                return idx;
+    _buildTierChain(primary, fallbacks) {
+        const chain = [primary];
+        if (Array.isArray(fallbacks)) {
+            for (const fb of fallbacks) {
+                if (fb && typeof fb === 'string' && fb !== primary && !chain.includes(fb)) {
+                    chain.push(fb);
+                }
             }
+        }
+        return chain;
+    }
+
+    _getModelKeyState(model, keyIndex) {
+        if (!this._modelKeyExhaustion.has(model)) {
+            this._modelKeyExhaustion.set(model,
+                new Array(this._keys.length).fill(null).map(() => ({ until: null, reason: null }))
+            );
+        }
+        return this._modelKeyExhaustion.get(model)[keyIndex];
+    }
+
+    _isModelKeyAvailable(model, keyIndex) {
+        // Per-key check: invalid keys are unavailable for all models
+        if (!this._isKeyAvailable(keyIndex)) return false;
+
+        // Per-model+key check: quota exhaustion
+        const state = this._getModelKeyState(model, keyIndex);
+        if (state.until && Date.now() < state.until) return false;
+
+        // Clear expired state
+        if (state.until && Date.now() >= state.until) {
+            state.until = null;
+            state.reason = null;
+        }
+        return true;
+    }
+
+    _markModelKeyExhausted(model, keyIndex, reason, untilMs) {
+        const state = this._getModelKeyState(model, keyIndex);
+        state.until = untilMs;
+        state.reason = reason;
+    }
+
+    _areAllKeysExhaustedForModel(model) {
+        for (let i = 0; i < this._keys.length; i++) {
+            if (this._isModelKeyAvailable(model, i)) return false;
+        }
+        return true;
+    }
+
+    _findNextAvailableKeyForModel(model, afterIndex) {
+        for (let i = 1; i <= this._keys.length; i++) {
+            const idx = (afterIndex + i) % this._keys.length;
+            if (this._isModelKeyAvailable(model, idx)) return idx;
         }
         return -1;
     }
 
-    /**
-     * Rotates to the next available API key if possible.
-     * @returns {Promise<boolean>} True if rotation was successful
-     * @private
-     */
-    async _rotateToNextKeyIfAvailable() {
-        if (this._rotationPromise) {
-            await this._rotationPromise;
-            return this._isKeyAvailable(this._activeKeyIndex);
+    isTierExhausted(modelTier = 'fast') {
+        const chain = this._modelTiers[modelTier];
+        for (const model of chain) {
+            if (!this._areAllKeysExhaustedForModel(model)) return false;
         }
-
-        const rotate = async () => {
-            const nextIdx = this._findNextAvailableKeyIndex();
-            if (nextIdx !== -1) {
-                const oldIdx = this._activeKeyIndex;
-                this._activeKeyIndex = nextIdx;
-                console.log(`🔄 Rotating Gemini key ${oldIdx + 1}/${this._keys.length} → ${nextIdx + 1}/${this._keys.length} (daily quota)`);
-                this._initModelsForActiveKey();
-                return true;
-            }
-            return false;
-        };
-
-        this._rotationPromise = rotate();
-        try {
-            return await this._rotationPromise;
-        } finally {
-            this._rotationPromise = null;
-        }
+        return true;
     }
 
     /**
@@ -452,12 +423,24 @@ export class GeminiAnalyzer {
         const nonNulls = this._exhaustedUntilByKey.filter(
             (t, idx) => t !== null && this._keyUnavailableReason[idx] === 'daily_quota'
         );
+
+        // Also check per-model+key exhaustion states
+        for (const [, states] of this._modelKeyExhaustion) {
+            for (const state of states) {
+                if (state.until && state.reason === 'daily_quota') {
+                    nonNulls.push(state.until);
+                }
+            }
+        }
+
         return nonNulls.length ? new Date(Math.min(...nonNulls)) : null;
     }
 
     /**
      * Checks if all available API keys have hit their daily quota.
-     * @returns {boolean} True if quota is exhausted
+     * This checks per-key exhaustion only. For tier-specific checks,
+     * use isTierExhausted('fast') or isTierExhausted('advanced').
+     * @returns {boolean} True if quota is exhausted across all keys
      */
     isQuotaExhausted() {
         for (let i = 0; i < this._keys.length; i++) {
@@ -470,64 +453,109 @@ export class GeminiAnalyzer {
 
     /**
      * Executes a model generation request with automatic failover and retries.
-     * @param {Function} getModelFn - Function that returns the model to use
      * @param {string} prompt - Prompt text
+     * @param {Function} apiCallFn - Function that receives (ai, prompt, model)
      * @param {Object} options - Generation options
+     * @param {number} [options.transientBaseMs=15] - Base backoff for transient 429s
+     * @param {string} [options.modelTier='fast'] - Model tier to use (fast/advanced)
      * @returns {Promise<Object>} Model generation result
      * @private
      */
-    async _executeWithFailover(prompt, apiCallFn, { transientBaseMs = 15 } = {}) {
-        if (this.isQuotaExhausted()) {
-            throw new Error('QUOTA_EXHAUSTED');
-        }
+    async _executeWithFailover(prompt, apiCallFn, { transientBaseMs = 15, modelTier = 'fast' } = {}) {
+        // Global pre-checks
         if (this._areAllKeysUnavailable()) {
             throw new Error('API_KEYS_UNAVAILABLE');
         }
 
-        const maxTransientRetries = 2; // For transient 429s
-        let transientAttempts = 0;
+        const chain = this._modelTiers[modelTier];
+        const maxTransientRetries = 2;
 
-        const maxRotations = Math.max(0, this._keys.length - 1);
-        let rotations = 0;
+        for (let modelIndex = 0; modelIndex < chain.length; modelIndex++) {
+            const model = chain[modelIndex];
 
-        while (true) {
-            try {
-                const ai = new GoogleGenAI({ apiKey: this._keys[this._activeKeyIndex] });
-                const response = await apiCallFn(ai, prompt);
+            if (modelIndex > 0) {
+                console.log(`⚡ [Gemini] Model fallback: ${chain[modelIndex - 1]} exhausted → trying ${model} (tier: ${modelTier})`);
+            }
 
-                // Telemetry Interceptor for Architecture Observability
-                const usage = response.usageMetadata;
-                if (usage) {
-                    console.log(`📊 [Gemini API] Tokens -> In: ${usage.promptTokenCount} | Out: ${usage.candidatesTokenCount} | Total: ${usage.totalTokenCount}`);
+            if (this._areAllKeysExhaustedForModel(model)) {
+                console.log(`⏭️ [Gemini] All keys exhausted for ${model}, skipping to next model in chain`);
+                continue;
+            }
+
+            let currentKeyIndex = this._activeKeyIndex;
+            let rotations = 0;
+            let transientAttempts = 0;
+            const maxRotations = this._keys.length - 1;
+
+            while (true) {
+                if (!this._isModelKeyAvailable(model, currentKeyIndex)) {
+                    const nextIdx = this._findNextAvailableKeyForModel(model, currentKeyIndex);
+                    if (nextIdx === -1) break; // all keys exhausted for this model
+                    currentKeyIndex = nextIdx;
+                    rotations++;
+                    if (rotations > maxRotations) break;
                 }
 
-                return response;
-            } catch (err) {
-                const activeK = this._keys[this._activeKeyIndex];
-                const maskedKey = activeK ? `${activeK.slice(0, 4)}...${activeK.slice(-4)}` : 'undefined';
-                console.error(`[DIAGNOSTICS] Key ${this._activeKeyIndex + 1}/${this._keys.length} [${maskedKey}] exactly threw: [${err.status}] ${err.message}`);
+                const maskedKey = this._keys[currentKeyIndex].slice(0, 4) + '...' + this._keys[currentKeyIndex].slice(-4);
 
-                if (this._isInvalidApiKeyError(err)) {
-                    // Expired/leaked keys should be sidelined for longer than daily quota windows.
-                    const disableMs = Date.now() + (7 * 24 * 60 * 60 * 1000);
-                    this._markActiveKeyUnavailable('invalid_key', disableMs);
-                    console.error(`🚫 Key ${this._activeKeyIndex + 1}/${this._keys.length} marked unavailable (invalid/leaked).`);
-                    if (rotations < maxRotations && await this._rotateToNextKeyIfAvailable()) {
-                        rotations++;
-                        continue;
+                try {
+                    const ai = new GoogleGenAI({ apiKey: this._keys[currentKeyIndex] });
+                    const response = await apiCallFn(ai, prompt, model);
+
+                    // Success — update active key index
+                    this._activeKeyIndex = currentKeyIndex;
+
+                    // Log usage metadata
+                    const usage = response?.usageMetadata;
+                    if (usage) {
+                        console.log(`📊 [Gemini API] Tokens -> In: ${usage.promptTokenCount} | Out: ${usage.candidatesTokenCount} | Total: ${usage.totalTokenCount}`);
                     }
-                    throw new Error('API_KEYS_UNAVAILABLE');
-                }
 
-                if (this._isDailyQuotaError(err)) {
-                    // Mark current key as exhausted
-                    const resetMs = this._getQuotaResetMs();
-                    this._markActiveKeyUnavailable('daily_quota', Date.now() + resetMs);
+                    if (modelIndex > 0) {
+                        console.log(`✅ [Gemini] Fallback model ${model} succeeded (tier: ${modelTier})`);
+                    }
 
-                    if (rotations < maxRotations && await this._rotateToNextKeyIfAvailable()) {
-                        rotations++;
-                        continue; // Valid retry on new key, transientAttempts remains unchanged
-                    } else {
+                    return response;
+
+                } catch (err) {
+                    const activeK = this._keys[currentKeyIndex];
+                    const maskedKey = activeK ? `${activeK.slice(0, 4)}...${activeK.slice(-4)}` : 'undefined';
+                    console.error(`[DIAGNOSTICS] Key ${currentKeyIndex + 1}/${this._keys.length} [${maskedKey}] exactly threw: [${err.status}] ${err.message}`);
+
+                    if (this._isInvalidApiKeyError(err)) {
+                        // Expired/leaked keys should be sidelined for longer than daily quota windows.
+                        const disableMs = Date.now() + (7 * 24 * 60 * 60 * 1000);
+                        this._markActiveKeyUnavailable('invalid_key', disableMs);
+                        this._markModelKeyExhausted(model, currentKeyIndex, 'invalid_key', disableMs);
+                        console.error(`🚫 Key ${currentKeyIndex + 1}/${this._keys.length} marked unavailable (invalid/leaked).`);
+                        const nextIdx = this._findNextAvailableKeyForModel(model, currentKeyIndex);
+                        if (nextIdx !== -1) {
+                            currentKeyIndex = nextIdx;
+                            rotations++;
+                            continue;
+                        }
+                        // No more keys available for this model — try next model in chain
+                        break;
+                    }
+
+                    if (this._isDailyQuotaError(err)) {
+                        // Mark current key as exhausted
+                        const resetMs = this._getQuotaResetMs();
+                        this._markActiveKeyUnavailable('daily_quota', Date.now() + resetMs);
+                        this._markModelKeyExhausted(model, currentKeyIndex, 'daily_quota', Date.now() + resetMs);
+
+                        // Try next key for THIS model before falling through to next model
+                        const nextIdx = this._findNextAvailableKeyForModel(model, currentKeyIndex);
+                        if (nextIdx !== -1) {
+                            currentKeyIndex = nextIdx;
+                            rotations++;
+                            if (rotations <= maxRotations) {
+                                console.log(`🔄 Rotating to next key for model ${model} (daily quota)`);
+                                continue;
+                            }
+                        }
+
+                        // All keys for this model exhausted — fall through to next model
                         if (this.isQuotaExhausted()) {
                             const resumeTime = this.quotaResumeTime();
                             const resumeStr = resumeTime ? resumeTime.toLocaleTimeString('en-US', {
@@ -535,31 +563,40 @@ export class GeminiAnalyzer {
                             }) : 'unknown';
                             console.error(`🛑 All AI keys exhausted — pausing calls until ~${resumeStr} PT.`);
                         } else {
-                            console.error(`⚠️ Daily quota hit across ${rotations + 1} attempted keys in one call. Aborting request to prevent runaway cascade.`);
+                            console.error(`⚠️ Daily quota hit for ${model} across ${rotations + 1} attempted keys. Moving to next model in chain.`);
                         }
-                        throw new Error(this._areAllKeysUnavailable() ? 'API_KEYS_UNAVAILABLE' : 'QUOTA_EXHAUSTED');
+                        break; // Exit inner while, continue to next model in outer for loop
                     }
-                }
 
-                // Transient Rate Limit handling
-                const isRateLimit = err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429');
-                if (isRateLimit && transientAttempts < maxTransientRetries) {
-                    let dynamicBackoffMs = transientBaseMs;
-                    const match = err.message?.match(/Please retry in ([\d\.]+)s/);
-                    if (match && match[1]) {
-                        // Google gives us exactly how long to wait. Parse it and add 2s buffer.
-                        dynamicBackoffMs = parseFloat(match[1]) * 1000 + 2000;
+                    // Transient Rate Limit handling
+                    const isRateLimit = err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429');
+                    if (isRateLimit && transientAttempts < maxTransientRetries) {
+                        let dynamicBackoffMs = transientBaseMs;
+                        const match = err.message?.match(/Please retry in ([\d\.]+)s/);
+                        if (match && match[1]) {
+                            // Google gives us exactly how long to wait. Parse it and add 2s buffer.
+                            dynamicBackoffMs = parseFloat(match[1]) * 1000 + 2000;
+                        }
+                        const backoffMs = dynamicBackoffMs + Math.random() * 5000;
+                        console.error(`⏳ Rate limited, waiting ${Math.round(backoffMs / 1000)}s before retry ${transientAttempts + 1}/${maxTransientRetries}...`);
+                        await new Promise(r => setTimeout(r, backoffMs));
+                        transientAttempts++;
+                        continue;
                     }
-                    const backoffMs = dynamicBackoffMs + Math.random() * 5000;
-                    console.error(`⏳ Rate limited, waiting ${Math.round(backoffMs / 1000)}s before retry ${transientAttempts + 1}/${maxTransientRetries}...`);
-                    await new Promise(r => setTimeout(r, backoffMs));
-                    transientAttempts++;
-                    continue;
-                }
 
-                throw err;
+                    // Transient retries exhausted or non-rate-limit error — try next model in chain
+                    if (isRateLimit) {
+                        console.error(`⏳ Rate limit retries exhausted for ${model}, trying next model in chain.`);
+                        break; // Exit inner while, continue to next model in outer for loop
+                    }
+
+                    throw err;
+                }
             }
         }
+
+        // All models in chain exhausted
+        throw new Error('QUOTA_EXHAUSTED');
     }
 
 
@@ -602,11 +639,11 @@ export class GeminiAnalyzer {
         const prompt = `${workStylePromptNote ? `${workStylePromptNote}\n\n` : ''}Today is ${today}.\n\nShared priority guidance:\n${rankedPreview || 'No ranked guidance available.'}\n\nActive tasks (${orderedTasks.length} total):\n${taskList}`;
         const response = await this._executeWithFailover(
             prompt,
-            async (ai, p) => ai.models.generateContent({
-                model: this._config.modelFast,
+            async (ai, p, model) => ai.models.generateContent({
+                model,
                 contents: p,
                 config: {
-                    systemInstruction: systemContext,
+                    systemInstruction: BRIEFING_PROMPT,
                     responseMimeType: "application/json",
                     responseSchema: briefingSummarySchema
                 }
@@ -703,16 +740,16 @@ export class GeminiAnalyzer {
         const prompt = `${workStylePromptNote ? `${workStylePromptNote}\n\n` : ''}Current active tasks (${orderedTasks.length}):\n${taskList || 'None'}\n\nProcessed tasks this week (${processedEntries.length}):\n${processed || 'None'}`;
         const response = await this._executeWithFailover(
             prompt,
-            async (ai, p) => ai.models.generateContent({
-                model: this._config.modelAdvanced,
+            async (ai, p, model) => ai.models.generateContent({
+                model,
                 contents: p,
                 config: {
-                    systemInstruction: systemContext,
+                    systemInstruction: WEEKLY_SUMMARY_PROMPT,
                     responseMimeType: "application/json",
                     responseSchema: weeklySummarySchema
                 }
             }),
-            { transientBaseMs: 15 }
+            { transientBaseMs: 15, modelTier: 'advanced' }
         );
 
         const raw = response.text.trim();
@@ -815,8 +852,8 @@ export class GeminiAnalyzer {
 
         const response = await this._executeWithFailover(
             prompt,
-            async (ai, p) => ai.models.generateContent({
-                model: this._config.modelAdvanced,
+            async (ai, p, model) => ai.models.generateContent({
+                model,
                 contents: p,
                 config: {
                     systemInstruction: `You are an organizational assistant...\\n\\nUser Context:\\n${USER_CONTEXT}`,
@@ -824,7 +861,7 @@ export class GeminiAnalyzer {
                     responseSchema: reorgSchema
                 }
             }),
-            { transientBaseMs: 12 }
+            { transientBaseMs: 12, modelTier: 'advanced' }
         );
 
         const raw = response.text.trim();

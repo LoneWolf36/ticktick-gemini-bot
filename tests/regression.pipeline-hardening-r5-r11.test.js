@@ -85,7 +85,7 @@ test('R5 single-task transient failures retry with exponential backoff', async (
 
     let attempts = 0;
     const pipeline = createPipeline({
-        axIntent: {
+        intentExtractor: {
             extractIntents: async () => [{ type: 'create', title: 'Retry task' }],
         },
         normalizer: {
@@ -137,7 +137,7 @@ test('R5 single-task transient failures retry with exponential backoff', async (
 
 test('R5 partial failures surface succeeded and failed actions without silent drops', async () => {
     const pipeline = createPipeline({
-        axIntent: {
+        intentExtractor: {
             extractIntents: async () => [{ type: 'create' }, { type: 'create' }, { type: 'create' }],
         },
         normalizer: {
@@ -185,7 +185,7 @@ test('R5 partial failures surface succeeded and failed actions without silent dr
 test('R11 pipeline surfaces typed adapter failures without leaking API internals', async () => {
     async function runScenario(adapterError) {
         const pipeline = createPipeline({
-            axIntent: {
+            intentExtractor: {
                 extractIntents: async () => [{ type: 'update', taskId: 'task-1', originalProjectId: 'proj-1' }],
             },
             normalizer: {
