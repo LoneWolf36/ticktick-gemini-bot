@@ -36,6 +36,7 @@ const {
     GEMINI_MODEL_ADVANCED = 'gemini-2.5-pro',
     GEMINI_MODEL_FAST_FALLBACKS = '',
     GEMINI_MODEL_ADVANCED_FALLBACKS = '',
+    DEFAULT_PROJECT_NAME = 'Inbox',
     // TICKTICK_ACCESS_TOKEN is loaded by dotenv and used by TickTickClient internally
     // (validated at first API call, not at startup — the OAuth flow sets it)
 } = process.env;
@@ -107,11 +108,11 @@ const adapter = new TickTickAdapter(ticktick);
 
 const intentExtractor = createIntentExtractor(gemini);
 const pipeline = createPipeline({
-
     intentExtractor,
     normalizer,
     adapter,
     deferIntent: (entry) => store.appendDeferredPipelineIntent(entry),
+    defaultProjectName: DEFAULT_PROJECT_NAME,
 });
 
 const bot = createBot(TELEGRAM_BOT_TOKEN, ticktick, gemini, adapter, pipeline, botConfig);

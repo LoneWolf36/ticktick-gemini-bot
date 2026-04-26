@@ -814,7 +814,7 @@ async function sleep(ms) {
  *   - `processMessage(userMessage, options?)` → `{ type: 'task'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`
  *   - `getTelemetry()` → the observability instance for this pipeline
  */
-export function createPipeline({ intentExtractor, normalizer, adapter, observability, deferIntent } = {}) {
+export function createPipeline({ intentExtractor, normalizer, adapter, observability, deferIntent, defaultProjectName = 'Inbox' } = {}) {
     const contextBuilder = createPipelineContextBuilder({ adapter });
     const telemetry = observability || createPipelineObservability();
 
@@ -1391,7 +1391,22 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             }
 
             const defaultProjectId = context.availableProjects
-                .find(p => p?.name?.toLowerCase() === 'inbox')?.id || null;
+                .find(p => p?.name?.toLowerCase() === defaultProjectName?.toLowerCase())?.id || null;
+
+            // Fall back to Inbox if the configured default project doesn't exist
+            if (defaultProjectId === null && defaultProjectName?.toLowerCase() !== 'inbox') {
+                const inboxId = context.availableProjects
+                    .find(p => p?.name?.toLowerCase() === 'inbox')?.id || null;
+                if (inboxId !== null) {
+                    console.warn(`[Pipeline:${context.requestId}] Default project "${defaultProjectName}" not found. Falling back to Inbox.`);
+                    return inboxId;
+                }
+            }
+
+            // Final fallback: null if neither configured project nor Inbox exists
+            if (defaultProjectId === null) {
+                console.warn(`[Pipeline:${context.requestId}] Neither "${defaultProjectName}" nor Inbox found in available projects.`);
+            }
 
             const normOptions = {
                 projects: context.availableProjects,

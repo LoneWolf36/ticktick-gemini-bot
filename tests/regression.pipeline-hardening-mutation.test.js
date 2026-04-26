@@ -87,7 +87,7 @@ test('pipeline context resolves dentist Thursday through the normalizer path', a
   assert.match(adapterCalls.create[0].dueDate, /^2026-03-12T23:59:00\.000[+-]\d{4}$/);
 });
 
-test('pipeline context keeps undated groceries in default project', async () => {
+test('pipeline context routes undated groceries to admin/personal project via content inference', async () => {
   process.env.USER_TIMEZONE = 'Europe/Dublin';
   const { processMessage, adapterCalls } = createPipelineHarness({
     intents: [
@@ -116,7 +116,9 @@ test('pipeline context keeps undated groceries in default project', async () => 
   assert.equal(result.results.length, 1);
   assert.equal(adapterCalls.create.length, 1);
   assert.equal(adapterCalls.create[0].title, 'Buy groceries');
-  assert.equal(adapterCalls.create[0].projectId, DEFAULT_PROJECTS[0].id);
+  // Without projectHint, normalizer now uses inferProjectIdFromTask which maps
+  // "grocery" keyword to life-admin category → admin/personal project (Personal)
+  assert.equal(adapterCalls.create[0].projectId, DEFAULT_PROJECTS[2].id);
   assert.equal(adapterCalls.create[0].dueDate, null);
 });
 

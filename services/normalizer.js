@@ -10,6 +10,8 @@
  * - Mixed create+mutation or multi-mutation batches are rejected cleanly.
  */
 
+import { inferProjectIdFromTask } from './execution-prioritization.js';
+
 // Title normalization constants
 const DATE_PATTERNS = /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next\s+\w+|this\s+\w+)\b/gi;
 const PRIORITY_PATTERNS = /^(urgent|important|critical|asap|high priority)[:\s-]*/i;
@@ -542,39 +544,58 @@ function _resolveRepeatFlag(intentAction = {}) {
 /**
  * Resolves a project hint string to a concrete TickTick project ID.
  * Expects a list of projects from the TickTick API.
+ *
+ * Resolution order:
+ * 1. projectHint exact match / startsWith / contains (if provided)
+ * 2. Content-based inference via inferProjectIdFromTask (if no projectHint)
+ * 3. defaultProjectId fallback
  */
-function _resolveProject(projectHint, projects = [], defaultProjectId = null) {
-    if (!projectHint) return defaultProjectId;
+function _resolveProject(projectHint, projects = [], defaultProjectId = null, taskTitle = '', taskContent = '') {
+    // If projectHint is provided, resolve it as before
+    if (projectHint) {
+        // If it's already a 24-char hex ID, assume it's resolved
+        if (/^[a-fA-F0-9]{24}$/.test(projectHint)) {
+            return projectHint;
+        }
 
-    // If it's already a 24-char hex ID, assume it's resolved
-    if (/^[a-fA-F0-9]{24}$/.test(projectHint)) {
-        return projectHint;
+        const hintLower = projectHint.toLowerCase().trim();
+
+        // Try exact match first
+        let match = projects.find(p => p.name.toLowerCase() === hintLower);
+
+        // Try starts-with
+        if (!match) {
+            match = projects.find(p => p.name.toLowerCase().startsWith(hintLower));
+        }
+
+        // Try contains
+        if (!match) {
+            const matches = projects.filter(p => p.name.toLowerCase().includes(hintLower));
+            if (matches.length > 0) {
+                // Pick the shortest name to avoid greedy matches on generic terms
+                match = matches.reduce((acc, curr) => (curr.name.length < acc.name.length ? curr : acc), matches[0]);
+            }
+        }
+
+        if (match) {
+            return match.id;
+        }
+
+        console.warn(`[Normalizer] Unresolved project hint: "${projectHint}". Falling back to default.`);
+        return defaultProjectId;
     }
 
-    const hintLower = projectHint.toLowerCase().trim();
-
-    // Try exact match first
-    let match = projects.find(p => p.name.toLowerCase() === hintLower);
-
-    // Try starts-with
-    if (!match) {
-        match = projects.find(p => p.name.toLowerCase().startsWith(hintLower));
-    }
-
-    // Try contains
-    if (!match) {
-        const matches = projects.filter(p => p.name.toLowerCase().includes(hintLower));
-        if (matches.length > 0) {
-            // Pick the shortest name to avoid greedy matches on generic terms
-            match = matches.reduce((acc, curr) => (curr.name.length < acc.name.length ? curr : acc), matches[0]);
+    // No projectHint provided — try content-based inference
+    if (taskTitle || taskContent) {
+        const inferredProjectId = inferProjectIdFromTask(
+            { title: taskTitle, content: taskContent },
+            projects
+        );
+        if (inferredProjectId) {
+            return inferredProjectId;
         }
     }
 
-    if (match) {
-        return match.id;
-    }
-
-    console.warn(`[Normalizer] Unresolved project hint: "${projectHint}". Falling back to default.`);
     return defaultProjectId;
 }
 
@@ -856,6 +877,12 @@ export function normalizeAction(intentAction, options = {}) {
         ? _normalizeChecklistItems(intentAction.checklistItems)
         : undefined;
 
+    // Pre-compute title and content for project inference
+    const normalizedTitle = isMutation && !intentAction.title
+        ? (resolvedTask?.title || _normalizeTitle(intentAction.title, maxTitleLength))
+        : _normalizeTitle(intentAction.title, maxTitleLength);
+    const normalizedContent = _truncateContent(mutationContent, maxContentLength);
+
     const normalized = {
         _index: Number.isInteger(intentAction._index) ? intentAction._index : null,
         type: _resolveActionType(intentAction, options.existingTask),
@@ -863,13 +890,11 @@ export function normalizeAction(intentAction, options = {}) {
         taskId: resolvedTaskId,
         originalProjectId: resolvedOriginalProjectId,
         targetQuery: isMutation ? (intentAction.targetQuery || null) : null,
-        title: isMutation && !intentAction.title
-            ? (resolvedTask?.title || _normalizeTitle(intentAction.title, maxTitleLength))
-            : _normalizeTitle(intentAction.title, maxTitleLength),
-        content: _truncateContent(mutationContent, maxContentLength),
+        title: normalizedTitle,
+        content: normalizedContent,
         priority: normalizedPriority,
         originalPriority: originalPriority,  // Keep for validation
-        projectId: _resolveProject(intentAction.projectHint, projects, defaultProjectId),
+        projectId: _resolveProject(intentAction.projectHint, projects, defaultProjectId, normalizedTitle, normalizedContent),
         dueDate: _expandDueDate(intentAction.dueDate, options),
         repeatFlag: _resolveRepeatFlag(intentAction),
         splitStrategy: intentAction.splitStrategy || 'single',
