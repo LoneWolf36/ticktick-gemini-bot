@@ -149,7 +149,7 @@ async function testR1_IntentExtraction(pipeline, adapter, projects) {
             checkpoint('R1-AC1-fields', hasRequiredFields ? 'pass' : 'warn',
                 `Intent extracted: type=${action.type}, title=${action.title}`);
             if (action.title) {
-                createdTaskIds.add(r1.results[0]?.taskId);
+                createdTaskIds.add(r1.results[0]?.result?.id);
                 createdTaskTitles.add(action.title);
             }
         } else {
@@ -171,7 +171,7 @@ async function testR1_IntentExtraction(pipeline, adapter, projects) {
         const hasDueDate = action?.dueDate || action?.scheduleBucket;
         checkpoint('R1-AC2-date', hasDueDate ? 'pass' : 'warn',
             `Dentist task created: dueDate=${action?.dueDate || action?.scheduleBucket || 'none'}`);
-        if (r2.results[0]?.taskId) createdTaskIds.add(r2.results[0].taskId);
+        if (r2.results[0]?.result?.id) createdTaskIds.add(r2.results[0].result.id);
     } else {
         checkpoint('R1-AC2-date', 'warn', `Dentist task result: type=${r2.type}`);
     }
@@ -185,7 +185,7 @@ async function testR1_IntentExtraction(pipeline, adapter, projects) {
         const action = r3.results[0]?.normalizedAction || r3.results[0]?.action;
         checkpoint('R1-AC3-default', 'pass',
             `Simple task created: title=${action?.title}, projectId=${action?.projectId || 'default'}`);
-        if (r3.results[0]?.taskId) createdTaskIds.add(r3.results[0].taskId);
+        if (r3.results[0]?.result?.id) createdTaskIds.add(r3.results[0].result.id);
     } else {
         checkpoint('R1-AC3-default', 'warn', `Simple task result: type=${r3.type}`);
     }
@@ -215,7 +215,7 @@ async function testR2_MultiTask(pipeline, projects) {
         `Multi-task: created ${taskCount} tasks (expected 3)`);
 
     for (const r of result.results || []) {
-        if (r.taskId) createdTaskIds.add(r.taskId);
+        if (r.result?.id) createdTaskIds.add(r.result.id);
     }
 
     return result;
@@ -235,7 +235,7 @@ async function testR5_Recurring(pipeline, projects) {
         const hasRepeat = action?.repeatFlag || action?.repeatHint;
         checkpoint('R5-AC1-recurring', hasRepeat ? 'pass' : 'warn',
             `Recurring task: repeatFlag=${action?.repeatFlag || 'none'}, repeatHint=${action?.repeatHint || 'none'}`);
-        if (result.results[0]?.taskId) createdTaskIds.add(result.results[0].taskId);
+        if (result.results[0]?.result?.id) createdTaskIds.add(result.results[0].result.id);
     } else {
         checkpoint('R5-AC1-recurring', 'warn', `Recurring result: type=${result.type}`);
     }
@@ -319,7 +319,7 @@ async function testR8_TerseResponses(pipeline, projects) {
         checkpoint('R8-AC1-terse', 'warn', `Result type=${result.type}`);
     }
 
-    if (result.results?.[0]?.taskId) createdTaskIds.add(result.results[0].taskId);
+    if (result.results?.[0]?.result?.id) createdTaskIds.add(result.results[0].result.id);
     return result;
 }
 
@@ -624,7 +624,7 @@ async function testChecklists(pipeline, projects) {
         const hasChecklist = action?.checklistItems && action.checklistItems.length > 0;
         checkpoint('CL-R1-AC1-checklist', hasChecklist ? 'pass' : 'warn',
             `Checklist task: items=${action?.checklistItems?.length || 0}, title=${action?.title}`);
-        if (result.results[0]?.taskId) createdTaskIds.add(result.results[0].taskId);
+        if (result.results[0]?.result?.id) createdTaskIds.add(result.results[0].result.id);
     } else {
         checkpoint('CL-R1-AC1-checklist', 'warn',
             `Checklist result: type=${result.type}, text="${result.confirmationText?.substring(0, 100)}"`);
@@ -726,7 +726,7 @@ async function testPrivacyLogging(pipeline, projects) {
     const result = await callPipelineWithRetry(msg, { availableProjects: projects });
     await delayAfterCreate();
 
-    if (result.results?.[0]?.taskId) createdTaskIds.add(result.results[0].taskId);
+    if (result.results?.[0]?.result?.id) createdTaskIds.add(result.results[0].result.id);
 
     // The confirmation should be terse, not echo the full message
     const confirmation = result.confirmationText || '';
@@ -763,7 +763,7 @@ async function testR6_MultiDaySplitting(pipeline, projects) {
         `Distinct due dates: ${dueDates.size}`);
 
     for (const r of result.results || []) {
-        if (r.taskId) createdTaskIds.add(r.taskId);
+        if (r.result?.id) createdTaskIds.add(r.result.id);
     }
 
     return result;
@@ -789,7 +789,7 @@ async function testR7_ProjectResolution(pipeline, adapter, ticktick, projects) {
     checkpoint('R7-AC1-project', isInbox ? 'pass' : 'warn',
         `Project assignment: projectId=${action?.projectId || 'inbox default'}`);
 
-    if (result.results?.[0]?.taskId) createdTaskIds.add(result.results[0].taskId);
+    if (result.results?.[0]?.result?.id) createdTaskIds.add(result.results[0].result.id);
 
     return result;
 }
@@ -847,7 +847,7 @@ async function testR13_LongMessage(pipeline, projects) {
     checkpoint('R13-AC2-title', titleBounded ? 'pass' : 'warn',
         `Title bounded: length=${action?.title?.length || 0}`);
 
-    if (result.results?.[0]?.taskId) createdTaskIds.add(result.results[0].taskId);
+    if (result.results?.[0]?.result?.id) createdTaskIds.add(result.results[0].result.id);
 
     return result;
 }
@@ -875,7 +875,7 @@ async function testR3_Normalization(pipeline, projects) {
     checkpoint('R3-AC3-verb-led', isVerbLed ? 'pass' : 'warn',
         `Verb-led title: ${isVerbLed}`);
 
-    if (result.results?.[0]?.taskId) createdTaskIds.add(result.results[0].taskId);
+    if (result.results?.[0]?.result?.id) createdTaskIds.add(result.results[0].result.id);
 
     return result;
 }
@@ -898,7 +898,7 @@ async function testCL_R2_Disambiguation(pipeline, projects) {
         `Ambiguous message handled: type=${result.type}, tasks=${taskCount}`);
 
     for (const r of result.results || []) {
-        if (r.taskId) createdTaskIds.add(r.taskId);
+        if (r.result?.id) createdTaskIds.add(r.result.id);
     }
 
     return result;
