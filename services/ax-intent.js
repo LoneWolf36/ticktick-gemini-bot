@@ -332,10 +332,12 @@ function isDailyQuotaError(error) {
  * @param {Function} keyManager.markKeyUnavailable - Marks a key as unavailable due to quota
  * @param {Function} keyManager.rotateKey - Rotates to the next available key
  * @param {Function} [keyManager.getKeyCount] - Returns the total number of keys (optional)
+ * @param {Object} [config={}] - Configuration options
+ * @param {string} [config.model='gemini-2.5-flash'] - Model for intent extraction
  * @returns {{extractIntents: Function}} Intent extraction service
  * @throws {Error} If keyManager doesn't implement required methods
  */
-export function createAxIntent(keyManager) {
+export function createAxIntent(keyManager, config = {}) {
     // Validate keyManager interface
     const requiredMethods = ['getActiveKey', 'markKeyUnavailable', 'rotateKey'];
     for (const method of requiredMethods) {
@@ -349,7 +351,7 @@ export function createAxIntent(keyManager) {
     const ai = new AxAI({
         name: 'google-gemini',
         apiKey: () => keyManager.getActiveKey(),
-        config: { model: 'gemini-2.5-flash' },
+        config: { model: config.model || 'gemini-2.5-flash' },
     });
 
     // AX signature-based generation with detailed instructions for structured output

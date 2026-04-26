@@ -143,13 +143,21 @@ export class GeminiAnalyzer {
     /**
      * Creates a new GeminiAnalyzer instance.
      * @param {string|string[]} apiKeys - One or more Gemini API keys
+     * @param {Object} [config={}] - Configuration options
+     * @param {string} [config.modelFast='gemini-2.5-flash'] - Model for fast operations
+     * @param {string} [config.modelAdvanced='gemini-2.5-pro'] - Model for advanced operations
      */
-    constructor(apiKeys) {
+    constructor(apiKeys, config = {}) {
         const keys = Array.isArray(apiKeys) ? apiKeys : [apiKeys];
         this._keys = keys.filter(k => k && k !== 'YOUR_GEMINI_API_KEY_HERE');
         if (this._keys.length === 0) {
             throw new Error('❌ Gemini API key not set! Get one from https://aistudio.google.com/apikey');
         }
+
+        this._config = {
+            modelFast: config.modelFast || 'gemini-2.5-flash',
+            modelAdvanced: config.modelAdvanced || 'gemini-2.5-pro',
+        };
 
         this._activeKeyIndex = 0;
         this._exhaustedUntilByKey = new Array(this._keys.length).fill(null);
@@ -278,7 +286,7 @@ export class GeminiAnalyzer {
         this.briefingModel = {
             generateContent: async (prompt) => {
                 const response = await ai.models.generateContent({
-                    model: 'gemini-2.5-flash',
+                    model: this._config.modelFast,
                     contents: prompt,
                     config: {
                         systemInstruction: BRIEFING_PROMPT,
@@ -296,7 +304,7 @@ export class GeminiAnalyzer {
         this.weeklyModel = {
             generateContent: async (prompt) => {
                 const response = await ai.models.generateContent({
-                    model: 'gemini-2.5-flash',
+                    model: this._config.modelFast,
                     contents: prompt,
                     config: {
                         systemInstruction: WEEKLY_SUMMARY_PROMPT,
@@ -314,7 +322,7 @@ export class GeminiAnalyzer {
         this.reorgModel = {
             generateContent: async (prompt) => {
                 const response = await ai.models.generateContent({
-                    model: "gemini-2.5-flash",
+                    model: this._config.modelFast,
                     contents: prompt,
                     config: {
                         systemInstruction: REORG_PROMPT,
@@ -595,7 +603,7 @@ export class GeminiAnalyzer {
         const response = await this._executeWithFailover(
             prompt,
             async (ai, p) => ai.models.generateContent({
-                model: "gemini-2.5-flash",
+                model: this._config.modelFast,
                 contents: p,
                 config: {
                     systemInstruction: systemContext,
@@ -605,6 +613,7 @@ export class GeminiAnalyzer {
             }),
             { transientBaseMs: 15 }
         );
+
         const raw = response.text.trim();
         const parsed = this._safeParseJson(raw);
         const modelSummary = parsed && typeof parsed === 'object'
@@ -695,7 +704,7 @@ export class GeminiAnalyzer {
         const response = await this._executeWithFailover(
             prompt,
             async (ai, p) => ai.models.generateContent({
-                model: "gemini-2.5-pro",
+                model: this._config.modelAdvanced,
                 contents: p,
                 config: {
                     systemInstruction: systemContext,
@@ -705,6 +714,7 @@ export class GeminiAnalyzer {
             }),
             { transientBaseMs: 15 }
         );
+
         const raw = response.text.trim();
         const parsed = this._safeParseJson(raw);
         const summaryPayload = parsed && typeof parsed === 'object' ? parsed : {};
@@ -806,7 +816,7 @@ export class GeminiAnalyzer {
         const response = await this._executeWithFailover(
             prompt,
             async (ai, p) => ai.models.generateContent({
-                model: "gemini-2.5-pro",
+                model: this._config.modelAdvanced,
                 contents: p,
                 config: {
                     systemInstruction: `You are an organizational assistant...\\n\\nUser Context:\\n${USER_CONTEXT}`,
@@ -816,6 +826,7 @@ export class GeminiAnalyzer {
             }),
             { transientBaseMs: 12 }
         );
+
         const raw = response.text.trim();
         const parsed = this._safeParseJson(raw);
         if (parsed) return this._safeNormalizeReorgProposal(parsed, tasks, projects);

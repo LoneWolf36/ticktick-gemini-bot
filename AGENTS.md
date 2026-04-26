@@ -166,3 +166,6 @@ See `context/kits/cavekit-overview.md` for the full cross-reference map and depe
 ### Notes
 
 - Cavekit kits in `context/kits/` are the canonical requirements source.
+
+### Agent Protocol: Codebase Function Map
+CRITICAL: Every agent MUST consult `context/refs/codebase-function-map.md` to discover codebase capabilities before searching blindly. Whenever you add, remove, or change the signature of any exported function, class, or constant, you MUST run `npm run docs:map` and `npm run docs:typedoc` to regenerate the map and API documentation.

@@ -32,6 +32,8 @@ const {
     AUTO_APPLY_LIFE_ADMIN = 'true',
     AUTO_APPLY_DROPS = 'false',
     AUTO_APPLY_MODE = 'metadata-only',
+    GEMINI_MODEL_FAST = 'gemini-2.5-flash',
+    GEMINI_MODEL_ADVANCED = 'gemini-2.5-pro',
     // TICKTICK_ACCESS_TOKEN is loaded by dotenv and used by TickTickClient internally
     // (validated at first API call, not at startup — the OAuth flow sets it)
 } = process.env;
@@ -79,7 +81,10 @@ if (geminiKeys.length === 0) {
 
 let gemini;
 try {
-    gemini = new GeminiAnalyzer(geminiKeys);
+    gemini = new GeminiAnalyzer(geminiKeys, {
+        modelFast: GEMINI_MODEL_FAST,
+        modelAdvanced: GEMINI_MODEL_ADVANCED,
+    });
 } catch (err) {
     console.error(chalk.red(err.message));
     process.exit(1);
@@ -115,8 +120,9 @@ const keyManager = {
     }
 };
 
-const axIntent = createAxIntent(keyManager);
+const axIntent = createAxIntent(keyManager, { model: GEMINI_MODEL_FAST });
 const pipeline = createPipeline({
+
     axIntent,
     normalizer,
     adapter,

@@ -183,7 +183,7 @@ Exported for testing purposes.</p>
 <dt><a href="#isDailyQuotaError">isDailyQuotaError(error)</a> ⇒ <code>boolean</code></dt>
 <dd><p>Detects if an error is a daily quota exceeded error (not transient rate limits).</p>
 </dd>
-<dt><a href="#createAxIntent">createAxIntent(keyManager)</a> ⇒ <code>Object</code></dt>
+<dt><a href="#createAxIntent">createAxIntent(keyManager, [config])</a> ⇒ <code>Object</code></dt>
 <dd><p>Creates an AX intent extraction service with quota-aware key rotation.</p>
 </dd>
 <dt><a href="#createGoalThemeProfile">createGoalThemeProfile(rawContext, [options])</a> ⇒ <code>object</code></dt>
@@ -1404,7 +1404,7 @@ Detects if an error is a daily quota exceeded error (not transient rate limits).
 
 <a name="createAxIntent"></a>
 
-## createAxIntent(keyManager) ⇒ <code>Object</code>
+## createAxIntent(keyManager, [config]) ⇒ <code>Object</code>
 Creates an AX intent extraction service with quota-aware key rotation.
 
 **Kind**: global function  
@@ -1414,13 +1414,15 @@ Creates an AX intent extraction service with quota-aware key rotation.
 - <code>Error</code> If keyManager doesn't implement required methods
 
 
-| Param | Type | Description |
-| --- | --- | --- |
-| keyManager | <code>object</code> | Key manager interface for API key rotation |
-| keyManager.getActiveKey | <code>function</code> | Returns the current active API key |
-| keyManager.markKeyUnavailable | <code>function</code> | Marks a key as unavailable due to quota |
-| keyManager.rotateKey | <code>function</code> | Rotates to the next available key |
-| [keyManager.getKeyCount] | <code>function</code> | Returns the total number of keys (optional) |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| keyManager | <code>object</code> |  | Key manager interface for API key rotation |
+| keyManager.getActiveKey | <code>function</code> |  | Returns the current active API key |
+| keyManager.markKeyUnavailable | <code>function</code> |  | Marks a key as unavailable due to quota |
+| keyManager.rotateKey | <code>function</code> |  | Rotates to the next available key |
+| [keyManager.getKeyCount] | <code>function</code> |  | Returns the total number of keys (optional) |
+| [config] | <code>Object</code> | <code>{}</code> | Configuration options |
+| [config.model] | <code>string</code> | <code>&quot;&#x27;gemini-2.5-flash&#x27;&quot;</code> | Model for intent extraction |
 
 <a name="createAxIntent..extractIntents"></a>
 
