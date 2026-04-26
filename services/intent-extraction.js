@@ -798,10 +798,3 @@ export function createIntentExtractor(gemini) {
         extractIntents: (userMessage, options) => extractIntentsWithGemini(gemini, userMessage, options),
     };
 }
-
-/**
- * @deprecated Use createIntentExtractor instead
- */
-export function createAxIntent(gemini) {
-    return createIntentExtractor(gemini);
-}
