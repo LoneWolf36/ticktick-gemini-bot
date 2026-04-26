@@ -19,7 +19,7 @@ const BRACKET_PREFIX = /^\[.*?\]\s*/;
 const LEADING_ARTICLES = /^(a|an|the)\s+/i;
 
 // Common verbs to detect verb-led titles (not exhaustive, but covers common cases)
-const VERB_PATTERNS = /^(add|book|buy|call|cancel|check|clean|complete|create|delete|do|download|draft|email|exercise|fetch|file|finish|fix|get|go|have|join|learn|make|meet|organize|pay|plan|prepare|practice|read|register|remove|reply|review|schedule|send|set|setup|start|study|submit|take|talk|test|update|upload|verify|visit|wait|walk|watch|write)\b/i;
+const VERB_PATTERNS = /^(add|analyze|apply|approve|arrange|assemble|assess|assign|assist|attach|authorize|block|book|build|buy|call|cancel|capture|celebrate|check|claim|clean|coach|collect|communicate|complete|compose|configure|confirm|consolidate|construct|contribute|convert|create|customize|debug|decide|define|delegate|delete|destroy|develop|discard|discover|discuss|distribute|do|document|download|draft|draw|edit|educate|email|emit|encourage|engage|enhance|ensure|enter|establish|evaluate|examine|execute|exercise|explain|explore|facilitate|fetch|file|finalize|finish|fix|follow|force|format|generate|get|give|go|govern|group|guide|have|identify|implement|import|improve|increase|inform|initiate|inspect|install|integrate|interact|investigate|join|keep|launch|lead|learn|limit|locate|log|make|manage|measure|meet|merge|modify|monitor|navigate|negotiate|notify|offer|operate|optimize|organize|outline|pack|participate|pay|perform|persuade|plan|prepare|present|preserve|prioritize|process|produce|practice|publish|purchase|read|receive|record|reduce|refactor|register|reject|release|remove|rename|renew|repair|reply|report|request|resolve|review|rewrite|scaffold|schedule|search|secure|segment|send|set|setup|share|sign|sort|split|start|stop|store|streamline|study|submit|subscribe|suggest|support|take|talk|test|track|train|transfer|transform|translate|update|upload|utilize|verify|visit|wait|walk|warn|watch|write)\b/i;
 
 // Content normalization constants
 const DEFAULT_MAX_CONTENT_LENGTH = 4000;
@@ -181,7 +181,7 @@ function _formatISO(date, timezone = 'Europe/Dublin', endOfDay = true) {
  * @param {number} maxLength - Maximum character limit (default 100)
  * @returns {string} Cleaned, verb-led title
  */
-function _normalizeTitle(rawTitle, maxLength = 100) {
+function _normalizeTitle(rawTitle, maxLength = 100, isMutation = false) {
     if (!rawTitle) return '';
 
     let title = rawTitle.trim();
@@ -205,8 +205,8 @@ function _normalizeTitle(rawTitle, maxLength = 100) {
     // Strip leading articles
     title = title.replace(LEADING_ARTICLES, '');
 
-    // Ensure verb-led: add "Do" prefix if no verb detected
-    if (!VERB_PATTERNS.test(title)) {
+    // Ensure verb-led: add "Do" prefix if no verb detected (skip for mutations)
+    if (!isMutation && !VERB_PATTERNS.test(title)) {
         title = 'Do ' + title;
     }
 
@@ -879,8 +879,8 @@ export function normalizeAction(intentAction, options = {}) {
 
     // Pre-compute title and content for project inference
     const normalizedTitle = isMutation && !intentAction.title
-        ? (resolvedTask?.title || _normalizeTitle(intentAction.title, maxTitleLength))
-        : _normalizeTitle(intentAction.title, maxTitleLength);
+        ? (resolvedTask?.title || _normalizeTitle(intentAction.title, maxTitleLength, isMutation))
+        : _normalizeTitle(intentAction.title, maxTitleLength, isMutation);
     const normalizedContent = _truncateContent(mutationContent, maxContentLength);
 
     const normalized = {
@@ -892,10 +892,11 @@ export function normalizeAction(intentAction, options = {}) {
         targetQuery: isMutation ? (intentAction.targetQuery || null) : null,
         title: normalizedTitle,
         content: normalizedContent,
+        mergeContent: (isMutation && existingTaskContent !== null && !normalizedContent) ? false : undefined,
         priority: normalizedPriority,
         originalPriority: originalPriority,  // Keep for validation
         projectId: _resolveProject(intentAction.projectHint, projects, defaultProjectId, normalizedTitle, normalizedContent),
-        dueDate: _expandDueDate(intentAction.dueDate, options),
+        dueDate: isMutation && intentAction.dueDate == null ? undefined : _expandDueDate(intentAction.dueDate, options),
         repeatFlag: _resolveRepeatFlag(intentAction),
         splitStrategy: intentAction.splitStrategy || 'single',
         valid: true,

@@ -1,7 +1,7 @@
 // Scheduler - cron jobs for daily briefing, weekly digest, and task polling
 import cron from 'node-cron';
 import * as store from './store.js';
-import { buildAutoApplyNotification, userTimeString, filterProcessedThisWeek, sendWithMarkdown } from './shared-utils.js';
+import { buildAutoApplyNotification, buildUndoEntry, userTimeString, filterProcessedThisWeek, sendWithMarkdown } from './shared-utils.js';
 import { logSummarySurfaceEvent } from './summary-surfaces/index.js';
 
 /**
@@ -610,9 +610,27 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                                 autoApplied.push({
                                     title: action.title || task.title,
                                     schedule: action.dueDate ? action.dueDate.split('T')[0] : null,
-                                    movedTo: action.projectId && action.projectId !== task.projectId ? action.projectId : null,
+                                    movedTo: action.projectId && action.projectId !== task.projectId
+                                        ? (projects.find(p => p.id === action.projectId)?.name || action.projectId)
+                                        : null,
                                 });
                             }
+                        }
+                        // Create undo entry for the last non-drop action (only keep latest)
+                        const lastAction = [...result.actions].reverse().find(a => a.type !== 'drop');
+                        if (lastAction) {
+                            const undoEntry = buildUndoEntry({
+                                source: task,
+                                action: 'auto-apply',
+                                applied: {
+                                    title: lastAction.title ?? null,
+                                    projectId: lastAction.projectId ?? null,
+                                    priority: lastAction.priority ?? null,
+                                    schedule: lastAction.dueDate ? lastAction.dueDate.split('T')[0] : null,
+                                },
+                                appliedTaskId: task.id,
+                            });
+                            await store.replaceUndoEntriesByAction('auto-apply', undoEntry);
                         }
                     } else {
                         await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });

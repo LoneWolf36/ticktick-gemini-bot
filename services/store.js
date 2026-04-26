@@ -883,6 +883,18 @@ export async function removeLastUndoEntry() {
     await save();
 }
 
+/**
+ * Removes all undo entries matching the given action tag, then adds a new entry.
+ * Used by auto-apply to keep only the most recent undo entry.
+ * @param {string} actionTag - The action tag to replace (e.g. 'auto-apply')
+ * @param {Object} newEntry - The new undo entry to add
+ */
+export async function replaceUndoEntriesByAction(actionTag, newEntry) {
+    state.undoLog = state.undoLog.filter(e => e.action !== actionTag);
+    state.undoLog.push({ ...newEntry, timestamp: new Date().toISOString() });
+    await save();
+}
+
 // ─── Stats ───────────────────────────────────────────────────
 
 export function getStats() {

@@ -1405,7 +1405,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
 
             // Final fallback: null if neither configured project nor Inbox exists
             if (defaultProjectId === null) {
-                console.warn(`[Pipeline:${context.requestId}] Neither "${defaultProjectName}" nor Inbox found in available projects.`);
+                console.warn(`[Pipeline:${context.requestId}] Neither "${defaultProjectName}" nor Inbox found in available projects. Available: ${context.availableProjects.map(p => p.name).join(', ')}`);
             }
 
             const normOptions = {
