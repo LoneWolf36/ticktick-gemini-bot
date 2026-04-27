@@ -13,11 +13,24 @@ const MUTATION_CLARIFICATION_TTL_MS = 10 * 60 * 1000;
  * Build an inline keyboard for task review.
  *
  * @param {string} taskId - The TickTick task ID.
+ * @param {string} [actionType='update'] - The action type: 'update', 'complete', or 'delete'.
  * @returns {InlineKeyboard} Grammy inline keyboard instance.
  */
-export function taskReviewKeyboard(taskId) {
+export function taskReviewKeyboard(taskId, actionType = 'update') {
     // Telegram callback_data has 64-byte limit — truncate if needed
     const id = taskId.length > 50 ? taskId.slice(0, 50) : taskId;
+    if (actionType === 'complete') {
+        return new InlineKeyboard()
+            .text('✅ Confirm complete', `a:${id}`)
+            .text('⏭ Keep active', `s:${id}`)
+            .row()
+            .text('🗑️ Delete instead', `d:${id}`);
+    }
+    if (actionType === 'delete') {
+        return new InlineKeyboard()
+            .text('🗑️ Confirm delete', `a:${id}`)
+            .text('⏭ Keep task', `s:${id}`);
+    }
     return new InlineKeyboard()
         .text('✅ Apply changes', `a:${id}`)
         .text('✏️ Refine', `r:${id}`)
@@ -97,33 +110,49 @@ export function registerCallbacks(bot, adapter, pipeline) {
         }
 
         try {
-            const update = buildTickTickUpdate(data);
-            const updatedTask = await adapter.updateTask(taskId, update);
+            const actionType = data.actionType || 'update';
 
-            await store.addUndoEntry(buildUndoEntry({
-                source: data, // `data` has taskId, originalTitle, etc.
-                action: 'approve',
-                appliedTaskId: updatedTask.id,
-                applied: {
-                    title: data.improvedTitle ?? null,
-                    priority: PRIORITY_LABEL[data.suggestedPriority] ?? null,
-                    project: (data.suggestedProjectId && data.suggestedProjectId !== data.projectId)
-                        ? data.suggestedProject : null,
-                    projectId: (data.suggestedProjectId && data.suggestedProjectId !== data.projectId)
-                        ? data.suggestedProjectId : null,
-                    schedule: data.suggestedSchedule ?? null,
-                }
-            }));
+            if (actionType === 'complete') {
+                const projectId = data.projectId || data.originalProjectId;
+                await adapter.completeTask(taskId, projectId);
+                await store.approveTask(taskId);
+                await ctx.answerCallbackQuery({ text: '✅ Marked as done!' });
+                await editWithMarkdown(ctx, `✅ **Completed:** "${data.originalTitle}"`);
+            } else if (actionType === 'delete') {
+                const projectId = data.projectId || data.originalProjectId;
+                await adapter.deleteTask(taskId, projectId);
+                await store.approveTask(taskId);
+                await ctx.answerCallbackQuery({ text: '🗑️ Deleted' });
+                await editWithMarkdown(ctx, `🗑️ **Deleted:** "${data.originalTitle}"`);
+            } else {
+                const update = buildTickTickUpdate(data);
+                const updatedTask = await adapter.updateTask(taskId, update);
 
-            await store.approveTask(taskId);
+                await store.addUndoEntry(buildUndoEntry({
+                    source: data, // `data` has taskId, originalTitle, etc.
+                    action: 'approve',
+                    appliedTaskId: updatedTask.id,
+                    applied: {
+                        title: data.improvedTitle ?? null,
+                        priority: PRIORITY_LABEL[data.suggestedPriority] ?? null,
+                        project: (data.suggestedProjectId && data.suggestedProjectId !== data.projectId)
+                            ? data.suggestedProject : null,
+                        projectId: (data.suggestedProjectId && data.suggestedProjectId !== data.projectId)
+                            ? data.suggestedProjectId : null,
+                        schedule: data.suggestedSchedule ?? null,
+                    }
+                }));
 
-            const movedNote = (data.suggestedProjectId && data.suggestedProjectId !== data.projectId)
-                ? ` Moved to ${data.suggestedProject}.` : '';
-            const dateNote = data.suggestedSchedule && data.suggestedSchedule !== 'someday'
-                ? ` Due: ${data.suggestedSchedule}.` : '';
+                await store.approveTask(taskId);
 
-            await ctx.answerCallbackQuery({ text: '✅ Applied to TickTick!' });
-            await editWithMarkdown(ctx, `✅ **Updated:** "${data.improvedTitle || data.originalTitle}"${movedNote}${dateNote}\n\n*Applied successfully.*`);
+                const movedNote = (data.suggestedProjectId && data.suggestedProjectId !== data.projectId)
+                    ? ` Moved to ${data.suggestedProject}.` : '';
+                const dateNote = data.suggestedSchedule && data.suggestedSchedule !== 'someday'
+                    ? ` Due: ${data.suggestedSchedule}.` : '';
+
+                await ctx.answerCallbackQuery({ text: '✅ Applied to TickTick!' });
+                await editWithMarkdown(ctx, `✅ **Updated:** "${data.improvedTitle || data.originalTitle}"${movedNote}${dateNote}\n\n*Applied successfully.*`);
+            }
         } catch (err) {
             console.error('Approve error:', err.message);
             await ctx.answerCallbackQuery({ text: '❌ Failed to update task. Please try again.' });

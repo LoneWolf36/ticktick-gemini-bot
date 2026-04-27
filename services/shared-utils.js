@@ -314,8 +314,12 @@ export function buildTickTickUpdate(data, options = {}) {
     }
 
     if (data.suggestedSchedule && data.suggestedSchedule !== 'someday' && data.suggestedSchedule !== 'null') {
-        const dueDate = scheduleToDateTime(data.suggestedSchedule, { priorityLabel });
-        if (dueDate) update.dueDate = dueDate;
+        if (typeof data.suggestedSchedule === 'string' && (data.suggestedSchedule.includes('T') || data.suggestedSchedule.includes('-'))) {
+            update.dueDate = data.suggestedSchedule;
+        } else {
+            const dueDate = scheduleToDateTime(data.suggestedSchedule, { priorityLabel });
+            if (dueDate) update.dueDate = dueDate;
+        }
     }
 
     return update;
@@ -371,6 +375,80 @@ export function buildTaskCard(task, analysis) {
 
     if (analysis.success_criteria) lines.push(`\n**🎯 Done when:** ${analysis.success_criteria}`);
     if (analysis.callout) lines.push(`\n**💬 Coach:** *${analysis.callout}*`);
+
+    return truncateMessage(lines.join('\n'));
+}
+
+/**
+ * Builds a Telegram review card from a task + normalized action.
+ * @param {Object} task - Original TickTick task object
+ * @param {Object} action - Normalized pipeline action
+ * @param {Array} [projects=[]] - List of available TickTick projects
+ * @returns {string} Formatted Telegram message string
+ */
+export function buildTaskCardFromAction(task, action, projects = []) {
+    const lines = [];
+
+    if (action.type === 'complete') {
+        lines.push(`✅ **Mark as done:** "${task.title}"`);
+        if (action.title && action.title !== task.title) {
+            lines.push(`✨ **${action.title}**`);
+        }
+        if (action.priority !== undefined && action.priority !== task.priority) {
+            lines.push(`${PRIORITY_EMOJI[action.priority] || '⚪'} ${PRIORITY_LABEL[action.priority] || 'unknown'}`);
+        }
+        if (action.projectId && action.projectId !== task.projectId) {
+            const project = projects.find(p => p.id === action.projectId);
+            lines.push(`📁 → ${project?.name || 'Inbox'}`);
+        }
+        if (action.dueDate) {
+            const schedLabel = action.dueDate.includes('T') || action.dueDate.includes('-')
+                ? userLocaleString(action.dueDate)
+                : scheduleLabel(action.dueDate);
+            if (schedLabel) lines.push(`📅 ${schedLabel}`);
+        }
+        return truncateMessage(lines.join('\n'));
+    }
+
+    if (action.type === 'delete') {
+        lines.push(`🗑️ **Suggested deletion:** "${task.title}"`);
+        return truncateMessage(lines.join('\n'));
+    }
+
+    // Update
+    lines.push(`📂 **${task.projectName || 'Inbox'}**`);
+
+    if (action.title && action.title !== task.title) {
+        lines.push(`_Was: "${task.title}"_`);
+        lines.push(`✨ **${action.title}**`);
+    } else {
+        lines.push(`📌 **${task.title}**`);
+    }
+
+    lines.push('');
+
+    const decisions = [];
+    const effectivePriority = action.priority ?? task.priority;
+    decisions.push(`${PRIORITY_EMOJI[effectivePriority] || '⚪'} ${PRIORITY_LABEL[effectivePriority] || 'unknown'}`);
+
+    if (action.dueDate) {
+        const schedLabel = action.dueDate.includes('T') || action.dueDate.includes('-')
+            ? userLocaleString(action.dueDate)
+            : scheduleLabel(action.dueDate);
+        if (schedLabel) decisions.push(`📅 ${schedLabel}`);
+    }
+
+    if (action.projectId && action.projectId !== task.projectId) {
+        const project = projects.find(p => p.id === action.projectId);
+        decisions.push(`📁 → ${project?.name || 'Inbox'}`);
+    }
+
+    lines.push(`**${decisions.join('  |  ')}**`);
+    lines.push('');
+
+    if (action.content) {
+        lines.push(`📝 ${action.content}`);
+    }
 
     return truncateMessage(lines.join('\n'));
 }
@@ -436,6 +514,48 @@ export function buildPendingData(task, analysis, projects = []) {
         resources: analysis.resources,
         successCriteria: analysis.success_criteria,
         callout: analysis.callout,
+    };
+}
+
+/**
+ * Maps a normalized pipeline action to the pending data shape expected by the store and callbacks.
+ * @param {Object} task - Original TickTick task
+ * @param {Object} action - Normalized pipeline action
+ * @param {Array} [projects=[]] - List of available TickTick projects
+ * @returns {Object} Structured pending task record
+ */
+export function buildPendingDataFromAction(task, action, projects = []) {
+    const project = action.projectId
+        ? projects.find(p => p.id === action.projectId)
+        : null;
+
+    return {
+        taskId: action.taskId,
+        originalTitle: task.title,
+        originalContent: task.content || '',
+        originalPriority: task.priority,
+        originalProjectId: task.projectId,
+        projectId: task.projectId,
+        projectName: task.projectName || 'Inbox',
+
+        improvedTitle: action.title !== task.title ? action.title : null,
+        improvedContent: action.content || null,
+        suggestedPriority: action.priority ?? task.priority,
+        suggestedProject: project?.name || null,
+        suggestedProjectId: action.projectId !== task.projectId ? action.projectId : null,
+        suggestedSchedule: action.dueDate || null,
+
+        actionType: action.type,
+
+        analysis: null,
+        description: null,
+        priority: null,
+        priorityEmoji: null,
+        needleMover: null,
+        subSteps: null,
+        resources: null,
+        successCriteria: null,
+        callout: null,
     };
 }
 

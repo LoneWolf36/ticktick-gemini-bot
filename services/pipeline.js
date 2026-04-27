@@ -878,6 +878,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
     }
 
     async function processMessage(userMessage, options = {}) {
+        const isDryRun = options.dryRun === true;
         let context;
         let requestStartedAt = Date.now();
 
@@ -1567,6 +1568,43 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 return attachPipelineContext(buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS, {
                     note: 'No valid actions after normalization.',
                 }), context);
+            }
+
+            if (isDryRun) {
+                const dryRunConfirmationText = `Analysis complete — ${validActions.length} action(s) ready for review.`;
+                context = finalizePipelineContext(context, requestStartedAt, {
+                    resultType: 'task',
+                    status: 'success',
+                    summary: 'dry_run',
+                });
+                await telemetry.emit(context, {
+                    eventType: 'pipeline.request.completed',
+                    step: 'result',
+                    status: 'success',
+                    durationMs: Date.now() - requestStartedAt,
+                    metadata: {
+                        type: 'task',
+                        actionCount: validActions.length,
+                        dryRun: true,
+                    },
+                });
+                return attachPipelineContext({
+                    type: 'task',
+                    actions: validActions,
+                    results: [],
+                    errors: [],
+                    confirmationText: dryRunConfirmationText,
+                    requestId: context.requestId,
+                    entryPoint: context.entryPoint,
+                    mode: context.mode,
+                    workStyleMode: context.workStyleMode || null,
+                    checklistContext: context.checklistContext || null,
+                    warnings: invalidActions.map(a => a.validationErrors).flat(),
+                    checklistMetadata: validActions
+                        .filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0)
+                        .map(a => ({ actionIndex: a._index ?? null, checklistItemCount: a.checklistItems.length })),
+                    dryRun: true,
+                }, context);
             }
 
             const executionResult = await _executeActions(validActions, adapter, context, telemetry);
