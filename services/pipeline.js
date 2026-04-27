@@ -696,9 +696,9 @@ async function executeAction(action, adapter) {
         case 'update':
             return adapter.updateTask(action.taskId, action);
         case 'complete':
-            return adapter.completeTask(action.taskId, action.projectId);
+            return adapter.completeTask(action.taskId, action.originalProjectId || action.projectId);
         case 'delete':
-            return adapter.deleteTask(action.taskId, action.projectId);
+            return adapter.deleteTask(action.taskId, action.originalProjectId || action.projectId);
         default:
             throw new Error(`Unsupported action type: ${action.type}`);
     }

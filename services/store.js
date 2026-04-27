@@ -773,8 +773,23 @@ export async function clearPendingMutationClarification() {
 /** Checklist clarification TTL: 24 hours */
 export const CHECKLIST_CLARIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 
+/** Task refinement TTL: 15 minutes */
+export const TASK_REFINEMENT_TTL_MS = 15 * 60 * 1000;
+
 export function getPendingTaskRefinement() {
-    return state.pendingTaskRefinement || null;
+    const pending = state.pendingTaskRefinement;
+    if (!pending) return null;
+
+    // TTL check — expire silently
+    const createdAt = pending.createdAt ? new Date(pending.createdAt).getTime() : 0;
+    if (createdAt && (Date.now() - createdAt > TASK_REFINEMENT_TTL_MS)) {
+        console.log('[TaskRefinement] Expired pending state cleared (TTL exceeded)');
+        state.pendingTaskRefinement = null;
+        save().catch(() => {}); // Best-effort cleanup
+        return null;
+    }
+
+    return pending;
 }
 
 export async function setPendingTaskRefinement(data) {

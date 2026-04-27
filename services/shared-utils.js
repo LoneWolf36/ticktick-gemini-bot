@@ -334,7 +334,7 @@ export function buildTaskCard(task, analysis) {
     lines.push(`📂 **${task.projectName || 'Inbox'}**`);
     
     if (analysis.improved_title && analysis.improved_title !== task.title) {
-        lines.push(`~~${task.title}~~`);
+        lines.push(`_Was: "${task.title}"_`);
         lines.push(`✨ **${analysis.improved_title}**`);
     } else {
         lines.push(`📌 **${task.title}**`);

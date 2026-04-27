@@ -642,10 +642,12 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                         await store.markTaskFailed(task.id, reason);
                         console.error(`  ❌ Failed: "${task.title}": ${reason}`);
                     } else if (result.type === 'task') {
-                        // Filter out drop actions when autoApplyDrops is OFF
-                        const appliedActions = autoApplyDrops
-                            ? result.actions
-                            : result.actions.filter(a => a.type !== 'drop');
+                        // Safety filter: never auto-apply destructive or terminal actions
+                        const appliedActions = result.actions.filter(a => {
+                            if (a.type === 'delete' || a.type === 'complete') return false;
+                            if (a.type === 'drop' && !autoApplyDrops) return false;
+                            return true;
+                        });
 
                         await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: true });
                         for (const action of appliedActions) {

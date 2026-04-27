@@ -48,10 +48,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         .text('🌙 Evening', 'menu:daily_close')
         .text('📊 Weekly', 'menu:weekly')
         .row()
-        .text('⚡ Urgent', 'menu:urgent')
-        .text('🎯 Focus', 'menu:focus')
-        .text('🧘 Normal', 'menu:normal')
-        .row()
         .text('🧭 Reorg', 'menu:reorg')
         .text('📈 Status', 'menu:status');
 
@@ -563,7 +559,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             let doneMsg = lines.join('\n');
             
             if (targetTasks.length > 5) {
-                const nextKeyboard = new InlineKeyboard().text('⬇️ Load Next 5', 'menu:scan');
+                const nextKeyboard = new InlineKeyboard().text('🔄 Continue', 'menu:scan');
                 await replyWithMarkdown(ctx, doneMsg.trim(), { reply_markup: nextKeyboard });
             } else {
                 await replyWithMarkdown(ctx, doneMsg.trim());
@@ -603,8 +599,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
 
         if (entries.length > 5) {
-            const nextKeyboard = new InlineKeyboard().text('⬇️ Load Next 5', 'menu:pending');
-            await ctx.reply(`📝 Sent 5 of ${entries.length}.`, { reply_markup: nextKeyboard });
+            const nextKeyboard = new InlineKeyboard().text('🔄 Continue', 'menu:pending');
+                await ctx.reply(`📝 Sent 5 of ${entries.length}.`, { reply_markup: nextKeyboard });
         }
     };
 
@@ -956,7 +952,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             let doneMsg = lines.join('\n');
 
             if (targetTasks.length > 5) {
-                const nextKeyboard = new InlineKeyboard().text('⬇️ Load Next 5', 'menu:review');
+                const nextKeyboard = new InlineKeyboard().text('🔄 Continue', 'menu:review');
                 await replyWithMarkdown(ctx, doneMsg.trim(), { reply_markup: nextKeyboard });
             } else {
                 await replyWithMarkdown(ctx, doneMsg.trim());
@@ -978,6 +974,11 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     bot.on('message:text', async (ctx) => {
         if (!isAuthorized(ctx)) return;
         // Skip commands (Grammy routes them first, but just in case)
+        const pendingRefinement = store.getPendingTaskRefinement();
+        if (pendingRefinement && ctx.message.text.startsWith('/')) {
+            await store.clearPendingTaskRefinement();
+            await ctx.reply('Refinement cancelled — running your command.');
+        }
         if (ctx.message.text.startsWith('/')) return;
         const rawText = ctx.message.text.trim();
         if (!rawText) return;

@@ -57,10 +57,22 @@ export function registerCallbacks(bot, adapter, pipeline) {
         
         await store.setPendingTaskRefinement(taskId);
         await ctx.answerCallbackQuery({ text: 'Ready for refinement' });
+        const cancelKeyboard = new InlineKeyboard().text('❌ Cancel', 'rcancel');
         await ctx.reply(`✏️ **Refining "${data.originalTitle}"**\nSend your tweaks (e.g. "make it high priority", "move to admin project").`, {
             reply_parameters: { message_id: ctx.callbackQuery.message.message_id },
-            parse_mode: 'Markdown'
+            parse_mode: 'Markdown',
+            reply_markup: cancelKeyboard
         });
+    });
+
+    bot.callbackQuery('rcancel', async (ctx) => {
+        if (!isAuthorized(ctx)) {
+            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            return;
+        }
+        await store.clearPendingTaskRefinement();
+        await ctx.answerCallbackQuery({ text: 'Refinement cancelled' });
+        await ctx.editMessageText('Refinement cancelled.');
     });
 
     // ─── Approve: move pending → processed, update TickTick ───
