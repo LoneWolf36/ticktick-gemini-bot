@@ -866,6 +866,20 @@ export async function removeDeferredPipelineIntent(id) {
     return structuredClone(removed);
 }
 
+/**
+ * Update a deferred pipeline intent in place (e.g., increment retry count).
+ * @param {Object} updatedEntry - Entry with updated fields (must have id)
+ */
+export async function updateDeferredPipelineIntent(updatedEntry) {
+    if (!updatedEntry?.id) return;
+    const current = Array.isArray(state.deferredPipelineIntents) ? state.deferredPipelineIntents : [];
+    const index = current.findIndex((entry) => entry?.id === updatedEntry.id);
+    if (index === -1) return;
+    current[index] = { ...current[index], ...updatedEntry };
+    state.deferredPipelineIntents = current;
+    await save();
+}
+
 // ─── Undo Log ────────────────────────────────────────────────
 
 export async function addUndoEntry(entry) {

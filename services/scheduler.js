@@ -332,6 +332,16 @@ export async function retryDeferredIntents({ adapter, pipeline, bot } = {}, opti
             continue;
         }
 
+        // Cap retries — remove intents that have failed too many times
+        const retryCount = (entry.retryCount || 0) + 1;
+        if (retryCount > 3) {
+            await store.removeDeferredPipelineIntent(entry.id);
+            failed++;
+            notifications.push(`❌ Failed permanently (3 retries): ${entry.userMessage.slice(0, 40)}`);
+            console.log(`[DeferredRetry] Removing intent ${entry.id} after ${retryCount} retries`);
+            continue;
+        }
+
         try {
             const processMessage = typeof pipeline.processMessageWithContext === 'function'
                 ? pipeline.processMessageWithContext
@@ -348,7 +358,9 @@ export async function retryDeferredIntents({ adapter, pipeline, bot } = {}, opti
                 retried++;
                 notifications.push(`✅ Retried: ${result.actions?.[0]?.title || entry.userMessage.slice(0, 40)}`);
             } else if (result.type === 'error' && result.failure?.category === 'transient') {
-                // Still transient — leave in queue for next cycle
+                // Still transient — increment retry count and leave in queue
+                entry.retryCount = retryCount;
+                await store.updateDeferredPipelineIntent(entry);
                 failed++;
             } else {
                 // Permanent failure or non-task result — remove to avoid infinite retry
