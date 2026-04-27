@@ -522,6 +522,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
     let tokenExpiredNotified = false;
     let quotaNotificationSent = false;
     let pendingSuppressionSent = false;
+    let unscannedNotificationSent = false;
 
     const processPipelineMessage = (userMessage, options) =>
         typeof pipeline.processMessageWithContext === 'function'
@@ -598,15 +599,21 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
             const projects = await adapter.listProjects();
             const newTasks = allTasks.filter((t) => !store.isTaskKnown(t.id));
 
-            if (newTasks.length === 0) return;
+            if (newTasks.length === 0) {
+                unscannedNotificationSent = false;
+                return;
+            }
             console.log(`📬 Found ${newTasks.length} new task(s)`);
 
 // When auto-apply is OFF, just notify and skip pipeline processing
 // Do NOT mark tasks as processed — /scan needs to find them
             if (!autoApplyLifeAdmin) {
-                if (!shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY)) {
-                    await sendWithMarkdown(bot.api, chatId,
-                        `📬 ${newTasks.length} new task(s) found.\n\nAuto-apply is OFF. Run /scan to process them.`);
+                if (!unscannedNotificationSent) {
+                    if (!shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY)) {
+                        await sendWithMarkdown(bot.api, chatId,
+                            `📬 ${newTasks.length} new task(s) found.\n\nAuto-apply is OFF. Run /scan to process them.`);
+                    }
+                    unscannedNotificationSent = true;
                 }
                 return;
             }

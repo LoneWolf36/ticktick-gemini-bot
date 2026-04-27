@@ -224,8 +224,6 @@ Exported for testing purposes.</p>
 <dt><a href="#createIntentExtractor">createIntentExtractor(gemini)</a> ⇒ <code>Object</code></dt>
 <dd><p>Creates a Gemini-based intent extraction service.</p>
 </dd>
-<dt><del><a href="#createAxIntent">createAxIntent()</a></del></dt>
-<dd></dd>
 <dt><a href="#_coerceDate">_coerceDate()</a></dt>
 <dd><p>Gets local current date components formatted by the system timezone.</p>
 </dd>
@@ -296,6 +294,12 @@ Validate — require non-empty title, default status to 0 (incomplete),
 <dt><a href="#_resolveProject">_resolveProject()</a></dt>
 <dd><p>Resolves a project hint string to a concrete TickTick project ID.
 Expects a list of projects from the TickTick API.</p>
+<p>Resolution order:</p>
+<ol>
+<li>projectHint exact match / startsWith / contains (if provided)</li>
+<li>Content-based inference via inferProjectIdFromTask (if no projectHint)</li>
+<li>defaultProjectId fallback</li>
+</ol>
 </dd>
 <dt><a href="#_expandDueDate">_expandDueDate()</a></dt>
 <dd><p>Expands relative dates to absolute ISO strings.
@@ -599,6 +603,16 @@ Mode transitions are explicit — never changes without user action or auto-expi
 </dd>
 <dt><a href="#clearPendingChecklistClarification">clearPendingChecklistClarification()</a> ⇒ <code>Promise.&lt;void&gt;</code></dt>
 <dd><p>Clears the pending checklist clarification state.</p>
+</dd>
+<dt><a href="#updateDeferredPipelineIntent">updateDeferredPipelineIntent(updatedEntry)</a></dt>
+<dd><p>Update a deferred pipeline intent in place (e.g., increment retry count).</p>
+</dd>
+<dt><a href="#getLastAutoApplyBatch">getLastAutoApplyBatch()</a> ⇒ <code>Array.&lt;Object&gt;</code></dt>
+<dd><p>Get all undo entries from the most recent auto-apply batch.
+Groups by batchId; if no batchId, falls back to the single most recent auto-apply entry.</p>
+</dd>
+<dt><a href="#removeUndoEntries">removeUndoEntries(entries)</a></dt>
+<dd><p>Remove specific undo entries by reference identity.</p>
 </dd>
 <dt><a href="#resetAll">resetAll()</a></dt>
 <dd><p>Wipe all data and start fresh</p>
@@ -1575,12 +1589,6 @@ Creates a Gemini-based intent extraction service.
 | --- | --- | --- |
 | gemini | [<code>GeminiAnalyzer</code>](#GeminiAnalyzer) | GeminiAnalyzer instance |
 
-<a name="createAxIntent"></a>
-
-## ~~createAxIntent()~~
-***Use createIntentExtractor instead***
-
-**Kind**: global function  
 <a name="_coerceDate"></a>
 
 ## \_coerceDate()
@@ -1727,6 +1735,11 @@ Supported patterns:
 ## \_resolveProject()
 Resolves a project hint string to a concrete TickTick project ID.
 Expects a list of projects from the TickTick API.
+
+Resolution order:
+1. projectHint exact match / startsWith / contains (if provided)
+2. Content-based inference via inferProjectIdFromTask (if no projectHint)
+3. defaultProjectId fallback
 
 **Kind**: global function  
 <a name="_expandDueDate"></a>
@@ -2859,6 +2872,35 @@ Stores a pending checklist clarification with automatic timestamp.
 Clears the pending checklist clarification state.
 
 **Kind**: global function  
+<a name="updateDeferredPipelineIntent"></a>
+
+## updateDeferredPipelineIntent(updatedEntry)
+Update a deferred pipeline intent in place (e.g., increment retry count).
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| updatedEntry | <code>Object</code> | Entry with updated fields (must have id) |
+
+<a name="getLastAutoApplyBatch"></a>
+
+## getLastAutoApplyBatch() ⇒ <code>Array.&lt;Object&gt;</code>
+Get all undo entries from the most recent auto-apply batch.Groups by batchId; if no batchId, falls back to the single most recent auto-apply entry.
+
+**Kind**: global function  
+**Returns**: <code>Array.&lt;Object&gt;</code> - Array of undo entries from the same batch  
+<a name="removeUndoEntries"></a>
+
+## removeUndoEntries(entries)
+Remove specific undo entries by reference identity.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| entries | <code>Array.&lt;Object&gt;</code> | Entries to remove |
+
 <a name="resetAll"></a>
 
 ## resetAll()
