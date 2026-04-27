@@ -568,25 +568,32 @@ export class GeminiAnalyzer {
                         break; // Exit inner while, continue to next model in outer for loop
                     }
 
-                    // Transient Rate Limit handling
+                    // Transient error handling (rate limits + service unavailable)
                     const isRateLimit = err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429');
-                    if (isRateLimit && transientAttempts < maxTransientRetries) {
+                    const isServiceUnavailable = err.status === 503;
+                    const isTransient = isRateLimit || isServiceUnavailable;
+                    if (isTransient && transientAttempts < maxTransientRetries) {
                         let dynamicBackoffMs = transientBaseMs;
                         const match = err.message?.match(/Please retry in ([\d\.]+)s/);
                         if (match && match[1]) {
-                            // Google gives us exactly how long to wait. Parse it and add 2s buffer.
                             dynamicBackoffMs = parseFloat(match[1]) * 1000 + 2000;
                         }
+                        // Use longer backoff for 503 (service usually needs more recovery time)
+                        if (isServiceUnavailable) {
+                            dynamicBackoffMs = Math.max(dynamicBackoffMs, 10000);
+                        }
                         const backoffMs = dynamicBackoffMs + Math.random() * 5000;
-                        console.error(`⏳ Rate limited, waiting ${Math.round(backoffMs / 1000)}s before retry ${transientAttempts + 1}/${maxTransientRetries}...`);
+                        const errorType = isServiceUnavailable ? 'service unavailable' : 'rate limited';
+                        console.error(`⏳ ${errorType}, waiting ${Math.round(backoffMs / 1000)}s before retry ${transientAttempts + 1}/${maxTransientRetries}...`);
                         await new Promise(r => setTimeout(r, backoffMs));
                         transientAttempts++;
                         continue;
                     }
 
-                    // Transient retries exhausted or non-rate-limit error — try next model in chain
-                    if (isRateLimit) {
-                        console.error(`⏳ Rate limit retries exhausted for ${model}, trying next model in chain.`);
+                    // Transient retries exhausted — try next model in chain
+                    if (isTransient) {
+                        const errorType = isServiceUnavailable ? 'Service unavailable' : 'Rate limit';
+                        console.error(`⏳ ${errorType} retries exhausted for ${model}, trying next model in chain.`);
                         break; // Exit inner while, continue to next model in outer for loop
                     }
 

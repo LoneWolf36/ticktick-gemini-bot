@@ -202,6 +202,13 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter, conf
     } catch (err) {
         logSummarySurfaceEvent({ context, result: briefing, deliveryStatus: 'failed', error: err });
         console.error('Daily briefing error:', err.message);
+        // Notify user so they know the briefing failed (not just silent failure)
+        try {
+            const errorMsg = err.message === 'QUOTA_EXHAUSTED'
+                ? '⚠️ Daily briefing skipped — AI quota exhausted for today.'
+                : `❌ Daily briefing failed: ${err.message}. Try /briefing manually.`;
+            await sendWithMarkdown(bot.api, chatId, errorMsg);
+        } catch (_) { /* don't let notification failure mask the original error */ }
         return false;
     }
 }
@@ -595,10 +602,8 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
             console.log(`📬 Found ${newTasks.length} new task(s)`);
 
 // When auto-apply is OFF, just notify and skip pipeline processing
+// Do NOT mark tasks as processed — /scan needs to find them
             if (!autoApplyLifeAdmin) {
-                for (const task of newTasks) {
-                    await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
-                }
                 if (!shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY)) {
                     await sendWithMarkdown(bot.api, chatId,
                         `📬 ${newTasks.length} new task(s) found.\n\nAuto-apply is OFF. Run /scan to process them.`);
