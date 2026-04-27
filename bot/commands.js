@@ -204,7 +204,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         );
     });
 
-    bot.command('reorg', async (ctx) => {
+    async function cmdReorg(ctx) {
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
@@ -225,7 +225,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         } catch (err) {
             await ctx.reply(`❌ Reorg failed: ${err.message}`);
         }
-    });
+    };
 
     // ─── /reset ──────────────────────────────────────────────
     bot.command('reset', async (ctx) => {
@@ -245,7 +245,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     });
 
     // ─── /status ──────────────────────────────────────────────
-    bot.command('status', async (ctx) => {
+    async function cmdStatus(ctx) {
         if (!await guardAccess(ctx)) return;
         const stats = store.getStats();
         const pendingCount = store.getPendingCount();
@@ -288,7 +288,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
 
         await replyWithMarkdown(ctx, lines.join('\n'));
-    });
+    };
 
     const resolveWorkStyleModeUserId = (ctx) => ctx.from?.id ?? ctx.chat?.id ?? null;
 
@@ -347,25 +347,51 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
     };
 
-    bot.command('urgent', async (ctx) => {
+    async function cmdUrgent(ctx) {
         if (!await guardAccess(ctx)) return;
         await applyWorkStyleMode(ctx, store.MODE_URGENT, { expiryMs: store.DEFAULT_URGENT_EXPIRY_MS });
-    });
+    };
 
-    bot.command('focus', async (ctx) => {
+    async function cmdFocus(ctx) {
         if (!await guardAccess(ctx)) return;
         await applyWorkStyleMode(ctx, store.MODE_FOCUS);
-    });
+    };
 
-    bot.command('normal', async (ctx) => {
+    async function cmdNormal(ctx) {
         if (!await guardAccess(ctx)) return;
         await applyWorkStyleMode(ctx, store.MODE_STANDARD);
-    });
+    };
 
     bot.command('mode', async (ctx) => {
         if (!await guardAccess(ctx)) return;
         await replyWithCurrentMode(ctx);
     });
+
+        bot.command('scan', cmdScan);
+    bot.command('pending', cmdPending);
+    bot.command('review', cmdReview);
+    bot.command('briefing', cmdBriefing);
+    bot.command('daily_close', cmdDailyClose);
+    bot.command('weekly', cmdWeekly);
+    bot.command('reorg', cmdReorg);
+    bot.command('status', cmdStatus);
+    bot.command('urgent', cmdUrgent);
+    bot.command('focus', cmdFocus);
+    bot.command('normal', cmdNormal);
+
+    const handlers = {
+        scan: cmdScan,
+        pending: cmdPending,
+        review: cmdReview,
+        briefing: cmdBriefing,
+        daily_close: cmdDailyClose,
+        weekly: cmdWeekly,
+        reorg: cmdReorg,
+        status: cmdStatus,
+        urgent: cmdUrgent,
+        focus: cmdFocus,
+        normal: cmdNormal,
+    };
 
     bot.callbackQuery(/^menu:(.+)$/, async (ctx) => {
         if (!isAuthorized(ctx)) {
@@ -374,22 +400,10 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
         const cmd = ctx.match[1];
         await ctx.answerCallbackQuery();
-        const map = {
-            scan: '/scan',
-            pending: '/pending',
-            review: '/review',
-            briefing: '/briefing',
-            daily_close: '/daily_close',
-            weekly: '/weekly',
-            reorg: '/reorg',
-            status: '/status',
-            urgent: '/urgent',
-            focus: '/focus',
-            normal: '/normal',
-        };
-        const typed = map[cmd];
-        if (!typed) return;
-        await ctx.reply(typed);
+        
+        if (handlers[cmd]) {
+            await handlers[cmd](ctx);
+        }
     });
 
     bot.callbackQuery(/^reorg:(apply|refine|cancel)$/, async (ctx) => {
@@ -443,7 +457,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
 
     // ─── /scan — manual poll, BATCHED (5 at a time) ───────────
-    bot.command('scan', async (ctx) => {
+    async function cmdScan(ctx) {
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected. Run the OAuth flow first.'); return; }
 
@@ -565,10 +579,10 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         } finally {
             store.releaseIntakeLock();
         }
-    });
+    };
 
     // ─── /pending — re-surface un-reviewed tasks ──────────────
-    bot.command('pending', async (ctx) => {
+    async function cmdPending(ctx) {
         if (!await guardAccess(ctx)) return;
         const pending = store.getPendingTasks();
         const entries = Object.entries(pending);
@@ -592,7 +606,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             const nextKeyboard = new InlineKeyboard().text('⬇️ Load Next 5', 'menu:pending');
             await ctx.reply(`📝 Sent 5 of ${entries.length}.`, { reply_markup: nextKeyboard });
         }
-    });
+    };
 
     // ─── /undo — revert last auto-applied change (or entire batch) ──
     // RETAINED BOUNDARY: /undo restores a previously applied structured change
@@ -673,7 +687,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     });
 
     // ─── /briefing ────────────────────────────────────────────
-    bot.command('briefing', async (ctx) => {
+    async function cmdBriefing(ctx) {
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
@@ -705,10 +719,10 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
             await ctx.reply(`❌ Briefing error: ${err.message}`);
         }
-    });
+    };
 
     // ─── /weekly ──────────────────────────────────────────────
-    bot.command('weekly', async (ctx) => {
+    async function cmdWeekly(ctx) {
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
@@ -754,10 +768,10 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
             await ctx.reply(`❌ Weekly digest error: ${err.message}`);
         }
-    });
+    };
 
     // ─── /daily_close (cavekit-briefings R7 manual surface) ──
-    bot.command('daily_close', async (ctx) => {
+    async function cmdDailyClose(ctx) {
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
@@ -801,7 +815,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
             await ctx.reply(`❌ Daily close error: ${err.message}`);
         }
-    });
+    };
 
     // ─── /memory (cavekit-behavioral-memory R8) ──
     bot.command('memory', async (ctx) => {
@@ -840,7 +854,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     });
 
     // ─── /review ──────────────────────────────────────────────
-    bot.command('review', async (ctx) => {
+    async function cmdReview(ctx) {
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
 
@@ -958,7 +972,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         } finally {
             store.releaseIntakeLock();
         }
-    });
+    };
 
     // ─── Catch-all: free-form messages → Pipeline ─────────────
     bot.on('message:text', async (ctx) => {
