@@ -19,10 +19,10 @@ export function taskReviewKeyboard(taskId) {
     // Telegram callback_data has 64-byte limit — truncate if needed
     const id = taskId.length > 50 ? taskId.slice(0, 50) : taskId;
     return new InlineKeyboard()
-        .text('✅ Apply', `a:${id}`)
-        .text('⏭ Skip', `s:${id}`)
+        .text('✅ Apply changes', `a:${id}`)
+        .text('⏭ Keep original', `s:${id}`)
         .row()
-        .text('⚪ Drop Task', `d:${id}`);
+        .text('🗑️ Delete task', `d:${id}`);
 }
 
 // ─── Register Callback Handlers ─────────────────────────────

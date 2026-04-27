@@ -179,24 +179,14 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const chatId = ctx.chat.id;
         await store.setChatId(chatId);
         await ctx.reply(
-            `🧠 TickTick AI Accountability Partner\n\n` +
-            `Connected! Chat ID: ${chatId}\n\n` +
-            `Commands:\n` +
-            `/scan — Analyze new tasks (batched, 5 at a time)\n` +
-            `/pending — Re-surface tasks awaiting review\n` +
-            `/briefing — Today's prioritized morning plan\n` +
-            `/daily_close — Brief end-of-day reflection\n` +
-            `/weekly — Weekly accountability digest\n` +
-            `/review — Walk through all unreviewed tasks\n` +
-            `/undo — Revert last auto-applied change\n` +
-            `/reset — Wipe all bot data and start fresh\n` +
-            `/status — Bot status and stats\n` +
-            `/memory — View behavioral memory summary\n` +
-            `/forget — Clear behavioral memory\n` +
-            `/urgent — Activate urgent mode\n` +
-            `/focus — Activate focus mode\n` +
-            `/normal — Return to standard mode\n` +
-            `/mode — Show current work-style mode`,
+            `**🧠 TickTick AI Accountability Partner**\n\n` +
+            `Connected! I'll help you focus on what actually matters.\n\n` +
+            `**Core commands:**\n` +
+            `/scan — Analyze new tasks\n` +
+            `/briefing — Today's plan\n` +
+            `/pending — Review queue\n` +
+            `/status — System overview\n\n` +
+            `Tap /menu for all commands, or just send me a task naturally.`,
             { reply_markup: menuKeyboard() }
         );
     });
@@ -256,40 +246,44 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const stats = store.getStats();
         const pendingCount = store.getPendingCount();
         const lines = [
-            '🧠 TickTick AI Accountability Partner\n',
-            `🔌 TickTick: ${ticktick.isAuthenticated() ? '🟢 Connected' : '🔴 Not connected'}`,
-            `📊 Tasks Analyzed: ${stats.tasksAnalyzed}`,
-            `✅ Approved: ${stats.tasksApproved}`,
-            `⚡ Auto-applied: ${stats.tasksAutoApplied || 0}`,
-            `⏭ Skipped: ${stats.tasksSkipped}`,
-            `⏳ Pending Review: ${pendingCount}`,
-            `\n🤖 Auto-apply life-admin: ${autoApplyLifeAdmin ? 'ON' : 'OFF'}`,
-            `🤖 Auto-apply mode: ${autoApplyMode}`,
+            '**📊 System Status**\n',
+            '**Connection**',
+            `TickTick: ${ticktick.isAuthenticated() ? '✅ Connected' : '❌ Not connected'}`,
         ];
-        if (stats.lastDailyBriefing) {
-            lines.push(`🌅 Last Briefing: ${userLocaleString(stats.lastDailyBriefing)}`);
-        }
-        if (stats.lastWeeklyDigest) {
-            lines.push(`📊 Last Digest: ${userLocaleString(stats.lastWeeklyDigest)}`);
-        }
 
-        const quotaResume = gemini.quotaResumeTime();
-        if (quotaResume) {
-            lines.push(`⚠️ Quota Exhausted Until: ${userLocaleString(quotaResume.toISOString())}`);
+        const keyInfo = gemini.activeKeyInfo?.();
+        if (keyInfo) {
+            lines.push(`Gemini Key: ${keyInfo.index}/${keyInfo.total}`);
         }
 
         const cacheAge = ticktick.getCacheAgeSeconds();
         if (cacheAge !== null) {
-            lines.push(`🗄️ Cache Age: ${cacheAge}s old`);
+            lines.push(`Cache: ${cacheAge}s old`);
         }
 
-        const keyInfo = gemini.activeKeyInfo?.();
-        if (keyInfo) {
-            lines.push(`🔑 Gemini Key: ${keyInfo.index}/${keyInfo.total}`);
+        lines.push(
+            '',
+            '**Pipeline Stats**',
+            `Analyzed: ${stats.tasksAnalyzed}  |  Approved: ${stats.tasksApproved}  |  Auto-applied: ${stats.tasksAutoApplied || 0}`,
+            `Skipped: ${stats.tasksSkipped}  |  Pending review: ${pendingCount}`,
+            '',
+            '**Settings**',
+            `Auto-apply life-admin: ${autoApplyLifeAdmin ? 'ON' : 'OFF'}`,
+            `Auto-apply mode: ${autoApplyMode}`,
+        );
+
+        const quotaResume = gemini.quotaResumeTime();
+        if (quotaResume) {
+            lines.push(`⚠️ Quota resumes: ${userLocaleString(quotaResume.toISOString())}`);
+        }
+        if (stats.lastDailyBriefing) {
+            lines.push(`Last briefing: ${userLocaleString(stats.lastDailyBriefing)}`);
+        }
+        if (stats.lastWeeklyDigest) {
+            lines.push(`Last digest: ${userLocaleString(stats.lastWeeklyDigest)}`);
         }
 
-        lines.push('\nCommands: /menu | /scan | /pending | /reorg | /undo | /briefing | /weekly');
-        await ctx.reply(lines.join('\n'));
+        await replyWithMarkdown(ctx, lines.join('\n'));
     });
 
     const resolveWorkStyleModeUserId = (ctx) => ctx.from?.id ?? ctx.chat?.id ?? null;
@@ -386,7 +380,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         };
         const typed = map[cmd];
         if (!typed) return;
-        await ctx.reply(`Run ${typed}`);
+        await ctx.reply(typed);
     });
 
     bot.callbackQuery(/^reorg:(apply|refine|cancel)$/, async (ctx) => {
@@ -997,7 +991,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
 
         // New pipeline path. Note: we leave gemini check in for the coach fallback optionally.
-        await ctx.reply('🤔 Processing...');
+        await ctx.reply('🧠 Thinking through this...');
         try {
             // Check for pending checklist clarification resume.
             const pendingChecklist = store.getPendingChecklistClarification();
@@ -1111,10 +1105,10 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
                     // Send question with optional inline buttons (T055)
                     const keyboard = new InlineKeyboard()
-                        .text('📋 Checklist', 'cl:checklist')
-                        .text('📝 Separate', 'cl:separate')
+                        .text('📋 One task + subtasks', 'cl:checklist')
+                        .text('📝 Multiple tasks', 'cl:separate')
                         .row()
-                        .text('⏭ Skip', 'cl:skip');
+                        .text('⏭ Just one task', 'cl:skip');
 
                     await replyWithMarkdown(ctx, question + '\n\nReply with your choice or tap a button:', { reply_markup: keyboard });
                 } else {

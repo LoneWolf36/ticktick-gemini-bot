@@ -329,56 +329,44 @@ export function buildTickTickUpdate(data, options = {}) {
  */
 export function buildTaskCard(task, analysis) {
     const lines = [];
-    lines.push(`🔍 New Task Detected\n`);
-    lines.push(`📂 Project: ${task.projectName || 'Inbox'}`);
-    lines.push(`📝 Original: ${task.title}\n`);
+
+    // Header — most important info first
+    lines.push(`**📂 ${task.projectName || 'Inbox'}**`);
+    lines.push(`Original: ${task.title}`);
 
     if (analysis.improved_title && analysis.improved_title !== task.title) {
-        lines.push(`✨ Suggested: ${analysis.improved_title}\n`);
+        lines.push(`→ **${analysis.improved_title}**`);
     }
+    lines.push('');
 
-    if (analysis.suggested_project && analysis.suggested_project !== (task.projectName || 'Inbox')) {
-        lines.push(`📁 Move to: ${analysis.suggested_project}`);
-    }
-
-    lines.push(`${analysis.priority_emoji || '🟡'} Priority: ${analysis.priority}`);
-
+    // Key decisions (pipe-separated on one line)
+    const decisions = [];
+    decisions.push(`${analysis.priority_emoji || '🟡'} ${analysis.priority}`);
     const schedLabel = scheduleLabel(analysis.suggested_schedule);
-    if (schedLabel) {
-        lines.push(`📅 Schedule: ${schedLabel}`);
+    if (schedLabel) decisions.push(`📅 ${schedLabel}`);
+    if (analysis.suggested_project && analysis.suggested_project !== (task.projectName || 'Inbox')) {
+        decisions.push(`📁 → ${analysis.suggested_project}`);
     }
-
     if (analysis.needle_mover !== undefined) {
-        lines.push(`🎯 Needle-mover: ${analysis.needle_mover ? 'Yes ✅' : 'No — consider if worth your time'}`);
+        decisions.push(analysis.needle_mover ? '🎯 Needle-mover' : '⚪ Low leverage');
     }
+    lines.push(decisions.join('  |  '));
+    lines.push('');
 
-    lines.push(`\n📊 Analysis: ${analysis.analysis}`);
-
-    if (analysis.description) {
-        lines.push(`\n📝 ${analysis.description}`);
-    }
+    // Supporting detail (only if present)
+    if (analysis.analysis) lines.push(`Analysis: ${analysis.analysis}`);
+    if (analysis.description) lines.push(`\n${analysis.description}`);
 
     if (analysis.sub_steps?.length > 0) {
-        lines.push(`\n📋 Action Steps:`);
-        analysis.sub_steps.forEach((step, i) => {
+        lines.push('\nSteps:');
+        analysis.sub_steps.slice(0, 4).forEach((step, i) => {
             lines.push(`  ${i + 1}. ${step}`);
         });
+        if (analysis.sub_steps.length > 4) lines.push(`  ...+${analysis.sub_steps.length - 4} more`);
     }
 
-    if (analysis.resources?.length > 0) {
-        lines.push(`\n🔗 Context & Resources:`);
-        analysis.resources.forEach((r) => {
-            lines.push(`  - ${r}`);
-        });
-    }
-
-    if (analysis.success_criteria) {
-        lines.push(`\n🎯 Done when: ${analysis.success_criteria}`);
-    }
-
-    if (analysis.callout) {
-        lines.push(`\n💬 Accountability: ${analysis.callout}`);
-    }
+    if (analysis.success_criteria) lines.push(`\nDone when: ${analysis.success_criteria}`);
+    if (analysis.callout) lines.push(`\n💬 ${analysis.callout}`);
 
     return truncateMessage(lines.join('\n'));
 }
@@ -634,9 +622,9 @@ export function buildQuotaExhaustedMessage(gemini) {
         const resumeStr = resumeTime.toLocaleTimeString('en-US', {
             timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit'
         }) + ' PT';
-        return `⚠️ AI quota exhausted. Try again around ${resumeStr}.`;
+        return `⚠️ **AI quota exhausted.** Try again around ${resumeStr}, or run non-AI commands like /pending and /status in the meantime.`;
     }
-    return `⚠️ AI quota exhausted. Try again in ~2 hours or after midnight PT.`;
+    return `⚠️ **AI quota exhausted.** Try again in ~2 hours or after midnight PT. Non-AI commands still work.`;
 }
 
 /**
@@ -706,14 +694,14 @@ export function buildMutationClarificationMessage(reason, candidates, intentSumm
     const lines = [];
     const urgentMode = workStyleMode === 'urgent';
     if (intentSummary) {
-        lines.push(urgentMode ? `**Which task?**` : `**Did you mean one of these?**`);
+        lines.push(urgentMode ? `**Which task?**` : `**I found a few tasks that match — which one?**`);
     } else {
-        lines.push(urgentMode ? `**Which task?**` : `**Not sure which task you mean.**`);
+        lines.push(urgentMode ? `**Which task?**` : `**I found a few tasks that match — which one?**`);
     }
     if (reason) {
         lines.push(reason);
     }
-    lines.push(urgentMode ? `\nPick below or rephrase.` : `\nTap a task below or rephrase your request.`);
+    lines.push(urgentMode ? `\nPick below or rephrase.` : `\nTap the right one, or tell me more specifically.`);
     return lines.join('\n');
 }
 
