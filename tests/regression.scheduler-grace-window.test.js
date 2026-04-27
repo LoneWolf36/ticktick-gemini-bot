@@ -370,7 +370,7 @@ test('retryDeferredIntents leaves transient failures in queue', async () => {
         pipeline: {
             processMessage: async () => ({
                 type: 'error',
-                failure: { category: 'transient' },
+                failure: { failureCategory: 'transient' },
             }),
         },
     });
@@ -390,7 +390,7 @@ test('retryDeferredIntents removes permanent failures from queue', async () => {
         pipeline: {
             processMessage: async () => ({
                 type: 'error',
-                failure: { category: 'permanent' },
+                failure: { failureCategory: 'permanent' },
             }),
         },
         bot: { api: { sendMessage: async () => {} } },

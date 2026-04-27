@@ -879,6 +879,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
 
     async function processMessage(userMessage, options = {}) {
         const isDryRun = options.dryRun === true;
+        const blockedActionTypes = new Set(options.blockedActionTypes || []);
         let context;
         let requestStartedAt = Date.now();
 
@@ -1607,7 +1608,16 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 }, context);
             }
 
-            const executionResult = await _executeActions(validActions, adapter, context, telemetry);
+            const skippedActions = [];
+            const executableActions = validActions.filter(a => {
+                if (blockedActionTypes.has(a.type)) {
+                    skippedActions.push(a);
+                    return false;
+                }
+                return true;
+            });
+
+            const executionResult = await _executeActions(executableActions, adapter, context, telemetry);
             context = updatePipelineContext(context, (draft) => {
                 draft.lifecycle.execute.status = executionResult.terminalFailure ? 'failure' : 'success';
                 draft.lifecycle.execute.requests = snapshotPrivacySafePipelineValue(executionResult.executionRequests);
@@ -1710,6 +1720,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 actions: validActions,
                 results: executionResult.results,
                 errors: allErrors,
+                skippedActions,
                 confirmationText,
                 requestId: context.requestId,
                 entryPoint: context.entryPoint,

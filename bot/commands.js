@@ -275,6 +275,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             '',
             '**Settings**',
             `Auto-apply life-admin: ${autoApplyLifeAdmin ? 'ON' : 'OFF'}`,
+            `Auto-apply drops: ${autoApplyDrops ? 'ON' : 'OFF'}`,
             `Auto-apply mode: ${autoApplyMode}`,
         );
 
@@ -621,7 +622,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         for (const [taskId, data] of batch) {
             const analysis = pendingToAnalysis(data);
             const card = buildTaskCard({ title: data.originalTitle, projectName: data.projectName }, analysis);
-            await replyWithMarkdown(ctx, card, { reply_markup: taskReviewKeyboard(taskId) });
+            await replyWithMarkdown(ctx, card, { reply_markup: taskReviewKeyboard(taskId, data.actionType) });
             await sleep(1000);
         }
 
@@ -651,6 +652,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 if (batch.length > 1) {
                     // Batch undo — revert all entries in the batch
                     const reverted = [];
+                    const successfulEntries = [];
                     for (const entry of batch) {
                         try {
                             await adapter.updateTask(entry.taskId, {
@@ -661,11 +663,14 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                                 priority: entry.originalPriority,
                             });
                             reverted.push(entry.originalTitle);
+                            successfulEntries.push(entry);
                         } catch (err) {
                             console.error(`[UNDO] Failed to revert "${entry.originalTitle}": ${err.message}`);
                         }
                     }
-                    await store.removeUndoEntries(batch);
+                    if (successfulEntries.length > 0) {
+                        await store.removeUndoEntries(successfulEntries);
+                    }
                     await replyWithMarkdown(ctx,
                         `↩️ **Reverted ${reverted.length} auto-applied change(s):**\n` +
                         reverted.map(t => `• "${t}"`).join('\n') +

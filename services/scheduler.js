@@ -364,7 +364,7 @@ export async function retryDeferredIntents({ adapter, pipeline, bot } = {}, opti
                 await store.removeDeferredPipelineIntent(entry.id);
                 retried++;
                 notifications.push(`✅ Retried: ${result.actions?.[0]?.title || entry.userMessage.slice(0, 40)}`);
-            } else if (result.type === 'error' && result.failure?.category === 'transient') {
+            } else if (result.type === 'error' && result.failure?.failureCategory === 'transient') {
                 // Still transient — increment retry count and leave in queue
                 entry.retryCount = retryCount;
                 await store.updateDeferredPipelineIntent(entry);
@@ -632,6 +632,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                         mode: 'poll',
                         availableProjects: projects,
                         activeTasks: allTasks,
+                        blockedActionTypes: ['delete', 'complete'],
                     });
 
                     if (result.type === 'error') {
@@ -642,7 +643,10 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                         await store.markTaskFailed(task.id, reason);
                         console.error(`  ❌ Failed: "${task.title}": ${reason}`);
                     } else if (result.type === 'task') {
-                        // Safety filter: never auto-apply destructive or terminal actions
+                        if (result.skippedActions?.length > 0) {
+                            console.log(`  ⚠️ Skipped ${result.skippedActions.length} destructive action(s) in auto-apply`);
+                        }
+
                         const appliedActions = result.actions.filter(a => {
                             if (a.type === 'delete' || a.type === 'complete') return false;
                             if (a.type === 'drop' && !autoApplyDrops) return false;

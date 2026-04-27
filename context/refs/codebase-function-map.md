@@ -132,6 +132,9 @@ Used by validateIntentAction to check checklistItems arrays.</p>
 <dt><a href="#CHECKLIST_CLARIFICATION_TTL_MS">CHECKLIST_CLARIFICATION_TTL_MS</a></dt>
 <dd><p>Checklist clarification TTL: 24 hours</p>
 </dd>
+<dt><a href="#TASK_REFINEMENT_TTL_MS">TASK_REFINEMENT_TTL_MS</a></dt>
+<dd><p>Task refinement TTL: 15 minutes</p>
+</dd>
 <dt><a href="#EXACT_SCORE">EXACT_SCORE</a> : <code>number</code></dt>
 <dd><p>Match score for an exact string match.</p>
 </dd>
@@ -519,11 +522,17 @@ following Postel&#39;s Law to shield against messy LLM output.</p>
 <dt><a href="#buildTaskCard">buildTaskCard(task, analysis)</a> ⇒ <code>string</code></dt>
 <dd><p>Builds a descriptive task card for Telegram display.</p>
 </dd>
+<dt><a href="#buildTaskCardFromAction">buildTaskCardFromAction(task, action, [projects])</a> ⇒ <code>string</code></dt>
+<dd><p>Builds a Telegram review card from a task + normalized action.</p>
+</dd>
 <dt><a href="#buildImprovedContent">buildImprovedContent(analysis)</a> ⇒ <code>string</code></dt>
 <dd><p>Builds the improved task description content from analysis results.</p>
 </dd>
 <dt><a href="#buildPendingData">buildPendingData(task, analysis, [projects])</a> ⇒ <code>Object</code></dt>
 <dd><p>Normalizes task and analysis into a pending task record for the store.</p>
+</dd>
+<dt><a href="#buildPendingDataFromAction">buildPendingDataFromAction(task, action, [projects])</a> ⇒ <code>Object</code></dt>
+<dd><p>Maps a normalized pipeline action to the pending data shape expected by the store and callbacks.</p>
 </dd>
 <dt><a href="#pendingToAnalysis">pendingToAnalysis(data)</a> ⇒ <code>Object</code></dt>
 <dd><p>Maps a stored pending record back to an analysis object shape.</p>
@@ -583,6 +592,9 @@ Used by both normalizer (post-cleaning) and adapter (pre-API).</p>
 <dt><a href="#validateChecklistItems">validateChecklistItems(items, [options])</a> ⇒ <code>Array</code></dt>
 <dd><p>Validates and normalizes an array of checklist items.
 Applies structural validation, defaults, and sort order assignment.</p>
+</dd>
+<dt><a href="#retryWithBackoff">retryWithBackoff(fn, [options])</a> ⇒ <code>Promise.&lt;*&gt;</code></dt>
+<dd><p>Retry an async operation with exponential backoff for transient failures.</p>
 </dd>
 <dt><a href="#getWorkStyleMode">getWorkStyleMode()</a></dt>
 <dd><p>Get the current work-style mode for a user.
@@ -706,7 +718,7 @@ Returns a string suitable for user-facing clarification.</p>
 <dt><a href="#getUserTimezoneSource">getUserTimezoneSource()</a> ⇒ <code>&#x27;user_context&#x27;</code> | <code>&#x27;env&#x27;</code> | <code>&#x27;default&#x27;</code></dt>
 <dd><p>Identifies the source of the resolved user timezone.</p>
 </dd>
-<dt><a href="#taskReviewKeyboard">taskReviewKeyboard(taskId)</a> ⇒ <code>InlineKeyboard</code></dt>
+<dt><a href="#taskReviewKeyboard">taskReviewKeyboard(taskId, [actionType])</a> ⇒ <code>InlineKeyboard</code></dt>
 <dd><p>Build an inline keyboard for task review.</p>
 </dd>
 <dt><a href="#registerCallbacks">registerCallbacks(bot, adapter, pipeline)</a></dt>
@@ -1307,6 +1319,12 @@ The user's timezone from environment variables or default.
 
 ## CHECKLIST\_CLARIFICATION\_TTL\_MS
 Checklist clarification TTL: 24 hours
+
+**Kind**: global constant  
+<a name="TASK_REFINEMENT_TTL_MS"></a>
+
+## TASK\_REFINEMENT\_TTL\_MS
+Task refinement TTL: 15 minutes
 
 **Kind**: global constant  
 <a name="EXACT_SCORE"></a>
@@ -2537,6 +2555,20 @@ Builds a descriptive task card for Telegram display.
 | task | <code>Object</code> | Original TickTick task object |
 | analysis | <code>Object</code> | Gemini analysis object |
 
+<a name="buildTaskCardFromAction"></a>
+
+## buildTaskCardFromAction(task, action, [projects]) ⇒ <code>string</code>
+Builds a Telegram review card from a task + normalized action.
+
+**Kind**: global function  
+**Returns**: <code>string</code> - Formatted Telegram message string  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| task | <code>Object</code> |  | Original TickTick task object |
+| action | <code>Object</code> |  | Normalized pipeline action |
+| [projects] | <code>Array</code> | <code>[]</code> | List of available TickTick projects |
+
 <a name="buildImprovedContent"></a>
 
 ## buildImprovedContent(analysis) ⇒ <code>string</code>
@@ -2561,6 +2593,20 @@ Normalizes task and analysis into a pending task record for the store.
 | --- | --- | --- | --- |
 | task | <code>Object</code> |  | Original TickTick task |
 | analysis | <code>Object</code> |  | Gemini analysis |
+| [projects] | <code>Array</code> | <code>[]</code> | List of available TickTick projects |
+
+<a name="buildPendingDataFromAction"></a>
+
+## buildPendingDataFromAction(task, action, [projects]) ⇒ <code>Object</code>
+Maps a normalized pipeline action to the pending data shape expected by the store and callbacks.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - Structured pending task record  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| task | <code>Object</code> |  | Original TickTick task |
+| action | <code>Object</code> |  | Normalized pipeline action |
 | [projects] | <code>Array</code> | <code>[]</code> | List of available TickTick projects |
 
 <a name="pendingToAnalysis"></a>
@@ -2807,6 +2853,22 @@ Applies structural validation, defaults, and sort order assignment.
 | [options.maxItems] | <code>number</code> | <code>30</code> | Maximum items to keep |
 | [options.cleanTitles] | <code>boolean</code> | <code>false</code> | Whether to apply text cleaning (normalizer's concern) |
 | [options.titleCleaner] | <code>function</code> | <code></code> | Custom title cleaner function |
+
+<a name="retryWithBackoff"></a>
+
+## retryWithBackoff(fn, [options]) ⇒ <code>Promise.&lt;\*&gt;</code>
+Retry an async operation with exponential backoff for transient failures.
+
+**Kind**: global function  
+**Returns**: <code>Promise.&lt;\*&gt;</code> - Result of fn  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| fn | <code>function</code> |  | Async function to retry |
+| [options] | <code>Object</code> |  |  |
+| [options.maxRetries] | <code>number</code> | <code>2</code> | Max retry attempts |
+| [options.baseDelayMs] | <code>number</code> | <code>1000</code> | Initial delay in ms |
+| [options.isRetryable] | <code>function</code> |  | Predicate to determine if error is retryable |
 
 <a name="getWorkStyleMode"></a>
 
@@ -3287,15 +3349,16 @@ Identifies the source of the resolved user timezone.
 **Returns**: <code>&#x27;user\_context&#x27;</code> \| <code>&#x27;env&#x27;</code> \| <code>&#x27;default&#x27;</code> - Timezone source  
 <a name="taskReviewKeyboard"></a>
 
-## taskReviewKeyboard(taskId) ⇒ <code>InlineKeyboard</code>
+## taskReviewKeyboard(taskId, [actionType]) ⇒ <code>InlineKeyboard</code>
 Build an inline keyboard for task review.
 
 **Kind**: global function  
 **Returns**: <code>InlineKeyboard</code> - Grammy inline keyboard instance.  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| taskId | <code>string</code> | The TickTick task ID. |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| taskId | <code>string</code> |  | The TickTick task ID. |
+| [actionType] | <code>string</code> | <code>&quot;&#x27;update&#x27;&quot;</code> | The action type: 'update', 'complete', or 'delete'. |
 
 <a name="registerCallbacks"></a>
 
