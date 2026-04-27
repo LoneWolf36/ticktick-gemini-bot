@@ -583,7 +583,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
     });
 
-    // ─── /undo — revert last auto-applied change ──────────────
+    // ─── /undo — revert last auto-applied change (or entire batch) ──
     // RETAINED BOUNDARY: /undo restores a previously applied structured change
     // directly through the adapter. It is an operational recovery path, not a
     // product-feature drift from the canonical pipeline write path.
@@ -597,7 +597,37 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
 
         try {
-            // Restore original values via adapter
+            // If last entry is auto-apply with a batch, revert the entire batch
+            if (last.action === 'auto-apply') {
+                const batch = store.getLastAutoApplyBatch();
+                if (batch.length > 1) {
+                    // Batch undo — revert all entries in the batch
+                    const reverted = [];
+                    for (const entry of batch) {
+                        try {
+                            await adapter.updateTask(entry.taskId, {
+                                originalProjectId: entry.appliedProjectId || entry.originalProjectId,
+                                projectId: entry.originalProjectId,
+                                title: entry.originalTitle,
+                                content: entry.originalContent,
+                                priority: entry.originalPriority,
+                            });
+                            reverted.push(entry.originalTitle);
+                        } catch (err) {
+                            console.error(`[UNDO] Failed to revert "${entry.originalTitle}": ${err.message}`);
+                        }
+                    }
+                    await store.removeUndoEntries(batch);
+                    await replyWithMarkdown(ctx,
+                        `↩️ **Reverted ${reverted.length} auto-applied change(s):**\n` +
+                        reverted.map(t => `• "${t}"`).join('\n') +
+                        '\n\n✅ All tasks restored to their original state.');
+                    console.log(`[UNDO] Reverted batch of ${reverted.length} auto-apply changes at ${new Date().toISOString()}`);
+                    return;
+                }
+            }
+
+            // Single-entry undo (approve, reorg-update, or legacy auto-apply without batch)
             await adapter.updateTask(last.taskId, {
                 originalProjectId: last.appliedProjectId || last.originalProjectId,
                 projectId: last.originalProjectId,

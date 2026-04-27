@@ -582,8 +582,21 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
             if (newTasks.length === 0) return;
             console.log(`📬 Found ${newTasks.length} new task(s)`);
 
+// When auto-apply is OFF, just notify and skip pipeline processing
+            if (!autoApplyLifeAdmin) {
+                for (const task of newTasks) {
+                    await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                }
+                if (!shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY)) {
+                    await sendWithMarkdown(bot.api, chatId,
+                        `📬 ${newTasks.length} new task(s) found.\n\nAuto-apply is OFF. Run /scan to process them.`);
+                }
+                return;
+            }
+
             const batch = newTasks.slice(0, 5);
             const autoApplied = [];
+            const batchId = `auto-${Date.now()}`;
             let quotaHit = false;
 
             for (const task of batch) {
@@ -594,6 +607,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                         entryPoint: 'scheduler:poll',
                         mode: 'poll',
                         availableProjects: projects,
+                        activeTasks: allTasks,
                     });
 
                     if (result.type === 'error') {
@@ -604,20 +618,23 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                         await store.markTaskFailed(task.id, reason);
                         console.error(`  ❌ Failed: "${task.title}": ${reason}`);
                     } else if (result.type === 'task') {
+                        // Filter out drop actions when autoApplyDrops is OFF
+                        const appliedActions = autoApplyDrops
+                            ? result.actions
+                            : result.actions.filter(a => a.type !== 'drop');
+
                         await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: true });
-                        for (const action of result.actions) {
-                            if (action.type !== 'drop') {
-                                autoApplied.push({
-                                    title: action.title || task.title,
-                                    schedule: action.dueDate ? action.dueDate.split('T')[0] : null,
-                                    movedTo: action.projectId && action.projectId !== task.projectId
-                                        ? (projects.find(p => p.id === action.projectId)?.name || action.projectId)
-                                        : null,
-                                });
-                            }
+                        for (const action of appliedActions) {
+                            autoApplied.push({
+                                title: action.title || task.title,
+                                schedule: action.dueDate ? action.dueDate.split('T')[0] : null,
+                                movedTo: action.projectId && action.projectId !== task.projectId
+                                    ? (projects.find(p => p.id === action.projectId)?.name || action.projectId)
+                                    : null,
+                            });
                         }
-                        // Create undo entry for the last non-drop action (only keep latest)
-                        const lastAction = [...result.actions].reverse().find(a => a.type !== 'drop');
+                        // Create undo entry per task with batchId for batch undo
+                        const lastAction = [...appliedActions].reverse().find(a => a.type !== 'drop');
                         if (lastAction) {
                             const undoEntry = buildUndoEntry({
                                 source: task,
@@ -630,7 +647,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                                 },
                                 appliedTaskId: task.id,
                             });
-                            await store.replaceUndoEntriesByAction('auto-apply', undoEntry);
+                            await store.addUndoEntry({ ...undoEntry, batchId });
                         }
                     } else {
                         await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });

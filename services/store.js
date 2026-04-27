@@ -884,14 +884,33 @@ export async function removeLastUndoEntry() {
 }
 
 /**
- * Removes all undo entries matching the given action tag, then adds a new entry.
- * Used by auto-apply to keep only the most recent undo entry.
- * @param {string} actionTag - The action tag to replace (e.g. 'auto-apply')
- * @param {Object} newEntry - The new undo entry to add
+ * Get all undo entries from the most recent auto-apply batch.
+ * Groups by batchId; if no batchId, falls back to the single most recent auto-apply entry.
+ * @returns {Array<Object>} Array of undo entries from the same batch
  */
-export async function replaceUndoEntriesByAction(actionTag, newEntry) {
-    state.undoLog = state.undoLog.filter(e => e.action !== actionTag);
-    state.undoLog.push({ ...newEntry, timestamp: new Date().toISOString() });
+export function getLastAutoApplyBatch() {
+    const autoEntries = state.undoLog.filter(e => e.action === 'auto-apply');
+    if (autoEntries.length === 0) return [];
+
+    // Find the most recent auto-apply entry to get its batchId
+    const latest = autoEntries[autoEntries.length - 1];
+
+    // If it has a batchId, return all entries with that batchId
+    if (latest.batchId) {
+        return autoEntries.filter(e => e.batchId === latest.batchId);
+    }
+
+    // Legacy: no batchId, return just the single entry
+    return [latest];
+}
+
+/**
+ * Remove specific undo entries by reference identity.
+ * @param {Array<Object>} entries - Entries to remove
+ */
+export async function removeUndoEntries(entries) {
+    const toRemove = new Set(entries);
+    state.undoLog = state.undoLog.filter(e => !toRemove.has(e));
     await save();
 }
 
