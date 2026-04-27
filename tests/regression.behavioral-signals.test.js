@@ -1005,7 +1005,7 @@ test('/memory command shows active patterns retention window and last signal dat
   assert.match(replies[0], /Behavioral Memory Summary/i);
   assert.match(replies[0], /Retention Window:<\/b> 30 days/i);
   assert.match(replies[0], /Last Signal Date:<\/b>/i);
-  assert.match(replies[0], /postponed 3 times/i);
+  assert.match(replies[0], /postponed.*3 times/i);
   assert.equal(/same-task/i.test(replies[0]), false);
 });
 
@@ -1168,7 +1168,7 @@ test('/memory after /forget shows no active patterns', async () => {
   });
   
   assert.equal(memoryRepliesBefore.length, 1);
-  assert.match(memoryRepliesBefore[0], /postponed 3 times/i);
+  assert.match(memoryRepliesBefore[0], /postponed.*3 times/i);
 
   // Execute /forget command
   const forgetReplies = [];

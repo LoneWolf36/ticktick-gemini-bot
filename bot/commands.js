@@ -60,20 +60,31 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
     const summarizeReorg = (proposal, tasks = []) => {
         const byId = new Map(tasks.map(t => [t.id, t.title]));
-        const lines = [];
-        lines.push(`**🧭 Reorg Proposal**`);
-        lines.push(proposal.summary || 'System cleanup proposal generated.');
+        const lines = [`**🧭 Reorg Proposal**`];
+        if (proposal.summary) lines.push(proposal.summary);
+
+        // Group by type
+        const byType = {};
         const actions = Array.isArray(proposal.actions) ? proposal.actions : [];
-        lines.push(`\nActions: ${actions.length}`);
-        actions.slice(0, 10).forEach((a, idx) => {
+        actions.forEach(a => {
+            const type = a.type || 'unknown';
+            if (!byType[type]) byType[type] = [];
             const title = a.taskId ? (byId.get(a.taskId) || a.taskId) : (a.changes?.title || 'New Task');
-            lines.push(`${idx + 1}. ${a.type} → ${title}`);
+            byType[type].push(title);
         });
-        if (actions.length > 10) lines.push(`...and ${actions.length - 10} more`);
+
+        const typeEmoji = { update: '✏️', drop: '⚪', create: '✨', complete: '✅' };
+        for (const [type, titles] of Object.entries(byType)) {
+            const emoji = typeEmoji[type] || '•';
+            lines.push(`\n**${emoji} ${type} (${titles.length})**`);
+            titles.slice(0, 5).forEach(t => lines.push(`  • ${t}`));
+            if (titles.length > 5) lines.push(`  ...+${titles.length - 5} more`);
+        }
+
         const questions = Array.isArray(proposal.questions) ? proposal.questions : [];
         if (questions.length > 0) {
-            lines.push(`\nClarifications needed:`);
-            questions.slice(0, 3).forEach((q, i) => lines.push(`${i + 1}. ${q}`));
+            lines.push(`\n**❓ Need your input:**`);
+            questions.slice(0, 3).forEach((q, i) => lines.push(`  ${i + 1}. ${q}`));
         }
         return lines.join('\n');
     };
@@ -102,13 +113,13 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     const describePatternForMemory = (pattern) => {
         switch (pattern?.type) {
             case 'snooze_spiral':
-                return `A task was postponed ${pattern.signalCount} times in the current window.`;
+                return `You've postponed this task ${pattern.signalCount} times — might be worth asking if it truly matters.`;
             case 'planning_without_execution_type_a':
-                return `Detailed planning stacked up ${pattern.signalCount} times without matching completion.`;
+                return `Detailed planning stacked up ${pattern.signalCount} times without matching completion. Planning feels productive, but execution moves the needle.`;
             case 'planning_without_execution_type_b':
-                return `${pattern.signalCount} new tasks landed before completion caught up.`;
+                return `${pattern.signalCount} new tasks landed before completion caught up. Check if you're adding more than you're finishing.`;
             default:
-                return `One recurring pattern was detected ${pattern.signalCount || 1} time(s).`;
+                return `A recurring pattern was detected ${pattern.signalCount || 1} time(s). Worth reflecting on.`;
         }
     };
 
@@ -501,15 +512,38 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 await sleep(3000); // Respect rate limits
             }
 
-            let doneMsg = confirmations.join('\n');
-            if (failed > 0) {
-                doneMsg += `\n\n⚠️ ${failed} task(s) failed or parked for retry.`;
-            }
-            if (targetTasks.length > 5) {
-                doneMsg += `\n\n📝 ${targetTasks.length - 5} more remain. Run /scan again for the next batch.`;
+            let processed = confirmations.filter(c => !c.startsWith('\n⚠️') && !c.startsWith('💭'));
+            let nonProcessed = confirmations.filter(c => c.startsWith('\n⚠️') || c.startsWith('❌') || c.startsWith('💭'));
+            const processedCount = processed.length;
+            const failedCount = nonProcessed.filter(c => c.startsWith('❌')).length;
+            const parkedCount = nonProcessed.filter(c => c.startsWith('\n⚠️')).length;
+            const ignoredCount = nonProcessed.filter(c => c.startsWith('💭')).length;
+
+            const header = `**Scan complete — ${processedCount} of ${batch.length} processed:**`;
+            const lines = [header];
+
+            if (processedCount > 0) {
+                processed.forEach(c => {
+                    const stripped = c.replace(/^(✨|✅)\s*/, '');
+                    lines.push(`• ${stripped}`);
+                });
             }
 
-            await replyWithMarkdown(ctx, doneMsg.trim());
+            if (failedCount > 0) {
+                lines.push(`\n⚠️ ${failedCount} failed or parked.`);
+            }
+            if (ignoredCount > 0) {
+                lines.push(`💭 ${ignoredCount} ignored (not actionable).`);
+            }
+            if (parkedCount > 0) {
+                lines.push(`📝 ${parkedCount} parked for retry.`);
+            }
+
+            if (targetTasks.length > 5) {
+                lines.push(`\n📝 ${targetTasks.length - 5} more remain. Run /scan again for the next batch.`);
+            }
+
+            let doneMsg = lines.join('\n');
 
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
@@ -576,18 +610,18 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             // Build detailed context of what was reverted
             const lines = [`↩️ **Reverted:** "${last.originalTitle}"`];
             if (last.appliedTitle && last.appliedTitle !== last.originalTitle) {
-                lines.push(`  **Title:** "${last.appliedTitle}" → "${last.originalTitle}"`);
+                lines.push(`  Title: "${last.appliedTitle}" → "${last.originalTitle}"`);
             }
-            if (last.appliedPriority) {
-                lines.push(`  **Priority:** ${last.appliedPriority} → original`);
+            if (last.appliedPriority != null && last.appliedPriority !== last.originalPriority) {
+                lines.push(`  Priority: ${last.appliedPriority} → ${last.originalPriority}`);
             }
             if (last.appliedProject) {
-                lines.push(`  **Project:** moved back from ${last.appliedProject}`);
+                lines.push(`  Project: ${last.appliedProject} → original`);
             }
             if (last.appliedSchedule) {
-                lines.push(`  **Schedule:** removed (was: ${last.appliedSchedule})`);
+                lines.push(`  Schedule: ${last.appliedSchedule} → removed`);
             }
-            lines.push('\n*Task restored to its original state.*');
+            lines.push('\n✅ Task restored to its original state.');
             await replyWithMarkdown(ctx, lines.join('\n'));
 
             console.log(`[UNDO] Reverted "${last.originalTitle}" (${last.action}) at ${new Date().toISOString()}`);
@@ -833,13 +867,38 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 await sleep(2500); // Respect rate limits
             }
 
-            let doneMsg = confirmations.join('\n');
-            if (failed > 0) {
-                doneMsg += `\n\n⚠️ ${failed} task(s) failed or parked for retry.`;
+            let processed = confirmations.filter(c => !c.startsWith('\n⚠️') && !c.startsWith('💭'));
+            let nonProcessed = confirmations.filter(c => c.startsWith('\n⚠️') || c.startsWith('❌') || c.startsWith('💭'));
+            const processedCount = processed.length;
+            const failedCount = nonProcessed.filter(c => c.startsWith('❌')).length;
+            const parkedCount = nonProcessed.filter(c => c.startsWith('\n⚠️')).length;
+            const ignoredCount = nonProcessed.filter(c => c.startsWith('💭')).length;
+
+            const header = `**Review complete — ${processedCount} of ${batch.length} processed:**`;
+            const lines = [header];
+
+            if (processedCount > 0) {
+                processed.forEach(c => {
+                    const stripped = c.replace(/^(✨|✅)\s*/, '');
+                    lines.push(`• ${stripped}`);
+                });
             }
+
+            if (failedCount > 0) {
+                lines.push(`\n⚠️ ${failedCount} failed or parked.`);
+            }
+            if (ignoredCount > 0) {
+                lines.push(`💭 ${ignoredCount} ignored (not actionable).`);
+            }
+            if (parkedCount > 0) {
+                lines.push(`📝 ${parkedCount} parked for retry.`);
+            }
+
             if (targetTasks.length > 5) {
-                doneMsg += `\n\n📝 ${targetTasks.length - 5} more remain. Run /review again for more.`;
+                lines.push(`\n📝 ${targetTasks.length - 5} more remain. Run /review again for more.`);
             }
+
+            let doneMsg = lines.join('\n');
 
             await replyWithMarkdown(ctx, doneMsg.trim());
 

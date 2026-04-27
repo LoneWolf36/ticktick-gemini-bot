@@ -475,16 +475,19 @@ export function pendingToAnalysis(data) {
  * @returns {string|null} Formatted notification or null if no results
  */
 export function buildAutoApplyNotification(results) {
-    if (results.length === 0) return null;
-    const lines = [`⚡ **Auto-applied ${results.length} task(s):**`];
+    if (!results || results.length === 0) return null;
+    const lines = [
+        `⚡ **${results.length} task(s) organized while you were away:**`,
+        '',
+    ];
     for (const r of results) {
         const parts = [];
-        if (r.schedule) parts.push(`due ${r.schedule}`);
-        if (r.movedTo) parts.push(`moved to ${r.movedTo}`);
+        if (r.schedule) parts.push(`📅 due ${r.schedule}`);
+        if (r.movedTo) parts.push(`📁 ${r.movedTo}`);
         const detail = parts.length > 0 ? ` → ${parts.join(', ')}` : '';
-        lines.push(`• **"${r.title}"**${detail}`);
+        lines.push(`• "${r.title}"${detail}`);
     }
-    lines.push(`\n*Run /undo to revert the last one.*`);
+    lines.push(`\n*Run /undo if anything looks off.*`);
     return lines.join('\n');
 }
 
