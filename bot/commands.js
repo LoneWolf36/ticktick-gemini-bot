@@ -44,10 +44,13 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         .text('🔍 Scan', 'menu:scan')
         .text('⏳ Pending', 'menu:pending')
         .row()
-        .text('🌅 Briefing', 'menu:briefing')
-        .text('🌙 Daily Close', 'menu:daily_close')
-        .row()
+        .text('🌅 Morning', 'menu:briefing')
+        .text('🌙 Evening', 'menu:daily_close')
         .text('📊 Weekly', 'menu:weekly')
+        .row()
+        .text('⚡ Urgent', 'menu:urgent')
+        .text('🎯 Focus', 'menu:focus')
+        .text('🧘 Normal', 'menu:normal')
         .row()
         .text('🧭 Reorg', 'menu:reorg')
         .text('📈 Status', 'menu:status');
@@ -374,10 +377,15 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const map = {
             scan: '/scan',
             pending: '/pending',
+            review: '/review',
             briefing: '/briefing',
+            daily_close: '/daily_close',
             weekly: '/weekly',
             reorg: '/reorg',
             status: '/status',
+            urgent: '/urgent',
+            focus: '/focus',
+            normal: '/normal',
         };
         const typed = map[cmd];
         if (!typed) return;
@@ -535,10 +543,17 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
 
             if (targetTasks.length > 5) {
-                lines.push(`\n📝 ${targetTasks.length - 5} more remain. Run /scan again for the next batch.`);
+                lines.push(`\n📝 ${targetTasks.length - 5} more remain.`);
             }
 
             let doneMsg = lines.join('\n');
+            
+            if (targetTasks.length > 5) {
+                const nextKeyboard = new InlineKeyboard().text('⬇️ Load Next 5', 'menu:scan');
+                await replyWithMarkdown(ctx, doneMsg.trim(), { reply_markup: nextKeyboard });
+            } else {
+                await replyWithMarkdown(ctx, doneMsg.trim());
+            }
 
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
@@ -574,7 +589,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
 
         if (entries.length > 5) {
-            await ctx.reply(`📝 Sent 5 of ${entries.length}. Run /pending again for more.`);
+            const nextKeyboard = new InlineKeyboard().text('⬇️ Load Next 5', 'menu:pending');
+            await ctx.reply(`📝 Sent 5 of ${entries.length}.`, { reply_markup: nextKeyboard });
         }
     });
 
@@ -920,12 +936,17 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
 
             if (targetTasks.length > 5) {
-                lines.push(`\n📝 ${targetTasks.length - 5} more remain. Run /review again for more.`);
+                lines.push(`\n📝 ${targetTasks.length - 5} more remain.`);
             }
 
             let doneMsg = lines.join('\n');
 
-            await replyWithMarkdown(ctx, doneMsg.trim());
+            if (targetTasks.length > 5) {
+                const nextKeyboard = new InlineKeyboard().text('⬇️ Load Next 5', 'menu:review');
+                await replyWithMarkdown(ctx, doneMsg.trim(), { reply_markup: nextKeyboard });
+            } else {
+                await replyWithMarkdown(ctx, doneMsg.trim());
+            }
 
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
@@ -967,6 +988,50 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
 
         const userMessage = rawText;
+
+        const pendingRefinementId = store.getPendingTaskRefinement();
+        if (pendingRefinementId) {
+            const data = store.getPendingTasks()[pendingRefinementId];
+            if (data) {
+                await store.clearPendingTaskRefinement();
+                await ctx.reply(`🧠 Applying refinements to "${data.originalTitle}"...`);
+                try {
+                    const availableProjects = await adapter.listProjects();
+                    const workStyleMode = await resolveCurrentWorkStyleMode(ctx);
+                    
+                    // We need a complete TickTick task object for the pipeline
+                    const existingTask = {
+                        id: pendingRefinementId,
+                        title: data.originalTitle,
+                        content: data.originalContent,
+                        projectId: data.originalProjectId,
+                        priority: data.originalPriority
+                    };
+
+                    const result = await processPipelineMessage(userMessage, {
+                        existingTask,
+                        entryPoint: 'telegram:refine',
+                        mode: 'interactive',
+                        availableProjects,
+                        workStyleMode,
+                    });
+
+                    if (result.type === 'error') {
+                        await ctx.reply(formatPipelineFailure(result));
+                    } else if (result.type === 'task') {
+                        await store.markTaskProcessed(pendingRefinementId, { originalTitle: data.originalTitle, autoApplied: true });
+                        await replyWithMarkdown(ctx, truncateMessage(`✅ Refined and applied:\n\n${result.confirmationText}`, 4000));
+                    } else {
+                        await ctx.reply(result.confirmationText || '✅ Done.');
+                    }
+                } catch (err) {
+                    await ctx.reply(`❌ Refinement error: ${err.message}`);
+                }
+                return;
+            } else {
+                await store.clearPendingTaskRefinement();
+            }
+        }
 
         const pendingReorg = store.getPendingReorg();
         if (pendingReorg?.awaitingRefine) {

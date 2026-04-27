@@ -773,6 +773,20 @@ export async function clearPendingMutationClarification() {
 /** Checklist clarification TTL: 24 hours */
 export const CHECKLIST_CLARIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 
+export function getPendingTaskRefinement() {
+    return state.pendingTaskRefinement || null;
+}
+
+export async function setPendingTaskRefinement(data) {
+    state.pendingTaskRefinement = data ? { ...data, createdAt: new Date().toISOString() } : null;
+    await save();
+}
+
+export async function clearPendingTaskRefinement() {
+    state.pendingTaskRefinement = null;
+    await save();
+}
+
 /**
  * Gets the pending checklist clarification if it exists and hasn't expired.
  *

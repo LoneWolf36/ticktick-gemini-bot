@@ -330,13 +330,16 @@ export function buildTickTickUpdate(data, options = {}) {
 export function buildTaskCard(task, analysis) {
     const lines = [];
 
-    // Header — most important info first
-    lines.push(`**📂 ${task.projectName || 'Inbox'}**`);
-    lines.push(`Original: ${task.title}`);
-
+    // Header — punchy project and original vs suggested
+    lines.push(`📂 **${task.projectName || 'Inbox'}**`);
+    
     if (analysis.improved_title && analysis.improved_title !== task.title) {
-        lines.push(`→ **${analysis.improved_title}**`);
+        lines.push(`~~${task.title}~~`);
+        lines.push(`✨ **${analysis.improved_title}**`);
+    } else {
+        lines.push(`📌 **${task.title}**`);
     }
+
     lines.push('');
 
     // Key decisions (pipe-separated on one line)
@@ -348,25 +351,26 @@ export function buildTaskCard(task, analysis) {
         decisions.push(`📁 → ${analysis.suggested_project}`);
     }
     if (analysis.needle_mover !== undefined) {
-        decisions.push(analysis.needle_mover ? '🎯 Needle-mover' : '⚪ Low leverage');
+        decisions.push(analysis.needle_mover ? '🎯 High Leverage' : '⚪ Routine');
     }
-    lines.push(decisions.join('  |  '));
+    
+    lines.push(`**${decisions.join('  |  ')}**`);
     lines.push('');
 
     // Supporting detail (only if present)
-    if (analysis.analysis) lines.push(`Analysis: ${analysis.analysis}`);
-    if (analysis.description) lines.push(`\n${analysis.description}`);
+    if (analysis.analysis) lines.push(`*Why:* ${analysis.analysis}`);
+    if (analysis.description) lines.push(`\n📝 ${analysis.description}`);
 
     if (analysis.sub_steps?.length > 0) {
-        lines.push('\nSteps:');
+        lines.push('\n**📋 Action Steps:**');
         analysis.sub_steps.slice(0, 4).forEach((step, i) => {
             lines.push(`  ${i + 1}. ${step}`);
         });
         if (analysis.sub_steps.length > 4) lines.push(`  ...+${analysis.sub_steps.length - 4} more`);
     }
 
-    if (analysis.success_criteria) lines.push(`\nDone when: ${analysis.success_criteria}`);
-    if (analysis.callout) lines.push(`\n💬 ${analysis.callout}`);
+    if (analysis.success_criteria) lines.push(`\n**🎯 Done when:** ${analysis.success_criteria}`);
+    if (analysis.callout) lines.push(`\n**💬 Coach:** *${analysis.callout}*`);
 
     return truncateMessage(lines.join('\n'));
 }
@@ -526,6 +530,7 @@ export function parseTelegramMarkdownToHTML(text) {
     let escaped = escapeHTML(normalized);
     escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
     escaped = escaped.replace(/\*([^*]+)\*/g, '<i>$1</i>');
+    escaped = escaped.replace(/~~(.*?)~~/g, '<s>$1</s>');
     return escaped;
 }
 

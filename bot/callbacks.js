@@ -20,8 +20,9 @@ export function taskReviewKeyboard(taskId) {
     const id = taskId.length > 50 ? taskId.slice(0, 50) : taskId;
     return new InlineKeyboard()
         .text('✅ Apply changes', `a:${id}`)
-        .text('⏭ Keep original', `s:${id}`)
+        .text('✏️ Refine', `r:${id}`)
         .row()
+        .text('⏭ Keep original', `s:${id}`)
         .text('🗑️ Delete task', `d:${id}`);
 }
 
@@ -39,6 +40,28 @@ export function registerCallbacks(bot, adapter, pipeline) {
         typeof pipeline.processMessageWithContext === 'function'
             ? pipeline.processMessageWithContext(userMessage, options)
             : pipeline.processMessage(userMessage, options);
+
+    // ─── Refine: Request user input for specific task tweaks ──
+    bot.callbackQuery(/^r:(.+)$/, async (ctx) => {
+        if (!isAuthorized(ctx)) {
+             await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+             return;
+        }
+        const taskId = ctx.match[1];
+        const data = store.getPendingTasks()[taskId];
+
+        if (!data) {
+             await ctx.answerCallbackQuery({ text: '⚠️ Task not pending' });
+             return;
+        }
+        
+        await store.setPendingTaskRefinement(taskId);
+        await ctx.answerCallbackQuery({ text: 'Ready for refinement' });
+        await ctx.reply(`✏️ **Refining "${data.originalTitle}"**\nSend your tweaks (e.g. "make it high priority", "move to admin project").`, {
+            reply_parameters: { message_id: ctx.callbackQuery.message.message_id },
+            parse_mode: 'Markdown'
+        });
+    });
 
     // ─── Approve: move pending → processed, update TickTick ───
     // RETAINED BOUNDARY: inline review callbacks apply precomputed review edits
