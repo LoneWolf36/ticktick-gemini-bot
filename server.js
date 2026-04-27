@@ -183,7 +183,11 @@ app.listen(parseInt(PORT), async () => {
     if (BOT_MODE === 'webhook' && WEBHOOK_URL) {
         await bot.init();
         await bot.api.setMyCommands(TELEGRAM_COMMANDS);
-        await bot.api.setWebhook(`${WEBHOOK_URL}/webhook`);
+        if (TELEGRAM_WEBHOOK_SECRET) {
+            await bot.api.setWebhook(`${WEBHOOK_URL}/webhook`, { secret_token: TELEGRAM_WEBHOOK_SECRET });
+        } else {
+            await bot.api.setWebhook(`${WEBHOOK_URL}/webhook`);
+        }
         console.log(chalk.green(`Telegram bot running (webhook: ${WEBHOOK_URL})`));
     } else {
         bot.start().catch((err) => {
