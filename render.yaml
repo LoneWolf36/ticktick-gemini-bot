@@ -57,7 +57,7 @@ services:
         value: Europe/Dublin
       # Optional — auto-apply behavior (defaults shown)
       - key: AUTO_APPLY_LIFE_ADMIN
-        value: "true"
+        value: "false"
       - key: AUTO_APPLY_DROPS
         value: "false"
       - key: AUTO_APPLY_MODE
