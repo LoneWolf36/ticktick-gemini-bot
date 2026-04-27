@@ -361,6 +361,7 @@ test('retryDeferredIntents retries and removes successful intent', async () => {
     assert.equal(store.getDeferredPipelineIntents().length, 0);
 });
 
+// Uses failureCategory (not category) to match real pipeline output shape
 test('retryDeferredIntents leaves transient failures in queue', async () => {
     await store.resetAll();
     await store.appendDeferredPipelineIntent({ userMessage: 'Transient task' });
@@ -396,6 +397,27 @@ test('retryDeferredIntents removes permanent failures from queue', async () => {
         bot: { api: { sendMessage: async () => {} } },
     });
 
+    assert.equal(result.failed, 1);
+    assert.equal(result.remaining, 0);
+});
+
+test('retryDeferredIntents does not match legacy category field', async () => {
+    await store.resetAll();
+    await store.setChatId('legacy-field-test');
+    await store.appendDeferredPipelineIntent({ userMessage: 'Legacy field task' });
+
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: {
+            processMessage: async () => ({
+                type: 'error',
+                failure: { category: 'transient' }, // WRONG field name
+            }),
+        },
+        bot: { api: { sendMessage: async () => {} } },
+    });
+
+    assert.equal(result.retried, 0);
     assert.equal(result.failed, 1);
     assert.equal(result.remaining, 0);
 });
@@ -501,4 +523,31 @@ test('retryDeferredIntents falls back to processMessage when processMessageWithC
 
     assert.equal(usedFallback, true);
     assert.equal(result.retried, 1);
+});
+
+// Auto-apply poll passes blockedActionTypes: ['delete', 'complete'] to prevent destructive
+// actions from being executed without human review. The pipeline-level contract is tested
+// in regression.scan-review-pending.test.js; this test verifies the same contract shape.
+test('auto-apply safety relies on pipeline blockedActionTypes to prevent destructive actions', async () => {
+    await store.resetAll();
+    const { processMessage, adapterCalls } = (await import('./pipeline-harness.js')).createPipelineHarness({
+        intents: [{ type: 'delete', taskId: 'task-1', title: 'Old task' }],
+        useRealNormalizer: false,
+        normalizedActions: [
+            { type: 'delete', taskId: 'task-1', title: 'Old task', originalProjectId: 'proj-a', valid: true, validationErrors: [] },
+            { type: 'complete', taskId: 'task-2', title: 'Buy milk', originalProjectId: 'proj-b', valid: true, validationErrors: [] },
+            { type: 'update', taskId: 'task-3', title: 'Updated task', originalProjectId: 'proj-c', valid: true, validationErrors: [] },
+        ],
+    });
+
+    const result = await processMessage('process tasks', { blockedActionTypes: ['delete', 'complete'] });
+
+    assert.equal(result.type, 'task');
+    assert.equal(adapterCalls.delete.length, 0);
+    assert.equal(adapterCalls.complete.length, 0);
+    assert.equal(adapterCalls.update.length, 1);
+    assert.ok(result.skippedActions);
+    assert.equal(result.skippedActions.length, 2);
+    assert.ok(result.skippedActions.some(a => a.type === 'delete'));
+    assert.ok(result.skippedActions.some(a => a.type === 'complete'));
 });
