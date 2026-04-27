@@ -115,12 +115,24 @@ export function registerCallbacks(bot, adapter, pipeline) {
             if (actionType === 'complete') {
                 const projectId = data.projectId || data.originalProjectId;
                 await adapter.completeTask(taskId, projectId);
+                await store.addUndoEntry(buildUndoEntry({
+                    source: { id: taskId, title: data.originalTitle, content: data.originalContent, priority: data.originalPriority, projectId: data.originalProjectId },
+                    action: 'complete',
+                    applied: {},
+                    appliedTaskId: taskId,
+                }));
                 await store.approveTask(taskId);
                 await ctx.answerCallbackQuery({ text: '✅ Marked as done!' });
                 await editWithMarkdown(ctx, `✅ **Completed:** "${data.originalTitle}"`);
             } else if (actionType === 'delete') {
                 const projectId = data.projectId || data.originalProjectId;
                 await adapter.deleteTask(taskId, projectId);
+                await store.addUndoEntry(buildUndoEntry({
+                    source: { id: taskId, title: data.originalTitle, content: data.originalContent, priority: data.originalPriority, projectId: data.originalProjectId },
+                    action: 'delete',
+                    applied: {},
+                    appliedTaskId: taskId,
+                }));
                 await store.approveTask(taskId);
                 await ctx.answerCallbackQuery({ text: '🗑️ Deleted' });
                 await editWithMarkdown(ctx, `🗑️ **Deleted:** "${data.originalTitle}"`);

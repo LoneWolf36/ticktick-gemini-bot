@@ -39,6 +39,7 @@ export {
     formatProcessedTask,
     buildMutationCandidateKeyboard,
     buildMutationClarificationMessage,
+    retryWithBackoff,
 } from '../services/shared-utils.js';
 
 /**

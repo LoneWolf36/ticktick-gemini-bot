@@ -14,6 +14,7 @@ import {
     buildMutationClarificationMessage,
     buildPendingDataFromAction,
     formatPipelineFailure,
+    retryWithBackoff,
 } from './utils.js';
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
@@ -492,14 +493,14 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 try {
                     const userMessage = task.title + (task.content ? `\n${task.content}` : '');
 
-                    const result = await processPipelineMessage(userMessage, {
+                    const result = await retryWithBackoff(() => processPipelineMessage(userMessage, {
                         existingTask: task,
                         entryPoint: 'telegram:scan',
                         mode: 'scan',
                         availableProjects,
                         workStyleMode,
                         dryRun: true,
-                    });
+                    }));
 
                     if (result.type === 'error') {
                         if (result.failure?.class === 'quota') {
@@ -909,79 +910,104 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             for (const task of batch) {
                 try {
                     const userMessage = task.title + (task.content ? `\n${task.content}` : '');
-                    const result = await processPipelineMessage(userMessage, {
+
+                    const result = await retryWithBackoff(() => processPipelineMessage(userMessage, {
                         existingTask: task,
                         entryPoint: 'telegram:review',
                         mode: 'review',
                         availableProjects,
                         workStyleMode,
-                    });
+                        dryRun: true,
+                    }));
 
                     if (result.type === 'error') {
                         if (result.failure?.class === 'quota') {
-                            failed += (batch.length - batch.indexOf(task));
+                            const remaining = batch.slice(batch.indexOf(task));
+                            for (const t of remaining) {
+                                await store.markTaskFailed(t.id, 'quota_exhausted', 30 * 60 * 1000);
+                            }
                             confirmations.push(`\n⚠️ AI quota exhausted. Stopping batch.`);
                             break;
                         }
                         failed++;
+                        await store.markTaskFailed(task.id, result.failure?.summary || 'pipeline_error');
                         confirmations.push(`❌ ${task.title}: ${formatPipelineFailure(result, { compact: true })}`);
                     } else if (result.type === 'task') {
-                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: true });
-                        confirmations.push(`✨ ${result.confirmationText.replace(/\n\n/g, ' | ')}`);
-                    } else {
+                        const action = result.actions?.[0];
+                        if (!action) {
+                            await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                            confirmations.push(`💭 No changes suggested: ${task.title}`);
+                        } else {
+                            const pendingData = buildPendingDataFromAction(task, action, availableProjects);
+                            await store.markTaskPending(task.id, pendingData);
+
+                            const card = buildTaskCardFromAction(task, action, availableProjects);
+                            await replyWithMarkdown(ctx, card, { reply_markup: taskReviewKeyboard(task.id, pendingData.actionType) });
+                            await sleep(1000);
+
+                            confirmations.push(`📋 Queued for review: ${task.title}`);
+                        }
+                    } else if (result.type === 'clarification') {
+                        failed++;
+                        await store.markTaskFailed(task.id, 'clarification_needed');
+                        confirmations.push(`❓ ${task.title}: Needs clarification — ${result.clarification?.reason || 'ambiguous'}`);
+                    } else if (result.type === 'non-task') {
                         await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
                         confirmations.push(`💭 Ignored (not actionable): ${task.title}`);
+                    } else {
+                        failed++;
+                        await store.markTaskFailed(task.id, `unknown_result_type: ${result.type}`);
+                        confirmations.push(`❓ ${task.title}: Unexpected result type (${result.type})`);
                     }
                 } catch (err) {
                     if (err.message.includes('quota') || err.message === 'All API keys exhausted') {
-                        failed += (batch.length - batch.indexOf(task));
+                        const remaining = batch.slice(batch.indexOf(task));
+                        for (const t of remaining) {
+                            await store.markTaskFailed(t.id, 'quota_exhausted', 30 * 60 * 1000);
+                        }
                         confirmations.push(`\n⚠️ AI quota exhausted. Stopping batch.`);
                         break;
                     }
                     failed++;
-                    confirmations.push(`❌ Failed processing ${task.title}: ${err.message}`);
+                    await store.markTaskFailed(task.id, err.message);
+                    confirmations.push(`❌ Failed analyzing ${task.title}: ${err.message}`);
                 }
                 await sleep(2500); // Respect rate limits
             }
 
-            let processed = confirmations.filter(c => !c.startsWith('\n⚠️') && !c.startsWith('💭'));
-            let nonProcessed = confirmations.filter(c => c.startsWith('\n⚠️') || c.startsWith('❌') || c.startsWith('💭'));
-            const processedCount = processed.length;
-            const failedCount = nonProcessed.filter(c => c.startsWith('❌')).length;
-            const parkedCount = nonProcessed.filter(c => c.startsWith('\n⚠️')).length;
-            const ignoredCount = nonProcessed.filter(c => c.startsWith('💭')).length;
+            const queuedCount = confirmations.filter(c => c.startsWith('📋')).length;
+            const failedCount = confirmations.filter(c => c.startsWith('❌')).length;
+            const ignoredCount = confirmations.filter(c => c.startsWith('💭')).length;
+            const parkedCount = confirmations.filter(c => c.startsWith('\n⚠️')).length;
 
-            const header = `**Review complete — ${processedCount} of ${batch.length} processed:**`;
-            const lines = [header];
-
-            if (processedCount > 0) {
-                processed.forEach(c => {
-                    const stripped = c.replace(/^(✨|✅)\s*/, '');
-                    lines.push(`• ${stripped}`);
-                });
+            const lines = [];
+            if (queuedCount > 0) {
+                lines.push(`📋 **${queuedCount} task(s) queued for review.** Tap ✅ Apply changes or ⏭ Keep original on each card above.`);
             }
-
             if (failedCount > 0) {
-                lines.push(`\n⚠️ ${failedCount} failed or parked.`);
+                lines.push(`❌ ${failedCount} failed or need clarification.`);
             }
             if (ignoredCount > 0) {
                 lines.push(`💭 ${ignoredCount} ignored (not actionable).`);
             }
             if (parkedCount > 0) {
-                lines.push(`📝 ${parkedCount} parked for retry.`);
+                lines.push(`📝 ${parkedCount} parked for retry (quota exhausted).`);
             }
 
             if (targetTasks.length > 5) {
-                lines.push(`\n📝 ${targetTasks.length - 5} more remain.`);
+                lines.push(`\n📝 ${targetTasks.length - 5} more remain. Run /review again after reviewing.`);
             }
 
-            let doneMsg = lines.join('\n');
-
-            if (targetTasks.length > 5) {
-                const nextKeyboard = new InlineKeyboard().text('🔄 Continue', 'menu:review');
-                await replyWithMarkdown(ctx, doneMsg.trim(), { reply_markup: nextKeyboard });
+            if (lines.length > 0) {
+                const doneMsg = lines.join('\n');
+                if (targetTasks.length > 5) {
+                    const nextKeyboard = new InlineKeyboard().text('🔄 Continue', 'menu:review');
+                    await replyWithMarkdown(ctx, doneMsg.trim(), { reply_markup: nextKeyboard });
+                } else {
+                    await replyWithMarkdown(ctx, doneMsg.trim());
+                }
             } else {
-                await replyWithMarkdown(ctx, doneMsg.trim());
+                await ctx.reply('✅ Review complete. No tasks to review.');
             }
 
         } catch (err) {

@@ -549,8 +549,8 @@ export function buildPendingDataFromAction(task, action, projects = []) {
 
         analysis: null,
         description: null,
-        priority: null,
-        priorityEmoji: null,
+        priority: PRIORITY_LABEL[action.priority ?? task.priority] ?? PRIORITY_LABEL[3],
+        priorityEmoji: PRIORITY_EMOJI[action.priority ?? task.priority] ?? PRIORITY_EMOJI[3],
         needleMover: null,
         subSteps: null,
         resources: null,
@@ -905,4 +905,36 @@ export function validateChecklistItems(items, options = {}) {
     }
 
     return validItems;
+}
+
+/**
+ * Retry an async operation with exponential backoff for transient failures.
+ * @param {Function} fn - Async function to retry
+ * @param {Object} [options]
+ * @param {number} [options.maxRetries=2] - Max retry attempts
+ * @param {number} [options.baseDelayMs=1000] - Initial delay in ms
+ * @param {Function} [options.isRetryable] - Predicate to determine if error is retryable
+ * @returns {Promise<*>} Result of fn
+ */
+export async function retryWithBackoff(fn, { maxRetries = 2, baseDelayMs = 1000, isRetryable = null } = {}) {
+    const defaultIsRetryable = (err) => {
+        const msg = err?.message || '';
+        return msg.includes('timeout') || msg.includes('ETIMEDOUT') || msg.includes('ECONNRESET') || msg.includes('rate limit') || msg.includes('429') || msg.includes('Too Many Requests');
+    };
+    const shouldRetry = isRetryable || defaultIsRetryable;
+
+    let lastError;
+    for (let attempt = 0; attempt <= maxRetries; attempt++) {
+        try {
+            return await fn();
+        } catch (err) {
+            lastError = err;
+            if (attempt === maxRetries || !shouldRetry(err)) {
+                throw err;
+            }
+            const delay = baseDelayMs * Math.pow(2, attempt);
+            await new Promise(r => setTimeout(r, delay));
+        }
+    }
+    throw lastError;
 }
