@@ -178,7 +178,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         if (!await guardAccess(ctx)) return;
         const chatId = ctx.chat.id;
         await store.setChatId(chatId);
-        await ctx.reply(
+        await replyWithMarkdown(
+            ctx,
             `**🧠 TickTick AI Accountability Partner**\n\n` +
             `Connected! I'll help you focus on what actually matters.\n\n` +
             `**Core commands:**\n` +
@@ -204,7 +205,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
-            await ctx.reply(buildQuotaExhaustedMessage(gemini));
+            await replyWithMarkdown(ctx, buildQuotaExhaustedMessage(gemini));
             return;
         }
         await ctx.reply('🧭 Building reorganization proposal...');
@@ -660,7 +661,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
-            await ctx.reply(buildQuotaExhaustedMessage(gemini));
+            await replyWithMarkdown(ctx, buildQuotaExhaustedMessage(gemini));
             return;
         }
         await ctx.reply('🌅 Generating your briefing...');
@@ -695,7 +696,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
-            await ctx.reply(buildQuotaExhaustedMessage(gemini));
+            await replyWithMarkdown(ctx, buildQuotaExhaustedMessage(gemini));
             return;
         }
         await ctx.reply('📊 Generating your weekly review...');
@@ -744,7 +745,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
         if (gemini.isQuotaExhausted()) {
-            await ctx.reply(buildQuotaExhaustedMessage(gemini));
+            await replyWithMarkdown(ctx, buildQuotaExhaustedMessage(gemini));
             return;
         }
         await ctx.reply('🌙 Generating your end-of-day reflection...');
@@ -970,7 +971,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const pendingReorg = store.getPendingReorg();
         if (pendingReorg?.awaitingRefine) {
             if (gemini.isQuotaExhausted()) {
-                await ctx.reply(buildQuotaExhaustedMessage(gemini));
+                await replyWithMarkdown(ctx, buildQuotaExhaustedMessage(gemini));
                 return;
             }
             await ctx.reply('🛠️ Refining reorg proposal...');
@@ -1079,7 +1080,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             } else if (result.type === 'non-task') {
                 // Fall back to conversational handling if no intent extracted
                 if (gemini.isQuotaExhausted()) {
-                    await ctx.reply(buildQuotaExhaustedMessage(gemini));
+                    await replyWithMarkdown(ctx, buildQuotaExhaustedMessage(gemini));
                     return;
                 }
                 await ctx.reply(result.confirmationText || 'Got it — no actionable tasks detected.');
