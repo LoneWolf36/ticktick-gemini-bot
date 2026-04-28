@@ -21,6 +21,7 @@ import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
 import { detectWorkStyleModeIntent } from '../services/intent-extraction.js';
 import { detectBehavioralPatterns } from '../services/behavioral-patterns.js';
+import { PRIORITY_LABEL } from '../services/shared-utils.js';
 
 // Rate limiter removed 2026-04-19 (cavekit-validate Phase 3): YAGNI for 1-user MVP.
 // Heavy-command rate limiting listed as out-of-scope in cavekit-task-pipeline.md.
@@ -64,25 +65,71 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         .row()
         .text('❌ Cancel', 'reorg:cancel');
 
-    const summarizeReorg = (proposal, tasks = []) => {
-        const byId = new Map(tasks.map(t => [t.id, t.title]));
+    const summarizeReorg = (proposal, tasks = [], projects = []) => {
+        const byId = new Map(tasks.map(t => [t.id, t]));
+        const projectMap = new Map(projects.map(p => [p.id, p.name || 'Unknown']));
         const lines = [`**🧭 Reorg Proposal**`];
         if (proposal.summary) lines.push(proposal.summary);
 
-        // Group by type
-        const byType = {};
         const actions = Array.isArray(proposal.actions) ? proposal.actions : [];
-        actions.forEach(a => {
-            const type = a.type || 'unknown';
-            if (!byType[type]) byType[type] = [];
-            const title = a.taskId ? (byId.get(a.taskId) || a.taskId) : (a.changes?.title || 'New Task');
-            byType[type].push(title);
-        });
+        const byType = { create: [], update: [], complete: [], drop: [] };
 
-        for (const [type, titles] of Object.entries(byType)) {
-            lines.push(`\n**${type} (${titles.length})**`);
-            titles.slice(0, 5).forEach(t => lines.push(`  • ${t}`));
-            if (titles.length > 5) lines.push(`  ...+${titles.length - 5} more`);
+        for (const a of actions) {
+            const type = a.type || 'unknown';
+            const task = a.taskId ? byId.get(a.taskId) : null;
+            const title = a.taskId ? (task?.title || a.taskId) : (a.changes?.title || 'New Task');
+
+            if (type === 'create') {
+                const changes = a.changes || {};
+                const parts = [];
+                if (changes.projectId) {
+                    parts.push(`Project: ${projectMap.get(changes.projectId) || 'Unknown'}`);
+                }
+                if (changes.priority !== undefined) {
+                    parts.push(`Priority: ${PRIORITY_LABEL[changes.priority] || changes.priority}`);
+                }
+                const due = changes.scheduleBucket || changes.dueDate;
+                if (due) {
+                    parts.push(`Due: ${due}`);
+                }
+                const detail = parts.length > 0 ? `\n  → ${parts.join(' · ')}` : '';
+                byType.create.push(`Create: ${title}${detail}`);
+            } else if (type === 'update') {
+                const changes = a.changes || {};
+                const parts = [];
+                if (changes.projectId && task && changes.projectId !== task.projectId) {
+                    parts.push(`Move to: ${projectMap.get(changes.projectId) || 'Unknown'}`);
+                }
+                if (changes.priority !== undefined && task && changes.priority !== task.priority) {
+                    parts.push(`Priority: ${PRIORITY_LABEL[changes.priority] || changes.priority}`);
+                }
+                if (changes.title && changes.title !== task?.title) {
+                    parts.push(`Renamed to: "${changes.title}"`);
+                }
+                const due = changes.dueDate || changes.scheduleBucket;
+                if (due) {
+                    parts.push(`Due: ${due}`);
+                }
+                const detail = parts.length > 0 ? `\n  → ${parts.join(' · ')}` : '';
+                byType.update.push(`Update: ${title}${detail}`);
+            } else if (type === 'complete') {
+                byType.complete.push(`Complete: ${title}`);
+            } else if (type === 'drop') {
+                byType.drop.push(`Drop: ${title}`);
+            } else {
+                if (!byType[type]) byType[type] = [];
+                byType[type].push(`${type}: ${title}`);
+            }
+        }
+
+        for (const type of ['create', 'update', 'complete', 'drop']) {
+            const items = byType[type];
+            if (!items || items.length === 0) continue;
+            lines.push(`\n**${type} (${items.length})**`);
+            for (const item of items.slice(0, 5)) {
+                lines.push(`  • ${item}`);
+            }
+            if (items.length > 5) lines.push(`  ...+${items.length - 5} more`);
         }
 
         const questions = Array.isArray(proposal.questions) ? proposal.questions : [];
@@ -222,7 +269,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 awaitingRefine: false,
                 createdAt: new Date().toISOString(),
             });
-            await replyWithMarkdown(ctx, summarizeReorg(proposal, tasks), { reply_markup: reorgKeyboard() });
+            await replyWithMarkdown(ctx, summarizeReorg(proposal, tasks, projects), { reply_markup: reorgKeyboard() });
         } catch (err) {
             await ctx.reply(`❌ Reorg failed: ${err.message}`);
         }
@@ -504,7 +551,29 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     }
                 );
                 await store.clearPendingReorg();
-                let msg = `**Reorg applied.**\n\n${outcomes.join('\n') || 'No actions were applied.'}`;
+                const typeOrder = ['Created', 'Updated', 'Complete', 'Drop'];
+                const grouped = {};
+                for (const o of outcomes) {
+                    const m = o.match(/^(Created|Updated|Complete|Drop):\s*(.+)/i);
+                    if (m) {
+                        const type = m[1];
+                        const rest = m[2];
+                        if (!grouped[type]) grouped[type] = [];
+                        grouped[type].push(rest);
+                    } else {
+                        if (!grouped.Other) grouped.Other = [];
+                        grouped.Other.push(o);
+                    }
+                }
+                const sections = [];
+                for (const type of typeOrder) {
+                    const items = grouped[type] || [];
+                    sections.push(`${type}:\n${items.length > 0 ? items.map(i => `  • ${i}`).join('\n') : '  • (none)'}`);
+                }
+                let msg = `**Reorg Applied**\n\n${sections.join('\n\n')}`;
+                if (grouped.Other?.length) {
+                    msg += `\n\n${grouped.Other.join('\n')}`;
+                }
                 if (hasUndoableActions) msg += '\n\nRun /undo to revert the last change.';
                 await replyWithMarkdown(ctx, truncateMessage(msg, 4000));
             } catch (err) {
@@ -1252,7 +1321,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     awaitingRefine: false,
                     createdAt: pendingReorg.createdAt || new Date().toISOString(),
                 });
-                await replyWithMarkdown(ctx, summarizeReorg(refined, tasks), { reply_markup: reorgKeyboard() });
+                await replyWithMarkdown(ctx, summarizeReorg(refined, tasks, projects), { reply_markup: reorgKeyboard() });
             } catch (err) {
                 await ctx.reply(`❌ Reorg refinement failed: ${err.message}`);
             }
@@ -1647,6 +1716,8 @@ export async function executeActions(actions, adapter, currentTasks, options = {
         return scheduleToDate(value, { priorityLabel }) || parseDateStringToTickTickISO(value, { priorityLabel, slotMode: 'priority' });
     };
 
+    const projectMap = new Map((options.projects || []).map(p => [p.id, p.name || 'Unknown']));
+
     for (const action of plannedActions) {
         if (!action || typeof action !== 'object' || !action.type) continue;
 
@@ -1659,7 +1730,19 @@ export async function executeActions(actions, adapter, currentTasks, options = {
                     if (safeDueDate) createPayload.dueDate = safeDueDate;
 
                     await adapter.createTask(createPayload);
-                    outcomes.push(`Created: "${changes.title}"`);
+                    const createParts = [];
+                    if (changes.projectId) {
+                        const projName = projectMap.get(changes.projectId) || 'new project';
+                        createParts.push(`Project: ${projName}`);
+                    }
+                    if (changes.priority !== undefined) {
+                        createParts.push(`Priority: ${PRIORITY_LABEL[changes.priority] || changes.priority}`);
+                    }
+                    if (safeDueDate) {
+                        createParts.push(`Due: ${safeDueDate}`);
+                    }
+                    const detail = createParts.length > 0 ? ` → ${createParts.join(', ')}` : '';
+                    outcomes.push(`Created: "${changes.title}"${detail}`);
                 } else {
                     outcomes.push(`⚠️ Cannot create task: Missing title`);
                 }
@@ -1679,7 +1762,7 @@ export async function executeActions(actions, adapter, currentTasks, options = {
 
             if (action.type === 'complete') {
                 await adapter.completeTask(task.id, task.projectId);
-                outcomes.push(`Marked complete: "${task.title}"`);
+                outcomes.push(`Complete: "${task.title}"`);
                 continue;
             }
 
@@ -1718,7 +1801,22 @@ export async function executeActions(actions, adapter, currentTasks, options = {
                     }
                 }));
 
-                outcomes.push(`Updated: "${task.title}"`);
+                const changeParts = [];
+                if (changes.projectId && changes.projectId !== task.projectId) {
+                    const projName = projectMap.get(changes.projectId) || 'new project';
+                    changeParts.push(`moved to ${projName}`);
+                }
+                if (changes.priority !== undefined && changes.priority !== task.priority) {
+                    changeParts.push(`priority ${PRIORITY_LABEL[changes.priority] || changes.priority}`);
+                }
+                if (changes.title && changes.title !== task.title) {
+                    changeParts.push(`renamed to "${changes.title}"`);
+                }
+                if (changes.dueDate) {
+                    changeParts.push(`due ${changes.dueDate}`);
+                }
+                const detail = changeParts.length > 0 ? ` → ${changeParts.join(', ')}` : '';
+                outcomes.push(`Updated: "${task.title}"${detail}`);
                 hasUndoableActions = true;
             } else if (action.type === 'drop') {
                 const dropChanges = action.changes || {};
@@ -1742,9 +1840,9 @@ export async function executeActions(actions, adapter, currentTasks, options = {
                     }
                     if (safeDueDate !== undefined) updatePayload.dueDate = safeDueDate;
                     await adapter.updateTask(task.id, updatePayload);
-                    outcomes.push(`⚪ Demoted as drop-candidate: "${task.title}"`);
+                    outcomes.push(`Drop: "${task.title}"`);
                 } else {
-                    outcomes.push(`⚪ Flagged for dropping: "${task.title}" (not deleted — mark complete in TickTick if you agree)`);
+                    outcomes.push(`Drop: "${task.title}" (not deleted — mark complete in TickTick if you agree)`);
                 }
 
                 await store.markTaskProcessed(task.id, {

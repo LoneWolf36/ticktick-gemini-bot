@@ -1199,7 +1199,7 @@ export class GeminiAnalyzer {
             if (actions.length >= 30) break;
         }
         return {
-            summary: 'Generated deterministic fallback proposal due malformed model output.',
+            summary: "I couldn't generate a full proposal, so I created a simple one based on your current tasks.",
             questions: [],
             actions,
         };
@@ -1260,6 +1260,13 @@ export class GeminiAnalyzer {
         const nonInboxProjects = projects.filter(p => (p.name || '').toLowerCase() !== 'inbox');
         const defaultProjectId = nonInboxProjects[0]?.id || projects[0]?.id || null;
 
+        function cleanReorgTitle(title) {
+            if (typeof title !== 'string') return title;
+            const jsonArtifactMatch = title.match(/^(.*?)["']?\s*[,\]\}]*\s*["']?\s*(?:priority|projectId|scheduleBucket|dueDate)\s*:/i);
+            if (jsonArtifactMatch) return jsonArtifactMatch[1].trim();
+            return title.trim();
+        }
+
         for (const raw of cleaned.actions.slice(0, 60)) {
             const action = raw && typeof raw === 'object' ? { ...raw } : null;
             if (!action || !validTypes.has(action.type)) continue;
@@ -1267,6 +1274,9 @@ export class GeminiAnalyzer {
             const changes = (action.changes && typeof action.changes === 'object') ? { ...action.changes } : {};
 
             if (action.type === 'create') {
+                if (changes.title && typeof changes.title === 'string') {
+                    changes.title = cleanReorgTitle(changes.title);
+                }
                 if (!changes.title || typeof changes.title !== 'string') continue;
                 if (![0, 1, 3, 5].includes(changes.priority)) changes.priority = 1;
                 if (!changes.projectId && defaultProjectId) changes.projectId = defaultProjectId;
@@ -1294,6 +1304,10 @@ export class GeminiAnalyzer {
             const task = taskById.get(taskId);
             const type = merged.__type || 'update';
             delete merged.__type;
+
+            if (merged.title && typeof merged.title === 'string') {
+                merged.title = cleanReorgTitle(merged.title);
+            }
 
             if (![0, 1, 3, 5].includes(merged.priority)) {
                 merged.priority = inferPriorityValueFromTask(task, { goalThemeProfile });
