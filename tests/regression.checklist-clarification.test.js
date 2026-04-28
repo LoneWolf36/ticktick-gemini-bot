@@ -120,8 +120,8 @@ test('R5: checklist create confirmation stays terse and includes item count', as
     workStyleMode: store.MODE_URGENT,
   });
 
-  assert.equal(standard.confirmationText, '✅ Created: Plan trip (3 items)');
-  assert.equal(urgent.confirmationText, '✅ Plan trip (3 items)');
+  assert.equal(standard.confirmationText, 'Created: Plan trip (3 items)');
+  assert.equal(urgent.confirmationText, 'Plan trip (3 items)');
   assert.doesNotMatch(standard.confirmationText, /Book flights|Pack bags|Renew travel card/);
   assert.doesNotMatch(urgent.confirmationText, /Book flights|Pack bags|Renew travel card/);
 });
@@ -415,7 +415,7 @@ test('WP05 P0#2: cl:checklist callback resumes pipeline with checklistPreference
   await registerCallbacksForTest(bot, mockTicktick, {
     processMessage: async (msg, opts) => {
       pipelineCalls.push({ message: msg, options: opts });
-      return { type: 'task', confirmationText: '✅ Created task with checklist.' };
+      return { type: 'task', confirmationText: 'Created task with checklist.' };
     },
   });
 
@@ -472,7 +472,7 @@ test('WP05 P0#2: cl:separate callback resumes pipeline with separate preference'
   await registerCallbacksForTest(bot, mockTicktick, {
     processMessage: async (msg, opts) => {
       pipelineCalls.push({ message: msg, options: opts });
-      return { type: 'task', confirmationText: '✅ Created separate tasks.' };
+      return { type: 'task', confirmationText: 'Created separate tasks.' };
     },
   });
 
@@ -524,7 +524,7 @@ test('WP05 P0#2: cl:skip callback resumes pipeline with skipChecklist=true', asy
   await registerCallbacksForTest(bot, mockTicktick, {
     processMessage: async (msg, opts) => {
       pipelineCalls.push({ message: msg, options: opts });
-      return { type: 'task', confirmationText: '✅ Created single task.' };
+      return { type: 'task', confirmationText: 'Created single task.' };
     },
   });
 
@@ -664,7 +664,7 @@ test('WP05 P0#2: free-form reply "checklist" resumes with checklistPreference', 
     {
       processMessage: async (msg, opts) => {
         pipelineCalls.push({ message: msg, options: opts });
-        return { type: 'task', confirmationText: '✅ Created with checklist.' };
+        return { type: 'task', confirmationText: 'Created with checklist.' };
       },
     },
   );
@@ -719,7 +719,7 @@ test('WP05 P0#2: free-form reply "separate tasks" resumes with separate preferen
     {
       processMessage: async (msg, opts) => {
         pipelineCalls.push({ message: msg, options: opts });
-        return { type: 'task', confirmationText: '✅ Created separate tasks.' };
+        return { type: 'task', confirmationText: 'Created separate tasks.' };
       },
     },
   );
@@ -772,7 +772,7 @@ test('WP05 P0#2: free-form reply "skip" resumes with skipChecklist=true', async 
     {
       processMessage: async (msg, opts) => {
         pipelineCalls.push({ message: msg, options: opts });
-        return { type: 'task', confirmationText: '✅ Created single task.' };
+        return { type: 'task', confirmationText: 'Created single task.' };
       },
     },
   );

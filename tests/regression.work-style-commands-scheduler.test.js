@@ -96,12 +96,12 @@ test('store silently reverts expired urgent mode to standard', async () => {
   assert.equal(await store.getWorkStyleMode(userId), store.MODE_STANDARD);
 });
 
-test('focus mode defaults to manual deactivation but supports optional auto-expiry', async () => {
+test('focus mode defaults to 4h auto-expiry but supports optional override', async () => {
   const userId = `node-test-focus-expiry-${Date.now()}`;
 
   const persistent = await store.setWorkStyleMode(userId, store.MODE_FOCUS);
   assert.equal(persistent.mode, store.MODE_FOCUS);
-  assert.equal(persistent.expiresAt || null, null);
+  assert.ok(persistent.expiresAt);
 
   await store.setWorkStyleMode(userId, store.MODE_FOCUS, { expiresAt: Date.now() - 1000 });
   const expired = await store.getWorkStyleState(userId);
@@ -134,7 +134,7 @@ test('work-style integration persists mode state in restart-recoverable storage'
 
   assert.ok(persisted?.workStyleModes?.[userId], 'expected focus mode to be written to restart-recoverable storage');
   assert.equal(persisted.workStyleModes[userId].mode, store.MODE_FOCUS);
-  assert.equal(persisted.workStyleModes[userId].expiresAt ?? null, null);
+  assert.ok(persisted.workStyleModes[userId].expiresAt);
 });
 
 test('work-style integration switches to urgent mode and shortens briefing plus task confirmations', async () => {
@@ -185,8 +185,8 @@ test('work-style integration switches to urgent mode and shortens briefing plus 
   const standardResult = await processMessage('buy groceries', { workStyleMode: store.MODE_STANDARD });
   const urgentResult = await processMessage('buy groceries', { workStyleMode: store.MODE_URGENT });
 
-  assert.equal(standardResult.confirmationText, '✅ Created: Buy groceries');
-  assert.equal(urgentResult.confirmationText, '✅ Buy groceries');
+  assert.equal(standardResult.confirmationText, 'Created: Buy groceries');
+  assert.equal(urgentResult.confirmationText, 'Buy groceries');
 });
 
 test('store logs work-style transitions as operational telemetry, not behavioral memory', async () => {
@@ -540,7 +540,7 @@ test('registerCommands forwards current work-style mode into freeform pipeline r
     {
       processMessage: async (message, options) => {
         pipelineCalls.push({ message, options });
-        return { type: 'task', confirmationText: '✅ Done.' };
+        return { type: 'task', confirmationText: 'Done.' };
       },
     },
   );
@@ -561,7 +561,7 @@ test('registerCommands forwards current work-style mode into freeform pipeline r
 
   assert.equal(pipelineCalls.length, 1);
   assert.equal(pipelineCalls[0].options.workStyleMode, store.MODE_URGENT);
-  assert.match(replies.at(-1), /✅ Done\./);
+  assert.match(replies.at(-1), /Done\./);
 });
 
 test('registerCommands compresses mutation clarification copy in urgent mode', async () => {
@@ -1409,4 +1409,100 @@ test('runWeeklyDigestJob passes historyAvailable false when processed-task histo
   assert.equal(ran, true);
   assert.equal(summaryCalls, 1);
 
+});
+
+test('registerCommands /status includes deferred queue counts', async () => {
+  await store.resetAll();
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery() { return this; },
+    on() { return this; },
+  };
+
+  registerCommands(
+    bot,
+    { isAuthenticated: () => true, getCacheAgeSeconds: () => null },
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
+    { listActiveTasks: async () => [] },
+    {},
+  );
+
+  const statusHandler = handlers.commands.get('status');
+  const replies = [];
+  const ctx = {
+    chat: { id: 1 },
+    from: { id: 1 },
+    reply: async (msg) => { replies.push(msg); },
+  };
+
+  await store.appendDeferredPipelineIntent({ userMessage: 'Deferred A', nextAttemptAt: Date.now() + 5 * 60 * 1000 });
+  await store.addFailedDeferredIntent({ userMessage: 'Failed B' });
+
+  await statusHandler(ctx);
+
+  const lastReply = replies.at(-1);
+  assert.match(lastReply, /Pending retry: 1 items/);
+  assert.match(lastReply, /Next retry:/);
+  assert.match(lastReply, /Failed permanently: 1 items/);
+});
+
+test('registerCommands /pending shows clear empty message', async () => {
+  await store.resetAll();
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery() { return this; },
+    on() { return this; },
+  };
+
+  registerCommands(
+    bot,
+    { isAuthenticated: () => true },
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
+    { listActiveTasks: async () => [] },
+    {},
+  );
+
+  const pendingHandler = handlers.commands.get('pending');
+  const replies = [];
+  const ctx = {
+    chat: { id: 1 },
+    from: { id: 1 },
+    reply: async (msg) => { replies.push(msg); },
+  };
+
+  await pendingHandler(ctx);
+  assert.equal(replies.at(-1), 'No tasks pending review.');
+});
+
+test('registerCommands /pending shows clear non-empty message', async () => {
+  await store.resetAll();
+  await store.markTaskPending('task-1', { originalTitle: 'Task One', projectName: 'Inbox', actionType: 'update' });
+
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery() { return this; },
+    on() { return this; },
+  };
+
+  registerCommands(
+    bot,
+    { isAuthenticated: () => true },
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
+    { listActiveTasks: async () => [] },
+    {},
+  );
+
+  const pendingHandler = handlers.commands.get('pending');
+  const replies = [];
+  const ctx = {
+    chat: { id: 1 },
+    from: { id: 1 },
+    reply: async (msg) => { replies.push(msg); return { message_id: 123 }; },
+  };
+
+  await pendingHandler(ctx);
+  assert.match(replies[0], /1 tasks awaiting your review\. Approve or skip each one\./);
 });

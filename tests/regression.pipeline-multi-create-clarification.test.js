@@ -21,7 +21,7 @@ test('R2: canonical multi-create executes independent create actions', async () 
     assert.match(adapterCalls.create[1].title, /pack bag/i);
     assert.match(adapterCalls.create[2].title, /call uber/i);
     assert.equal(adapterCalls.create[2].dueDate, '2026-03-13');
-    assert.equal(result.confirmationText, '✅ Created 3 tasks');
+    assert.equal(result.confirmationText, 'Created 3 tasks');
 });
 
 test('R2: clear create executes while ambiguous create fragment requests clarification', async () => {
@@ -44,7 +44,7 @@ test('R2: clear create executes while ambiguous create fragment requests clarifi
     assert.equal(result.type, 'task', 'clear action should execute immediately');
     assert.equal(adapterCalls.create.length, 1, 'only clear create should be executed');
     assert.match(adapterCalls.create[0].title, /book flight/i);
-    assert.equal(result.confirmationText, `✅ Created: Book flight\n\n${clarificationQuestion}`);
+    assert.equal(result.confirmationText, `Created: Book flight\n\n${clarificationQuestion}`);
     assert.ok(result.confirmationText.includes(clarificationQuestion), 'result should include focused clarification question');
     assert.equal(result.clarification?.reason, 'ambiguous_create_fragment');
 });

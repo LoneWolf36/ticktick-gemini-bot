@@ -136,7 +136,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - [x] `/scan` manually polls TickTick for new tasks and processes them through the pipeline in batches
 - [x] `/pending` re-surfaces tasks that were parked during scan or review for user decision
 - [x] `/review` walks unreviewed tasks through the same review flow when the user explicitly requests it
-- [x] `/undo` reverts the last auto-applied task mutation (title, project, priority, or schedule)
+- [x] `/undo` reverts the last auto-applied task mutation (title, project, priority, or schedule). Registered as `/undo` slash command in `server.js` `TELEGRAM_COMMANDS` array.
 - [x] `/menu` provides an inline keyboard for quick access to primary commands
 - [x] `/status` reports bot connection, quota, cache, and review-state health without mutating TickTick
 - [x] `/reset` wipes bot-local state only after explicit confirmation and never mutates TickTick tasks

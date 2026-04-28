@@ -40,6 +40,7 @@ export {
     buildMutationCandidateKeyboard,
     buildMutationClarificationMessage,
     retryWithBackoff,
+    isFollowUpMessage,
 } from '../services/shared-utils.js';
 
 /**

@@ -1,6 +1,6 @@
 ---
 created: "2026-04-18T22:30:00Z"
-last_edited: "2026-04-22T01:35:00Z"
+last_edited: "2026-04-28T00:00:00Z"
 source_specs: ["004-post-migration-cleanup"]
 complexity: "quick"
 ---
@@ -78,6 +78,7 @@ Post-migration cleanup: dead code removal, documentation alignment, env-var stan
 - [x] Audit R1 (Dead Code Removal): legacy prompt-driven task-writing paths are gone; retained direct adapter calls in `bot/commands.js` (`/undo`, `executeActions`) and `bot/callbacks.js` (approve/drop callbacks) are explicitly documented operational or reorg boundaries rather than orphaned legacy writers, and no orphaned imports or dead helper exports were introduced by the pipeline migration.
 
 ## Changelog
+- 2026-04-28: R5 remains partially completed — all 555 automated tests pass (no skips, no xfails, no new failures). Manual smoke test of core create/update/complete/delete flows still pending.
 - 2026-04-25: R5 partially completed — all 555 automated tests pass (no skips, no xfails, no new failures). Manual smoke test remains pending.
 - 2026-04-18: Migrated from kitty-specs 004-post-migration-cleanup
 - 2026-04-22: R1 completed — legacy prompt-writing paths are removed, retained operational mutation boundaries are documented, and cleanup validation no longer treats them as orphaned drift.

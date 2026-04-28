@@ -18,7 +18,7 @@ function toString(value, fallback = '') {
 }
 
 function toPriorityLabel(priority) {
-    if (priority === 5) return 'career-critical';
+    if (priority === 5) return 'core_goal';
     if (priority === 3) return 'high';
     if (priority === 1) return 'medium';
     return null;

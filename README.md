@@ -5,7 +5,7 @@ An AI-powered Telegram bot that connects to your TickTick task manager and acts 
 ## Features
 
 - **Structured write pipeline** — Natural language → intent extraction → deterministic normalizer → TickTick adapter. No model prose writes directly to TickTick.
-- **AI task analysis** — Gemini evaluates every new task: is it a needle-mover or busywork? Rewrites vague titles, adds sub-steps, and re-prioritizes based on your real goals
+- **Structured intent extraction** — parses natural language into deterministic actions (create, update, complete, delete) via Gemini, then validates and executes through the TickTick adapter
 - **Project reassignment** — suggests moving tasks to the right TickTick project
 - **Smart scheduling** — assigns due dates (today / tomorrow / this-week / next-week / someday) based on urgency and your patterns
 - **Native TickTick priority flags** — maps to 🔴🟡🔵 priority levels
@@ -112,8 +112,14 @@ Open your bot in Telegram and send `/start`.
 | `/weekly` | Weekly accountability digest — wins, avoidance patterns, top 3 for next week |
 | `/review` | Walk through all unreviewed tasks |
 | `/reorg` | Build a full task reorganization proposal (apply/refine/cancel) |
-| `/urgent` | Toggle urgent mode on/off — sharper tone, deadline-first prioritization |
+| `/urgent` | Activate urgent mode (also: /focus, /normal, /mode to query) |
+| `/focus` | Switch to focus mode |
+| `/normal` | Switch to normal mode |
+| `/mode` | Query current mode |
 | `/undo` | Revert last auto-applied change |
+| `/memory` | Behavioral memory summary |
+| `/forget` | Reset behavioral memory |
+| `/daily_close` | End-of-day reflection |
 | `/reset` | Wipe all bot data and start fresh (requires `/reset CONFIRM`) |
 | `/status` | Bot status, stats, and auto-apply mode |
 

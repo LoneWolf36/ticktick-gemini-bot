@@ -54,6 +54,7 @@ const CLARIFICATION_GAP = 15; // minimum score gap to avoid clarification
  * @type {RegExp}
  */
 const UNDERSPECIFIED_PRONOUN_QUERY = /^(it|this|that|them|these|those|this one|that one|this task|that task)$/;
+const GENERIC_REFERENCE_PATTERN = /^(the task|this one|that one|last task|recent task|the one)$/;
 
 /**
  * Normalize a title for matching: lowercase, trim, collapse whitespace, strip punctuation.
@@ -203,8 +204,11 @@ export function resolveTarget({ targetQuery, activeTasks, recentTask = null }) {
 
     const normalizedQuery = normalizeTitle(targetQuery);
 
-    if (UNDERSPECIFIED_PRONOUN_QUERY.test(normalizedQuery)) {
-        // Bind pronoun to recently discussed task when exactly one is available
+    const isPronounMatch = UNDERSPECIFIED_PRONOUN_QUERY.test(normalizedQuery);
+    const isGenericMatch = GENERIC_REFERENCE_PATTERN.test(normalizedQuery);
+
+    if (isPronounMatch || isGenericMatch) {
+        // Bind pronoun/generic reference to recently discussed task when available
         if (recentTask && typeof recentTask.id === 'string' && typeof recentTask.title === 'string' && recentTask.title.trim()) {
             return {
                 status: 'resolved',
@@ -235,7 +239,7 @@ export function resolveTarget({ targetQuery, activeTasks, recentTask = null }) {
             status: 'clarification',
             selected: null,
             candidates,
-            reason: 'underspecified_pronoun',
+            reason: isPronounMatch ? 'underspecified_pronoun' : 'underspecified_reference',
         };
     }
 

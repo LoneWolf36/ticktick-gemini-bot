@@ -46,22 +46,28 @@ export function taskReviewKeyboard(taskId, actionType = 'update') {
     const id = taskId.length > 50 ? taskId.slice(0, 50) : taskId;
     if (actionType === 'complete') {
         return new InlineKeyboard()
-            .text('✅ Confirm complete', `a:${id}`)
+            .text('Confirm complete', `a:${id}`)
             .text('⏭ Keep active', `s:${id}`)
             .row()
-            .text('🗑️ Delete instead', `d:${id}`);
+            .text('🗑️ Delete instead', `d:${id}`)
+            .row()
+            .text('⏹ Stop reviewing', 'review:stop');
     }
     if (actionType === 'delete') {
         return new InlineKeyboard()
             .text('🗑️ Confirm delete', `a:${id}`)
-            .text('⏭ Keep task', `s:${id}`);
+            .text('⏭ Keep task', `s:${id}`)
+            .row()
+            .text('⏹ Stop reviewing', 'review:stop');
     }
     return new InlineKeyboard()
-        .text('✅ Apply changes', `a:${id}`)
+        .text('Apply changes', `a:${id}`)
         .text('✏️ Refine', `r:${id}`)
         .row()
         .text('⏭ Keep original', `s:${id}`)
-        .text('🗑️ Delete task', `d:${id}`);
+        .text('🗑️ Delete task', `d:${id}`)
+        .row()
+        .text('⏹ Stop reviewing', 'review:stop');
 }
 
 // ─── Register Callback Handlers ─────────────────────────────
@@ -73,21 +79,70 @@ export function taskReviewKeyboard(taskId, actionType = 'update') {
  * @param {TickTickAdapter} adapter - TickTick adapter instance.
  * @param {Object} pipeline - Pipeline instance.
  */
-async function sendNextPendingTask(ctx) {
+async function advanceReviewCard(ctx, prefix = '') {
     const remaining = store.getPendingCount();
+    const chatId = ctx.chat?.id;
+    const session = chatId ? store.getCurrentReviewSession(chatId) : null;
+    const reviewed = session?.startingProcessedCount !== undefined
+        ? store.getProcessedCount() - session.startingProcessedCount
+        : store.getProcessedCount();
+    const stillUnreviewed = store.getPendingCount();
+
     if (remaining === 0) {
-        await ctx.reply('✅ All tasks reviewed.');
+        const summary = `Reviewed ${reviewed} tasks. ${stillUnreviewed} still unreviewed locally.`;
+        const text = prefix ? `${prefix}\n\n${summary}` : summary;
+        if (chatId) await store.clearCurrentReviewSession(chatId);
+        try {
+            await editWithMarkdown(ctx, text);
+        } catch (err) {
+            const msg = String(err?.message || '').toLowerCase();
+            if (msg.includes('message is not modified') || msg.includes('message to edit not found') || msg.includes('message_id_invalid') || msg.includes('too old')) {
+                await ctx.reply(text);
+            } else {
+                throw err;
+            }
+        }
         return;
     }
+
     const next = store.getNextPendingTask();
     if (!next) {
-        await ctx.reply('✅ All tasks reviewed.');
+        const summary = `Reviewed ${reviewed} tasks. ${stillUnreviewed} still unreviewed locally.`;
+        const text = prefix ? `${prefix}\n\n${summary}` : summary;
+        if (chatId) await store.clearCurrentReviewSession(chatId);
+        try {
+            await editWithMarkdown(ctx, text);
+        } catch (err) {
+            const msg = String(err?.message || '').toLowerCase();
+            if (msg.includes('message is not modified') || msg.includes('message to edit not found') || msg.includes('message_id_invalid') || msg.includes('too old')) {
+                await ctx.reply(text);
+            } else {
+                throw err;
+            }
+        }
         return;
     }
+
     const [taskId, data] = next;
     const analysis = pendingToAnalysis(data);
     const card = buildTaskCard({ title: data.originalTitle, projectName: data.projectName }, analysis);
-    await replyWithMarkdown(ctx, `${card}\n\n⏳ ${remaining} remaining`, { reply_markup: taskReviewKeyboard(taskId, data.actionType) });
+    const totalTasks = session?.totalTasks || 0;
+    const progressLine = totalTasks > 0
+        ? `Task ${reviewed + 1} of ${totalTasks} · ${remaining} remaining\n\n`
+        : '';
+    const baseText = `${progressLine}${card}\n\n⏳ ${remaining} remaining`;
+    const text = prefix ? `${prefix}\n\n${baseText}` : baseText;
+    try {
+        await editWithMarkdown(ctx, text, { reply_markup: taskReviewKeyboard(taskId, data.actionType) });
+    } catch (err) {
+        const msg = String(err?.message || '').toLowerCase();
+        if (msg.includes('message is not modified') || msg.includes('message to edit not found') || msg.includes('message_id_invalid') || msg.includes('too old')) {
+            console.warn(`[ReviewFlow] Edit failed, sending new message: ${msg}`);
+            await replyWithMarkdown(ctx, text, { reply_markup: taskReviewKeyboard(taskId, data.actionType) });
+        } else {
+            throw err;
+        }
+    }
     await sleep(300);
 }
 
@@ -120,13 +175,33 @@ export function registerCallbacks(bot, adapter, pipeline) {
         }
 
         await safeAnswerCallbackQuery(ctx, );
-        await store.setPendingTaskRefinement(taskId);
-        const cancelKeyboard = new InlineKeyboard().text('❌ Cancel', 'rcancel');
-        await ctx.reply(`✏️ **Refining "${data.originalTitle}"**\nSend your tweaks (e.g. "make it high priority", "move to admin project").`, {
-            reply_parameters: { message_id: ctx.callbackQuery.message.message_id },
+        const sent = await ctx.reply(`What would you like to change about "${data.originalTitle}"?`, {
+            reply_markup: { force_reply: true, selective: true },
             parse_mode: 'Markdown',
-            reply_markup: cancelKeyboard
         });
+        await store.setPendingTaskRefinement({
+            taskId,
+            mode: 'force_reply',
+            forceReplyMessageId: sent.message_id,
+            chatId: ctx.chat?.id,
+            userId: ctx.from?.id,
+        });
+        const cancelKeyboard = new InlineKeyboard().text('❌ Cancel', 'rcancel');
+        await ctx.reply('Or tap Cancel to discard:', {
+            reply_markup: cancelKeyboard,
+        });
+
+        // Store as recently discussed
+        const userId = ctx.from?.id;
+        if (userId) {
+            await store.setRecentTaskContext(userId, {
+                taskId,
+                title: data.originalTitle,
+                content: data.originalContent || undefined,
+                projectId: data.projectId || data.originalProjectId,
+                source: 'review:refine',
+            });
+        }
     });
 
     bot.callbackQuery('rcancel', async (ctx) => {
@@ -153,16 +228,17 @@ export function registerCallbacks(bot, adapter, pipeline) {
 
         if (!data) {
             if (store.isTaskProcessed(taskId)) {
-                await safeAnswerCallbackQuery(ctx, { text: '✅ Already handled' });
+                await safeAnswerCallbackQuery(ctx, { text: 'Already handled.' });
                 return;
             }
             await safeAnswerCallbackQuery(ctx, { text: '⚠️ Task not found' });
             return;
         }
 
-        await safeAnswerCallbackQuery(ctx, { text: 'Processing...' });
+        await safeAnswerCallbackQuery(ctx, { text: 'Applied.' });
         try {
             const actionType = data.actionType || 'update';
+            let diffText = '';
 
             if (actionType === 'complete') {
                 const projectId = data.projectId || data.originalProjectId;
@@ -174,7 +250,6 @@ export function registerCallbacks(bot, adapter, pipeline) {
                     appliedTaskId: taskId,
                 }));
                 await store.approveTask(taskId);
-                await editWithMarkdown(ctx, `✅ **Completed:** "${data.originalTitle}"`);
             } else if (actionType === 'delete') {
                 const projectId = data.projectId || data.originalProjectId;
                 await adapter.deleteTask(taskId, projectId);
@@ -185,13 +260,29 @@ export function registerCallbacks(bot, adapter, pipeline) {
                     appliedTaskId: taskId,
                 }));
                 await store.approveTask(taskId);
-                await editWithMarkdown(ctx, `🗑️ **Deleted:** "${data.originalTitle}"`);
             } else {
+                const oldTitle = data.originalTitle;
                 const update = buildTickTickUpdate(data);
                 const updatedTask = await adapter.updateTask(taskId, update);
 
+                const newTitle = data.improvedTitle ?? oldTitle;
+                if (newTitle !== oldTitle) {
+                    diffText = `Updated: "${oldTitle}" → "${newTitle}"`;
+                } else {
+                    const changedFields = [];
+                    if (data.improvedContent) changedFields.push('content');
+                    if (data.suggestedSchedule) changedFields.push('due date');
+                    if (data.suggestedPriority !== undefined && data.suggestedPriority !== data.originalPriority) changedFields.push('priority');
+                    if (data.suggestedProjectId && data.suggestedProjectId !== data.originalProjectId) changedFields.push('project');
+                    if (changedFields.length > 0) {
+                        diffText = `Updated "${oldTitle}": ${changedFields.join(', ')} changed`;
+                    } else {
+                        diffText = `Updated "${oldTitle}"`;
+                    }
+                }
+
                 await store.addUndoEntry(buildUndoEntry({
-                    source: data, // `data` has taskId, originalTitle, etc.
+                    source: data,
                     action: 'approve',
                     appliedTaskId: updatedTask.id,
                     applied: {
@@ -206,27 +297,43 @@ export function registerCallbacks(bot, adapter, pipeline) {
                 }));
 
                 await store.approveTask(taskId);
-
-                const movedNote = (data.suggestedProjectId && data.suggestedProjectId !== data.projectId)
-                    ? ` Moved to ${data.suggestedProject}.` : '';
-                const dateNote = data.suggestedSchedule && data.suggestedSchedule !== 'someday'
-                    ? ` Due: ${data.suggestedSchedule}.` : '';
-
-                await editWithMarkdown(ctx, `✅ **Updated:** "${data.improvedTitle || data.originalTitle}"${movedNote}${dateNote}\n\n*Applied.*`);
             }
+            const userId = ctx.from?.id;
+            if (userId) {
+                await store.setRecentTaskContext(userId, {
+                    taskId,
+                    title: data.improvedTitle || data.originalTitle,
+                    content: data.improvedContent || data.originalContent || undefined,
+                    projectId: data.suggestedProjectId || data.projectId || data.originalProjectId,
+                    source: 'review:approve',
+                });
+            }
+            await advanceReviewCard(ctx, diffText);
         } catch (err) {
             const message = err.message?.toLowerCase() || '';
             const isMissing = message.includes('not found') || message.includes('404') || message.includes('missing') || message.includes('completed') || message.includes('deleted');
             if (isMissing) {
                 await store.approveTask(taskId);
-                await editWithMarkdown(ctx, '⚠️ Task was already handled externally. Moving to next...');
+                const userId = ctx.from?.id;
+                if (userId) {
+                    await store.setRecentTaskContext(userId, {
+                        taskId,
+                        title: data?.originalTitle || 'Unknown task',
+                        content: data?.originalContent || undefined,
+                        projectId: data?.projectId || data?.originalProjectId,
+                        source: 'review:approve',
+                    });
+                }
+                await advanceReviewCard(ctx);
             } else {
                 console.error('Approve error:', err.message);
-                await editWithMarkdown(ctx, '❌ Failed to update task. Please try again.');
-                return;
+                try {
+                    await editWithMarkdown(ctx, '❌ Failed to update task. Please try again.');
+                } catch (editErr) {
+                    await ctx.reply('❌ Failed to update task. Please try again.');
+                }
             }
         }
-        await sendNextPendingTask(ctx);
     });
 
     // ─── Skip: move pending → processed, leave TickTick alone ─
@@ -238,14 +345,24 @@ export function registerCallbacks(bot, adapter, pipeline) {
         const taskId = ctx.match[1];
 
         if (!store.isTaskPending(taskId)) {
-            await safeAnswerCallbackQuery(ctx, { text: '✅ Already handled' });
+            await safeAnswerCallbackQuery(ctx, { text: 'Already handled.' });
             return;
         }
 
-        await safeAnswerCallbackQuery(ctx, { text: 'Skipping...' });
+        await safeAnswerCallbackQuery(ctx, { text: 'Skipped.' });
         await store.skipTask(taskId);
-        await editWithMarkdown(ctx, '⏭ **Skipped** — task left unchanged in TickTick.');
-        await sendNextPendingTask(ctx);
+        const skippedData = store.getProcessedTasks()[taskId];
+        const userId = ctx.from?.id;
+        if (userId && skippedData) {
+            await store.setRecentTaskContext(userId, {
+                taskId,
+                title: skippedData.originalTitle,
+                content: skippedData.originalContent || undefined,
+                projectId: skippedData.projectId || skippedData.originalProjectId,
+                source: 'review:skip',
+            });
+        }
+        await advanceReviewCard(ctx);
     });
 
     // ─── Drop: move pending → processed, flag for removal ─────
@@ -261,29 +378,52 @@ export function registerCallbacks(bot, adapter, pipeline) {
         const data = store.getPendingTasks()[taskId] || {};
 
         if (!store.isTaskPending(taskId)) {
-            await safeAnswerCallbackQuery(ctx, { text: '✅ Already handled' });
+            await safeAnswerCallbackQuery(ctx, { text: 'Already handled.' });
             return;
         }
 
-        await safeAnswerCallbackQuery(ctx, { text: 'Processing...' });
+        await safeAnswerCallbackQuery(ctx, { text: 'Dropped.' });
         try {
             const projectId = data.projectId || data.originalProjectId || null;
             await adapter.deleteTask(taskId, projectId);
             await store.dropTask(taskId);
-            await editWithMarkdown(ctx, '⚪ **Deleted** — task was removed from TickTick.');
+            await advanceReviewCard(ctx);
         } catch (err) {
             const message = err.message?.toLowerCase() || '';
             const isNotFound = message.includes('not found') || message.includes('404') || message.includes('already deleted') || message.includes('missing') || message.includes('completed');
             if (isNotFound) {
                 await store.dropTask(taskId);
-                await editWithMarkdown(ctx, '⚪ **Deleted** — task was already removed from TickTick.');
+                await advanceReviewCard(ctx);
             } else {
                 console.error('Drop error:', err.message);
-                await editWithMarkdown(ctx, '❌ Delete failed. Please retry — task still pending review.');
-                return;
+                try {
+                    await editWithMarkdown(ctx, '❌ Delete failed. Please retry — task still pending review.');
+                } catch (editErr) {
+                    await ctx.reply('❌ Delete failed. Please retry — task still pending review.');
+                }
             }
         }
-        await sendNextPendingTask(ctx);
+    });
+
+    // ─── Stop Reviewing ────────────────────────────────────────
+    bot.callbackQuery('review:stop', async (ctx) => {
+        if (!isAuthorized(ctx)) {
+            await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
+            return;
+        }
+        await safeAnswerCallbackQuery(ctx, { text: 'Review stopped.' });
+        const chatId = ctx.chat?.id;
+        if (chatId) await store.clearCurrentReviewSession(chatId);
+        try {
+            await editWithMarkdown(ctx, '⏹ **Review stopped.**');
+        } catch (err) {
+            const msg = String(err?.message || '').toLowerCase();
+            if (msg.includes('message is not modified') || msg.includes('message to edit not found') || msg.includes('message_id_invalid') || msg.includes('too old')) {
+                await ctx.reply('⏹ **Review stopped.**');
+            } else {
+                throw err;
+            }
+        }
     });
 
     // ─── Mutation Candidate Selection ────────────────────────
@@ -360,6 +500,16 @@ export function registerCallbacks(bot, adapter, pipeline) {
 
             if (result.type === 'task') {
                 await editWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                const recentUserId = ctx.from?.id;
+                if (recentUserId && resolvedTask) {
+                    await store.setRecentTaskContext(recentUserId, {
+                        taskId: resolvedTask.id,
+                        title: resolvedTask.title,
+                        content: resolvedTask.content || undefined,
+                        projectId: resolvedTask.projectId,
+                        source: 'mutation:pick',
+                    });
+                }
             } else if (result.type === 'error') {
                 const diag = result.isDevMode && result.diagnostics?.length > 0
                     ? `\n\n${result.diagnostics.slice(0, 3).join('\n')}`
@@ -444,6 +594,20 @@ export function registerCallbacks(bot, adapter, pipeline) {
 
             if (result.type === 'task') {
                 await editWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                const checklistUserId = ctx.from?.id;
+                const action = result.actions?.[0];
+                if (checklistUserId && action) {
+                    const taskId = action.type === 'create'
+                        ? (result.results?.[0]?.result?.id || 'unknown')
+                        : (action.taskId || 'unknown');
+                    await store.setRecentTaskContext(checklistUserId, {
+                        taskId,
+                        title: action.title || 'Task',
+                        content: action.content || undefined,
+                        projectId: action.projectId,
+                        source: 'checklist:create',
+                    });
+                }
             } else if (result.type === 'error') {
                 const diag = result.isDevMode && result.diagnostics?.length > 0
                     ? `\n\n${result.diagnostics.slice(0, 3).join('\n')}`

@@ -7,6 +7,28 @@ import { sanitizePipelineContextForDiagnostics } from './pipeline-context.js';
 const MAX_RECENT_LATENCIES = 50;
 const recentLatencies = [];
 
+const _recentTelemetry = new Map();
+let _deduplicatedCount = 0;
+const TELEMETRY_DEDUP_WINDOW_MS = 30 * 1000;
+const TELEMETRY_DEDUP_MAX_AGE_MS = 60 * 1000;
+const TELEMETRY_DEDUP_MAX_ENTRIES = 200;
+
+function pruneRecentTelemetry(nowMs) {
+    for (const [key, entry] of _recentTelemetry) {
+        if (nowMs - entry.timestamp > TELEMETRY_DEDUP_MAX_AGE_MS) {
+            _recentTelemetry.delete(key);
+        }
+    }
+}
+
+export function getTelemetryDedupStats() {
+    pruneRecentTelemetry(Date.now());
+    return {
+        deduplicatedCount: _deduplicatedCount,
+        cacheSize: _recentTelemetry.size,
+    };
+}
+
 const ENTRY_POINT_ALIASES = {
     telegram: 'telegram_message',
     telegram_message: 'telegram_message',
@@ -92,11 +114,32 @@ export function createPipelineObservability({
      * @returns {Promise<Object>} The emitted event object
      */
     async function emit(context, payload) {
+        const requestId = context?.requestId || payload.requestId || 'unknown';
+        const eventType = payload.eventType;
+        const key = `${requestId}:${eventType}`;
+        const nowMs = now().getTime();
+
+        pruneRecentTelemetry(nowMs);
+
+        if (_recentTelemetry.has(key)) {
+            const last = _recentTelemetry.get(key);
+            if (nowMs - last.timestamp < TELEMETRY_DEDUP_WINDOW_MS) {
+                _deduplicatedCount++;
+                return null;
+            }
+        }
+
+        _recentTelemetry.set(key, { timestamp: nowMs, eventType, requestId });
+        if (_recentTelemetry.size > TELEMETRY_DEDUP_MAX_ENTRIES) {
+            const firstKey = _recentTelemetry.keys().next().value;
+            _recentTelemetry.delete(firstKey);
+        }
+
         const diagnosticContext = sanitizePipelineContextForDiagnostics(context);
         const event = {
             eventType: payload.eventType,
-            timestamp: now().toISOString(),
-            requestId: context?.requestId || payload.requestId || 'unknown',
+            timestamp: new Date(nowMs).toISOString(),
+            requestId,
             entryPoint: normalizeEntryPoint(context?.entryPoint, context?.mode),
             step: payload.step,
             status: payload.status,
@@ -145,6 +188,7 @@ export function createPipelineObservability({
         emit,
         emitLatencyHistogram,
         getRecentLatencies,
+        getTelemetryDedupStats,
         normalizeEntryPoint,
     };
 }

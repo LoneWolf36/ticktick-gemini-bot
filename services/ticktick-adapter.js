@@ -539,6 +539,9 @@ export class TickTickAdapter {
         const newContent = incomingContent === null || incomingContent === undefined ? '' : String(incomingContent);
 
         if (!mergeContent) {
+            if (incomingContent === null || incomingContent === undefined) {
+                return { shouldUpdate: false, content: oldContent, strategy: 'preserve_no_incoming' };
+            }
             return { shouldUpdate: true, content: newContent, strategy: 'replace' };
         }
 
@@ -588,6 +591,96 @@ export class TickTickAdapter {
             content: `${oldContent}${CONTENT_MERGE_SEPARATOR}${newContent}`,
             strategy: 'merge_append',
         };
+    }
+
+    /**
+     * Verifies an update mutation by fetching the task and comparing expected fields.
+     * @param {string} taskId - Task ID to verify
+     * @param {string} projectId - Project ID to fetch from
+     * @param {Object} expectedPayload - Fields that were sent in the update
+     * @returns {Promise<{verified: boolean, verificationNote: string}>}
+     * @private
+     */
+    async _verifyUpdate(taskId, projectId, expectedPayload) {
+        try {
+            const task = await this._client.getTask(projectId, taskId);
+            const mismatches = [];
+            if (expectedPayload.title !== undefined && task.title !== expectedPayload.title) {
+                mismatches.push(`title: expected "${expectedPayload.title}", got "${task.title}"`);
+            }
+            if (expectedPayload.content !== undefined && task.content !== expectedPayload.content) {
+                mismatches.push('content mismatch');
+            }
+            if (expectedPayload.dueDate !== undefined && task.dueDate !== expectedPayload.dueDate) {
+                mismatches.push(`dueDate: expected "${expectedPayload.dueDate}", got "${task.dueDate}"`);
+            }
+            if (expectedPayload.priority !== undefined && task.priority !== expectedPayload.priority) {
+                mismatches.push(`priority: expected ${expectedPayload.priority}, got ${task.priority}`);
+            }
+            if (expectedPayload.projectId !== undefined && task.projectId !== expectedPayload.projectId) {
+                mismatches.push(`projectId: expected ${expectedPayload.projectId}, got ${task.projectId}`);
+            }
+            if (expectedPayload.repeatFlag !== undefined && task.repeatFlag !== expectedPayload.repeatFlag) {
+                mismatches.push('repeatFlag mismatch');
+            }
+            if (mismatches.length > 0) {
+                const note = `Verification failed: ${mismatches.join('; ')}`;
+                this._log('updateTask', `WARNING { ${note} }`, true);
+                return { verified: false, verificationNote: note };
+            }
+            return { verified: true, verificationNote: 'Verified against TickTick API' };
+        } catch (err) {
+            const note = `Verification skipped due to fetch error: ${err.message}`;
+            this._log('updateTask', `WARNING { ${note} }`, true);
+            return { verified: false, verificationNote: note };
+        }
+    }
+
+    /**
+     * Verifies a complete mutation by checking the task is no longer active.
+     * @param {string} projectId - Project ID containing the task
+     * @param {string} taskId - Task ID to verify
+     * @returns {Promise<{verified: boolean, verificationNote: string}>}
+     * @private
+     */
+    async _verifyComplete(projectId, taskId) {
+        try {
+            const task = await this._client.getTask(projectId, taskId);
+            const isCompleted = task.status !== 0 && task.status !== undefined;
+            if (!isCompleted) {
+                const note = `Verification failed: task status is ${task.status} (expected completed)`;
+                this._log('completeTask', `WARNING { ${note} }`, true);
+                return { verified: false, verificationNote: note };
+            }
+            return { verified: true, verificationNote: 'Verified against TickTick API' };
+        } catch (err) {
+            const note = `Verification skipped due to fetch error: ${err.message}`;
+            this._log('completeTask', `WARNING { ${note} }`, true);
+            return { verified: false, verificationNote: note };
+        }
+    }
+
+    /**
+     * Verifies a delete mutation by ensuring the task is absent from active tasks.
+     * @param {string} taskId - Task ID to verify
+     * @returns {Promise<{verified: boolean, verificationNote: string}>}
+     * @private
+     */
+    async _verifyDelete(taskId) {
+        try {
+            const tasks = await this.listActiveTasks(true);
+            const found = tasks.find((t) => t.id === taskId);
+            if (found) {
+                const note = 'Verification failed: task still present in active list';
+                this._log('deleteTask', `WARNING { ${note} }`, true);
+                return { verified: false, verificationNote: note };
+            }
+            return { verified: true, verificationNote: 'Verified against TickTick API' };
+        } catch (err) {
+            const note = `Verification skipped due to fetch error: ${err.message}`;
+            this._log('deleteTask', `WARNING { ${note} }`, true);
+            return { verified: false, verificationNote: note };
+        }
     }
 
     /**
@@ -783,18 +876,20 @@ export class TickTickAdapter {
      * @param {string} [normalizedAction.projectId] - Target project ID (move task if different from original)
      * @param {string} [normalizedAction.originalProjectId] - Original project ID (for cross-project moves)
      * @param {string} [normalizedAction.repeatFlag] - New recurrence rule
-     * @returns {Promise<Object>} Updated task object from TickTick API
+     * @param {Object} [options={}] - Adapter options
+     * @param {boolean} [options.verifyAfterWrite=false] - Fetch task after update to verify fields
+     * @returns {Promise<Object>} Updated task object from TickTick API with `verified` and `verificationNote`
      * @throws {Error} Classified error with code if API call fails or validation fails
-     * 
+     *
      * @example
      * // Merge content (default behavior)
      * await adapter.updateTask('task123...', { content: 'Additional note' });
-     * 
+     *
      * @example
      * // Replace content entirely
      * await adapter.updateTask('task123...', { content: 'New content only', mergeContent: false });
      */
-    async updateTask(taskId, normalizedAction) {
+    async updateTask(taskId, normalizedAction, options = {}) {
         const start = Date.now();
         const projectId = normalizedAction.originalProjectId || normalizedAction.projectId;
         this._log('updateTask', { taskId, projectId });
@@ -847,6 +942,17 @@ export class TickTickAdapter {
 
             const updatedTask = await this._client.updateTask(taskId, updatePayload);
             const elapsed = Date.now() - start;
+
+            // Optional post-mutation verification
+            if (options.verifyAfterWrite) {
+                const verifyResult = await this._verifyUpdate(
+                    updatedTask?.id || taskId,
+                    updatedTask?.projectId || targetProjectId,
+                    updatePayload,
+                );
+                updatedTask.verified = verifyResult.verified;
+                updatedTask.verificationNote = verifyResult.verificationNote;
+            }
 
             // Non-blocking behavioral signal observation
             this._observeSignals('update', {
@@ -963,13 +1069,16 @@ export class TickTickAdapter {
      * Note: Requires both taskId and projectId per TickTick API requirements.
      * @param {string} taskId - 24-char hex task ID
      * @param {string} projectId - 24-char hex project ID (required by TickTick API)
-     * @returns {Promise<{completed: boolean, taskId: string}>} Confirmation object
+     * @param {string} [userId=DEFAULT_BEHAVIORAL_USER_ID] - User ID for behavioral signals
+     * @param {Object} [options={}] - Adapter options
+     * @param {boolean} [options.verifyAfterWrite=false] - Fetch task after complete to verify status
+     * @returns {Promise<{completed: boolean, taskId: string, verified?: boolean, verificationNote?: string}>} Confirmation object
      * @throws {Error} Classified error with code if API call fails or validation fails
      *
      * @example
      * await adapter.completeTask('task123...', 'proj456...');
      */
-    async completeTask(taskId, projectId, userId = DEFAULT_BEHAVIORAL_USER_ID) {
+    async completeTask(taskId, projectId, userId = DEFAULT_BEHAVIORAL_USER_ID, options = {}) {
         const start = Date.now();
         this._log('completeTask', { taskId, projectId });
         try {
@@ -979,6 +1088,13 @@ export class TickTickAdapter {
             await this._client.completeTask(projectId, taskId);
             const elapsed = Date.now() - start;
 
+            const result = { completed: true, taskId };
+            if (options.verifyAfterWrite) {
+                const verifyResult = await this._verifyComplete(projectId, taskId);
+                result.verified = verifyResult.verified;
+                result.verificationNote = verifyResult.verificationNote;
+            }
+
             // Non-blocking behavioral signal observation
             this._observeSignals('complete', {
                 userId,
@@ -987,7 +1103,7 @@ export class TickTickAdapter {
             });
 
             this._log('completeTask', `SUCCESS { id: "${taskId}", ${elapsed}ms }`);
-            return { completed: true, taskId };
+            return result;
         } catch (error) {
             const elapsed = Date.now() - start;
             const classified = this._classifyError(error, 'completeTask');
@@ -1001,13 +1117,16 @@ export class TickTickAdapter {
      * Note: Requires both taskId and projectId per TickTick API requirements.
      * @param {string} taskId - 24-char hex task ID
      * @param {string} projectId - 24-char hex project ID (required by TickTick API)
-     * @returns {Promise<{deleted: boolean, taskId: string}>} Confirmation object
+     * @param {string} [userId=DEFAULT_BEHAVIORAL_USER_ID] - User ID for behavioral signals
+     * @param {Object} [options={}] - Adapter options
+     * @param {boolean} [options.verifyAfterWrite=false] - Verify task is no longer in active list
+     * @returns {Promise<{deleted: boolean, taskId: string, verified?: boolean, verificationNote?: string}>} Confirmation object
      * @throws {Error} Classified error with code if API call fails or validation fails
-     * 
+     *
      * @example
      * await adapter.deleteTask('task123...', 'proj456...');
      */
-    async deleteTask(taskId, projectId, userId = DEFAULT_BEHAVIORAL_USER_ID) {
+    async deleteTask(taskId, projectId, userId = DEFAULT_BEHAVIORAL_USER_ID, options = {}) {
         const start = Date.now();
         this._log('deleteTask', { taskId, projectId });
         try {
@@ -1017,6 +1136,13 @@ export class TickTickAdapter {
             await this._client.deleteTask(projectId, taskId);
             const elapsed = Date.now() - start;
 
+            const result = { deleted: true, taskId };
+            if (options.verifyAfterWrite) {
+                const verifyResult = await this._verifyDelete(taskId);
+                result.verified = verifyResult.verified;
+                result.verificationNote = verifyResult.verificationNote;
+            }
+
             // Non-blocking behavioral signal observation
             this._observeSignals('delete', {
                 userId,
@@ -1025,7 +1151,7 @@ export class TickTickAdapter {
             });
 
             this._log('deleteTask', `SUCCESS { id: "${taskId}", ${elapsed}ms }`);
-            return { deleted: true, taskId };
+            return result;
         } catch (error) {
             const elapsed = Date.now() - start;
             const classified = this._classifyError(error, 'deleteTask');

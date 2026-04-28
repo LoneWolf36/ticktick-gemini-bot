@@ -318,7 +318,7 @@ test('retryDeferredIntents returns zeros when no deferred intents exist', async 
         adapter: { listActiveTasks: async () => [] },
         pipeline: { processMessage: async () => ({ type: 'task' }) },
     });
-    assert.deepEqual(result, { retried: 0, failed: 0, remaining: 0 });
+    assert.deepEqual(result, { retried: 0, failed: 0, givenUp: 0, remaining: 0 });
 });
 
 test('retryDeferredIntents skips retry when API health check fails', async () => {
@@ -339,6 +339,7 @@ test('retryDeferredIntents retries and removes successful intent', async () => {
     const entry = await store.appendDeferredPipelineIntent({
         userMessage: 'Buy groceries',
         entryPoint: 'free-form',
+        nextAttemptAt: Date.now() - 1000,
     });
 
     const processCalls = [];
@@ -364,7 +365,7 @@ test('retryDeferredIntents retries and removes successful intent', async () => {
 // Uses failureCategory (not category) to match real pipeline output shape
 test('retryDeferredIntents leaves transient failures in queue', async () => {
     await store.resetAll();
-    await store.appendDeferredPipelineIntent({ userMessage: 'Transient task' });
+    await store.appendDeferredPipelineIntent({ userMessage: 'Transient task', nextAttemptAt: Date.now() - 1000 });
 
     const result = await retryDeferredIntents({
         adapter: { listActiveTasks: async () => [] },
@@ -384,7 +385,7 @@ test('retryDeferredIntents leaves transient failures in queue', async () => {
 test('retryDeferredIntents removes permanent failures from queue', async () => {
     await store.resetAll();
     await store.setChatId('perm-fail-test');
-    await store.appendDeferredPipelineIntent({ userMessage: 'Permanent fail task' });
+    await store.appendDeferredPipelineIntent({ userMessage: 'Permanent fail task', nextAttemptAt: Date.now() - 1000 });
 
     const result = await retryDeferredIntents({
         adapter: { listActiveTasks: async () => [] },
@@ -404,7 +405,7 @@ test('retryDeferredIntents removes permanent failures from queue', async () => {
 test('retryDeferredIntents does not match legacy category field', async () => {
     await store.resetAll();
     await store.setChatId('legacy-field-test');
-    await store.appendDeferredPipelineIntent({ userMessage: 'Legacy field task' });
+    await store.appendDeferredPipelineIntent({ userMessage: 'Legacy field task', nextAttemptAt: Date.now() - 1000 });
 
     const result = await retryDeferredIntents({
         adapter: { listActiveTasks: async () => [] },
@@ -425,7 +426,7 @@ test('retryDeferredIntents does not match legacy category field', async () => {
 test('retryDeferredIntents removes malformed entries without userMessage', async () => {
     await store.resetAll();
     await store.appendDeferredPipelineIntent({ entryPoint: 'orphan' });
-    await store.appendDeferredPipelineIntent({ userMessage: 'Valid task' });
+    await store.appendDeferredPipelineIntent({ userMessage: 'Valid task', nextAttemptAt: Date.now() - 1000 });
 
     const result = await retryDeferredIntents({
         adapter: { listActiveTasks: async () => [] },
@@ -441,7 +442,7 @@ test('retryDeferredIntents removes malformed entries without userMessage', async
 test('retryDeferredIntents respects maxRetries batch limit', async () => {
     await store.resetAll();
     for (let i = 0; i < 8; i++) {
-        await store.appendDeferredPipelineIntent({ userMessage: `Task ${i}` });
+        await store.appendDeferredPipelineIntent({ userMessage: `Task ${i}`, nextAttemptAt: Date.now() - 1000 });
     }
 
     let callCount = 0;
@@ -463,7 +464,7 @@ test('retryDeferredIntents respects maxRetries batch limit', async () => {
 test('retryDeferredIntents sends notification to user on success', async () => {
     await store.resetAll();
     await store.setChatId('notify-test');
-    await store.appendDeferredPipelineIntent({ userMessage: 'Notify me' });
+    await store.appendDeferredPipelineIntent({ userMessage: 'Notify me', nextAttemptAt: Date.now() - 1000 });
 
     const sentMessages = [];
     const result = await retryDeferredIntents({
@@ -486,7 +487,7 @@ test('retryDeferredIntents sends notification to user on success', async () => {
 
 test('retryDeferredIntents prefers processMessageWithContext over processMessage', async () => {
     await store.resetAll();
-    await store.appendDeferredPipelineIntent({ userMessage: 'Context task' });
+    await store.appendDeferredPipelineIntent({ userMessage: 'Context task', nextAttemptAt: Date.now() - 1000 });
 
     let usedWithContext = false;
     const result = await retryDeferredIntents({
@@ -508,7 +509,7 @@ test('retryDeferredIntents prefers processMessageWithContext over processMessage
 
 test('retryDeferredIntents falls back to processMessage when processMessageWithContext absent', async () => {
     await store.resetAll();
-    await store.appendDeferredPipelineIntent({ userMessage: 'Fallback task' });
+    await store.appendDeferredPipelineIntent({ userMessage: 'Fallback task', nextAttemptAt: Date.now() - 1000 });
 
     let usedFallback = false;
     const result = await retryDeferredIntents({
@@ -550,4 +551,212 @@ test('auto-apply safety relies on pipeline blockedActionTypes to prevent destruc
     assert.equal(result.skippedActions.length, 2);
     assert.ok(result.skippedActions.some(a => a.type === 'delete'));
     assert.ok(result.skippedActions.some(a => a.type === 'complete'));
+});
+
+// ─── Exponential Backoff & DLQ (deferred queue improvements) ─
+
+test('store: appendDeferredPipelineIntent sets nextAttemptAt with exponential backoff', async () => {
+    await store.resetAll();
+    const before = Date.now();
+    const entry = await store.appendDeferredPipelineIntent({ userMessage: 'Backoff test' });
+    const after = Date.now();
+
+    assert.ok(entry.nextAttemptAt >= before + 60 * 1000, 'nextAttemptAt should be at least 1 minute out');
+    assert.ok(entry.nextAttemptAt <= after + 60 * 1000, 'nextAttemptAt should be capped at 1 minute for retryCount 0');
+});
+
+test('store: appendDeferredPipelineIntent respects existing nextAttemptAt', async () => {
+    await store.resetAll();
+    const custom = Date.now() + 99999;
+    const entry = await store.appendDeferredPipelineIntent({ userMessage: 'Custom', nextAttemptAt: custom });
+    assert.equal(entry.nextAttemptAt, custom);
+});
+
+test('retryDeferredIntents skips items that are not yet due', async () => {
+    await store.resetAll();
+    await store.appendDeferredPipelineIntent({
+        userMessage: 'Future task',
+        nextAttemptAt: Date.now() + 60 * 60 * 1000, // 1 hour from now
+    });
+
+    let called = false;
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: {
+            processMessage: async () => {
+                called = true;
+                return { type: 'task', actions: [{ title: 'ok' }] };
+            },
+        },
+    });
+
+    assert.equal(called, false);
+    assert.equal(result.retried, 0);
+    assert.equal(result.remaining, 1);
+});
+
+test('retryDeferredIntents processes items that are due now', async () => {
+    await store.resetAll();
+    await store.appendDeferredPipelineIntent({
+        userMessage: 'Due now',
+        nextAttemptAt: Date.now() - 1000,
+    });
+
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: {
+            processMessage: async () => ({ type: 'task', actions: [{ title: 'ok' }] }),
+        },
+    });
+
+    assert.equal(result.retried, 1);
+    assert.equal(result.remaining, 0);
+});
+
+test('retryDeferredIntents gives up after 3 attempts and moves to DLQ', async () => {
+    await store.resetAll();
+    await store.setChatId('dlq-test');
+    const entry = await store.appendDeferredPipelineIntent({
+        userMessage: 'Give up task',
+        retryCount: 3,
+        nextAttemptAt: Date.now() - 1000,
+    });
+
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: {
+            processMessage: async () => ({ type: 'task', actions: [{ title: 'ok' }] }),
+        },
+        bot: { api: { sendMessage: async () => {} } },
+    });
+
+    assert.equal(result.givenUp, 1);
+    assert.equal(result.retried, 0);
+    assert.equal(result.remaining, 0);
+    assert.equal(store.getDeferredPipelineIntents().length, 0);
+
+    const dlq = store.getFailedDeferredIntents();
+    assert.equal(dlq.length, 1);
+    assert.equal(dlq[0].id, entry.id);
+    assert.equal(dlq[0].attempts, 3);
+});
+
+test('retryDeferredIntents increments retryCount and updates nextAttemptAt on transient failure', async () => {
+    await store.resetAll();
+    await store.appendDeferredPipelineIntent({
+        userMessage: 'Transient retry',
+        retryCount: 0,
+        nextAttemptAt: Date.now() - 1000,
+    });
+
+    const before = Date.now();
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: {
+            processMessage: async () => ({
+                type: 'error',
+                failure: { failureCategory: 'transient' },
+            }),
+        },
+    });
+    const after = Date.now();
+
+    assert.equal(result.failed, 1);
+    assert.equal(result.remaining, 1);
+
+    const remaining = store.getDeferredPipelineIntents();
+    assert.equal(remaining[0].retryCount, 1);
+    assert.ok(remaining[0].nextAttemptAt >= before + 2 * 60 * 1000);
+    assert.ok(remaining[0].nextAttemptAt <= after + 2 * 60 * 1000);
+});
+
+test('retryDeferredIntents treats unexpected exception as failed attempt with backoff', async () => {
+    await store.resetAll();
+    await store.appendDeferredPipelineIntent({
+        userMessage: 'Unexpected crash',
+        retryCount: 0,
+        nextAttemptAt: Date.now() - 1000,
+    });
+
+    const before = Date.now();
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: {
+            processMessage: async () => {
+                throw new Error('Unexpected crash');
+            },
+        },
+    });
+    const after = Date.now();
+
+    assert.equal(result.failed, 1);
+    assert.equal(result.remaining, 1);
+
+    const remaining = store.getDeferredPipelineIntents();
+    assert.equal(remaining[0].retryCount, 1);
+    assert.ok(remaining[0].nextAttemptAt >= before + 2 * 60 * 1000);
+    assert.ok(remaining[0].nextAttemptAt <= after + 2 * 60 * 1000);
+});
+
+test('retryDeferredIntents moves unexpected exception to DLQ after 3 attempts and alerts user', async () => {
+    await store.resetAll();
+    await store.setChatId('unexpected-dlq-test');
+    const entry = await store.appendDeferredPipelineIntent({
+        userMessage: 'Unexpected crash dlq',
+        retryCount: 2,
+        nextAttemptAt: Date.now() - 1000,
+    });
+
+    const sentMessages = [];
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline: {
+            processMessage: async () => {
+                throw new Error('Unexpected crash dlq');
+            },
+        },
+        bot: {
+            api: {
+                sendMessage: async (_chatId, msg) => { sentMessages.push(msg); },
+            },
+        },
+    });
+
+    assert.equal(result.givenUp, 1);
+    assert.equal(result.retried, 0);
+    assert.equal(result.remaining, 0);
+    assert.equal(store.getDeferredPipelineIntents().length, 0);
+
+    const dlq = store.getFailedDeferredIntents();
+    assert.equal(dlq.length, 1);
+    assert.equal(dlq[0].id, entry.id);
+    assert.equal(dlq[0].finalError, 'Unexpected crash dlq');
+    assert.equal(sentMessages.length, 1);
+    assert.match(sentMessages[0], /Failed to process after 3 attempts/);
+});
+
+test('store: addFailedDeferredIntent caps at 50 items FIFO', async () => {
+    await store.resetAll();
+    for (let i = 0; i < 55; i++) {
+        await store.addFailedDeferredIntent({ id: `f_${i}`, userMessage: `Task ${i}` });
+    }
+    const dlq = store.getFailedDeferredIntents();
+    assert.equal(dlq.length, 50);
+    assert.equal(dlq[0].id, 'f_5');
+    assert.equal(dlq[49].id, 'f_54');
+});
+
+test('store: getOperationalSnapshot includes failedDeferred count', async () => {
+    await store.resetAll();
+    await store.addFailedDeferredIntent({ userMessage: 'Snapshot test' });
+    const snapshot = store.getOperationalSnapshot();
+    assert.equal(snapshot.localWorkflow.failedDeferred, 1);
+});
+
+test('store: clearFailedDeferredIntents empties DLQ', async () => {
+    await store.resetAll();
+    await store.addFailedDeferredIntent({ userMessage: 'Clear me' });
+    assert.equal(store.getFailedDeferredIntents().length, 1);
+    await store.clearFailedDeferredIntents();
+    assert.equal(store.getFailedDeferredIntents().length, 0);
 });

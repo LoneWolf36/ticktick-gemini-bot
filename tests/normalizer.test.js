@@ -972,19 +972,30 @@ describe('WP03: Batch Validation — Unsupported Mutation Shapes (T033)', () => 
             assert.strictEqual(result.reason, 'mixed_create_and_mutation');
         });
 
-        it('should reject multiple mutations', () => {
+        it('should accept small lightweight mutation batches', () => {
             const result = validateMutationBatch([
                 { type: 'update', taskId: 'abc123' },
                 { type: 'complete', taskId: 'def456' }
             ]);
-            assert.strictEqual(result.valid, false);
-            assert.strictEqual(result.reason, 'multiple_mutations');
+            assert.strictEqual(result.valid, true);
+            assert.strictEqual(result.reason, null);
         });
 
-        it('should reject multiple deletes', () => {
+        it('should accept small lightweight delete batches', () => {
             const result = validateMutationBatch([
                 { type: 'delete', taskId: 'abc123' },
                 { type: 'delete', taskId: 'def456' }
+            ]);
+            assert.strictEqual(result.valid, true);
+            assert.strictEqual(result.reason, null);
+        });
+
+        it('should reject large lightweight mutation batches', () => {
+            const result = validateMutationBatch([
+                { type: 'update', taskId: 'abc123' },
+                { type: 'complete', taskId: 'def456' },
+                { type: 'delete', taskId: 'ghi789' },
+                { type: 'update', taskId: 'jkl012' }
             ]);
             assert.strictEqual(result.valid, false);
             assert.strictEqual(result.reason, 'multiple_mutations');
@@ -1014,10 +1025,12 @@ describe('WP03: Batch Validation — Unsupported Mutation Shapes (T033)', () => 
             ));
         });
 
-        it('should return batchError for multiple mutations', () => {
+        it('should return batchError for large mutation batches', () => {
             const { actions, batchError } = normalizeActionBatch([
                 { type: 'update', taskId: 'abc123', targetQuery: 'task one' },
-                { type: 'complete', taskId: 'def456', targetQuery: 'task two' }
+                { type: 'complete', taskId: 'def456', targetQuery: 'task two' },
+                { type: 'delete', taskId: 'ghi789', targetQuery: 'task three' },
+                { type: 'update', taskId: 'jkl012', targetQuery: 'task four' }
             ]);
 
             assert.strictEqual(batchError, 'multiple_mutations');

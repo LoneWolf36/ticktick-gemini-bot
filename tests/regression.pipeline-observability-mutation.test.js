@@ -122,3 +122,57 @@ test('WP07 T074: pipeline harness does not reference nonexistent modules', () =>
     );
   }
 });
+
+test('telemetry deduplicates same requestId + eventType within 30 seconds', async () => {
+    const events = [];
+    const obs = createPipelineObservability({
+        eventSink: async (event) => { if (event) events.push(event); },
+        logger: { log: () => {}, error: () => {} },
+        now: () => new Date('2026-03-10T10:00:00.000Z'),
+    });
+
+    const context = { requestId: 'req-dedup-1', entryPoint: 'telegram', mode: 'interactive' };
+
+    await obs.emit(context, { eventType: 'pipeline.request.received', step: 'request', status: 'start' });
+    await obs.emit(context, { eventType: 'pipeline.request.received', step: 'request', status: 'start' });
+    await obs.emit(context, { eventType: 'pipeline.request.received', step: 'request', status: 'start' });
+
+    const stats = obs.getTelemetryDedupStats();
+    assert.equal(events.length, 1, 'expected only 1 emission for dedup window');
+    assert.equal(stats.deduplicatedCount, 2, 'expected 2 deduplications');
+    assert.ok(stats.cacheSize >= 1, 'expected cacheSize to be at least 1');
+});
+
+test('telemetry allows different eventTypes for same requestId', async () => {
+    const events = [];
+    const obs = createPipelineObservability({
+        eventSink: async (event) => { if (event) events.push(event); },
+        logger: { log: () => {}, error: () => {} },
+        now: () => new Date('2026-03-10T10:00:00.000Z'),
+    });
+
+    const context = { requestId: 'req-dedup-2', entryPoint: 'telegram', mode: 'interactive' };
+
+    await obs.emit(context, { eventType: 'pipeline.request.received', step: 'request', status: 'start' });
+    await obs.emit(context, { eventType: 'pipeline.intent.completed', step: 'intent', status: 'success' });
+
+    assert.equal(events.length, 2, 'expected both events for different eventTypes');
+});
+
+test('telemetry allows re-emission after 30 second gap', async () => {
+    const events = [];
+    let currentTime = new Date('2026-03-10T10:00:00.000Z').getTime();
+    const obs = createPipelineObservability({
+        eventSink: async (event) => { if (event) events.push(event); },
+        logger: { log: () => {}, error: () => {} },
+        now: () => new Date(currentTime),
+    });
+
+    const context = { requestId: 'req-dedup-3', entryPoint: 'telegram', mode: 'interactive' };
+
+    await obs.emit(context, { eventType: 'pipeline.request.received', step: 'request', status: 'start' });
+    currentTime += 31 * 1000;
+    await obs.emit(context, { eventType: 'pipeline.request.received', step: 'request', status: 'start' });
+
+    assert.equal(events.length, 2, 'expected re-emission after 30s gap');
+});

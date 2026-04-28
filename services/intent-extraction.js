@@ -637,6 +637,33 @@ OUT-OF-SCOPE EXAMPLES (should return low confidence or unsupported):
 - Underspecified pronouns: "move that one to Friday" — should have low confidence (<0.5)
 - Reschedule as a separate type: do NOT emit type "reschedule"; use "update" with dueDate instead`;
 
+const COMPACT_INTENT_EXTRACTION_PROMPT = `Extract structured task/intent actions from the user's message.
+
+Rules:
+- One action per distinct intent.
+- "multi-task" splitStrategy for multiple independent tasks.
+- "multi-day" splitStrategy for distinct days (not recurrence).
+- Set repeatHint for repeating patterns.
+- Short, verb-first titles. No dates or project names in titles.
+- Low confidence for ambiguous intent.
+- JSON array of action objects.
+- Conversational/non-task messages ("hello", "thanks") → return empty array [].
+
+Checklist vs multi-task:
+- ONE outcome with sub-steps → single "create" with checklistItems.
+- INDEPENDENT tasks → separate "create" actions with splitStrategy "multi-task".
+- Unclear → one "create" with clarification:true and a short clarificationQuestion.
+
+Action types: create, update, complete, delete.
+
+Required fields for every action: type, title, content, priority, projectHint, dueDate, repeatHint, splitStrategy, confidence (use null when not applicable).
+
+create: requires title; targetQuery null.
+update/complete/delete: requires targetQuery; title optional (only when renaming).
+clarification: requires clarification:true, clarificationQuestion, confidence <= 0.5.
+
+Checklist item shape: { title: string (required), status?: "completed"|"incomplete", sortOrder?: number }`;
+
 // ─── Intent Action Response Schema ─────────────────────────────────────
 
 /**
@@ -714,9 +741,21 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
         ? `${contextSection}\nUser message:\n${userMessage}`
         : `User message:\n${userMessage}`;
 
-    // Large-message guard: don't send oversized prompts into fragile extraction path
-    const promptCharCount = fullPrompt.length;
-    const promptLineCount = fullPrompt.split('\n').length;
+    // Large-message guard: progressively truncate instead of refusing outright
+    let workingMessage = userMessage;
+    let promptCharCount = fullPrompt.length;
+    let promptLineCount = fullPrompt.split('\n').length;
+    if (promptCharCount > 7000 || promptLineCount > 80) {
+        const looksTaskLike = /\b(add|create|move|rename|delete|done|complete|schedule|tomorrow|today|next week|call|buy|finish|start|plan|review|send|write|email|meeting)\b/i.test(userMessage);
+        if (looksTaskLike) {
+            workingMessage = truncateMessageForExtraction(userMessage, 4000);
+            const newPrompt = contextSection
+                ? `${contextSection}\nUser message:\n${workingMessage}`
+                : `User message:\n${workingMessage}`;
+            promptCharCount = newPrompt.length;
+            promptLineCount = newPrompt.split('\n').length;
+        }
+    }
     if (promptCharCount > 7000 || promptLineCount > 80) {
         return [{
             type: 'create',
@@ -730,10 +769,14 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
             splitStrategy: null,
             checklistItems: null,
             clarification: true,
-            clarificationQuestion: 'Message too large to parse reliably. Please split into smaller blocks.',
+            clarificationQuestion: 'Message too long. Please split into smaller parts.',
             confidence: 0.3,
         }];
     }
+
+    const finalPrompt = contextSection
+        ? `${contextSection}\nUser message:\n${workingMessage}`
+        : `User message:\n${workingMessage}`;
 
     const apiCallFn = async (ai, prompt, model) => {
         return ai.models.generateContent({
@@ -749,11 +792,12 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
 
     let response;
     try {
-        response = await gemini._executeWithFailover(fullPrompt, apiCallFn, { modelTier: 'fast', interactiveWritePath: true });
+        response = await gemini._executeWithFailover(finalPrompt, apiCallFn, { modelTier: 'fast', interactiveWritePath: true });
     } catch (err) {
-        // Typed AI errors from _executeWithFailover
+        // Preserve typed AI errors from _executeWithFailover so pipeline
+        // can surface distinct user messages for quota vs unavailable vs invalid key.
         if (err?.kind === 'hard_quota' || err?.kind === 'service_unavailable' || err?.kind === 'invalid_key') {
-            throw new QuotaExhaustedError('All API keys exhausted');
+            throw err;
         }
         // Legacy string fallback
         const errMsg = err.message || '';
@@ -779,9 +823,43 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
         throw new Error(`Failed to parse Gemini intent response as JSON: ${jsonStr.slice(0, 200)}`);
     }
 
-    const actions = parsed?.actions || [];
+    let actions = parsed?.actions || [];
     if (!Array.isArray(actions)) {
         throw new Error(`Expected actions array, got ${typeof actions}`);
+    }
+
+    // Retry once with compact prompt for long/complex messages that return empty
+    if (actions.length === 0 && (userMessage.length > 1500 || userMessage.split('\n').length > 15)) {
+        console.log(`[IntentExtraction:${requestId}] Empty intents for long message (${userMessage.length} chars, ${userMessage.split('\n').length} lines). Retrying with compact prompt.`);
+        const compactApiCallFn = async (ai, prompt, model) => {
+            return ai.models.generateContent({
+                model,
+                contents: prompt,
+                config: {
+                    systemInstruction: COMPACT_INTENT_EXTRACTION_PROMPT,
+                    responseMimeType: 'application/json',
+                    responseSchema: intentActionSchema,
+                },
+            });
+        };
+        try {
+            const retryResponse = await gemini._executeWithFailover(fullPrompt, compactApiCallFn, { modelTier: 'fast', interactiveWritePath: true });
+            const retryRaw = retryResponse.text.trim();
+            const retryJsonStr = retryRaw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?\s*```$/i, '').trim();
+            let retryParsed;
+            try {
+                retryParsed = JSON.parse(retryJsonStr);
+            } catch {
+                throw new Error(`Failed to parse Gemini retry intent response as JSON: ${retryJsonStr.slice(0, 200)}`);
+            }
+            actions = retryParsed?.actions || [];
+            if (!Array.isArray(actions)) {
+                throw new Error(`Expected actions array on retry, got ${typeof actions}`);
+            }
+        } catch (retryErr) {
+            console.warn(`[IntentExtraction:${requestId}] Retry with compact prompt failed: ${retryErr.message}`);
+            // Fall through to return empty array
+        }
     }
 
     // Runtime validation (defense in depth)
@@ -798,6 +876,42 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
     }
 
     return actions;
+}
+
+/**
+ * Progressively truncates a long user message to fit within a safe prompt limit.
+ * Strategy: strip examples, strip verbose filler, keep schema + core rules.
+ * @param {string} text - Original user message
+ * @param {number} maxChars - Maximum characters to keep
+ * @returns {string} Truncated text
+ */
+function truncateMessageForExtraction(text, maxChars = 4000) {
+    if (text.length <= maxChars) return text;
+
+    // Heuristic: messages that look task-like (have verbs, deadlines, or task cues)
+    const looksTaskLike = /\b(add|create|move|rename|delete|done|complete|schedule|tomorrow|today|next week|call|buy|finish|start|plan|review|send|write|email|meeting)\b/i.test(text);
+    if (!looksTaskLike) return text;
+
+    // Step 1: Remove example blocks (lines starting with "Example:" or fenced blocks)
+    let trimmed = text
+        .replace(/Example output for [^:]+:\s*\[[\s\S]*?\]/gi, '')
+        .replace(/Example input:[^\n]*\nExpected output:\s*\[[\s\S]*?\]/gi, '');
+
+    // Step 2: Remove verbose filler phrases
+    trimmed = trimmed
+        .replace(/\b(just|really|basically|actually|literally|honestly)\b/gi, '')
+        .replace(/\s{2,}/g, ' ')
+        .trim();
+
+    if (trimmed.length <= maxChars) return trimmed;
+
+    // Step 3: Hard truncate at sentence boundary, preserving the beginning
+    const sliceEnd = trimmed.lastIndexOf('. ', maxChars - 3);
+    if (sliceEnd > maxChars * 0.5) {
+        return trimmed.slice(0, sliceEnd + 1).trim() + '...';
+    }
+
+    return trimmed.slice(0, maxChars - 3).trim() + '...';
 }
 
 /**

@@ -9,6 +9,11 @@ import {
     retryWithBackoff,
 } from '../services/shared-utils.js';
 import { taskReviewKeyboard } from '../bot/callbacks.js';
+import {
+    setCurrentReviewSession,
+    getCurrentReviewSession,
+    clearCurrentReviewSession,
+} from '../services/store.js';
 
 // ─── 1. Pipeline dryRun mode ─────────────────────────────────
 
@@ -135,9 +140,9 @@ test('buildTaskCardFromAction renders update card with changes', () => {
     assert.match(card, /Was: "Old title"/);
     assert.match(card, /New title/);
     assert.match(card, /🔴/);
-    assert.match(card, /career-critical/);
-    assert.match(card, /📅/);
-    assert.match(card, /📁 → Personal/);
+    assert.match(card, /Core Goal/);
+    assert.match(card, /15\/3\/2026/);
+    assert.match(card, /→ Personal/);
 });
 
 test('buildTaskCardFromAction renders complete card', () => {
@@ -185,30 +190,33 @@ test('taskReviewKeyboard returns update layout by default', () => {
     const keyboard = taskReviewKeyboard('task-123');
     const flat = keyboard.inline_keyboard.flat();
 
-    assert.equal(flat.length, 4);
+    assert.equal(flat.length, 5);
     assert.match(flat[0].callback_data, /^a:task-123$/);
     assert.match(flat[1].callback_data, /^r:task-123$/);
     assert.match(flat[2].callback_data, /^s:task-123$/);
     assert.match(flat[3].callback_data, /^d:task-123$/);
+    assert.match(flat[4].callback_data, /^review:stop$/);
 });
 
 test('taskReviewKeyboard returns complete layout', () => {
     const keyboard = taskReviewKeyboard('task-123', 'complete');
     const flat = keyboard.inline_keyboard.flat();
 
-    assert.equal(flat.length, 3);
+    assert.equal(flat.length, 4);
     assert.match(flat[0].text, /Confirm complete/);
     assert.match(flat[1].text, /Keep active/);
     assert.match(flat[2].text, /Delete instead/);
+    assert.match(flat[3].callback_data, /^review:stop$/);
 });
 
 test('taskReviewKeyboard returns delete layout', () => {
     const keyboard = taskReviewKeyboard('task-123', 'delete');
     const flat = keyboard.inline_keyboard.flat();
 
-    assert.equal(flat.length, 2);
+    assert.equal(flat.length, 3);
     assert.match(flat[0].text, /Confirm delete/);
     assert.match(flat[1].text, /Keep task/);
+    assert.match(flat[2].callback_data, /^review:stop$/);
 });
 
 test('taskReviewKeyboard truncates long task IDs', () => {
@@ -221,7 +229,35 @@ test('taskReviewKeyboard truncates long task IDs', () => {
     }
 });
 
-// ─── 7. retryWithBackoff ─────────────────────────────────────
+// ─── 7. currentReviewSession store helpers ───────────────────
+
+test('setCurrentReviewSession stores and getCurrentReviewSession retrieves', async () => {
+    await setCurrentReviewSession(12345, {
+        messageId: 99,
+        chatId: 12345,
+        source: 'scan',
+        startedAt: '2026-04-28T10:00:00.000Z',
+    });
+
+    const session = getCurrentReviewSession(12345);
+    assert.ok(session);
+    assert.equal(session.messageId, 99);
+    assert.equal(session.source, 'scan');
+
+    await clearCurrentReviewSession(12345);
+    assert.equal(getCurrentReviewSession(12345), null);
+});
+
+test('getCurrentReviewSession returns null when no session exists', () => {
+    assert.equal(getCurrentReviewSession(99999), null);
+});
+
+test('clearCurrentReviewSession is safe for unknown chatId', async () => {
+    await clearCurrentReviewSession(88888);
+    assert.equal(getCurrentReviewSession(88888), null);
+});
+
+// ─── 8. retryWithBackoff ─────────────────────────────────────
 
 test('retryWithBackoff succeeds on first attempt', async () => {
     const result = await retryWithBackoff(async () => 42);

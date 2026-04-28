@@ -101,7 +101,7 @@ Generate today's focused plan as structured JSON only.
 
 Rules:
 - Maximum 3 tasks in priorities.
-- First priority MUST be career-critical if one exists.
+- First priority MUST be core goal if one exists.
 - Avoid behavioral callouts; focus on task evidence and ranking rationale.
 - If data is sparse, return compact output without filler.
 
@@ -161,7 +161,7 @@ Goals:
 9. Do not emit duplicate actions for the same task.
 
 Scheduling policy:
-- Career/study tasks -> morning/afternoon biased scheduling.
+- Core goal/career/study tasks -> morning/afternoon biased scheduling.
 - Admin tasks -> later slots unless urgent/time-bound.
 - For uncertainty, include a clarifying question instead of guessing.
 

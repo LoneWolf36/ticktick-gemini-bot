@@ -99,7 +99,7 @@ test('composeBriefingSummary prefers structured model focus and priorities', () 
         title: '',
         project_name: null,
         due_date: null,
-        priority_label: 'career-critical',
+        priority_label: 'core_goal',
         rationale_text: 'Directly moves the core goal.',
       },
     ],

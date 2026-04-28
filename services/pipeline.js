@@ -693,16 +693,16 @@ async function capturePreWriteSnapshot(action, adapter) {
     }
 }
 
-async function executeAction(action, adapter) {
+async function executeAction(action, adapter, options = {}) {
     switch (action.type) {
         case 'create':
             return adapter.createTask(action);
         case 'update':
-            return adapter.updateTask(action.taskId, action);
+            return adapter.updateTask(action.taskId, action, options);
         case 'complete':
-            return adapter.completeTask(action.taskId, action.originalProjectId || action.projectId);
+            return adapter.completeTask(action.taskId, action.originalProjectId || action.projectId, action.userId, options);
         case 'delete':
-            return adapter.deleteTask(action.taskId, action.originalProjectId || action.projectId);
+            return adapter.deleteTask(action.taskId, action.originalProjectId || action.projectId, action.userId, options);
         default:
             throw new Error(`Unsupported action type: ${action.type}`);
     }
@@ -881,6 +881,28 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
         }
     }
 
+    async function persistDeferredAiQuotaIntent({ userMessage, context }) {
+        if (typeof deferIntent !== 'function') return null;
+        const payload = {
+            requestId: context?.requestId || null,
+            entryPoint: context?.entryPoint || null,
+            mode: context?.mode || null,
+            workStyleMode: context?.workStyleMode || null,
+            userMessage: userMessage || context?.userMessage || null,
+            failureType: 'ai_quota',
+            failureReason: 'ai_quota',
+            retryCount: 0,
+            nextAttemptAt: new Date(Date.now() + 60 * 1000).toISOString(),
+            deferredAt: new Date().toISOString(),
+        };
+        try {
+            return await deferIntent(payload);
+        } catch (error) {
+            console.error('[Pipeline] Failed to persist deferred AI quota intent:', error?.message || error);
+            return null;
+        }
+    }
+
     async function processMessage(userMessage, options = {}) {
         const isDryRun = options.dryRun === true;
         const blockedActionTypes = new Set(options.blockedActionTypes || []);
@@ -1014,7 +1036,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             const intentDurationMs = Date.now() - intentStartedAt;
             await telemetry.emit(context, {
                 eventType: 'pipeline.intent.completed',
-                step: 'ax',
+                step: 'intent',
                 status: 'success',
                 durationMs: intentDurationMs,
                 metadata: {
@@ -1034,6 +1056,45 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             }
 
             if (intents.length === 0) {
+                const userMessageText = (userMessage || '').toLowerCase();
+                const hasActionVerb = /\b(add|create|move|complete|delete|schedule|priority|update|rename|done|finish)\b/.test(userMessageText);
+                const hasDateOrTime = /\b(today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|this week|am|pm|morning|afternoon|evening|\d{1,2}[:/]\d{2}|\d{4}-\d{2}-\d{2})\b/.test(userMessageText);
+                const looksTaskLike = hasActionVerb || hasDateOrTime;
+
+                if (looksTaskLike) {
+                    console.log(`[Pipeline:${context.requestId}] No intents extracted but message looks task-like. Returning clarification.`);
+                    const clarificationResult = {
+                        type: 'clarification',
+                        results: [],
+                        errors: [],
+                        confirmationText: "I couldn't parse that clearly. Try rephrasing with a specific action like 'create task...' or 'move X to project Y'.",
+                        clarification: {
+                            reason: 'empty_intents_task_like',
+                        },
+                        requestId: context.requestId || null,
+                        entryPoint: context.entryPoint || null,
+                        mode: context.mode || null,
+                        workStyleMode: context.workStyleMode || null,
+                        checklistContext: context.checklistContext || null,
+                    };
+                    context = finalizePipelineContext(context, requestStartedAt, {
+                        resultType: 'clarification',
+                        status: 'success',
+                        summary: 'empty_intents_task_like',
+                    });
+                    await telemetry.emit(context, {
+                        eventType: 'pipeline.request.completed',
+                        step: 'result',
+                        status: 'success',
+                        durationMs: Date.now() - requestStartedAt,
+                        metadata: {
+                            type: 'clarification',
+                            reason: 'empty_intents_task_like',
+                        },
+                    });
+                    return attachPipelineContext(clarificationResult, context);
+                }
+
                 console.log(`[Pipeline:${context.requestId}] No intents extracted. Routing as non-task.`);
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'non-task',
@@ -1201,43 +1262,6 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             const hasCreate = intents.some(i => i.type === 'create');
             const mutationIntents = intents.filter(i => mutationTypes.includes(i.type));
 
-            if (mutationIntents.length > 1) {
-                console.warn(`[Pipeline:${context.requestId}] Batch mutation request rejected.`);
-                context = updatePipelineContext(context, (draft) => {
-                    draft.lifecycle.validationFailures = snapshotPipelineValue(['multiple_mutations']);
-                });
-                const failureResult = buildFailureResult(context, {
-                    failureClass: FAILURE_CLASSES.VALIDATION,
-                    stage: 'mutation-routing',
-                    summary: 'Batch mutation request is out of scope.',
-                    details: {
-                        intentTypes: intents.map(i => i.type),
-                    },
-                    userMessage: buildMutationBoundaryMessage('multiple_mutations', context),
-                    retryable: true,
-                });
-                context = finalizePipelineContext(context, requestStartedAt, {
-                    resultType: 'error',
-                    status: 'failure',
-                    summary: 'Batch mutation request is out of scope.',
-                    failureClass: FAILURE_CLASSES.VALIDATION,
-                    rolledBack: false,
-                    validationFailures: ['multiple_mutations'],
-                });
-                await telemetry.emit(context, {
-                    eventType: 'pipeline.request.failed',
-                    step: 'result',
-                    status: 'failure',
-                    durationMs: Date.now() - requestStartedAt,
-                    failureClass: FAILURE_CLASSES.VALIDATION,
-                    rolledBack: false,
-                    metadata: {
-                        reason: 'multiple_mutations',
-                    },
-                });
-                return attachPipelineContext(failureResult, context);
-            }
-
             if (hasMutation && hasCreate) {
                 // Mixed create+mutation: out of scope for v1
                 console.warn(`[Pipeline:${context.requestId}] Mixed create+mutation request rejected.`);
@@ -1400,7 +1424,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 }
             }
 
-            const defaultProjectId = context.availableProjects
+            let defaultProjectId = context.availableProjects
                 .find(p => p?.name?.toLowerCase() === defaultProjectName?.toLowerCase())?.id || null;
 
             // Fall back to Inbox if the configured default project doesn't exist
@@ -1409,13 +1433,24 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     .find(p => p?.name?.toLowerCase() === 'inbox')?.id || null;
                 if (inboxId !== null) {
                     console.warn(`[Pipeline:${context.requestId}] Default project "${defaultProjectName}" not found. Falling back to Inbox.`);
-                    return inboxId;
+                    defaultProjectId = inboxId;
                 }
             }
 
-            // Final fallback: null if neither configured project nor Inbox exists
+            // Final fallback: first available project sorted by name then id
             if (defaultProjectId === null) {
-                console.warn(`[Pipeline:${context.requestId}] Neither "${defaultProjectName}" nor Inbox found in available projects. Available: ${context.availableProjects.map(p => p.name).join(', ')}`);
+                const sorted = [...context.availableProjects].sort((a, b) => {
+                    const nameCompare = String(a?.name || '').localeCompare(String(b?.name || ''));
+                    if (nameCompare !== 0) return nameCompare;
+                    return String(a?.id || '').localeCompare(String(b?.id || ''));
+                });
+                const fallback = sorted[0] || null;
+                if (fallback) {
+                    console.warn(`[Pipeline:${context.requestId}] Default project "${defaultProjectName}" and Inbox not found. Falling back to first available project "${fallback.name}".`);
+                    defaultProjectId = fallback.id;
+                } else {
+                    console.warn(`[Pipeline:${context.requestId}] Neither "${defaultProjectName}" nor Inbox found in available projects. Available: ${context.availableProjects.map(p => p.name).join(', ')}`);
+                }
             }
 
             const normOptions = {
@@ -1757,6 +1792,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             let failureClass = FAILURE_CLASSES.UNEXPECTED;
             let stage = 'pipeline';
             let summary = 'Unhandled pipeline error.';
+            let deferredAiQuotaIntent = null;
 
             if (error?.code === 'PIPELINE_CONTEXT_INVALID') {
                 failureClass = FAILURE_CLASSES.VALIDATION;
@@ -1764,19 +1800,21 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 summary = 'Invalid pipeline request context.';
             } else if (error instanceof AIHardQuotaError) {
                 failureClass = FAILURE_CLASSES.QUOTA;
-                stage = 'ax';
+                stage = 'intent';
                 summary = 'AI hard quota exhausted after configured key rotation.';
+                deferredAiQuotaIntent = await persistDeferredAiQuotaIntent({ userMessage, context });
             } else if (error instanceof AIServiceUnavailableError) {
                 failureClass = FAILURE_CLASSES.QUOTA;
-                stage = 'ax';
+                stage = 'intent';
                 summary = 'AI service unavailable after model fallback chain exhausted.';
+                deferredAiQuotaIntent = await persistDeferredAiQuotaIntent({ userMessage, context });
             } else if (error instanceof AIInvalidKeyError) {
                 failureClass = FAILURE_CLASSES.QUOTA;
-                stage = 'ax';
+                stage = 'intent';
                 summary = 'AI API keys invalid or expired.';
             } else if (isQuotaFailure(error)) {
                 failureClass = FAILURE_CLASSES.QUOTA;
-                stage = 'ax';
+                stage = 'intent';
                 summary = 'AI quota exhausted after configured key rotation.';
             }
 
@@ -1800,6 +1838,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     rolledBack: false,
                     metadata: {
                         message: error.message,
+                        deferredAiQuota: !!deferredAiQuotaIntent,
                     },
                 });
             }
@@ -1809,6 +1848,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 stage,
                 summary,
                 error,
+                userMessage: deferredAiQuotaIntent
+                    ? 'AI temporarily unavailable. I\'ll retry this in a few minutes.'
+                    : undefined,
                 retryable: failureClass !== FAILURE_CLASSES.MALFORMED_INTENT,
             }), context);
         }
@@ -1845,7 +1887,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
 
                 try {
                     const preWriteSnapshot = await capturePreWriteSnapshot(action, adapter);
-                    const result = await executeAction(action, adapter);
+                    const result = await executeAction(action, adapter, { verifyAfterWrite: true });
                     executionResults.push(snapshotPipelineValue({
                         phase: 'execute',
                         actionIndex: index,
@@ -2243,8 +2285,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 : 0;
             const checklistSuffix = checklistCount > 0 ? ` (${checklistCount} items)` : '';
             text = urgentMode
-                ? `✅ ${created[0].action.title}${checklistSuffix}`
-                : `✅ Created: ${created[0].action.title}${checklistSuffix}`;
+                ? `${created[0].action.title}${checklistSuffix}`
+                : `Created: ${created[0].action.title}${checklistSuffix}`;
         } else {
             const parts = [];
             if (created.length > 0) parts.push(urgentMode ? `Created ${created.length}` : `Created ${created.length} tasks`);
@@ -2252,7 +2294,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             if (completed.length > 0) parts.push(urgentMode ? `Completed ${completed.length}` : `Completed ${completed.length} task(s)`);
             if (deleted.length > 0) parts.push(urgentMode ? `Deleted ${deleted.length}` : `Deleted ${deleted.length} task(s)`);
 
-            text = urgentMode ? `✅ Done. ${parts.join(', ')}` : `✅ ${parts.join(', ')}`;
+            text = urgentMode ? `Done. ${parts.join(', ')}` : `${parts.join(', ')}`;
         }
 
         if (errors && errors.length > 0) {
@@ -2271,6 +2313,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
      * the createRequestContext → processMessage dance locally.
      */
     async function processMessageWithContext(userMessage, options = {}) {
+        if (!options.existingTask && options.recentTask) {
+            options = { ...options, existingTask: options.recentTask };
+        }
         const requestContext = await contextBuilder.buildRequestContext(userMessage, options);
         return processMessage(userMessage, { ...options, requestContext });
     }

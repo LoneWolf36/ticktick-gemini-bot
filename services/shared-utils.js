@@ -9,7 +9,7 @@ import { InlineKeyboard } from 'grammy';
  * @type {Object<string, number>}
  */
 export const PRIORITY_MAP = {
-    'career-critical': 5,   // 🔴 High (red)
+    'core_goal': 5,         // 🔴 High (red)
     'important': 3,         // 🟡 Medium (yellow)
     'life-admin': 1,        // 🔵 Low (blue)
     'consider-dropping': 0, // None
@@ -26,10 +26,10 @@ export const PRIORITY_EMOJI = { 5: '🔴', 3: '🟡', 1: '🔵', 0: '⚪' };
  * @type {Object<number, string>}
  */
 export const PRIORITY_LABEL = {
-    5: '🔴 career-critical',
-    3: '🟡 important',
-    1: '🔵 life-admin',
-    0: '⚪ consider-dropping',
+    5: 'Core Goal',
+    3: 'Important',
+    1: 'Life Admin',
+    0: 'Optional',
 };
 
 // ─── Access Control (single source of truth) ────────────────
@@ -198,7 +198,7 @@ export function parseDateStringToTickTickISO(dateStr, options = {}) {
     const slotMode = options.slotMode || 'end-of-day';
     if (slotMode === 'priority') {
         const priorityLabel = options.priorityLabel || 'important';
-        const slot = priorityLabel === 'career-critical' ? { hour: 9, minute: 30 }
+        const slot = priorityLabel === 'core_goal' ? { hour: 9, minute: 30 }
             : priorityLabel === 'important' ? { hour: 13, minute: 0 }
                 : { hour: 17, minute: 30 };
         return atTimeISO(year, month, day, slot.hour, slot.minute);
@@ -241,7 +241,7 @@ export function scheduleToDateTime(bucket, { priorityLabel = 'important' } = {})
         return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate() };
     };
 
-    const slot = priorityLabel === 'career-critical' ? { hour: 9, minute: 30 }
+    const slot = priorityLabel === 'core_goal' ? { hour: 9, minute: 30 }
         : priorityLabel === 'important' ? { hour: 13, minute: 0 }
             : { hour: 17, minute: 30 };
 
@@ -335,46 +335,43 @@ export function buildTaskCard(task, analysis) {
     const lines = [];
 
     // Header — punchy project and original vs suggested
-    lines.push(`📂 **${task.projectName || 'Inbox'}**`);
-    
+    lines.push(`**${task.projectName || 'Inbox'}**`);
+
     if (analysis.improved_title && analysis.improved_title !== task.title) {
         lines.push(`_Was: "${task.title}"_`);
-        lines.push(`✨ **${analysis.improved_title}**`);
+        lines.push(`**${analysis.improved_title}**`);
     } else {
-        lines.push(`📌 **${task.title}**`);
+        lines.push(`**${task.title}**`);
     }
-
-    lines.push('');
 
     // Key decisions (pipe-separated on one line)
     const decisions = [];
     decisions.push(`${analysis.priority_emoji || '🟡'} ${analysis.priority}`);
     const schedLabel = scheduleLabel(analysis.suggested_schedule);
-    if (schedLabel) decisions.push(`📅 ${schedLabel}`);
+    if (schedLabel) decisions.push(schedLabel);
     if (analysis.suggested_project && analysis.suggested_project !== (task.projectName || 'Inbox')) {
-        decisions.push(`📁 → ${analysis.suggested_project}`);
+        decisions.push(`→ ${analysis.suggested_project}`);
     }
     if (analysis.needle_mover !== undefined) {
-        decisions.push(analysis.needle_mover ? '🎯 High Leverage' : '⚪ Routine');
+        decisions.push(analysis.needle_mover ? 'High Leverage' : 'Routine');
     }
-    
-    lines.push(`**${decisions.join('  |  ')}**`);
-    lines.push('');
+
+    lines.push(decisions.join('  |  '));
 
     // Supporting detail (only if present)
     if (analysis.analysis) lines.push(`*Why:* ${analysis.analysis}`);
-    if (analysis.description) lines.push(`\n📝 ${analysis.description}`);
+    if (analysis.description) lines.push(`📝 ${analysis.description}`);
 
     if (analysis.sub_steps?.length > 0) {
-        lines.push('\n**📋 Action Steps:**');
+        lines.push('**Action Steps:**');
         analysis.sub_steps.slice(0, 4).forEach((step, i) => {
             lines.push(`  ${i + 1}. ${step}`);
         });
         if (analysis.sub_steps.length > 4) lines.push(`  ...+${analysis.sub_steps.length - 4} more`);
     }
 
-    if (analysis.success_criteria) lines.push(`\n**🎯 Done when:** ${analysis.success_criteria}`);
-    if (analysis.callout) lines.push(`\n**💬 Coach:** *${analysis.callout}*`);
+    if (analysis.success_criteria) lines.push(`**Done when:** ${analysis.success_criteria}`);
+    if (analysis.callout) lines.push(`**Coach:** *${analysis.callout}*`);
 
     return truncateMessage(lines.join('\n'));
 }
@@ -390,22 +387,22 @@ export function buildTaskCardFromAction(task, action, projects = []) {
     const lines = [];
 
     if (action.type === 'complete') {
-        lines.push(`✅ **Mark as done:** "${task.title}"`);
+        lines.push(`**Mark as done:** "${task.title}"`);
         if (action.title && action.title !== task.title) {
-            lines.push(`✨ **${action.title}**`);
+            lines.push(`**${action.title}**`);
         }
         if (action.priority !== undefined && action.priority !== task.priority) {
             lines.push(`${PRIORITY_EMOJI[action.priority] || '⚪'} ${PRIORITY_LABEL[action.priority] || 'unknown'}`);
         }
         if (action.projectId && action.projectId !== task.projectId) {
             const project = projects.find(p => p.id === action.projectId);
-            lines.push(`📁 → ${project?.name || 'Inbox'}`);
+            lines.push(`→ ${project?.name || 'Inbox'}`);
         }
         if (action.dueDate) {
             const schedLabel = action.dueDate.includes('T') || action.dueDate.includes('-')
                 ? userLocaleString(action.dueDate)
                 : scheduleLabel(action.dueDate);
-            if (schedLabel) lines.push(`📅 ${schedLabel}`);
+            if (schedLabel) lines.push(schedLabel);
         }
         return truncateMessage(lines.join('\n'));
     }
@@ -416,16 +413,14 @@ export function buildTaskCardFromAction(task, action, projects = []) {
     }
 
     // Update
-    lines.push(`📂 **${task.projectName || 'Inbox'}**`);
+    lines.push(`**${task.projectName || 'Inbox'}**`);
 
     if (action.title && action.title !== task.title) {
         lines.push(`_Was: "${task.title}"_`);
-        lines.push(`✨ **${action.title}**`);
+        lines.push(`**${action.title}**`);
     } else {
-        lines.push(`📌 **${task.title}**`);
+        lines.push(`**${task.title}**`);
     }
-
-    lines.push('');
 
     const decisions = [];
     const effectivePriority = action.priority ?? task.priority;
@@ -435,19 +430,18 @@ export function buildTaskCardFromAction(task, action, projects = []) {
         const schedLabel = action.dueDate.includes('T') || action.dueDate.includes('-')
             ? userLocaleString(action.dueDate)
             : scheduleLabel(action.dueDate);
-        if (schedLabel) decisions.push(`📅 ${schedLabel}`);
+        if (schedLabel) decisions.push(schedLabel);
     }
 
     if (action.projectId && action.projectId !== task.projectId) {
         const project = projects.find(p => p.id === action.projectId);
-        decisions.push(`📁 → ${project?.name || 'Inbox'}`);
+        decisions.push(`→ ${project?.name || 'Inbox'}`);
     }
 
-    lines.push(`**${decisions.join('  |  ')}**`);
-    lines.push('');
+    lines.push(decisions.join('  |  '));
 
     if (action.content) {
-        lines.push(`📝 ${action.content}`);
+        lines.push(action.content);
     }
 
     return truncateMessage(lines.join('\n'));
@@ -589,17 +583,16 @@ export function pendingToAnalysis(data) {
 export function buildAutoApplyNotification(results) {
     if (!results || results.length === 0) return null;
     const lines = [
-        `⚡ **${results.length} task(s) organized while you were away:**`,
-        '',
+        `**${results.length} task(s) organized while you were away:**`,
     ];
     for (const r of results) {
         const parts = [];
-        if (r.schedule) parts.push(`📅 due ${r.schedule}`);
-        if (r.movedTo) parts.push(`📁 ${r.movedTo}`);
+        if (r.schedule) parts.push(`due ${r.schedule}`);
+        if (r.movedTo) parts.push(`moved to ${r.movedTo}`);
         const detail = parts.length > 0 ? ` → ${parts.join(', ')}` : '';
         lines.push(`• "${r.title}"${detail}`);
     }
-    lines.push(`\n*Run /undo if anything looks off.*`);
+    lines.push(`*Run /undo if anything looks off.*`);
     return lines.join('\n');
 }
 
@@ -646,6 +639,8 @@ export function parseTelegramMarkdownToHTML(text) {
     let normalized = text.replace(/\r\n/g, '\n');
     normalized = normalized.replace(/^\s{0,3}#{1,6}\s+(.+)$/gm, '**$1**');
     normalized = normalized.replace(/^\s*#{3,}\s*$/gm, '────────');
+    // Normalize underscore italics to asterisk so Telegram HTML parse handles them
+    normalized = normalized.replace(/_([^_]+)_/g, '*$1*');
 
     let escaped = escapeHTML(normalized);
     escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
@@ -707,13 +702,13 @@ export function appendUrgentModeReminder(text, urgentMode) {
  */
 export function formatBriefingHeader({ kind }) {
     if (kind === 'daily') {
-        return `**🌅 MORNING BRIEFING**\n${userTodayFormatted()}\n${'─'.repeat(24)}\n\n`;
+        return `**MORNING BRIEFING**\n${userTodayFormatted()}\n${'─'.repeat(16)}\n\n`;
     }
     if (kind === 'daily_close') {
-        return `**🌙 END-OF-DAY REFLECTION**\n${userTodayFormatted()}\n${'─'.repeat(28)}\n\n`;
+        return `**END-OF-DAY REFLECTION**\n${userTodayFormatted()}\n${'─'.repeat(16)}\n\n`;
     }
     if (kind === 'weekly') {
-        return `**📊 WEEKLY ACCOUNTABILITY REVIEW**\n${'─'.repeat(28)}\n\n`;
+        return `**WEEKLY ACCOUNTABILITY REVIEW**\n${'─'.repeat(16)}\n\n`;
     }
     return '';
 }
@@ -758,13 +753,13 @@ export function buildQuotaExhaustedMessage(gemini) {
  * @returns {string} Formatted line
  */
 export function formatProcessedTask(task) {
-    const action = task.approved ? '✅ Approved' : task.skipped ? '⏭ Skipped' : task.dropped ? '⚪ Dropped' : '⏳ Pending';
+    const action = task.approved ? 'Approved' : task.skipped ? 'Skipped' : task.dropped ? 'Dropped' : 'Pending';
 
     let badge = '';
     if (task.priorityEmoji && task.priority) {
         badge = `${task.priorityEmoji} ${task.priority}`;
     } else {
-        badge = PRIORITY_LABEL[task.suggestedPriority ?? 3] || '🟡 important';
+        badge = PRIORITY_LABEL[task.suggestedPriority ?? 3] || 'important';
     }
 
     return `- "${task.originalTitle}" -> ${action} [${badge}]`;
@@ -905,6 +900,34 @@ export function validateChecklistItems(items, options = {}) {
     }
 
     return validItems;
+}
+
+export const FOLLOWUP_PRONOUNS = /\b(it|this|that|them|its)\b/;
+export const FOLLOWUP_TIME_SHIFTS = /\b(tomorrow|next week|instead|postpone|reschedule|move to|change to|later|earlier|rename)\b/;
+
+/**
+ * Detects if a freeform message is likely a follow-up referring to a recent task.
+ * @param {string} text - The user's message
+ * @returns {boolean}
+ */
+export function isFollowUpMessage(text = '', recentTaskTitle = null) {
+    const t = text.trim().toLowerCase();
+    const length = t.length;
+
+    if (recentTaskTitle) {
+        const titleWords = recentTaskTitle
+            .toLowerCase()
+            .replace(/[^\w\s]/g, ' ')
+            .split(/\s+/)
+            .filter(w => w.length >= 3);
+        const hasFuzzyMatch = titleWords.some(word => t.includes(word));
+        if (hasFuzzyMatch) {
+            return length <= 120;
+        }
+    }
+
+    if (length >= 60) return false;
+    return FOLLOWUP_PRONOUNS.test(t) || FOLLOWUP_TIME_SHIFTS.test(t);
 }
 
 /**

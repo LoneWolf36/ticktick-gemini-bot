@@ -15,6 +15,7 @@ import {
     buildPendingDataFromAction,
     formatPipelineFailure,
     retryWithBackoff,
+    isFollowUpMessage,
 } from './utils.js';
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
@@ -58,7 +59,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         .text('📈 Status', 'menu:status');
 
     const reorgKeyboard = () => new InlineKeyboard()
-        .text('✅ Apply Reorg', 'reorg:apply')
+        .text('Apply Reorg', 'reorg:apply')
         .text('🛠️ Refine', 'reorg:refine')
         .row()
         .text('❌ Cancel', 'reorg:cancel');
@@ -78,10 +79,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             byType[type].push(title);
         });
 
-        const typeEmoji = { update: '✏️', drop: '⚪', create: '✨', complete: '✅' };
         for (const [type, titles] of Object.entries(byType)) {
-            const emoji = typeEmoji[type] || '•';
-            lines.push(`\n**${emoji} ${type} (${titles.length})**`);
+            lines.push(`\n**${type} (${titles.length})**`);
             titles.slice(0, 5).forEach(t => lines.push(`  • ${t}`));
             if (titles.length > 5) lines.push(`  ...+${titles.length - 5} more`);
         }
@@ -242,22 +241,24 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             );
             return;
         }
+        await store.clearCurrentReviewSession(ctx.chat.id);
         await store.resetAll();
-        let backendCount = 0;
+        let backendCount = null;
         try {
             const activeTasks = await adapter.listActiveTasks(true);
             backendCount = activeTasks.length;
         } catch (err) {
             console.error('Reset: failed to fetch backend count:', err.message);
         }
-        await ctx.reply(`🗑️ Local review state cleared. TickTick still has ${backendCount} active task(s).`);
+        const backendText = backendCount === null ? 'unavailable' : `${backendCount} active task(s)`;
+        await ctx.reply(`Local review state cleared. TickTick: ${backendText}.`);
     });
 
     // ─── /status ──────────────────────────────────────────────
     async function cmdStatus(ctx) {
         if (!await guardAccess(ctx)) return;
 
-        let backendCount = 0;
+        let backendCount = null;
         try {
             const activeTasks = await adapter.listActiveTasks(true);
             backendCount = activeTasks.length;
@@ -269,10 +270,31 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const stats = snapshot.cumulative;
         const local = snapshot.localWorkflow;
 
+        const deferredIntents = store.getDeferredPipelineIntents();
+        const failedDeferred = store.getFailedDeferredIntents();
+        const pendingRetry = deferredIntents.length;
+        const failedPermanently = failedDeferred.length;
+        let nextRetryText = '—';
+        if (pendingRetry > 0) {
+            const oldest = deferredIntents
+                .filter(e => typeof e.nextAttemptAt === 'number')
+                .sort((a, b) => a.nextAttemptAt - b.nextAttemptAt)[0];
+            if (oldest) {
+                const seconds = Math.max(0, Math.ceil((oldest.nextAttemptAt - Date.now()) / 1000));
+                if (seconds <= 0) {
+                    nextRetryText = 'now';
+                } else if (seconds < 60) {
+                    nextRetryText = `in ${seconds}s`;
+                } else {
+                    nextRetryText = `in ${Math.ceil(seconds / 60)}m`;
+                }
+            }
+        }
+
         const lines = [
             '**📊 System Status**\n',
             '**Backend Snapshot**',
-            `Active tasks in TickTick: ${backendCount}`,
+            `Active tasks in TickTick: ${backendCount === null ? 'unavailable' : backendCount}`,
             '',
             '**Local Workflow**',
             `Pending review: ${local.pendingReview}`,
@@ -280,13 +302,18 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             `Deferred intents: ${local.deferredIntents}`,
             `Clarifications waiting: ${local.clarifications}`,
             '',
+            '**Deferred Queue**',
+            `Pending retry: ${pendingRetry} items`,
+            `Next retry: ${nextRetryText}`,
+            `Failed permanently: ${failedPermanently} items`,
+            '',
             '**Cumulative Stats**',
             `Analyzed: ${stats.tasksAnalyzed}  |  Approved: ${stats.tasksApproved}`,
             `Skipped: ${stats.tasksSkipped}  |  Dropped: ${stats.tasksDropped}`,
             `Auto-applied: ${stats.tasksAutoApplied || 0}`,
             '',
             '**Connection**',
-            `TickTick: ${ticktick.isAuthenticated() ? '✅ Connected' : '❌ Not connected'}`,
+            `TickTick: ${ticktick.isAuthenticated() ? 'Connected' : '❌ Not connected'}`,
         ];
 
         const keyInfo = gemini.activeKeyInfo?.();
@@ -477,7 +504,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     }
                 );
                 await store.clearPendingReorg();
-                let msg = `✅ **Reorg applied.**\n\n${outcomes.join('\n') || 'No actions were applied.'}`;
+                let msg = `**Reorg applied.**\n\n${outcomes.join('\n') || 'No actions were applied.'}`;
                 if (hasUndoableActions) msg += '\n\nRun /undo to revert the last change.';
                 await replyWithMarkdown(ctx, truncateMessage(msg, 4000));
             } catch (err) {
@@ -501,8 +528,9 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
         if (!store.tryAcquireIntakeLock()) { await ctx.reply('⏳ A scan or poll is already running.'); return; }
 
+        let backgroundPromise = Promise.resolve();
         try {
-            await ctx.reply('🔍 Scanning for new tasks...');
+            await store.clearCurrentReviewSession(ctx.chat.id);
             const allTasks = await adapter.listActiveTasks(true);
 
             const { removedPending, removedFailed } = await store.reconcileTaskState(allTasks);
@@ -515,20 +543,21 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
-                await ctx.reply('No new tasks found.');
+                await ctx.reply('No tasks to review.');
                 return;
             }
 
             const batch = targetTasks.slice(0, availableSlots);
-            await ctx.reply(`📬 Found ${targetTasks.length} new task(s). Processing first ${batch.length} through pipeline...`);
+            let firstQueuedTask = null;
+            let firstQueuedAction = null;
+            let firstQueuedPendingData = null;
+            let quotaExhausted = false;
 
-            let confirmations = [];
-            let failed = 0;
-
-            for (const task of batch) {
+            // Phase 1: process first task synchronously and show card immediately
+            if (batch.length > 0) {
+                const task = batch[0];
                 try {
                     const userMessage = task.title + (task.content ? `\n${task.content}` : '');
-
                     const result = await retryWithBackoff(() => processPipelineMessage(userMessage, {
                         existingTask: task,
                         entryPoint: 'telegram:scan',
@@ -538,94 +567,101 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         dryRun: true,
                     }));
 
-                    if (result.type === 'error') {
-                        if (result.failure?.class === 'quota') {
-                            const remaining = batch.slice(batch.indexOf(task));
-                            for (const t of remaining) {
-                                await store.markTaskFailed(t.id, 'quota_exhausted', 30 * 60 * 1000);
-                            }
-                            confirmations.push(`\n⚠️ AI quota exhausted. Stopping batch.`);
-                            break;
-                        }
-                        failed++;
-                        await store.markTaskFailed(task.id, result.failure?.summary || 'pipeline_error');
-                        confirmations.push(`❌ ${task.title}: ${formatPipelineFailure(result, { compact: true })}`);
-                    } else if (result.type === 'task') {
+                    if (result.type === 'task') {
                         const action = result.actions?.[0];
-                        if (!action) {
-                            await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
-                            confirmations.push(`💭 No changes suggested: ${task.title}`);
-                        } else {
+                        if (action) {
                             const pendingData = buildPendingDataFromAction(task, action, availableProjects);
                             await store.markTaskPending(task.id, pendingData);
-
-                            const card = buildTaskCardFromAction(task, action, availableProjects);
-                            await replyWithMarkdown(ctx, `[Preview]\n\n${card}`, { reply_markup: taskReviewKeyboard(task.id, pendingData.actionType) });
-                            await sleep(1000);
-
-                            confirmations.push(`📋 Queued for review: ${task.title}`);
+                            firstQueuedTask = task;
+                            firstQueuedAction = action;
+                            firstQueuedPendingData = pendingData;
+                        } else {
+                            await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
                         }
+                    } else if (result.type === 'error' && result.failure?.class === 'quota') {
+                        quotaExhausted = true;
+                        for (const t of batch.slice(1)) {
+                            await store.markTaskFailed(t.id, 'quota_exhausted', 30 * 60 * 1000);
+                        }
+                    } else if (result.type === 'error') {
+                        await store.markTaskFailed(task.id, result.failure?.summary || 'pipeline_error');
                     } else if (result.type === 'clarification') {
-                        failed++;
                         await store.markTaskFailed(task.id, 'clarification_needed');
-                        confirmations.push(`❓ ${task.title}: Needs clarification — ${result.clarification?.reason || 'ambiguous'}`);
                     } else if (result.type === 'non-task') {
                         await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
-                        confirmations.push(`💭 Ignored (not actionable): ${task.title}`);
                     } else {
-                        failed++;
                         await store.markTaskFailed(task.id, `unknown_result_type: ${result.type}`);
-                        confirmations.push(`❓ ${task.title}: Unexpected result type (${result.type})`);
                     }
                 } catch (err) {
                     if (err.message.includes('quota') || err.message === 'All API keys exhausted') {
-                        const remaining = batch.slice(batch.indexOf(task));
-                        for (const t of remaining) {
+                        quotaExhausted = true;
+                        for (const t of batch.slice(1)) {
                             await store.markTaskFailed(t.id, 'quota_exhausted', 30 * 60 * 1000);
                         }
-                        confirmations.push(`\n⚠️ AI quota exhausted. Stopping batch.`);
-                        break;
+                    } else {
+                        await store.markTaskFailed(task.id, err.message);
                     }
-                    failed++;
-                    await store.markTaskFailed(task.id, err.message);
-                    confirmations.push(`❌ Failed analyzing ${task.title}: ${err.message}`);
                 }
-                await sleep(3000); // Respect rate limits
             }
 
-            const queuedCount = confirmations.filter(c => c.startsWith('📋')).length;
-            const failedCount = confirmations.filter(c => c.startsWith('❌')).length;
-            const ignoredCount = confirmations.filter(c => c.startsWith('💭')).length;
-            const parkedCount = confirmations.filter(c => c.startsWith('\n⚠️')).length;
-
-            const lines = [];
-            if (queuedCount > 0) {
-                lines.push(`📋 **[Preview] ${queuedCount} task(s) queued for review.** Tap ✅ Apply changes or ⏭ Keep original on each card above.`);
-            }
-            if (failedCount > 0) {
-                lines.push(`❌ ${failedCount} failed or need clarification.`);
-            }
-            if (ignoredCount > 0) {
-                lines.push(`💭 ${ignoredCount} ignored (not actionable).`);
-            }
-            if (parkedCount > 0) {
-                lines.push(`📝 ${parkedCount} parked for retry (quota exhausted).`);
-            }
-
-            if (targetTasks.length > availableSlots) {
-                lines.push(`\n📝 ${targetTasks.length - availableSlots} more remain. Run /scan again after reviewing.`);
-            }
-
-            if (lines.length > 0) {
-                const doneMsg = lines.join('\n');
-                if (targetTasks.length > availableSlots) {
-                    const nextKeyboard = new InlineKeyboard().text('🔄 Continue', 'menu:scan');
-                    await replyWithMarkdown(ctx, doneMsg.trim(), { reply_markup: nextKeyboard });
-                } else {
-                    await replyWithMarkdown(ctx, doneMsg.trim());
-                }
+            if (firstQueuedTask) {
+                const card = buildTaskCardFromAction(firstQueuedTask, firstQueuedAction, availableProjects);
+                const summaryLine = `${allTasks.length} active in TickTick · ${targetTasks.length} unreviewed locally · Showing next`;
+                const msg = await replyWithMarkdown(ctx, `${summaryLine}\n\n${card}\n\n_(Preview — not yet applied)_`, { reply_markup: taskReviewKeyboard(firstQueuedTask.id, firstQueuedPendingData.actionType) });
+                await store.setCurrentReviewSession(ctx.chat.id, {
+                    messageId: msg.message_id,
+                    chatId: ctx.chat.id,
+                    source: 'scan',
+                    startedAt: new Date().toISOString(),
+                    startingProcessedCount: store.getProcessedCount(),
+                    totalTasks: targetTasks.length,
+                });
             } else {
-                await ctx.reply('Scan complete. No tasks to review.');
+                await ctx.reply('No tasks to review.');
+            }
+
+            // Phase 2: background processing for remaining tasks
+            if (batch.length > 1 && !quotaExhausted) {
+                const remainingTasks = batch.slice(1);
+                backgroundPromise = (async () => {
+                    try {
+                        for (const task of remainingTasks) {
+                            try {
+                                const userMessage = task.title + (task.content ? `\n${task.content}` : '');
+                                const result = await retryWithBackoff(() => processPipelineMessage(userMessage, {
+                                    existingTask: task,
+                                    entryPoint: 'telegram:scan',
+                                    mode: 'scan',
+                                    availableProjects,
+                                    workStyleMode,
+                                    dryRun: true,
+                                }));
+                                if (result.type === 'task') {
+                                    const action = result.actions?.[0];
+                                    if (action) {
+                                        const pendingData = buildPendingDataFromAction(task, action, availableProjects);
+                                        await store.markTaskPending(task.id, pendingData);
+                                    } else {
+                                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                                    }
+                                } else if (result.type === 'error') {
+                                    await store.markTaskFailed(task.id, result.failure?.summary || 'pipeline_error');
+                                } else if (result.type === 'clarification') {
+                                    await store.markTaskFailed(task.id, 'clarification_needed');
+                                } else if (result.type === 'non-task') {
+                                    await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                                } else {
+                                    await store.markTaskFailed(task.id, `unknown_result_type: ${result.type}`);
+                                }
+                            } catch (err) {
+                                await store.markTaskFailed(task.id, err.message);
+                            }
+                            await sleep(1000);
+                        }
+                    } catch (bgErr) {
+                        console.error(`[ScanBackground] error: ${bgErr.message}`);
+                    }
+                })();
             }
 
         } catch (err) {
@@ -636,6 +672,11 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 await ctx.reply(`❌ Scan error: ${err.message}`);
             }
         } finally {
+            try {
+                await backgroundPromise;
+            } catch (bgAwaitErr) {
+                console.error(`[ScanBackground] await error: ${bgAwaitErr.message}`);
+            }
             store.releaseIntakeLock();
         }
     };
@@ -646,23 +687,30 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const pendingCount = store.getPendingCount();
 
         if (pendingCount === 0) {
-            await ctx.reply('No pending tasks. Everything has been reviewed.');
+            await ctx.reply('No tasks pending review.');
             return;
         }
 
-        await ctx.reply(`⏳ You have ${pendingCount} task(s) awaiting review. Re-sending...`);
+        await store.clearCurrentReviewSession(ctx.chat.id);
+        await ctx.reply(`${pendingCount} tasks awaiting your review. Approve or skip each one.`);
 
-        const batch = store.getPendingBatch({ limit: 5, sortBy: 'sentAt' });
-        for (const [taskId, data] of batch) {
+        const next = store.getNextPendingTask();
+        if (next) {
+            const [taskId, data] = next;
             const analysis = pendingToAnalysis(data);
             const card = buildTaskCard({ title: data.originalTitle, projectName: data.projectName }, analysis);
-            await replyWithMarkdown(ctx, card, { reply_markup: taskReviewKeyboard(taskId, data.actionType) });
-            await sleep(1000);
+            const msg = await replyWithMarkdown(ctx, card, { reply_markup: taskReviewKeyboard(taskId, data.actionType) });
+            await store.setCurrentReviewSession(ctx.chat.id, {
+                messageId: msg.message_id,
+                chatId: ctx.chat.id,
+                source: 'pending',
+                startedAt: new Date().toISOString(),
+                totalTasks: pendingCount,
+            });
         }
 
-        if (pendingCount > 5) {
-            const nextKeyboard = new InlineKeyboard().text('🔄 Continue', 'menu:pending');
-            await ctx.reply(`📝 Sent 5 of ${pendingCount}.`, { reply_markup: nextKeyboard });
+        if (pendingCount > 1) {
+            await ctx.reply(`📝 ${pendingCount - 1} more task(s) after this one.`);
         }
     };
 
@@ -708,7 +756,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     await replyWithMarkdown(ctx,
                         `↩️ **Reverted ${reverted.length} auto-applied change(s):**\n` +
                         reverted.map(t => `• "${t}"`).join('\n') +
-                        '\n\n✅ All tasks restored to their original state.');
+                        '\n\nAll tasks restored to their original state.');
                     console.log(`[UNDO] Reverted batch of ${reverted.length} auto-apply changes at ${new Date().toISOString()}`);
                     return;
                 }
@@ -738,7 +786,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             if (last.appliedSchedule) {
                 lines.push(`  Schedule: ${last.appliedSchedule} → removed`);
             }
-            lines.push('\n✅ Task restored to its original state.');
+            lines.push('\nTask restored to its original state.');
             await replyWithMarkdown(ctx, lines.join('\n'));
 
             console.log(`[UNDO] Reverted "${last.originalTitle}" (${last.action}) at ${new Date().toISOString()}`);
@@ -929,8 +977,9 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
         if (!store.tryAcquireIntakeLock()) { await ctx.reply('⏳ A scan or poll is already running.'); return; }
 
+        let backgroundPromise = Promise.resolve();
         try {
-            await ctx.reply('📋 Checking for unreviewed tasks...');
+            await store.clearCurrentReviewSession(ctx.chat.id);
             const allTasks = await adapter.listActiveTasks(true);
 
             const { removedPending, removedFailed } = await store.reconcileTaskState(allTasks);
@@ -942,21 +991,23 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
-                await ctx.reply('All tasks reviewed.');
+                await ctx.reply('No tasks to review.');
                 return;
             }
 
             const batch = targetTasks.slice(0, availableSlots);
-            await ctx.reply(`📬 ${targetTasks.length} task(s) to review. Processing ${batch.length} through pipeline...`);
             const workStyleMode = await resolveCurrentWorkStyleMode(ctx);
 
-            let confirmations = [];
-            let failed = 0;
+            let firstQueuedTask = null;
+            let firstQueuedAction = null;
+            let firstQueuedPendingData = null;
+            let quotaExhausted = false;
 
-            for (const task of batch) {
+            // Phase 1: process first task synchronously and show card immediately
+            if (batch.length > 0) {
+                const task = batch[0];
                 try {
                     const userMessage = task.title + (task.content ? `\n${task.content}` : '');
-
                     const result = await retryWithBackoff(() => processPipelineMessage(userMessage, {
                         existingTask: task,
                         entryPoint: 'telegram:review',
@@ -966,94 +1017,101 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         dryRun: true,
                     }));
 
-                    if (result.type === 'error') {
-                        if (result.failure?.class === 'quota') {
-                            const remaining = batch.slice(batch.indexOf(task));
-                            for (const t of remaining) {
-                                await store.markTaskFailed(t.id, 'quota_exhausted', 30 * 60 * 1000);
-                            }
-                            confirmations.push(`\n⚠️ AI quota exhausted. Stopping batch.`);
-                            break;
-                        }
-                        failed++;
-                        await store.markTaskFailed(task.id, result.failure?.summary || 'pipeline_error');
-                        confirmations.push(`❌ ${task.title}: ${formatPipelineFailure(result, { compact: true })}`);
-                    } else if (result.type === 'task') {
+                    if (result.type === 'task') {
                         const action = result.actions?.[0];
-                        if (!action) {
-                            await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
-                            confirmations.push(`💭 No changes suggested: ${task.title}`);
-                        } else {
+                        if (action) {
                             const pendingData = buildPendingDataFromAction(task, action, availableProjects);
                             await store.markTaskPending(task.id, pendingData);
-
-                            const card = buildTaskCardFromAction(task, action, availableProjects);
-                            await replyWithMarkdown(ctx, `[Preview]\n\n${card}`, { reply_markup: taskReviewKeyboard(task.id, pendingData.actionType) });
-                            await sleep(1000);
-
-                            confirmations.push(`📋 Queued for review: ${task.title}`);
+                            firstQueuedTask = task;
+                            firstQueuedAction = action;
+                            firstQueuedPendingData = pendingData;
+                        } else {
+                            await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
                         }
+                    } else if (result.type === 'error' && result.failure?.class === 'quota') {
+                        quotaExhausted = true;
+                        for (const t of batch.slice(1)) {
+                            await store.markTaskFailed(t.id, 'quota_exhausted', 30 * 60 * 1000);
+                        }
+                    } else if (result.type === 'error') {
+                        await store.markTaskFailed(task.id, result.failure?.summary || 'pipeline_error');
                     } else if (result.type === 'clarification') {
-                        failed++;
                         await store.markTaskFailed(task.id, 'clarification_needed');
-                        confirmations.push(`❓ ${task.title}: Needs clarification — ${result.clarification?.reason || 'ambiguous'}`);
                     } else if (result.type === 'non-task') {
                         await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
-                        confirmations.push(`💭 Ignored (not actionable): ${task.title}`);
                     } else {
-                        failed++;
                         await store.markTaskFailed(task.id, `unknown_result_type: ${result.type}`);
-                        confirmations.push(`❓ ${task.title}: Unexpected result type (${result.type})`);
                     }
                 } catch (err) {
                     if (err.message.includes('quota') || err.message === 'All API keys exhausted') {
-                        const remaining = batch.slice(batch.indexOf(task));
-                        for (const t of remaining) {
+                        quotaExhausted = true;
+                        for (const t of batch.slice(1)) {
                             await store.markTaskFailed(t.id, 'quota_exhausted', 30 * 60 * 1000);
                         }
-                        confirmations.push(`\n⚠️ AI quota exhausted. Stopping batch.`);
-                        break;
+                    } else {
+                        await store.markTaskFailed(task.id, err.message);
                     }
-                    failed++;
-                    await store.markTaskFailed(task.id, err.message);
-                    confirmations.push(`❌ Failed analyzing ${task.title}: ${err.message}`);
                 }
-                await sleep(2500); // Respect rate limits
             }
 
-            const queuedCount = confirmations.filter(c => c.startsWith('📋')).length;
-            const failedCount = confirmations.filter(c => c.startsWith('❌')).length;
-            const ignoredCount = confirmations.filter(c => c.startsWith('💭')).length;
-            const parkedCount = confirmations.filter(c => c.startsWith('\n⚠️')).length;
-
-            const lines = [];
-            if (queuedCount > 0) {
-                lines.push(`📋 **[Preview] ${queuedCount} task(s) queued for review.** Tap ✅ Apply changes or ⏭ Keep original on each card above.`);
-            }
-            if (failedCount > 0) {
-                lines.push(`❌ ${failedCount} failed or need clarification.`);
-            }
-            if (ignoredCount > 0) {
-                lines.push(`💭 ${ignoredCount} ignored (not actionable).`);
-            }
-            if (parkedCount > 0) {
-                lines.push(`📝 ${parkedCount} parked for retry (quota exhausted).`);
-            }
-
-            if (targetTasks.length > availableSlots) {
-                lines.push(`\n📝 ${targetTasks.length - availableSlots} more remain. Run /review again after reviewing.`);
-            }
-
-            if (lines.length > 0) {
-                const doneMsg = lines.join('\n');
-                if (targetTasks.length > availableSlots) {
-                    const nextKeyboard = new InlineKeyboard().text('🔄 Continue', 'menu:review');
-                    await replyWithMarkdown(ctx, doneMsg.trim(), { reply_markup: nextKeyboard });
-                } else {
-                    await replyWithMarkdown(ctx, doneMsg.trim());
-                }
+            if (firstQueuedTask) {
+                const card = buildTaskCardFromAction(firstQueuedTask, firstQueuedAction, availableProjects);
+                const summaryLine = `${allTasks.length} active in TickTick · ${targetTasks.length} unreviewed locally · Showing next`;
+                const msg = await replyWithMarkdown(ctx, `${summaryLine}\n\n${card}\n\n_(Preview — not yet applied)_`, { reply_markup: taskReviewKeyboard(firstQueuedTask.id, firstQueuedPendingData.actionType) });
+                await store.setCurrentReviewSession(ctx.chat.id, {
+                    messageId: msg.message_id,
+                    chatId: ctx.chat.id,
+                    source: 'review',
+                    startedAt: new Date().toISOString(),
+                    startingProcessedCount: store.getProcessedCount(),
+                    totalTasks: targetTasks.length,
+                });
             } else {
-                await ctx.reply('Review complete. No tasks to review.');
+                await ctx.reply('No tasks to review.');
+            }
+
+            // Phase 2: background processing for remaining tasks
+            if (batch.length > 1 && !quotaExhausted) {
+                const remainingTasks = batch.slice(1);
+                backgroundPromise = (async () => {
+                    try {
+                        for (const task of remainingTasks) {
+                            try {
+                                const userMessage = task.title + (task.content ? `\n${task.content}` : '');
+                                const result = await retryWithBackoff(() => processPipelineMessage(userMessage, {
+                                    existingTask: task,
+                                    entryPoint: 'telegram:review',
+                                    mode: 'review',
+                                    availableProjects,
+                                    workStyleMode,
+                                    dryRun: true,
+                                }));
+                                if (result.type === 'task') {
+                                    const action = result.actions?.[0];
+                                    if (action) {
+                                        const pendingData = buildPendingDataFromAction(task, action, availableProjects);
+                                        await store.markTaskPending(task.id, pendingData);
+                                    } else {
+                                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                                    }
+                                } else if (result.type === 'error') {
+                                    await store.markTaskFailed(task.id, result.failure?.summary || 'pipeline_error');
+                                } else if (result.type === 'clarification') {
+                                    await store.markTaskFailed(task.id, 'clarification_needed');
+                                } else if (result.type === 'non-task') {
+                                    await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                                } else {
+                                    await store.markTaskFailed(task.id, `unknown_result_type: ${result.type}`);
+                                }
+                            } catch (err) {
+                                await store.markTaskFailed(task.id, err.message);
+                            }
+                            await sleep(1000);
+                        }
+                    } catch (bgErr) {
+                        console.error(`[ReviewBackground] error: ${bgErr.message}`);
+                    }
+                })();
             }
 
         } catch (err) {
@@ -1064,6 +1122,11 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 await ctx.reply(`❌ Review error: ${err.message}`);
             }
         } finally {
+            try {
+                await backgroundPromise;
+            } catch (bgAwaitErr) {
+                console.error(`[ReviewBackground] await error: ${bgAwaitErr.message}`);
+            }
             store.releaseIntakeLock();
         }
     };
@@ -1072,7 +1135,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     bot.on('message:text', async (ctx) => {
         if (!isAuthorized(ctx)) return;
         // Skip commands (Grammy routes them first, but just in case)
-        const pendingRefinement = store.getPendingTaskRefinement();
+        let pendingRefinement = store.getPendingTaskRefinement();
         if (pendingRefinement && ctx.message.text.startsWith('/')) {
             await store.clearPendingTaskRefinement();
             await ctx.reply('Refinement cancelled — running your command.');
@@ -1080,6 +1143,11 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         if (ctx.message.text.startsWith('/')) return;
         const rawText = ctx.message.text.trim();
         if (!rawText) return;
+
+        const userId = ctx.from?.id;
+        if (userId) {
+            await store.getWorkStyleMode(userId, { notify: (msg) => ctx.reply(msg).catch(() => {}) });
+        }
 
         const freeformModeIntent = detectWorkStyleModeIntent(rawText);
         if (freeformModeIntent?.type === 'clarify_work_style_mode') {
@@ -1102,48 +1170,69 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
         const userMessage = rawText;
 
-        const pendingRefinementId = store.getPendingTaskRefinement();
-        if (pendingRefinementId) {
-            const data = store.getPendingTasks()[pendingRefinementId];
-            if (data) {
-                await store.clearPendingTaskRefinement();
-                await ctx.reply(`🧠 Applying refinements to "${data.originalTitle}"...`);
-                try {
-                    const availableProjects = await adapter.listProjects();
-                    const workStyleMode = await resolveCurrentWorkStyleMode(ctx);
-                    
-                    // We need a complete TickTick task object for the pipeline
-                    const existingTask = {
-                        id: pendingRefinementId,
-                        title: data.originalTitle,
-                        content: data.originalContent,
-                        projectId: data.originalProjectId,
-                        priority: data.originalPriority
-                    };
+        pendingRefinement = store.getPendingTaskRefinement();
+        if (pendingRefinement?.taskId) {
+            const isReplyToForceReply = pendingRefinement.mode === 'force_reply'
+                && ctx.message?.reply_to_message?.message_id === pendingRefinement.forceReplyMessageId;
+            const isOldStyleRefinement = !pendingRefinement.mode || pendingRefinement.mode !== 'force_reply';
 
-                    const result = await processPipelineMessage(userMessage, {
-                        existingTask,
-                        entryPoint: 'telegram:refine',
-                        mode: 'interactive',
-                        availableProjects,
-                        workStyleMode,
-                    });
+            if (isReplyToForceReply || isOldStyleRefinement) {
+                const pendingRefinementId = pendingRefinement.taskId;
+                const data = store.getPendingTasks()[pendingRefinementId];
+                if (data) {
+                    await store.clearPendingTaskRefinement();
+                    try {
+                        const availableProjects = await adapter.listProjects();
+                        const workStyleMode = await resolveCurrentWorkStyleMode(ctx);
 
-                    if (result.type === 'error') {
-                        await ctx.reply(formatPipelineFailure(result));
-                    } else if (result.type === 'task') {
-                        await store.markTaskProcessed(pendingRefinementId, { originalTitle: data.originalTitle, autoApplied: true });
-                        const text = result.dryRun ? `[Preview] ${result.confirmationText}` : result.confirmationText;
-                        await replyWithMarkdown(ctx, truncateMessage(`Refined:\n\n${text}`, 4000));
-                    } else {
-                        await ctx.reply(result.confirmationText || 'Done.');
+                        // We need a complete TickTick task object for the pipeline
+                        const existingTask = {
+                            id: pendingRefinementId,
+                            title: data.originalTitle,
+                            content: data.originalContent,
+                            projectId: data.originalProjectId,
+                            priority: data.originalPriority
+                        };
+
+                        const result = await processPipelineMessage(userMessage, {
+                            existingTask,
+                            entryPoint: 'telegram:refine',
+                            mode: 'interactive',
+                            availableProjects,
+                            workStyleMode,
+                        });
+
+                        if (result.type === 'error') {
+                            await ctx.reply(formatPipelineFailure(result));
+                        } else if (result.type === 'task') {
+                            await store.markTaskProcessed(pendingRefinementId, { originalTitle: data.originalTitle, autoApplied: true });
+                            const text = result.dryRun ? `${result.confirmationText} (preview)` : result.confirmationText;
+                            await replyWithMarkdown(ctx, truncateMessage(`Refined "${data.originalTitle}":\n\n${text}`, 4000));
+
+                            // Store recent task context
+                            if (userId) {
+                                await store.setRecentTaskContext(userId, {
+                                    taskId: pendingRefinementId,
+                                    title: data.originalTitle,
+                                    projectId: data.originalProjectId,
+                                    content: data.originalContent || undefined,
+                                    source: 'refine:applied',
+                                });
+                            }
+                        } else {
+                            await ctx.reply(result.confirmationText || 'Done.');
+                        }
+                    } catch (err) {
+                        await ctx.reply(`❌ Refinement error: ${err.message}`);
                     }
-                } catch (err) {
-                    await ctx.reply(`❌ Refinement error: ${err.message}`);
+                    return;
+                } else {
+                    await store.clearPendingTaskRefinement();
                 }
-                return;
             } else {
+                // Non-reply message while force_reply refinement is pending — cancel and process normally
                 await store.clearPendingTaskRefinement();
+                await ctx.reply('Refinement cancelled.');
             }
         }
 
@@ -1201,8 +1290,18 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         workStyleMode,
                     });
                     if (result.type === 'task') {
-                        const text = result.dryRun ? `[Preview] ${result.confirmationText}` : result.confirmationText;
+                        const text = result.dryRun ? `${result.confirmationText} (preview)` : result.confirmationText;
                         await replyWithMarkdown(ctx, truncateMessage(text, 4000));
+                        if (userId && result.actions?.[0]) {
+                            const action = result.actions[0];
+                            await store.setRecentTaskContext(userId, {
+                                taskId: action.type === 'create' ? (result.results?.[0]?.result?.id || 'unknown') : (action.taskId || 'unknown'),
+                                title: result.results?.[0]?.result?.title || action.title || 'Task',
+                                projectId: action.projectId,
+                                content: result.results?.[0]?.result?.content || action.content || undefined,
+                                source: 'checklist:create',
+                            });
+                        }
                     } else if (result.type === 'error') {
                         await ctx.reply(formatPipelineFailure(result));
                     } else {
@@ -1221,8 +1320,18 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         workStyleMode,
                     });
                     if (result.type === 'task') {
-                        const text = result.dryRun ? `[Preview] ${result.confirmationText}` : result.confirmationText;
+                        const text = result.dryRun ? `${result.confirmationText} (preview)` : result.confirmationText;
                         await replyWithMarkdown(ctx, truncateMessage(text, 4000));
+                        if (userId && result.actions?.[0]) {
+                            const action = result.actions[0];
+                            await store.setRecentTaskContext(userId, {
+                                taskId: action.type === 'create' ? (result.results?.[0]?.result?.id || 'unknown') : (action.taskId || 'unknown'),
+                                title: result.results?.[0]?.result?.title || action.title || 'Task',
+                                projectId: action.projectId,
+                                content: result.results?.[0]?.result?.content || action.content || undefined,
+                                source: 'checklist:create',
+                            });
+                        }
                     } else if (result.type === 'error') {
                         await ctx.reply(formatPipelineFailure(result));
                     } else {
@@ -1241,8 +1350,17 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     workStyleMode,
                 });
                 if (result.type === 'task') {
-                    const text = result.dryRun ? `[Preview] ${result.confirmationText}` : result.confirmationText;
+                    const text = result.dryRun ? `${result.confirmationText} (preview)` : result.confirmationText;
                     await replyWithMarkdown(ctx, truncateMessage(text, 4000));
+                    if (userId && result.actions?.[0]) {
+                        const action = result.actions[0];
+                        await store.setRecentTaskContext(userId, {
+                            taskId: action.type === 'create' ? (result.results?.[0]?.result?.id || 'unknown') : (action.taskId || 'unknown'),
+                            title: action.title || 'Task',
+                            projectId: action.projectId,
+                            source: 'checklist:create',
+                        });
+                    }
                 } else if (result.type === 'error') {
                     await ctx.reply(formatPipelineFailure(result));
                 } else {
@@ -1251,15 +1369,82 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 return;
             }
 
-            const result = await processPipelineMessage(userMessage, {
+            // Follow-up detection: bind short/pronoun messages to recently discussed task
+            let pipelineOptions = {
                 entryPoint: 'telegram:freeform',
                 mode: 'interactive',
                 workStyleMode: await resolveCurrentWorkStyleMode(ctx),
-            });
+            };
+            let recentTask = null;
+            if (userId && !pipelineOptions.existingTask) {
+                recentTask = store.getRecentTaskContext(userId);
+                if (isFollowUpMessage(userMessage, recentTask?.title || null)) {
+                    if (recentTask) {
+                        await ctx.reply(`Applying to "${recentTask.title}"...`);
+                        pipelineOptions.existingTask = {
+                            id: recentTask.taskId,
+                            title: recentTask.title,
+                            projectId: recentTask.projectId,
+                        };
+                    }
+                }
+            }
+
+            const result = await processPipelineMessage(userMessage, pipelineOptions);
 
             if (result.type === 'task') {
-                const text = result.dryRun ? `[Preview] ${result.confirmationText}` : result.confirmationText;
+                let text = result.dryRun ? `${result.confirmationText} (preview)` : result.confirmationText;
+                const diffLines = [];
+                for (const record of result.results || []) {
+                    if (record.status === 'succeeded' && record.action?.type === 'update') {
+                        const snapshot = record.rollbackStep?.payload?.snapshot;
+                        const oldTitle = snapshot?.title || 'Task';
+                        const newTitle = record.action.title;
+                        if (newTitle && newTitle !== oldTitle) {
+                            diffLines.push(`Updated: "${oldTitle}" → "${newTitle}"`);
+                        } else {
+                            const changedFields = [];
+                            if (record.action.content && record.action.content !== snapshot?.content) changedFields.push('content');
+                            if (record.action.dueDate && record.action.dueDate !== snapshot?.dueDate) changedFields.push('due date');
+                            if (record.action.priority !== undefined && record.action.priority !== snapshot?.priority) changedFields.push('priority');
+                            if (record.action.projectId && record.action.projectId !== snapshot?.projectId) changedFields.push('project');
+                            if (changedFields.length > 0) {
+                                diffLines.push(`Updated "${oldTitle}": ${changedFields.join(', ')} changed`);
+                            }
+                        }
+                    }
+                }
+                if (diffLines.length > 0) {
+                    text += '\n\n' + diffLines.join('\n');
+                }
+                if (result.results?.[0]?.result?.verified === false) {
+                    text += '\n\n_(Warning: TickTick may not reflect this change yet.)_';
+                }
                 await replyWithMarkdown(ctx, truncateMessage(text, 4000));
+
+                // Store recent task context after successful create/update/complete/delete
+                if (userId) {
+                    const action = result.actions?.[0];
+                    if (action) {
+                        if (action.type === 'create' && action.title) {
+                            await store.setRecentTaskContext(userId, {
+                                taskId: result.results?.[0]?.result?.id || 'unknown',
+                                title: action.title,
+                                content: result.results?.[0]?.result?.content || action.content || undefined,
+                                projectId: action.projectId,
+                                source: 'freeform:create',
+                            });
+                        } else if (['update', 'complete', 'delete'].includes(action.type) && action.taskId) {
+                            await store.setRecentTaskContext(userId, {
+                                taskId: action.taskId,
+                                title: result.results?.[0]?.result?.title || action.title || 'Task',
+                                content: result.results?.[0]?.result?.content || action.content || undefined,
+                                projectId: action.projectId,
+                                source: `freeform:${action.type}`,
+                            });
+                        }
+                    }
+                }
             } else if (result.type === 'non-task') {
                 // Fall back to conversational handling if no intent extracted
                 if (gemini.isQuotaExhausted()) {
@@ -1458,7 +1643,7 @@ export async function executeActions(actions, adapter, currentTasks, options = {
 
     const resolveDueDate = (value, explicitPriority) => {
         if (!value) return null;
-        const priorityLabel = explicitPriority === 5 ? 'career-critical' : explicitPriority === 1 ? 'life-admin' : 'important';
+        const priorityLabel = explicitPriority === 5 ? 'core_goal' : explicitPriority === 1 ? 'life-admin' : 'important';
         return scheduleToDate(value, { priorityLabel }) || parseDateStringToTickTickISO(value, { priorityLabel, slotMode: 'priority' });
     };
 
@@ -1474,7 +1659,7 @@ export async function executeActions(actions, adapter, currentTasks, options = {
                     if (safeDueDate) createPayload.dueDate = safeDueDate;
 
                     await adapter.createTask(createPayload);
-                    outcomes.push(`✅ Created: "${changes.title}"`);
+                    outcomes.push(`Created: "${changes.title}"`);
                 } else {
                     outcomes.push(`⚠️ Cannot create task: Missing title`);
                 }
@@ -1494,7 +1679,7 @@ export async function executeActions(actions, adapter, currentTasks, options = {
 
             if (action.type === 'complete') {
                 await adapter.completeTask(task.id, task.projectId);
-                outcomes.push(`✅ Marked complete: "${task.title}"`);
+                outcomes.push(`Marked complete: "${task.title}"`);
                 continue;
             }
 
@@ -1533,7 +1718,7 @@ export async function executeActions(actions, adapter, currentTasks, options = {
                     }
                 }));
 
-                outcomes.push(`✅ Updated: "${task.title}"`);
+                outcomes.push(`Updated: "${task.title}"`);
                 hasUndoableActions = true;
             } else if (action.type === 'drop') {
                 const dropChanges = action.changes || {};

@@ -748,14 +748,15 @@ export function validateMutationBatch(actions) {
     if (mutationCount > 1) {
         const mutationActions = actions.filter(a => mutationTypes.includes(a.type));
 
-        // Allow if all mutations target the same resolved task
+        // Allow if all mutations target the same task (resolved or unresolved)
         const allSameTask = mutationActions.every(a => a.taskId === mutationActions[0].taskId);
-        if (allSameTask && mutationActions[0].taskId) {
+        if (allSameTask) {
             return { valid: true, reason: null };
         }
 
-        // Allow small, semantically coherent batches (all updates, <=3 actions)
-        if (mutationCount <= 3 && mutationActions.every(a => a.type === 'update')) {
+        // Allow small, lightweight mutation batches (<=3 actions)
+        const isLightweight = mutationActions.every(a => a.type === 'complete' || a.type === 'delete' || a.type === 'update');
+        if (mutationCount <= 3 && isLightweight) {
             return { valid: true, reason: null };
         }
 

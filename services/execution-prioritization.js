@@ -789,7 +789,7 @@ export function buildRankingContext(options = {}) {
 }
 
 /**
- * Infers a priority label (e.g., 'career-critical') from a task.
+ * Infers a priority label (e.g., 'core_goal') from a task.
  *
  * @param {object} task - Normalized task or candidate
  * @param {object} [options={}] - Ranking options
@@ -809,7 +809,7 @@ export function inferPriorityLabelFromTask(task, options = {}) {
     const haystack = `${normalizedCandidate.title || ''} ${normalizedCandidate.projectName || ''} ${normalizedCandidate.content || ''}`.toLowerCase();
 
     if (decision?.rationaleCode === 'goal_alignment') {
-        return 'career-critical';
+        return 'core_goal';
     }
 
     if (decision?.rationaleCode === 'capacity_protection') {
@@ -828,7 +828,7 @@ export function inferPriorityLabelFromTask(task, options = {}) {
     }
 
     if (rationaleText.includes('career-signaling')) {
-        return 'career-critical';
+        return 'core_goal';
     }
 
     if (rationaleText.includes('consequential admin')) {
@@ -836,7 +836,7 @@ export function inferPriorityLabelFromTask(task, options = {}) {
     }
 
     if (/\b(system design|dsa|interview|resume|leetcode|backend|career|study|assignment|exam)\b/i.test(haystack)) {
-        return 'career-critical';
+        return 'core_goal';
     }
 
     if (/\b(bank|bill|grocery|admin|errand|password|credential|home|apartment|rent|insurance)\b/i.test(haystack)) {
@@ -856,7 +856,7 @@ export function inferPriorityLabelFromTask(task, options = {}) {
 export function inferPriorityValueFromTask(task, options = {}) {
     const label = inferPriorityLabelFromTask(task, options);
 
-    if (label === 'career-critical') return 5;
+    if (label === 'core_goal') return 5;
     if (label === 'life-admin') return 1;
     return 3;
 }
@@ -890,7 +890,7 @@ export function inferProjectIdFromTask(task, projects = [], options = {}) {
         return findProjectIdByFragments(projects, ['health', 'personal']);
     }
 
-    if (inferredPriorityLabel === 'career-critical') {
+    if (inferredPriorityLabel === 'core_goal') {
         return findProjectIdByFragments(projects, ['career', 'study']);
     }
 

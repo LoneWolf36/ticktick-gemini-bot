@@ -24,6 +24,7 @@ export const MODE_FOCUS = 'focus';
 export const MODE_URGENT = 'urgent';
 export const VALID_WORK_STYLE_MODES = [MODE_STANDARD, MODE_FOCUS, MODE_URGENT];
 export const DEFAULT_URGENT_EXPIRY_MS = 2 * 60 * 60 * 1000; // 2 hours
+export const FOCUS_MODE_EXPIRY_MS = 4 * 60 * 60 * 1000; // 4 hours
 export const DEFAULT_BEHAVIORAL_USER_ID = 'default';
 export const BEHAVIORAL_SIGNAL_RETENTION_DAYS = Math.max(1, Number.parseInt(process.env.BEHAVIORAL_SIGNAL_RETENTION_DAYS || '30', 10) || 30);
 export const BEHAVIORAL_SIGNAL_ARCHIVE_DAYS = Math.max(
@@ -68,6 +69,7 @@ const DEFAULT_STATE = {
     pendingMutationClarification: null, // Pending mutation clarification state for free-form handler
     pendingChecklistClarification: null, // Pending checklist vs separate-tasks clarification
     deferredPipelineIntents: [], // Pending deferred pipeline intents for API-unavailable recovery
+    failedDeferredIntents: [], // Dead-letter queue for intents that exhausted retries
     behavioralSignals: {}, // R2: { [userId]: BehavioralSignal[] }
     processedTasks: {},  // User has clicked approve/skip/drop
     failedTasks: {},     // AI analysis failed (rate limit) — parked to prevent re-polling
@@ -75,6 +77,8 @@ const DEFAULT_STATE = {
     queueHealth: {
         blockedSince: null,
     },
+    lastPendingNudgeAt: null,
+    recentTaskContext: {}, // { [userId]: { taskId, title, projectId, source, updatedAt, expiresAt } }
     stats: {
         tasksAnalyzed: 0,
         tasksApproved: 0,
@@ -144,9 +148,11 @@ async function loadFromRedis() {
                 pendingMutationClarification: rest.pendingMutationClarification || null,
                 pendingChecklistClarification: rest.pendingChecklistClarification || null,
                 deferredPipelineIntents: Array.isArray(rest.deferredPipelineIntents) ? rest.deferredPipelineIntents : [],
+                failedDeferredIntents: Array.isArray(rest.failedDeferredIntents) ? rest.failedDeferredIntents : [],
                 behavioralSignals: normalizeBehavioralSignalsMap(rest.behavioralSignals),
                 processedTasks: rest.processedTasks || {},
                 undoLog: rest.undoLog || [],
+                recentTaskContext: rest.recentTaskContext || {},
             };
         }
     } catch (err) {
@@ -216,9 +222,11 @@ function loadFromFile() {
             pendingMutationClarification: rest.pendingMutationClarification || null,
             pendingChecklistClarification: rest.pendingChecklistClarification || null,
             deferredPipelineIntents: Array.isArray(rest.deferredPipelineIntents) ? rest.deferredPipelineIntents : [],
+            failedDeferredIntents: Array.isArray(rest.failedDeferredIntents) ? rest.failedDeferredIntents : [],
             behavioralSignals: normalizeBehavioralSignalsMap(rest.behavioralSignals),
             processedTasks: rest.processedTasks || {},
             undoLog: rest.undoLog || [],
+            recentTaskContext: rest.recentTaskContext || {},
         };
     }
 
@@ -466,7 +474,7 @@ function normalizeWorkStyleEntry(entry) {
     };
 }
 
-export async function getWorkStyleState(userId) {
+export async function getWorkStyleState(userId, options = {}) {
     assertUserId(userId);
     await load();
 
@@ -484,21 +492,28 @@ export async function getWorkStyleState(userId) {
         entry = state.workStyleModes[userId];
     }
 
-    const normalized = normalizeWorkStyleEntry(entry);
-    if (normalized.expiresAt && new Date(normalized.expiresAt) <= new Date()) {
+    const previousEntry = normalizeWorkStyleEntry(entry);
+    if (previousEntry.expiresAt && new Date(previousEntry.expiresAt) <= new Date()) {
         await setWorkStyleMode(userId, MODE_STANDARD, { reason: 'auto_expiry' });
+        if (previousEntry.mode === MODE_FOCUS && typeof options?.notify === 'function') {
+            try {
+                await options.notify('Focus mode expired. Switched back to standard.');
+            } catch (_) {
+                // best effort
+            }
+        }
         return { mode: MODE_STANDARD, expiresAt: null };
     }
 
-    return normalized;
+    return previousEntry;
 }
 
 /**
  * Get the current work-style mode for a user.
  * Returns the active mode, automatically reverting to standard if expired.
  */
-export async function getWorkStyleMode(userId) {
-    return (await getWorkStyleState(userId)).mode;
+export async function getWorkStyleMode(userId, options) {
+    return (await getWorkStyleState(userId, options)).mode;
 }
 
 /**
@@ -533,8 +548,11 @@ export async function setWorkStyleMode(userId, mode, options = {}) {
     } else if (mode === MODE_URGENT) {
         // Default auto-expiry for urgent mode: 2 hours
         entry.expiresAt = new Date(Date.now() + DEFAULT_URGENT_EXPIRY_MS).toISOString();
+    } else if (mode === MODE_FOCUS) {
+        // Default auto-expiry for focus mode: 4 hours
+        entry.expiresAt = new Date(Date.now() + FOCUS_MODE_EXPIRY_MS).toISOString();
     }
-    // standard and focus modes have no auto-expiry unless explicitly set
+    // standard mode has no auto-expiry unless explicitly set
 
     state.workStyleModes[userId] = entry;
 
@@ -803,6 +821,15 @@ export async function setQueueBlocked(isBlocked) {
     }
 }
 
+export function getLastPendingNudgeAt() {
+    return state.lastPendingNudgeAt;
+}
+
+export async function setLastPendingNudgeAt(value) {
+    state.lastPendingNudgeAt = value;
+    await save();
+}
+
 /** Return a sorted slice of pending tasks.
  *  @param {Object} options
  *  @param {number} [options.limit=5]
@@ -875,8 +902,11 @@ export async function clearPendingMutationClarification() {
 /** Checklist clarification TTL: 24 hours */
 export const CHECKLIST_CLARIFICATION_TTL_MS = 24 * 60 * 60 * 1000;
 
-/** Task refinement TTL: 15 minutes */
-export const TASK_REFINEMENT_TTL_MS = 15 * 60 * 1000;
+/** Task refinement TTL: 5 minutes */
+export const TASK_REFINEMENT_TTL_MS = 5 * 60 * 1000;
+
+/** Recent task context TTL: 10 minutes */
+export const RECENT_TASK_CONTEXT_TTL_MS = 10 * 60 * 1000;
 
 export function getPendingTaskRefinement() {
     const pending = state.pendingTaskRefinement;
@@ -902,6 +932,49 @@ export async function setPendingTaskRefinement(data) {
 export async function clearPendingTaskRefinement() {
     state.pendingTaskRefinement = null;
     await save();
+}
+
+// ─── Recent Task Context ─────────────────────────────────────
+
+export async function setRecentTaskContext(userId, context) {
+    assertUserId(userId);
+    await load();
+    if (!state.recentTaskContext || typeof state.recentTaskContext !== 'object' || Array.isArray(state.recentTaskContext)) {
+        state.recentTaskContext = {};
+    }
+    state.recentTaskContext[userId] = {
+        taskId: context.taskId,
+        title: context.title,
+        content: context.content ?? '',
+        projectId: context.projectId ?? null,
+        source: context.source || 'unknown',
+        updatedAt: new Date().toISOString(),
+        expiresAt: new Date(Date.now() + RECENT_TASK_CONTEXT_TTL_MS).toISOString(),
+    };
+    await save();
+}
+
+export function getRecentTaskContext(userId) {
+    assertUserId(userId);
+    const entry = state.recentTaskContext?.[userId];
+    if (!entry) return null;
+    const expiresAt = entry.expiresAt ? new Date(entry.expiresAt).getTime() : 0;
+    if (expiresAt && Date.now() > expiresAt) {
+        console.log(`[RecentTaskContext] Expired context cleared for user: ${userId}`);
+        delete state.recentTaskContext[userId];
+        save().catch(() => {});
+        return null;
+    }
+    return { ...entry };
+}
+
+export async function clearRecentTaskContext(userId) {
+    assertUserId(userId);
+    await load();
+    if (state.recentTaskContext?.[userId]) {
+        delete state.recentTaskContext[userId];
+        await save();
+    }
 }
 
 /**
@@ -965,6 +1038,16 @@ export function getDeferredPipelineIntents() {
         : [];
 }
 
+const MAX_DEFERRED_BACKOFF_MS = 15 * 60 * 1000; // 15 minutes
+
+export function computeNextAttemptAt(retryCount = 0) {
+    const delayMs = Math.min(
+        2 ** Math.max(0, retryCount) * 60 * 1000,
+        MAX_DEFERRED_BACKOFF_MS,
+    );
+    return Date.now() + delayMs;
+}
+
 export async function appendDeferredPipelineIntent(entry) {
     if (!entry || typeof entry !== 'object') {
         throw new Error('deferred pipeline intent entry must be an object');
@@ -973,11 +1056,17 @@ export async function appendDeferredPipelineIntent(entry) {
     const id = typeof entry.id === 'string' && entry.id.trim()
         ? entry.id.trim()
         : `dpi_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const retryCount = typeof entry.retryCount === 'number' && entry.retryCount >= 0
+        ? entry.retryCount
+        : 0;
     const record = {
         id,
         createdAt: entry.createdAt || new Date().toISOString(),
+        failureType: entry.failureType || null,
         ...entry,
         id,
+        retryCount: Number.isFinite(entry.retryCount) ? entry.retryCount : retryCount,
+        nextAttemptAt: Number.isFinite(entry.nextAttemptAt) ? entry.nextAttemptAt : computeNextAttemptAt(retryCount),
     };
 
     const current = Array.isArray(state.deferredPipelineIntents) ? state.deferredPipelineIntents : [];
@@ -1008,6 +1097,33 @@ export async function updateDeferredPipelineIntent(updatedEntry) {
     if (index === -1) return;
     current[index] = { ...current[index], ...updatedEntry };
     state.deferredPipelineIntents = current;
+    await save();
+}
+
+const FAILED_DEFERRED_INTENT_LIMIT = 50;
+
+export async function addFailedDeferredIntent(item) {
+    if (!item || typeof item !== 'object') {
+        throw new Error('failed deferred intent item must be an object');
+    }
+    const record = {
+        ...item,
+        failedAt: item.failedAt || new Date().toISOString(),
+    };
+    const current = Array.isArray(state.failedDeferredIntents) ? state.failedDeferredIntents : [];
+    state.failedDeferredIntents = [...current, record].slice(-FAILED_DEFERRED_INTENT_LIMIT);
+    await save();
+    return structuredClone(record);
+}
+
+export function getFailedDeferredIntents() {
+    return Array.isArray(state.failedDeferredIntents)
+        ? structuredClone(state.failedDeferredIntents)
+        : [];
+}
+
+export async function clearFailedDeferredIntents() {
+    state.failedDeferredIntents = [];
     await save();
 }
 
@@ -1065,6 +1181,7 @@ export function getOperationalSnapshot() {
     const pendingCount = Object.keys(state.pendingTasks).length;
     const failedCount = Object.keys(state.failedTasks || {}).length;
     const deferredCount = Array.isArray(state.deferredPipelineIntents) ? state.deferredPipelineIntents.length : 0;
+    const failedDeferredCount = Array.isArray(state.failedDeferredIntents) ? state.failedDeferredIntents.length : 0;
     const clarificationCount = [
         state.pendingMutationClarification,
         state.pendingChecklistClarification,
@@ -1075,6 +1192,7 @@ export function getOperationalSnapshot() {
             pendingReview: pendingCount,
             failedParked: failedCount,
             deferredIntents: deferredCount,
+            failedDeferred: failedDeferredCount,
             clarifications: clarificationCount,
         },
         cumulative: { ...state.stats },
@@ -1098,6 +1216,33 @@ export function getProcessedCount() {
     return Object.keys(state.processedTasks).length;
 }
 
+// ─── Current Review Session ──────────────────────────────────
+
+export async function setCurrentReviewSession(chatId, session) {
+    if (!state.currentReviewSessions || typeof state.currentReviewSessions !== 'object' || Array.isArray(state.currentReviewSessions)) {
+        state.currentReviewSessions = {};
+    }
+    state.currentReviewSessions[String(chatId)] = session;
+    await save();
+}
+
+export function getCurrentReviewSession(chatId) {
+    if (!state.currentReviewSessions || typeof state.currentReviewSessions !== 'object' || Array.isArray(state.currentReviewSessions)) {
+        return null;
+    }
+    return state.currentReviewSessions[String(chatId)] || null;
+}
+
+export async function clearCurrentReviewSession(chatId) {
+    if (!state.currentReviewSessions || typeof state.currentReviewSessions !== 'object' || Array.isArray(state.currentReviewSessions)) {
+        return;
+    }
+    if (String(chatId) in state.currentReviewSessions) {
+        delete state.currentReviewSessions[String(chatId)];
+        await save();
+    }
+}
+
 // ─── Maintenance ─────────────────────────────────────────────
 
 /** Wipe all data and start fresh */
@@ -1105,6 +1250,7 @@ export async function resetAll() {
     const chatId = state.chatId; // Preserve chatId so bot stays connected
     state = structuredClone(DEFAULT_STATE);
     state.chatId = chatId;
+    state.currentReviewSessions = {};
     await save();
     console.log('🗑️  Store reset to defaults.');
 }

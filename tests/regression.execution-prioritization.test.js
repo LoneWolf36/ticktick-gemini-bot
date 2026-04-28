@@ -575,7 +575,7 @@ test('GeminiAnalyzer generateDailyBriefingSummary matches manual and scheduler o
           title: 'Ship weekly architecture PR',
           project_name: 'Career',
           due_date: '2026-03-12',
-          priority_label: 'career-critical',
+          priority_label: 'core_goal',
           rationale_text: 'Directly moves the highest-priority goal.',
         },
       ],

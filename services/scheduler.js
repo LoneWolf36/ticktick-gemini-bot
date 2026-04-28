@@ -1,6 +1,7 @@
 // Scheduler - cron jobs for daily briefing, weekly digest, and task polling
 import cron from 'node-cron';
 import * as store from './store.js';
+import { computeNextAttemptAt } from './store.js';
 import { buildAutoApplyNotification, buildUndoEntry, userTimeString, filterProcessedThisWeek, sendWithMarkdown } from './shared-utils.js';
 import { logSummarySurfaceEvent } from './summary-surfaces/index.js';
 
@@ -297,6 +298,13 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
     } catch (err) {
         logSummarySurfaceEvent({ context, result: digest, deliveryStatus: 'failed', error: err });
         console.error('Weekly digest error:', err.message);
+        // Notify user so they know the digest failed (not just silent failure)
+        try {
+            const errorMsg = err.message === 'QUOTA_EXHAUSTED'
+                ? '⚠️ Weekly digest skipped — AI quota exhausted for today.'
+                : `❌ Weekly digest failed: ${err.message}. Will retry next cycle.`;
+            await sendWithMarkdown(bot.api, chatId, errorMsg);
+        } catch (_) { /* don't let notification failure mask the original error */ }
         return false;
     }
 }
@@ -314,22 +322,24 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
  * @param {number} [options.maxRetries=5] - Max intents to retry per invocation
  * @returns {{ retried: number, failed: number, remaining: number }}
  */
-export async function retryDeferredIntents({ adapter, pipeline, bot } = {}, options = {}) {
+export async function retryDeferredIntents({ adapter, pipeline, bot, gemini } = {}, options = {}) {
     const { maxRetries = 5 } = options;
     const deferred = store.getDeferredPipelineIntents();
-    if (deferred.length === 0) return { retried: 0, failed: 0, remaining: 0 };
+    if (deferred.length === 0) return { retried: 0, failed: 0, givenUp: 0, remaining: 0 };
 
     // Quick health check — if the API is still down, skip retry entirely
     try {
         await adapter.listActiveTasks(false);
     } catch {
         console.log(`[DeferredRetry] API still unavailable — skipping ${deferred.length} deferred intent(s).`);
-        return { retried: 0, failed: 0, remaining: deferred.length };
+        return { retried: 0, failed: 0, givenUp: 0, remaining: deferred.length };
     }
 
+    const now = Date.now();
     const batch = deferred.slice(0, maxRetries);
     let retried = 0;
     let failed = 0;
+    let givenUp = 0;
     const notifications = [];
 
     for (const entry of batch) {
@@ -339,13 +349,52 @@ export async function retryDeferredIntents({ adapter, pipeline, bot } = {}, opti
             continue;
         }
 
-        // Cap retries — remove intents that have failed too many times
-        const retryCount = (entry.retryCount || 0) + 1;
-        if (retryCount > 3) {
+        const nextAttemptAtMs = typeof entry.nextAttemptAt === 'string'
+            ? Date.parse(entry.nextAttemptAt)
+            : entry.nextAttemptAt;
+
+        // Exponential backoff: skip items that are not yet due
+        if (Number.isFinite(nextAttemptAtMs) && now < nextAttemptAtMs) {
+            continue;
+        }
+
+        // AI quota deferral: skip if quota still exhausted
+        if (entry.failureType === 'ai_quota') {
+            if (gemini && typeof gemini.isQuotaExhausted === 'function' && gemini.isQuotaExhausted()) {
+                console.log(`[DeferredRetry] Skipping intent ${entry.id} — Gemini quota still exhausted.`);
+                continue;
+            }
+        }
+
+        // Give up after 3 attempts — move to DLQ
+        const currentRetryCount = entry.retryCount || 0;
+        if (currentRetryCount >= 3) {
             await store.removeDeferredPipelineIntent(entry.id);
-            failed++;
-            notifications.push(`❌ Failed permanently (3 retries): ${entry.userMessage.slice(0, 40)}`);
-            console.log(`[DeferredRetry] Removing intent ${entry.id} after ${retryCount} retries`);
+            await store.addFailedDeferredIntent({
+                ...entry,
+                reason: entry.failure?.summary || 'exhausted_retries',
+                attempts: currentRetryCount,
+            });
+            givenUp++;
+            console.log(`[DeferredQueue] ${JSON.stringify({
+                eventType: 'deferred.given_up',
+                taskId: entry.id,
+                reason: entry.failure?.summary || 'exhausted_retries',
+                attempts: currentRetryCount,
+            })}`);
+            if (bot) {
+                const chatId = store.getChatId();
+                if (chatId) {
+                    try {
+                        const desc = entry.userMessage.slice(0, 80);
+                        await sendWithMarkdown(bot.api, chatId,
+                            `Failed to process after 3 attempts: ${desc}... Please retry manually.`
+                        );
+                    } catch {
+                        // best effort
+                    }
+                }
+            }
             continue;
         }
 
@@ -363,10 +412,16 @@ export async function retryDeferredIntents({ adapter, pipeline, bot } = {}, opti
             if (result.type === 'task') {
                 await store.removeDeferredPipelineIntent(entry.id);
                 retried++;
-                notifications.push(`✅ Retried: ${result.actions?.[0]?.title || entry.userMessage.slice(0, 40)}`);
+                notifications.push(`Retried: ${result.actions?.[0]?.title || entry.userMessage.slice(0, 40)}`);
             } else if (result.type === 'error' && result.failure?.failureCategory === 'transient') {
-                // Still transient — increment retry count and leave in queue
-                entry.retryCount = retryCount;
+                // Still transient — increment retry count, compute next attempt, and leave in queue
+                const nextRetryCount = currentRetryCount + 1;
+                const nextAttemptAt = Date.now() + Math.min(
+                    2 ** Math.max(0, nextRetryCount) * 60 * 1000,
+                    15 * 60 * 1000,
+                );
+                entry.retryCount = nextRetryCount;
+                entry.nextAttemptAt = nextAttemptAt;
                 await store.updateDeferredPipelineIntent(entry);
                 failed++;
             } else {
@@ -376,8 +431,25 @@ export async function retryDeferredIntents({ adapter, pipeline, bot } = {}, opti
                 notifications.push(`❌ Failed permanently: ${entry.userMessage.slice(0, 40)}`);
             }
         } catch (err) {
-            console.error(`[DeferredRetry] Error retrying intent ${entry.id}:`, err.message);
-            failed++;
+            console.error(`[Scheduler] Deferred retry failed unexpectedly: ${err.message}`);
+            entry.retryCount = (entry.retryCount || 0) + 1;
+            entry.nextAttemptAt = computeNextAttemptAt(entry.retryCount);
+            if (entry.retryCount >= 3) {
+                await store.addFailedDeferredIntent({ ...entry, finalError: err.message });
+                await store.removeDeferredPipelineIntent(entry.id);
+                const chatId = store.getChatId();
+                if (chatId && bot?.api) {
+                    try {
+                        await sendWithMarkdown(bot.api, chatId, `Failed to process after 3 attempts: ${entry.userMessage.slice(0, 100)}. Please retry manually.`);
+                    } catch (_) {
+                        // best effort
+                    }
+                }
+                givenUp++;
+            } else {
+                await store.updateDeferredPipelineIntent(entry);
+                failed++;
+            }
         }
     }
 
@@ -396,8 +468,8 @@ export async function retryDeferredIntents({ adapter, pipeline, bot } = {}, opti
         }
     }
 
-    console.log(`[DeferredRetry] retried=${retried} failed=${failed} remaining=${remaining}`);
-    return { retried, failed, remaining };
+    console.log(`[DeferredRetry] retried=${retried} failed=${failed} givenUp=${givenUp} remaining=${remaining}`);
+    return { retried, failed, givenUp, remaining };
 }
 
 /**
@@ -516,7 +588,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
     await runStartupCatchupJobs({ bot, ticktick, gemini, adapter }, schedulerConfig);
 
     // Retry any deferred intents from previous API outages (R12)
-    await retryDeferredIntents({ adapter, pipeline, bot });
+    await retryDeferredIntents({ adapter, pipeline, bot, gemini });
 
     // Task polling (every N minutes)
     let tokenExpiredNotified = false;
@@ -554,12 +626,20 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
         tokenExpiredNotified = false;
         const chatId = store.getChatId();
         if (!chatId) return;
-        const workStyleMode = await store.getWorkStyleMode(chatId);
+        const workStyleMode = await store.getWorkStyleMode(chatId, {
+            notify: async (msg) => {
+                try {
+                    if (bot?.api) await sendWithMarkdown(bot.api, chatId, msg);
+                } catch (_) {
+                    // best effort
+                }
+            },
+        });
 
         // Retry deferred intents before polling for new tasks (R12)
         if (store.getDeferredPipelineIntents().length > 0) {
             try {
-                await retryDeferredIntents({ adapter, pipeline, bot });
+                await retryDeferredIntents({ adapter, pipeline, bot, gemini });
             } catch (err) {
                 console.error('[DeferredRetry] Poll-cycle retry error:', err.message);
             }
@@ -581,7 +661,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
             if (!pendingSuppressionSent) {
                 try {
                     if (!shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.PENDING_SUPPRESSION)) {
-                        await sendWithMarkdown(bot.api, chatId, `⏳ You have ${pendingCount} pending task(s). Run /pending to review; background scanning paused to save your API quota.`);
+                        await sendWithMarkdown(bot.api, chatId, `Backlog exists (${pendingCount} tasks). Use /pending to review.`);
                     }
                     pendingSuppressionSent = true;
                 } catch (err) {
@@ -594,6 +674,22 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                 console.log(`[QueueHealth] ${JSON.stringify({ eventType: 'queue.backlog.resumed', pendingCount })}`);
             }
             pendingSuppressionSent = false;
+        }
+
+        // Periodic pending nudge (once per hour)
+        if (pendingCount > 0 && workStyleMode !== store.MODE_FOCUS) {
+            const lastNudge = store.getLastPendingNudgeAt();
+            const oneHourAgo = Date.now() - 60 * 60 * 1000;
+            if (!lastNudge || Date.parse(lastNudge) < oneHourAgo) {
+                try {
+                    await sendWithMarkdown(bot.api, chatId,
+                        `You have ${pendingCount} task${pendingCount === 1 ? '' : 's'} awaiting review. Use /pending to catch up.`
+                    );
+                    await store.setLastPendingNudgeAt(new Date().toISOString());
+                } catch (err) {
+                    console.error('Failed to send pending nudge:', err.message);
+                }
+            }
         }
 
         if (!store.tryAcquireIntakeLock()) {

@@ -54,7 +54,7 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - `services/ticktick-adapter.js` — Executes normalized actions against the TickTick REST API (create/update/complete/delete). Handles retries, OAuth refresh, and project-move rollback.
 - `services/ticktick.js` — Low-level TickTick API client with OAuth2 token management and CRUD operations.
 - `services/gemini.js` — Gemini AI client for briefing, weekly digest, reorg proposals, free-form chat, and intent extraction. Manages API key rotation.
-- `services/scheduler.js` — Cron-driven read-only jobs: proactive TickTick polling, daily morning briefings, weekly accountability digests, and store pruning. Also retries deferred pipeline intents on startup and each poll cycle.
+- `services/scheduler.js` — Cron-driven jobs: proactive TickTick polling, daily/weekly briefings, deferred intent retry, queue health checks
 - `services/store.js` — State persistence layer. Redis-backed when `REDIS_URL` is set; falls back to local JSON file for development.
 - `services/pipeline-context.js` — Carries structured context through the pipeline execution stages.
 - `services/pipeline-observability.js` — Pipeline execution metrics and logging.
@@ -72,7 +72,7 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - `bot/utils.js` — Card builders, message formatters, priority maps, and schedule display logic.
 
 ### Integration rule
-**Bot handlers must never bypass the pipeline for new task-writing flows.** All mutations to TickTick state must flow through `pipeline.js` → `normalizer.js` → `ticktick-adapter.js`. Bot handlers may read from TickTick directly only for display purposes (e.g., `/pending`, `/status`).
+**Bot handlers must never bypass the pipeline for new task-writing flows.** Operational mutations (approve/skip/drop in callbacks) directly call the adapter as a retained boundary for interactive UX. All new free-form text flows must route through `pipeline.js` → `normalizer.js` → `ticktick-adapter.js`. Bot handlers may read from TickTick directly only for display purposes (e.g., `/pending`, `/status`).
 
 ### Function Map
 
@@ -98,8 +98,9 @@ All command-triggered write behavior must use `services/pipeline.js` (intent ext
 
 Read/summarization surfaces stay outside write path:
 
-- `/briefing`, `/weekly`, scheduler briefings/digests/poll notifications are non-write surfaces
-- `/status`, `/pending`, `/menu` are operational/read-only command surfaces
+- `/briefing`, `/weekly`, `/daily_close`, scheduler briefings/digests/poll notifications are non-write surfaces
+- `/status`, `/pending`, `/menu`, `/memory`, `/mode` are operational/read-only command surfaces
+- `/focus`, `/normal`, `/urgent`, `/forget` are work-style/behavioral command surfaces (bot-local state only, no TickTick mutation)
 
 ## Build, Test, and Development Commands
 - `npm install` installs dependencies from `package-lock.json`.

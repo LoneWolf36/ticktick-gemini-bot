@@ -5,6 +5,9 @@ import { TickTickAdapter } from '../services/ticktick-adapter.js';
 import { TickTickClient } from '../services/ticktick.js';
 import { createPipeline } from '../services/pipeline.js';
 import { createPipelineObservability } from '../services/pipeline-observability.js';
+import { AIHardQuotaError, AIServiceUnavailableError, AIInvalidKeyError } from '../services/gemini.js';
+import { retryDeferredIntents } from '../services/scheduler.js';
+import * as store from '../services/store.js';
 
 test('R11 adapter returns typed permission, not-found, completion, and network failures', async () => {
     const client = Object.create(TickTickClient.prototype);
@@ -239,4 +242,159 @@ test('R11 pipeline surfaces typed adapter failures without leaking API internals
     const completedResult = await runScenario(completedError);
     assert.match(completedResult.confirmationText, /already completed/i);
     assert.doesNotMatch(completedResult.confirmationText, /400|task already completed/i);
+});
+
+test('AI hard quota failure defers intent for retry', async () => {
+    const deferred = [];
+    const pipeline = createPipeline({
+        intentExtractor: {
+            extractIntents: async () => { throw new AIHardQuotaError('quota exhausted'); },
+        },
+        normalizer: { normalizeActions: () => [] },
+        adapter: {
+            listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+            listActiveTasks: async () => [],
+        },
+        deferIntent: (entry) => {
+            deferred.push(entry);
+            return Promise.resolve({ id: 'dpi-1' });
+        },
+    });
+
+    const result = await pipeline.processMessage('create test task', {
+        requestId: 'req-ai-quota',
+        entryPoint: 'telegram',
+        mode: 'interactive',
+    });
+
+    assert.equal(result.type, 'error');
+    assert.equal(result.failure.class, 'quota');
+    assert.match(result.confirmationText, /AI temporarily unavailable/);
+    assert.equal(deferred.length, 1);
+    assert.equal(deferred[0].failureType, 'ai_quota');
+    assert.equal(deferred[0].userMessage, 'create test task');
+});
+
+test('AI service unavailable failure defers intent for retry', async () => {
+    const deferred = [];
+    const pipeline = createPipeline({
+        intentExtractor: {
+            extractIntents: async () => { throw new AIServiceUnavailableError('service unavailable'); },
+        },
+        normalizer: { normalizeActions: () => [] },
+        adapter: {
+            listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+            listActiveTasks: async () => [],
+        },
+        deferIntent: (entry) => {
+            deferred.push(entry);
+            return Promise.resolve({ id: 'dpi-2' });
+        },
+    });
+
+    const result = await pipeline.processMessage('complete test task', {
+        requestId: 'req-ai-svc',
+        entryPoint: 'telegram',
+        mode: 'interactive',
+    });
+
+    assert.equal(result.type, 'error');
+    assert.equal(result.failure.class, 'quota');
+    assert.match(result.confirmationText, /AI temporarily unavailable/);
+    assert.equal(deferred.length, 1);
+    assert.equal(deferred[0].failureType, 'ai_quota');
+});
+
+test('AI invalid key error does NOT defer intent', async () => {
+    const deferred = [];
+    const pipeline = createPipeline({
+        intentExtractor: {
+            extractIntents: async () => { throw new AIInvalidKeyError('invalid key'); },
+        },
+        normalizer: { normalizeActions: () => [] },
+        adapter: {
+            listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+            listActiveTasks: async () => [],
+        },
+        deferIntent: (entry) => {
+            deferred.push(entry);
+            return Promise.resolve({ id: 'dpi-3' });
+        },
+    });
+
+    const result = await pipeline.processMessage('create invalid key task', {
+        requestId: 'req-ai-key',
+        entryPoint: 'telegram',
+        mode: 'interactive',
+    });
+
+    assert.equal(result.type, 'error');
+    assert.equal(result.failure.class, 'quota');
+    assert.equal(deferred.length, 0);
+});
+
+test('deferred ai_quota retry respects nextAttemptAt backoff', async () => {
+    // Clear any leftover deferred intents
+    for (const existing of store.getDeferredPipelineIntents()) {
+        await store.removeDeferredPipelineIntent(existing.id);
+    }
+
+    const future = new Date(Date.now() + 5 * 60 * 1000).toISOString();
+    const entry = {
+        id: 'dpi-backoff-1',
+        userMessage: 'backoff task',
+        failureType: 'ai_quota',
+        retryCount: 1,
+        nextAttemptAt: future,
+    };
+    await store.appendDeferredPipelineIntent(entry);
+
+    const pipeline = {
+        processMessage: async () => ({ type: 'task', actions: [{ title: 'backoff task' }] }),
+    };
+
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline,
+        gemini: { isQuotaExhausted: () => false },
+    });
+
+    const remaining = store.getDeferredPipelineIntents();
+    assert.ok(remaining.some((e) => e.id === 'dpi-backoff-1'), 'entry should still be in store');
+    assert.equal(result.retried, 0, 'should not retry before nextAttemptAt');
+
+    // Cleanup
+    await store.removeDeferredPipelineIntent('dpi-backoff-1');
+});
+
+test('deferred ai_quota retry skips when gemini quota exhausted', async () => {
+    // Clear any leftover deferred intents
+    for (const existing of store.getDeferredPipelineIntents()) {
+        await store.removeDeferredPipelineIntent(existing.id);
+    }
+
+    const entry = {
+        id: 'dpi-quota-1',
+        userMessage: 'quota task',
+        failureType: 'ai_quota',
+        retryCount: 0,
+    };
+    await store.appendDeferredPipelineIntent(entry);
+
+    const pipeline = {
+        processMessage: async () => ({ type: 'task', actions: [{ title: 'quota task' }] }),
+    };
+
+    const result = await retryDeferredIntents({
+        adapter: { listActiveTasks: async () => [] },
+        pipeline,
+        gemini: { isQuotaExhausted: () => true },
+    });
+
+    const remaining = store.getDeferredPipelineIntents();
+    assert.ok(remaining.some((e) => e.id === 'dpi-quota-1'), 'entry should still be in store');
+    assert.equal(result.retried, 0, 'should not retry while quota exhausted');
+
+    // Cleanup
+    await store.removeDeferredPipelineIntent('dpi-quota-1');
 });

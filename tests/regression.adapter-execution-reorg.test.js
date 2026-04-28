@@ -539,7 +539,7 @@ test('pipeline retries once and rolls back earlier successful writes', async () 
     telemetryEvents
       .filter((event) => event.eventType === 'pipeline.execute.failed')
       .map((event) => event.attempt),
-    [1, 2],
+    [1],
   );
   assert.ok(
     telemetryEvents.some((event) =>
@@ -678,7 +678,7 @@ test('executeActions accepts suggested_schedule update alias and applies dueDate
 
   const result = await executeActions(actions, ticktick, currentTasks);
 
-  assert.equal(result.outcomes[0], '✅ Updated: "Netflix task"');
+  assert.equal(result.outcomes[0], 'Updated: "Netflix task"');
   assert.equal(typeof calls[0].changes.dueDate, 'string');
   assert.ok(calls[0].changes.dueDate.includes('T'));
   assert.ok(!calls[0].changes.dueDate.includes('T23:59:00.000'));
@@ -1244,8 +1244,8 @@ test('pipeline shortens urgent confirmations and clarification prompts while kee
     workStyleMode: store.MODE_URGENT,
   });
 
-  assert.equal(standardTask.confirmationText, '✅ Created: Buy groceries');
-  assert.equal(urgentTask.confirmationText, '✅ Buy groceries');
+  assert.equal(standardTask.confirmationText, 'Created: Buy groceries');
+  assert.equal(urgentTask.confirmationText, 'Buy groceries');
 
   const multiCreateHarness = createPipelineHarness({
     intents: [
@@ -1260,8 +1260,8 @@ test('pipeline shortens urgent confirmations and clarification prompts while kee
     workStyleMode: store.MODE_URGENT,
   });
 
-  assert.equal(standardMultiCreate.confirmationText, '✅ Created 2 tasks');
-  assert.equal(urgentMultiCreate.confirmationText, '✅ Done. Created 2');
+  assert.equal(standardMultiCreate.confirmationText, 'Created 2 tasks');
+  assert.equal(urgentMultiCreate.confirmationText, 'Done. Created 2');
 
   const clarificationHarness = createPipelineHarness({
     intents: [{ type: 'update', title: 'Weekly update', confidence: 0.9, targetQuery: 'weekly' }],
