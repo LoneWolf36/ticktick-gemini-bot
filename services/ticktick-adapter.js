@@ -96,6 +96,7 @@ export class TickTickAdapter {
         this._client = client;
         this._projectCache = null;
         this._projectCacheTs = 0;
+        this._defaultProjectId = process.env.TICKTICK_DEFAULT_PROJECT_ID || null;
     }
 
     /**
@@ -409,7 +410,7 @@ export class TickTickAdapter {
         try {
             const projects = await this.listProjects();
 
-            const defaultProject = this._getSafeDefaultProject(projects);
+            const defaultProject = this._getSafeDefaultProject(projects, this._defaultProjectId);
             if (!nameHint || typeof nameHint !== 'string' || nameHint.trim().length === 0) {
                 const elapsed = Date.now() - start;
                 this._log('findProjectByName', `SUCCESS { match: null, fallback: ${JSON.stringify(defaultProject ? { id: defaultProject.id, name: defaultProject.name } : null)}, reason: "empty_hint", ${elapsed}ms }`);
@@ -498,18 +499,31 @@ export class TickTickAdapter {
      * @returns {Object|null} Default project or null
      * @private
      */
-    _getSafeDefaultProject(projects = []) {
+    _getSafeDefaultProject(projects = [], preferredDefaultProjectId = null) {
         if (!Array.isArray(projects) || projects.length === 0) return null;
 
         const inbox = projects.find((project) => this._normalizeProjectName(project?.name) === 'inbox');
         if (inbox) return inbox;
+
+        const preferredId = preferredDefaultProjectId || this._defaultProjectId;
+        if (preferredId) {
+            const preferred = projects.find((project) => project?.id === preferredId);
+            if (preferred) {
+                console.warn(`[Adapter] No Inbox project found; falling back to configured default project "${preferred.name}" (${preferred.id})`);
+                return preferred;
+            }
+        }
 
         const sorted = [...projects].sort((a, b) => {
             const nameCompare = String(a?.name || '').localeCompare(String(b?.name || ''));
             if (nameCompare !== 0) return nameCompare;
             return String(a?.id || '').localeCompare(String(b?.id || ''));
         });
-        return sorted[0] || null;
+        const fallback = sorted[0] || null;
+        if (fallback) {
+            console.warn(`[Adapter] No Inbox project found; falling back to first available project "${fallback.name}" (${fallback.id})`);
+        }
+        return fallback;
     }
 
     /**
@@ -808,10 +822,12 @@ export class TickTickAdapter {
 
             // Handle content merge with adapter-owned single merge path
             if (Object.prototype.hasOwnProperty.call(normalizedAction, 'content')) {
+                const isTitleChange = normalizedAction.title !== undefined && normalizedAction.title !== existingTask.title;
+                const effectiveMergeContent = isTitleChange ? false : (normalizedAction.mergeContent !== false);
                 const contentMerge = this._mergeTaskContent(
                     existingTask.content,
                     normalizedAction.content,
-                    normalizedAction.mergeContent !== false,
+                    effectiveMergeContent,
                 );
                 if (contentMerge.shouldUpdate) {
                     updatePayload.content = contentMerge.content;
@@ -819,8 +835,9 @@ export class TickTickAdapter {
                 this._log('updateTask.contentMerge', {
                     taskId,
                     strategy: contentMerge.strategy,
-                    mergeContent: normalizedAction.mergeContent !== false,
+                    mergeContent: effectiveMergeContent,
                     updated: contentMerge.shouldUpdate,
+                    isTitleChange,
                 });
             }
 

@@ -159,7 +159,7 @@ function createLifecycleState(baseContext) {
             activeTasks: snapshotPrivacySafePipelineValue(baseContext.activeTasks),
             checklistContext: snapshotPrivacySafePipelineValue(baseContext.checklistContext),
         },
-        ax: {
+        intent: {
             status: 'pending',
             intentOutput: null,
             failure: null,
@@ -358,8 +358,8 @@ export function validatePipelineContext(context) {
             if (!context.lifecycle.request || typeof context.lifecycle.request !== 'object' || Array.isArray(context.lifecycle.request)) {
                 errors.push('lifecycle.request must be an object');
             }
-            if (!context.lifecycle.ax || typeof context.lifecycle.ax !== 'object' || Array.isArray(context.lifecycle.ax)) {
-                errors.push('lifecycle.ax must be an object');
+            if (!context.lifecycle.intent || typeof context.lifecycle.intent !== 'object' || Array.isArray(context.lifecycle.intent)) {
+                errors.push('lifecycle.intent must be an object');
             }
             if (!context.lifecycle.normalize || typeof context.lifecycle.normalize !== 'object' || Array.isArray(context.lifecycle.normalize)) {
                 errors.push('lifecycle.normalize must be an object');

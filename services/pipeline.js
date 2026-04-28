@@ -13,6 +13,7 @@ import {
 } from './pipeline-context.js';
 import { createPipelineObservability } from './pipeline-observability.js';
 import { QuotaExhaustedError } from './intent-extraction.js';
+import { AIHardQuotaError, AIServiceUnavailableError, AIInvalidKeyError } from './gemini.js';
 import { resolveTarget, buildClarificationPrompt } from './task-resolver.js';
 
 /**
@@ -21,7 +22,7 @@ import { resolveTarget, buildClarificationPrompt } from './task-resolver.js';
  */
 const FAILURE_CLASSES = {
     QUOTA: 'quota',
-    MALFORMED_AX: 'malformed_ax',
+    MALFORMED_INTENT: 'malformed_intent',
     VALIDATION: 'validation',
     ADAPTER: 'adapter',
     ROLLBACK: 'rollback',
@@ -63,7 +64,7 @@ const NON_TASK_REASONS = {
  */
 const USER_FAILURE_MESSAGES = {
     [FAILURE_CLASSES.QUOTA]: '⚠️ AI quota exhausted. Try again shortly.',
-    [FAILURE_CLASSES.MALFORMED_AX]: '⚠️ I could not understand that request. Please rephrase.',
+    [FAILURE_CLASSES.MALFORMED_INTENT]: '⚠️ I could not understand that request. Please rephrase.',
     [FAILURE_CLASSES.VALIDATION]: '⚠️ I could not validate the task details. Please clarify and retry.',
     [FAILURE_CLASSES.ADAPTER]: '⚠️ Task updates failed. Please retry shortly.',
     [FAILURE_CLASSES.ROLLBACK]: '⚠️ Task updates partially failed. Please check your tasks.',
@@ -197,7 +198,7 @@ function deriveFailureCategory({ failureClass, failureCategory, details, rolledB
     switch (failureClass) {
         case FAILURE_CLASSES.QUOTA:
             return FAILURE_CATEGORIES.TRANSIENT;
-        case FAILURE_CLASSES.MALFORMED_AX:
+        case FAILURE_CLASSES.MALFORMED_INTENT:
         case FAILURE_CLASSES.VALIDATION:
             return FAILURE_CATEGORIES.PERMANENT;
         case FAILURE_CLASSES.ADAPTER:
@@ -526,8 +527,11 @@ function updateChecklistContext(context, metadata = {}) {
 function isQuotaFailure(error) {
     if (!error) return false;
     if (error instanceof QuotaExhaustedError) return true;
+    if (error instanceof AIHardQuotaError) return true;
+    if (error instanceof AIServiceUnavailableError) return true;
+    if (error instanceof AIInvalidKeyError) return true;
     const msg = error.message || '';
-    return msg.includes('QUOTA_EXHAUSTED') || msg.includes('quota') || msg.includes('All API keys exhausted');
+    return msg.includes('QUOTA_EXHAUSTED') || msg.includes('API_KEYS_UNAVAILABLE');
 }
 
 function isMalformedIntentPayload(intents) {
@@ -907,7 +911,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
 
             console.log(`[Pipeline:${context.requestId}] Processing message (${context.userMessage?.length || 0} chars)`);
 
-            const axStartedAt = Date.now();
+            const intentStartedAt = Date.now();
             let intents;
 
             try {
@@ -919,14 +923,14 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             } catch (error) {
                 const failureClass = isQuotaFailure(error) ? FAILURE_CLASSES.QUOTA : FAILURE_CLASSES.UNEXPECTED;
                 context = updatePipelineContext(context, (draft) => {
-                    draft.lifecycle.ax.status = 'failure';
-                    draft.lifecycle.ax.failure = {
+                    draft.lifecycle.intent.status = 'failure';
+                    draft.lifecycle.intent.failure = {
                         failureClass,
                         message: error.message,
                     };
-                    draft.lifecycle.timing.stages.ax = {
-                        startedAt: new Date(axStartedAt).toISOString(),
-                        durationMs: Date.now() - axStartedAt,
+                    draft.lifecycle.timing.stages.intent = {
+                        startedAt: new Date(intentStartedAt).toISOString(),
+                        durationMs: Date.now() - intentStartedAt,
                         status: 'failure',
                     };
                 });
@@ -934,7 +938,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     eventType: 'pipeline.intent.failed',
                     step: 'intent',
                     status: 'failure',
-                    durationMs: Date.now() - axStartedAt,
+                    durationMs: Date.now() - intentStartedAt,
                     failureClass,
                     metadata: {
                         message: error.message,
@@ -944,24 +948,24 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             }
 
             if (isMalformedIntentPayload(intents)) {
-                console.warn(`[Pipeline:${context.requestId}] Malformed AX output.`);
+                console.warn(`[Pipeline:${context.requestId}] Malformed intent extraction output.`);
                 context = updatePipelineContext(context, (draft) => {
-                    draft.lifecycle.ax.status = 'failure';
-                    draft.lifecycle.ax.intentOutput = snapshotPrivacySafePipelineValue(intents);
-                    draft.lifecycle.ax.failure = {
-                        failureClass: FAILURE_CLASSES.MALFORMED_AX,
-                        message: 'Malformed AX output.',
+                    draft.lifecycle.intent.status = 'failure';
+                    draft.lifecycle.intent.intentOutput = snapshotPrivacySafePipelineValue(intents);
+                    draft.lifecycle.intent.failure = {
+                        failureClass: FAILURE_CLASSES.MALFORMED_INTENT,
+                        message: 'Malformed intent extraction output.',
                     };
-                    draft.lifecycle.timing.stages.ax = {
-                        startedAt: new Date(axStartedAt).toISOString(),
-                        durationMs: Date.now() - axStartedAt,
+                    draft.lifecycle.timing.stages.intent = {
+                        startedAt: new Date(intentStartedAt).toISOString(),
+                        durationMs: Date.now() - intentStartedAt,
                         status: 'failure',
                     };
                 });
                 const failureResult = buildFailureResult(context, {
-                    failureClass: FAILURE_CLASSES.MALFORMED_AX,
-                    stage: 'ax',
-                    summary: 'Malformed AX output.',
+                    failureClass: FAILURE_CLASSES.MALFORMED_INTENT,
+                    stage: 'intent',
+                    summary: 'Malformed intent extraction output.',
                     details: {
                         receivedType: Array.isArray(intents) ? 'array' : typeof intents,
                     },
@@ -970,17 +974,17 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'error',
                     status: 'failure',
-                    summary: 'Malformed AX output.',
-                    failureClass: FAILURE_CLASSES.MALFORMED_AX,
+                    summary: 'Malformed intent extraction output.',
+                    failureClass: FAILURE_CLASSES.MALFORMED_INTENT,
                     rolledBack: false,
                 });
 
                 await telemetry.emit(context, {
                     eventType: 'pipeline.intent.failed',
-                    step: 'ax',
+                    step: 'intent',
                     status: 'failure',
-                    durationMs: Date.now() - axStartedAt,
-                    failureClass: FAILURE_CLASSES.MALFORMED_AX,
+                    durationMs: Date.now() - intentStartedAt,
+                    failureClass: FAILURE_CLASSES.MALFORMED_INTENT,
                     metadata: {
                         receivedType: Array.isArray(intents) ? 'array' : typeof intents,
                     },
@@ -990,28 +994,29 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     step: 'result',
                     status: 'failure',
                     durationMs: Date.now() - requestStartedAt,
-                    failureClass: FAILURE_CLASSES.MALFORMED_AX,
+                    failureClass: FAILURE_CLASSES.MALFORMED_INTENT,
                     rolledBack: false,
                 });
                 return attachPipelineContext(failureResult, context);
             }
 
             context = updatePipelineContext(context, (draft) => {
-                draft.lifecycle.ax.status = 'success';
-                draft.lifecycle.ax.intentOutput = snapshotPrivacySafePipelineValue(intents);
-                draft.lifecycle.ax.failure = null;
-                draft.lifecycle.timing.stages.ax = {
-                    startedAt: new Date(axStartedAt).toISOString(),
-                    durationMs: Date.now() - axStartedAt,
+                draft.lifecycle.intent.status = 'success';
+                draft.lifecycle.intent.intentOutput = snapshotPrivacySafePipelineValue(intents);
+                draft.lifecycle.intent.failure = null;
+                draft.lifecycle.timing.stages.intent = {
+                    startedAt: new Date(intentStartedAt).toISOString(),
+                    durationMs: Date.now() - intentStartedAt,
                     status: 'success',
                 };
             });
 
+            const intentDurationMs = Date.now() - intentStartedAt;
             await telemetry.emit(context, {
                 eventType: 'pipeline.intent.completed',
                 step: 'ax',
                 status: 'success',
-                durationMs: Date.now() - axStartedAt,
+                durationMs: intentDurationMs,
                 metadata: {
                     intentCount: intents.length,
                     checklistIntentCount: intents.filter(i => Array.isArray(i.checklistItems) && i.checklistItems.length > 0).length,
@@ -1024,6 +1029,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         .filter((entry) => entry.checklistItemCount > 0),
                 },
             });
+            if (typeof telemetry.emitLatencyHistogram === 'function') {
+                telemetry.emitLatencyHistogram({ stage: 'intent_extraction', durationMs: intentDurationMs });
+            }
 
             if (intents.length === 0) {
                 console.log(`[Pipeline:${context.requestId}] No intents extracted. Routing as non-task.`);
@@ -1327,7 +1335,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     resolvedTaskContent = activeTasks.find(t => t.id === resolvedTask.id)?.content ?? null;
                 } else if (targetQuery && !options.skipClarification) {
                     const resolveStartedAt = Date.now();
-                    const resolverResult = resolveTarget({ targetQuery, activeTasks });
+                    const resolverResult = resolveTarget({ targetQuery, activeTasks, recentTask: context.existingTask });
 
                     await telemetry.emit(context, {
                         eventType: 'pipeline.resolve.completed',
@@ -1491,11 +1499,12 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 };
             });
 
+            const normalizeDurationMs = Date.now() - normalizeStartedAt;
             await telemetry.emit(context, {
                 eventType: 'pipeline.normalize.completed',
                 step: 'normalize',
                 status: 'success',
-                durationMs: Date.now() - normalizeStartedAt,
+                durationMs: normalizeDurationMs,
                 metadata: {
                     normalizedCount: normalizedActions.length,
                     validCount: validActions.length,
@@ -1511,6 +1520,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         .filter((entry) => entry.checklistItemCount > 0),
                 },
             });
+            if (typeof telemetry.emitLatencyHistogram === 'function') {
+                telemetry.emitLatencyHistogram({ stage: 'normalization', durationMs: normalizeDurationMs });
+            }
 
             if (invalidActions.length > 0) {
                 console.warn(
@@ -1630,6 +1642,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     status: executionResult.terminalFailure ? 'failure' : 'success',
                 };
             });
+            if (typeof telemetry.emitLatencyHistogram === 'function') {
+                telemetry.emitLatencyHistogram({ stage: 'execution', durationMs: executionResult.durationMs });
+            }
 
             if (executionResult.terminalFailure) {
                 const deferredIntent = await persistDeferredIntent({
@@ -1747,6 +1762,18 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 failureClass = FAILURE_CLASSES.VALIDATION;
                 stage = 'context';
                 summary = 'Invalid pipeline request context.';
+            } else if (error instanceof AIHardQuotaError) {
+                failureClass = FAILURE_CLASSES.QUOTA;
+                stage = 'ax';
+                summary = 'AI hard quota exhausted after configured key rotation.';
+            } else if (error instanceof AIServiceUnavailableError) {
+                failureClass = FAILURE_CLASSES.QUOTA;
+                stage = 'ax';
+                summary = 'AI service unavailable after model fallback chain exhausted.';
+            } else if (error instanceof AIInvalidKeyError) {
+                failureClass = FAILURE_CLASSES.QUOTA;
+                stage = 'ax';
+                summary = 'AI API keys invalid or expired.';
             } else if (isQuotaFailure(error)) {
                 failureClass = FAILURE_CLASSES.QUOTA;
                 stage = 'ax';
@@ -1782,7 +1809,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 stage,
                 summary,
                 error,
-                retryable: failureClass !== FAILURE_CLASSES.MALFORMED_AX,
+                retryable: failureClass !== FAILURE_CLASSES.MALFORMED_INTENT,
             }), context);
         }
     }

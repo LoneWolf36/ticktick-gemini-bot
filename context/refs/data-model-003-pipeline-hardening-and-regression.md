@@ -2,7 +2,7 @@
 
 ## Purpose
 
-This model defines the contracts needed to harden the live `AX -> normalizer -> TickTickAdapter` execution path. It formalizes request context, execution records, rollback state, and telemetry signals so the feature can be implemented and tested without changing the existing architectural boundary.
+This model defines the contracts needed to harden the live `intent extraction -> normalizer -> TickTickAdapter` execution path. It formalizes request context, execution records, rollback state, and telemetry signals so the feature can be implemented and tested without changing the existing architectural boundary.
 
 ## Current Source Objects
 
@@ -53,7 +53,7 @@ Current normalized fields:
 
 ### PipelineRequestContext
 
-Canonical execution context assembled before AX extraction.
+Canonical execution context assembled before intent extraction.
 
 Fields:
 - `requestId: string`
@@ -69,13 +69,13 @@ Validation rules:
 - `entryPoint` must be a non-empty string. Call sites may pass raw values such as `telegram:freeform`, `telegram:scan`, `telegram:review`, `scheduler:poll`, `manual_command`, or test-only values such as `regression`.
 - `mode` must be a non-empty string. Current live modes include `interactive`, `scan`, `review`, `poll`, and dev/debug aliases used to toggle diagnostic output.
 - `timezone` must come from stored user context, not an environment default chosen at execution time.
-- `currentDate` must be formatted before AX runs so relative dates are deterministic.
-- `currentDate` is normalized to `YYYY-MM-DD` before AX runs, even when the incoming value starts as a timestamp.
+- `currentDate` must be formatted before intent extraction runs so relative dates are deterministic.
+- `currentDate` is normalized to `YYYY-MM-DD` before intent extraction runs, even when the incoming value starts as a timestamp.
 - `requestId` must be present on every request for observability correlation.
 
 ### ProjectRef
 
-Minimal project metadata exposed to AX and normalization.
+Minimal project metadata exposed to intent extraction and normalization.
 
 Fields:
 - `id: string`
@@ -188,7 +188,7 @@ Fields:
 - `nonTaskDetails?: object | null`
 
 State expectations:
-- `non-task` means AX produced no actionable intent or all actions failed validation without writes.
+- `non-task` means intent extraction produced no actionable intent or all actions failed validation without writes.
 - `error` means the request terminated in a classified failure envelope.
 - `task` can include rolled-back writes, but final success is only valid when no unrecovered failure remains.
 - `actions` is present on `task` results, not on `non-task` or `error` results.
@@ -204,7 +204,7 @@ Fields:
 - `timestamp: string`
 - `requestId: string`
 - `entryPoint: string`
-- `step: "request" | "ax" | "normalize" | "execute" | "rollback" | "result"`
+- `step: "request" | "intent" | "normalize" | "execute" | "rollback" | "result"`
 - `status: "start" | "success" | "failure"`
 - `durationMs: number | null`
 - `failureClass: string | null`
@@ -214,8 +214,8 @@ Fields:
 
 ## Relationships
 
-- One `PipelineRequestContext` produces zero or more AX intent actions.
-- AX intent actions become zero or more `NormalizedPipelineAction` objects after normalization.
+- One `PipelineRequestContext` produces zero or more extracted intent actions.
+- Extracted intent actions become zero or more `NormalizedPipelineAction` objects after normalization.
 - Each normalized action produces one `ActionExecutionRecord`.
 - A successful execution record may have one `RollbackStep`.
 - One request ends in one `PipelineResult`.
@@ -243,4 +243,4 @@ Failure lifecycle:
 - No multi-user tenancy model is introduced in this feature.
 - No new external telemetry vendor is required in this feature.
 - No direct TickTick client calls are allowed outside the adapter.
-- No change to the model's core extraction responsibility; AX still emits intent actions, not final execution policy.
+- No change to the model's core extraction responsibility; intent extraction still emits intent actions, not final execution policy.

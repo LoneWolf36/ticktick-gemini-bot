@@ -2,10 +2,35 @@
 // These move tasks from pendingTasks → processedTasks and resume mutation clarifications
 import { InlineKeyboard } from 'grammy';
 import * as store from '../services/store.js';
-import { buildTickTickUpdate, isAuthorized, buildUndoEntry, PRIORITY_LABEL, editWithMarkdown, truncateMessage } from './utils.js';
+import {
+    buildTickTickUpdate, isAuthorized, buildUndoEntry, PRIORITY_LABEL,
+    editWithMarkdown, truncateMessage, buildTaskCard, pendingToAnalysis,
+    replyWithMarkdown, sleep,
+} from './utils.js';
 
 // Pending mutation clarification expiry: 10 minutes
 const MUTATION_CLARIFICATION_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Wraps ctx.answerCallbackQuery with timeout telemetry.
+ * @param {Object} ctx - Grammy context
+ * @param {Object} [options] - answerCallbackQuery options
+ */
+async function safeAnswerCallbackQuery(ctx, options = {}) {
+    const elapsedMs = Date.now() - (ctx._callbackReceivedAt || Date.now());
+    try {
+        if (ctx.telegram && ctx.callbackQuery?.id) {
+            return await ctx.telegram.answerCallbackQuery(ctx.callbackQuery.id, options);
+        }
+        return await ctx.answerCallbackQuery(options);
+    } catch (err) {
+        const msg = String(err?.message || '').toLowerCase();
+        if (msg.includes('query is too old') || msg.includes('too old')) {
+            console.warn(`[TelegramCallback] ${JSON.stringify({ eventType: 'telegram.callback.timeout', callbackId: ctx.callbackQuery?.id, elapsedMs })}`);
+        }
+        throw err;
+    }
+}
 
 // ─── Build Keyboard for Task Review ─────────────────────────
 
@@ -48,7 +73,33 @@ export function taskReviewKeyboard(taskId, actionType = 'update') {
  * @param {TickTickAdapter} adapter - TickTick adapter instance.
  * @param {Object} pipeline - Pipeline instance.
  */
+async function sendNextPendingTask(ctx) {
+    const remaining = store.getPendingCount();
+    if (remaining === 0) {
+        await ctx.reply('✅ All tasks reviewed.');
+        return;
+    }
+    const next = store.getNextPendingTask();
+    if (!next) {
+        await ctx.reply('✅ All tasks reviewed.');
+        return;
+    }
+    const [taskId, data] = next;
+    const analysis = pendingToAnalysis(data);
+    const card = buildTaskCard({ title: data.originalTitle, projectName: data.projectName }, analysis);
+    await replyWithMarkdown(ctx, `${card}\n\n⏳ ${remaining} remaining`, { reply_markup: taskReviewKeyboard(taskId, data.actionType) });
+    await sleep(300);
+}
+
 export function registerCallbacks(bot, adapter, pipeline) {
+    // Timestamp all callback queries for timeout telemetry
+    if (typeof bot.on === 'function') {
+        bot.on('callback_query', async (ctx, next) => {
+            ctx._callbackReceivedAt = Date.now();
+            await next();
+        });
+    }
+
     const processPipelineMessage = (userMessage, options) =>
         typeof pipeline.processMessageWithContext === 'function'
             ? pipeline.processMessageWithContext(userMessage, options)
@@ -57,19 +108,19 @@ export function registerCallbacks(bot, adapter, pipeline) {
     // ─── Refine: Request user input for specific task tweaks ──
     bot.callbackQuery(/^r:(.+)$/, async (ctx) => {
         if (!isAuthorized(ctx)) {
-             await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+             await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
              return;
         }
         const taskId = ctx.match[1];
         const data = store.getPendingTasks()[taskId];
 
         if (!data) {
-             await ctx.answerCallbackQuery({ text: '⚠️ Task not pending' });
+             await safeAnswerCallbackQuery(ctx, { text: '⚠️ Task not pending' });
              return;
         }
-        
+
+        await safeAnswerCallbackQuery(ctx, );
         await store.setPendingTaskRefinement(taskId);
-        await ctx.answerCallbackQuery({ text: 'Ready for refinement' });
         const cancelKeyboard = new InlineKeyboard().text('❌ Cancel', 'rcancel');
         await ctx.reply(`✏️ **Refining "${data.originalTitle}"**\nSend your tweaks (e.g. "make it high priority", "move to admin project").`, {
             reply_parameters: { message_id: ctx.callbackQuery.message.message_id },
@@ -80,11 +131,11 @@ export function registerCallbacks(bot, adapter, pipeline) {
 
     bot.callbackQuery('rcancel', async (ctx) => {
         if (!isAuthorized(ctx)) {
-            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
             return;
         }
+        await safeAnswerCallbackQuery(ctx, );
         await store.clearPendingTaskRefinement();
-        await ctx.answerCallbackQuery({ text: 'Refinement cancelled' });
         await ctx.editMessageText('Refinement cancelled.');
     });
 
@@ -94,7 +145,7 @@ export function registerCallbacks(bot, adapter, pipeline) {
     // product-feature drift from the canonical pipeline write path.
     bot.callbackQuery(/^a:(.+)$/, async (ctx) => {
         if (!isAuthorized(ctx)) {
-            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
             return;
         }
         const taskId = ctx.match[1];
@@ -102,13 +153,14 @@ export function registerCallbacks(bot, adapter, pipeline) {
 
         if (!data) {
             if (store.isTaskProcessed(taskId)) {
-                await ctx.answerCallbackQuery({ text: '✅ Already handled' });
+                await safeAnswerCallbackQuery(ctx, { text: '✅ Already handled' });
                 return;
             }
-            await ctx.answerCallbackQuery({ text: '⚠️ Task not found' });
+            await safeAnswerCallbackQuery(ctx, { text: '⚠️ Task not found' });
             return;
         }
 
+        await safeAnswerCallbackQuery(ctx, { text: 'Processing...' });
         try {
             const actionType = data.actionType || 'update';
 
@@ -122,7 +174,6 @@ export function registerCallbacks(bot, adapter, pipeline) {
                     appliedTaskId: taskId,
                 }));
                 await store.approveTask(taskId);
-                await ctx.answerCallbackQuery({ text: '✅ Marked as done!' });
                 await editWithMarkdown(ctx, `✅ **Completed:** "${data.originalTitle}"`);
             } else if (actionType === 'delete') {
                 const projectId = data.projectId || data.originalProjectId;
@@ -134,7 +185,6 @@ export function registerCallbacks(bot, adapter, pipeline) {
                     appliedTaskId: taskId,
                 }));
                 await store.approveTask(taskId);
-                await ctx.answerCallbackQuery({ text: '🗑️ Deleted' });
                 await editWithMarkdown(ctx, `🗑️ **Deleted:** "${data.originalTitle}"`);
             } else {
                 const update = buildTickTickUpdate(data);
@@ -162,31 +212,40 @@ export function registerCallbacks(bot, adapter, pipeline) {
                 const dateNote = data.suggestedSchedule && data.suggestedSchedule !== 'someday'
                     ? ` Due: ${data.suggestedSchedule}.` : '';
 
-                await ctx.answerCallbackQuery({ text: '✅ Applied to TickTick!' });
-                await editWithMarkdown(ctx, `✅ **Updated:** "${data.improvedTitle || data.originalTitle}"${movedNote}${dateNote}\n\n*Applied successfully.*`);
+                await editWithMarkdown(ctx, `✅ **Updated:** "${data.improvedTitle || data.originalTitle}"${movedNote}${dateNote}\n\n*Applied.*`);
             }
         } catch (err) {
-            console.error('Approve error:', err.message);
-            await ctx.answerCallbackQuery({ text: '❌ Failed to update task. Please try again.' });
+            const message = err.message?.toLowerCase() || '';
+            const isMissing = message.includes('not found') || message.includes('404') || message.includes('missing') || message.includes('completed') || message.includes('deleted');
+            if (isMissing) {
+                await store.approveTask(taskId);
+                await editWithMarkdown(ctx, '⚠️ Task was already handled externally. Moving to next...');
+            } else {
+                console.error('Approve error:', err.message);
+                await editWithMarkdown(ctx, '❌ Failed to update task. Please try again.');
+                return;
+            }
         }
+        await sendNextPendingTask(ctx);
     });
 
     // ─── Skip: move pending → processed, leave TickTick alone ─
     bot.callbackQuery(/^s:(.+)$/, async (ctx) => {
         if (!isAuthorized(ctx)) {
-            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
             return;
         }
         const taskId = ctx.match[1];
 
         if (!store.isTaskPending(taskId)) {
-            await ctx.answerCallbackQuery({ text: '✅ Already handled' });
+            await safeAnswerCallbackQuery(ctx, { text: '✅ Already handled' });
             return;
         }
 
+        await safeAnswerCallbackQuery(ctx, { text: 'Skipping...' });
         await store.skipTask(taskId);
-        await ctx.answerCallbackQuery({ text: '⏭ Skipped' });
         await editWithMarkdown(ctx, '⏭ **Skipped** — task left unchanged in TickTick.');
+        await sendNextPendingTask(ctx);
     });
 
     // ─── Drop: move pending → processed, flag for removal ─────
@@ -195,37 +254,47 @@ export function registerCallbacks(bot, adapter, pipeline) {
     // operational moderation surface, not a freeform task-writing path.
     bot.callbackQuery(/^d:(.+)$/, async (ctx) => {
         if (!isAuthorized(ctx)) {
-            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
             return;
         }
         const taskId = ctx.match[1];
-        const data = store.getPendingTasks()[taskId];
+        const data = store.getPendingTasks()[taskId] || {};
 
         if (!store.isTaskPending(taskId)) {
-            await ctx.answerCallbackQuery({ text: '✅ Already handled' });
+            await safeAnswerCallbackQuery(ctx, { text: '✅ Already handled' });
             return;
         }
 
-        await store.dropTask(taskId);
+        await safeAnswerCallbackQuery(ctx, { text: 'Processing...' });
         try {
-            const projectId = data?.projectId || data?.originalProjectId || null;
+            const projectId = data.projectId || data.originalProjectId || null;
             await adapter.deleteTask(taskId, projectId);
-            await ctx.answerCallbackQuery({ text: '⚪ Deleted from TickTick' });
+            await store.dropTask(taskId);
             await editWithMarkdown(ctx, '⚪ **Deleted** — task was removed from TickTick.');
         } catch (err) {
-            console.error('Drop error:', err.message);
-            await ctx.answerCallbackQuery({ text: '❌ Delete failed. The task is marked dropped locally.' });
+            const message = err.message?.toLowerCase() || '';
+            const isNotFound = message.includes('not found') || message.includes('404') || message.includes('already deleted') || message.includes('missing') || message.includes('completed');
+            if (isNotFound) {
+                await store.dropTask(taskId);
+                await editWithMarkdown(ctx, '⚪ **Deleted** — task was already removed from TickTick.');
+            } else {
+                console.error('Drop error:', err.message);
+                await editWithMarkdown(ctx, '❌ Delete failed. Please retry — task still pending review.');
+                return;
+            }
         }
+        await sendNextPendingTask(ctx);
     });
 
     // ─── Mutation Candidate Selection ────────────────────────
     // Handles user picking a task from the clarification keyboard.
-    // Resumes through the pipeline (AX intent -> normalizer -> adapter), not direct adapter writes.
+    // Resumes through the pipeline (intent extraction -> normalizer -> adapter), not direct adapter writes.
     bot.callbackQuery(/^mut:pick:(.+)$/, async (ctx) => {
         if (!isAuthorized(ctx)) {
-            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
             return;
         }
+        await safeAnswerCallbackQuery(ctx, { text: 'Processing...' });
         const selectedTaskId = ctx.match[1];
         const chatId = ctx.chat?.id;
         const userId = ctx.from?.id;
@@ -234,18 +303,17 @@ export function registerCallbacks(bot, adapter, pipeline) {
 
         // Fail-closed: no pending state
         if (!pending) {
-            await ctx.answerCallbackQuery({ text: '⚠️ No pending clarification found.' });
             await editWithMarkdown(ctx, '⚠️ **No pending clarification.** Rephrase your request.');
             return;
         }
 
         // Cross-chat/user rejection
         if (pending.chatId && chatId && pending.chatId !== chatId) {
-            await ctx.answerCallbackQuery({ text: '⚠️ Wrong chat.' });
+            await editWithMarkdown(ctx, '⚠️ Wrong chat.');
             return;
         }
         if (pending.userId && userId && pending.userId !== userId) {
-            await ctx.answerCallbackQuery({ text: '⚠️ Wrong user.' });
+            await editWithMarkdown(ctx, '⚠️ Wrong user.');
             return;
         }
 
@@ -253,7 +321,6 @@ export function registerCallbacks(bot, adapter, pipeline) {
         const createdAt = pending.createdAt ? new Date(pending.createdAt).getTime() : 0;
         if (createdAt && (Date.now() - createdAt > MUTATION_CLARIFICATION_TTL_MS)) {
             await store.clearPendingMutationClarification();
-            await ctx.answerCallbackQuery({ text: '⏰ Expired.' });
             await editWithMarkdown(ctx, '⏰ **Clarification expired.** Rephrase your request.');
             return;
         }
@@ -261,13 +328,12 @@ export function registerCallbacks(bot, adapter, pipeline) {
         // Validate candidate exists in stored list
         const candidate = pending.candidates.find(c => c.id === selectedTaskId);
         if (!candidate) {
-            await ctx.answerCallbackQuery({ text: '⚠️ Candidate not found.' });
+            await editWithMarkdown(ctx, '⚠️ Candidate not found.');
             return;
         }
 
         // Duplicate tap guard: mark as consumed immediately to prevent replay
         await store.clearPendingMutationClarification();
-        await ctx.answerCallbackQuery({ text: `Selected: "${candidate.title}"` });
 
         // Resume through the pipeline with resolved task context.
         // Reconstruct the original message and inject the resolved task.
@@ -283,7 +349,7 @@ export function registerCallbacks(bot, adapter, pipeline) {
             }
 
             // Re-enter the pipeline with the original message + resolved task context.
-            // This ensures the same AX intent -> normalizer -> adapter safety path.
+            // This ensures the same intent extraction -> normalizer -> adapter safety path.
             const result = await processPipelineMessage(pending.originalMessage, {
                 existingTask: resolvedTask,
                 entryPoint: pending.entryPoint || 'telegram:clarification-resume',
@@ -300,7 +366,7 @@ export function registerCallbacks(bot, adapter, pipeline) {
                     : '';
                 await editWithMarkdown(ctx, `❌ ${result.confirmationText}${diag}`);
             } else {
-                await editWithMarkdown(ctx, `✅ **"${candidate.title}"** selected. ${result.confirmationText || 'Proceeding.'}`);
+                await editWithMarkdown(ctx, `**"${candidate.title}"** selected. ${result.confirmationText || 'Proceeding.'}`);
             }
         } catch (err) {
             console.error('Mutation clarification resume error:', err.message);
@@ -311,9 +377,10 @@ export function registerCallbacks(bot, adapter, pipeline) {
     // ─── Mutation Clarification Cancel ───────────────────────
     bot.callbackQuery(/^mut:cancel$/, async (ctx) => {
         if (!isAuthorized(ctx)) {
-            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
             return;
         }
+        await safeAnswerCallbackQuery(ctx, );
         const pending = store.getPendingMutationClarification();
 
         // Cross-chat/user rejection for cancel too
@@ -321,24 +388,23 @@ export function registerCallbacks(bot, adapter, pipeline) {
         const userId = ctx.from?.id;
         if (pending) {
             if (pending.chatId && chatId && pending.chatId !== chatId) {
-                await ctx.answerCallbackQuery({ text: '⚠️ Wrong chat.' });
+                await editWithMarkdown(ctx, '⚠️ Wrong chat.');
                 return;
             }
             if (pending.userId && userId && pending.userId !== userId) {
-                await ctx.answerCallbackQuery({ text: '⚠️ Wrong user.' });
+                await editWithMarkdown(ctx, '⚠️ Wrong user.');
                 return;
             }
         }
 
         await store.clearPendingMutationClarification();
-        await ctx.answerCallbackQuery({ text: 'Canceled' });
         await editWithMarkdown(ctx, '❌ **Clarification canceled.** Rephrase or try again.');
     });
 
     // ─── Checklist Clarification: shared handler ─────────────
     async function _handleChecklistClarification(ctx, { preference, skipChecklist, successPrefix }) {
         if (!isAuthorized(ctx)) {
-            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
             return;
         }
         const pending = store.getPendingChecklistClarification();
@@ -346,16 +412,16 @@ export function registerCallbacks(bot, adapter, pipeline) {
         const userId = ctx.from?.id;
 
         if (!pending) {
-            await ctx.answerCallbackQuery({ text: '⚠️ No pending clarification found.' });
+            await safeAnswerCallbackQuery(ctx, { text: '⚠️ No pending clarification found.' });
             await editWithMarkdown(ctx, '⚠️ **No pending clarification.** Rephrase your request.');
             return;
         }
         if (pending.chatId && chatId && pending.chatId !== chatId) {
-            await ctx.answerCallbackQuery({ text: '⚠️ Wrong chat.' });
+            await safeAnswerCallbackQuery(ctx, { text: '⚠️ Wrong chat.' });
             return;
         }
         if (pending.userId && userId && pending.userId !== userId) {
-            await ctx.answerCallbackQuery({ text: '⚠️ Wrong user.' });
+            await safeAnswerCallbackQuery(ctx, { text: '⚠️ Wrong user.' });
             return;
         }
 
@@ -393,29 +459,29 @@ export function registerCallbacks(bot, adapter, pipeline) {
     }
 
     bot.callbackQuery(/^cl:checklist$/, async (ctx) => {
-        await ctx.answerCallbackQuery({ text: '📋 Checklist mode' });
+        await safeAnswerCallbackQuery(ctx, { text: '📋 Checklist mode' });
         console.log('[ChecklistClarification] Button: checklist selected');
         await _handleChecklistClarification(ctx, {
             preference: 'checklist',
-            successPrefix: '✅ **Checklist mode.**',
+            successPrefix: 'Checklist mode.',
         });
     });
 
     bot.callbackQuery(/^cl:separate$/, async (ctx) => {
-        await ctx.answerCallbackQuery({ text: '📝 Separate tasks' });
+        await safeAnswerCallbackQuery(ctx, { text: '📝 Separate tasks' });
         console.log('[ChecklistClarification] Button: separate selected');
         await _handleChecklistClarification(ctx, {
             preference: 'separate',
-            successPrefix: '✅ **Separate tasks.**',
+            successPrefix: 'Separate tasks.',
         });
     });
 
     bot.callbackQuery(/^cl:skip$/, async (ctx) => {
-        await ctx.answerCallbackQuery({ text: '⏭ Skipped' });
+        await safeAnswerCallbackQuery(ctx, { text: '⏭ Skipped' });
         console.log('[ChecklistClarification] Button: skip selected');
         await _handleChecklistClarification(ctx, {
             skipChecklist: true,
-            successPrefix: '✅ **Single task.**',
+            successPrefix: 'Single task.',
         });
     });
 }

@@ -36,7 +36,7 @@ Wraps TickTickClient with validation, error classification, and structured loggi
 <dl>
 <dt><a href="#INTENT_EXTRACTION_PROMPT">INTENT_EXTRACTION_PROMPT</a></dt>
 <dd><p>System prompt for Gemini-based intent extraction.
-This prompt was preserved from the AX framework instruction text.</p>
+This prompt was preserved from the original framework instruction text.</p>
 </dd>
 <dt><a href="#intentActionSchema">intentActionSchema</a></dt>
 <dd><p>Response schema for Gemini intent extraction.
@@ -102,7 +102,7 @@ Cavekit ownership: Task Pipeline R16 (Guided Reorg).</p>
 Prevents brain-dump overload and keeps checklists execution-friendly.</p>
 </dd>
 <dt><a href="#CHECKLIST_ITEM_SHAPE">CHECKLIST_ITEM_SHAPE</a></dt>
-<dd><p>Shape descriptor for checklist items in AX intent output.
+<dd><p>Shape descriptor for checklist items in extracted intent output.
 Used by validateIntentAction to check checklistItems arrays.</p>
 </dd>
 <dt><a href="#briefingSummarySchema">briefingSummarySchema</a></dt>
@@ -213,7 +213,7 @@ Used by validateIntentAction to check checklistItems arrays.</p>
 <dd><p>Detects work-style mode intents from user messages.</p>
 </dd>
 <dt><a href="#validateChecklistItems">validateChecklistItems(items)</a> ⇒ <code>Object</code></dt>
-<dd><p>Validates and normalizes checklist items from AX intent output.
+<dd><p>Validates and normalizes checklist items from extracted intent output.
 Caps at MAX_CHECKLIST_ITEMS, validates each item has a title,
 and strips invalid entries.</p>
 </dd>
@@ -275,8 +275,8 @@ Checks for URLs, locations, instructions, or actionable items not already presen
 Trims whitespace, strips filler, truncates at word boundary.</p>
 </dd>
 <dt><a href="#_normalizeChecklistItems">_normalizeChecklistItems(rawItems)</a> ⇒ <code>Array</code></dt>
-<dd><p>Normalizes and validates raw AX checklist items.</p>
-<p>Accept raw AX checklistItems, return clean items or empty array.
+<dd><p>Normalizes and validates raw extracted checklist items.</p>
+<p>Accept raw extracted checklistItems, return clean items or empty array.
 Clean item text — trim, strip filler, drop empty, truncate ~50 chars.
 Cap at 30 items, log truncation.
 Assign zero-based sort order when absent.
@@ -341,7 +341,7 @@ that are out of scope for v1 single-target mutation.</p>
 <ul>
 <li><code>options.resolvedTask</code> carries the resolver&#39;s selected task { id, projectId, title }.</li>
 <li><code>options.existingTaskContent</code> preserves the original task description on updates.</li>
-<li><code>targetQuery</code> is passed through from AX for logging/diagnostics.</li>
+<li><code>targetQuery</code> is passed through from extracted intent for logging/diagnostics.</li>
 <li>Mutation actions without a resolved taskId fail validation (fail-closed).</li>
 </ul>
 </dd>
@@ -604,8 +604,23 @@ Returns the active mode, automatically reverting to standard if expired.</p>
 <dd><p>Set the work-style mode for a user.
 Mode transitions are explicit — never changes without user action or auto-expiry.</p>
 </dd>
+<dt><a href="#reconcileTaskState">reconcileTaskState()</a> ⇒ <code>Object</code></dt>
+<dd><p>Remove pending and failed entries for tasks no longer active in TickTick.</p>
+</dd>
 <dt><a href="#markTaskFailed">markTaskFailed([retryAfterMs])</a></dt>
 <dd><p>Park a task that failed analysis — prevents re-polling until retryAfterMs expires.</p>
+</dd>
+<dt><a href="#getQueueHealthSnapshot">getQueueHealthSnapshot()</a> ⇒ <code>Object</code></dt>
+<dd><p>Returns a snapshot of queue health for telemetry.</p>
+</dd>
+<dt><a href="#setQueueBlocked">setQueueBlocked(isBlocked)</a></dt>
+<dd><p>Sets or clears the queue blocked state.</p>
+</dd>
+<dt><a href="#getPendingBatch">getPendingBatch(options)</a> ⇒ <code>Array</code></dt>
+<dd><p>Return a sorted slice of pending tasks.</p>
+</dd>
+<dt><a href="#getNextPendingTask">getNextPendingTask()</a> ⇒ <code>Array</code> | <code>null</code></dt>
+<dd><p>Return the oldest pending task (by sentAt).</p>
 </dd>
 <dt><a href="#getPendingChecklistClarification">getPendingChecklistClarification()</a> ⇒ <code>Object</code> | <code>null</code></dt>
 <dd><p>Gets the pending checklist clarification if it exists and hasn&#39;t expired.</p>
@@ -718,10 +733,13 @@ Returns a string suitable for user-facing clarification.</p>
 <dt><a href="#getUserTimezoneSource">getUserTimezoneSource()</a> ⇒ <code>&#x27;user_context&#x27;</code> | <code>&#x27;env&#x27;</code> | <code>&#x27;default&#x27;</code></dt>
 <dd><p>Identifies the source of the resolved user timezone.</p>
 </dd>
+<dt><a href="#safeAnswerCallbackQuery">safeAnswerCallbackQuery(ctx, [options])</a></dt>
+<dd><p>Wraps ctx.answerCallbackQuery with timeout telemetry.</p>
+</dd>
 <dt><a href="#taskReviewKeyboard">taskReviewKeyboard(taskId, [actionType])</a> ⇒ <code>InlineKeyboard</code></dt>
 <dd><p>Build an inline keyboard for task review.</p>
 </dd>
-<dt><a href="#registerCallbacks">registerCallbacks(bot, adapter, pipeline)</a></dt>
+<dt><a href="#sendNextPendingTask">sendNextPendingTask(bot, adapter, pipeline)</a></dt>
 <dd><p>Register all inline keyboard callback handlers.</p>
 </dd>
 <dt><a href="#registerCommands">registerCommands(bot, ticktick, gemini, adapter, pipeline, [config])</a></dt>
@@ -1137,7 +1155,7 @@ Standard error codes used across the adapter and pipeline.
 
 ## INTENT\_EXTRACTION\_PROMPT
 System prompt for Gemini-based intent extraction.
-This prompt was preserved from the AX framework instruction text.
+This prompt was preserved from the original framework instruction text.
 
 **Kind**: global constant  
 <a name="intentActionSchema"></a>
@@ -1264,7 +1282,7 @@ Maximum number of checklist items allowed in a single create action.Prevents br
 <a name="CHECKLIST_ITEM_SHAPE"></a>
 
 ## CHECKLIST\_ITEM\_SHAPE
-Shape descriptor for checklist items in AX intent output.Used by validateIntentAction to check checklistItems arrays.
+Shape descriptor for checklist items in extracted intent output.Used by validateIntentAction to check checklistItems arrays.
 
 **Kind**: global constant  
 <a name="briefingSummarySchema"></a>
@@ -1546,7 +1564,7 @@ Detects work-style mode intents from user messages.
 <a name="validateChecklistItems"></a>
 
 ## validateChecklistItems(items) ⇒ <code>Object</code>
-Validates and normalizes checklist items from AX intent output.
+Validates and normalizes checklist items from extracted intent output.
 Caps at MAX_CHECKLIST_ITEMS, validates each item has a title,
 and strips invalid entries.
 
@@ -1555,7 +1573,7 @@ and strips invalid entries.
 
 | Param | Type | Description |
 | --- | --- | --- |
-| items | <code>Array</code> | Raw checklist items from AX output |
+| items | <code>Array</code> | Raw checklist items from extracted output |
 
 <a name="validateIntentAction"></a>
 
@@ -1645,7 +1663,7 @@ Transformations applied in order:
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
-| rawTitle | <code>string</code> |  | The raw title from AX intent |
+| rawTitle | <code>string</code> |  | The raw title from extracted intent |
 | maxLength | <code>number</code> | <code>100</code> | Maximum character limit (default 100) |
 
 <a name="_normalizeContent"></a>
@@ -1666,7 +1684,7 @@ Content cleaning steps:
 
 | Param | Type | Description |
 | --- | --- | --- |
-| rawContent | <code>string</code> \| <code>null</code> | Raw content from AX intent |
+| rawContent | <code>string</code> \| <code>null</code> | Raw content from extracted intent |
 | existingContent | <code>string</code> \| <code>null</code> | Existing task content (for updates) |
 
 <a name="_truncateContent"></a>
@@ -1713,9 +1731,9 @@ Trims whitespace, strips filler, truncates at word boundary.
 <a name="_normalizeChecklistItems"></a>
 
 ## \_normalizeChecklistItems(rawItems) ⇒ <code>Array</code>
-Normalizes and validates raw AX checklist items.
+Normalizes and validates raw extracted checklist items.
 
-Accept raw AX checklistItems, return clean items or empty array.
+Accept raw extracted checklistItems, return clean items or empty array.
 Clean item text — trim, strip filler, drop empty, truncate ~50 chars.
 Cap at 30 items, log truncation.
 Assign zero-based sort order when absent.
@@ -1727,7 +1745,7 @@ Validate — require non-empty title, default status to 0 (incomplete),
 
 | Param | Type | Description |
 | --- | --- | --- |
-| rawItems | <code>Array</code> \| <code>null</code> | Raw checklistItems from AX intent |
+| rawItems | <code>Array</code> \| <code>null</code> | Raw checklistItems from extracted intent |
 
 <a name="_convertRepeatHint"></a>
 
@@ -1830,7 +1848,7 @@ Normalizes a single intent action.
 Mutation support:
 - `options.resolvedTask` carries the resolver's selected task { id, projectId, title }.
 - `options.existingTaskContent` preserves the original task description on updates.
-- `targetQuery` is passed through from AX for logging/diagnostics.
+- `targetQuery` is passed through from extracted intent for logging/diagnostics.
 - Mutation actions without a resolved taskId fail validation (fail-closed).
 
 **Kind**: global function  
@@ -2117,6 +2135,11 @@ Creates a pipeline observability instance for emitting telemetry.
 | [options.logger] | <code>Object</code> | <code>console</code> | Console logger instance |
 | [options.now] | <code>function</code> |  | Function returning current Date |
 
+
+* [createPipelineObservability([options])](#createPipelineObservability) ⇒ <code>Object</code>
+    * [~emit(context, payload)](#createPipelineObservability..emit) ⇒ <code>Promise.&lt;Object&gt;</code>
+    * [~emitLatencyHistogram(payload)](#createPipelineObservability..emitLatencyHistogram)
+
 <a name="createPipelineObservability..emit"></a>
 
 ### createPipelineObservability~emit(context, payload) ⇒ <code>Promise.&lt;Object&gt;</code>
@@ -2129,6 +2152,19 @@ Emits a telemetry event for a pipeline step.
 | --- | --- | --- |
 | context | <code>Object</code> | Pipeline request context |
 | payload | <code>Object</code> | Event data |
+
+<a name="createPipelineObservability..emitLatencyHistogram"></a>
+
+### createPipelineObservability~emitLatencyHistogram(payload)
+Emits a latency histogram event for a pipeline stage.
+
+**Kind**: inner method of [<code>createPipelineObservability</code>](#createPipelineObservability)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| payload | <code>Object</code> | Event payload |
+| payload.stage | <code>string</code> | Stage name |
+| payload.durationMs | <code>number</code> | Duration in milliseconds |
 
 <a name="parseNonNegativeIntEnv"></a>
 
@@ -2893,6 +2929,12 @@ Set the work-style mode for a user.Mode transitions are explicit — never chan
 | [options.expiryMs] | <code>number</code> | Optional relative expiry duration (ms from now) |
 | [options.reason] | <code>string</code> | Optional operational telemetry reason for the transition |
 
+<a name="reconcileTaskState"></a>
+
+## reconcileTaskState() ⇒ <code>Object</code>
+Remove pending and failed entries for tasks no longer active in TickTick.
+
+**Kind**: global function  
 <a name="markTaskFailed"></a>
 
 ## markTaskFailed([retryAfterMs])
@@ -2904,6 +2946,44 @@ Park a task that failed analysis — prevents re-polling until retryAfterMs expi
 | --- | --- | --- | --- |
 | [retryAfterMs] | <code>number</code> | <code>7200000</code> | — ms to park (default 2h; callers can pass quota-aligned duration) |
 
+<a name="getQueueHealthSnapshot"></a>
+
+## getQueueHealthSnapshot() ⇒ <code>Object</code>
+Returns a snapshot of queue health for telemetry.
+
+**Kind**: global function  
+<a name="setQueueBlocked"></a>
+
+## setQueueBlocked(isBlocked)
+Sets or clears the queue blocked state.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| isBlocked | <code>boolean</code> | 
+
+<a name="getPendingBatch"></a>
+
+## getPendingBatch(options) ⇒ <code>Array</code>
+Return a sorted slice of pending tasks.
+
+**Kind**: global function  
+**Returns**: <code>Array</code> - Array of [taskId, data] tuples  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| options | <code>Object</code> |  | 
+| [options.limit] | <code>number</code> | <code>5</code> | 
+| [options.sortBy] | <code>string</code> | <code>&quot;&#x27;sentAt&#x27;&quot;</code> | 
+
+<a name="getNextPendingTask"></a>
+
+## getNextPendingTask() ⇒ <code>Array</code> \| <code>null</code>
+Return the oldest pending task (by sentAt).
+
+**Kind**: global function  
+**Returns**: <code>Array</code> \| <code>null</code> - [taskId, data] or null  
 <a name="getPendingChecklistClarification"></a>
 
 ## getPendingChecklistClarification() ⇒ <code>Object</code> \| <code>null</code>
@@ -3347,6 +3427,18 @@ Identifies the source of the resolved user timezone.
 
 **Kind**: global function  
 **Returns**: <code>&#x27;user\_context&#x27;</code> \| <code>&#x27;env&#x27;</code> \| <code>&#x27;default&#x27;</code> - Timezone source  
+<a name="safeAnswerCallbackQuery"></a>
+
+## safeAnswerCallbackQuery(ctx, [options])
+Wraps ctx.answerCallbackQuery with timeout telemetry.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| ctx | <code>Object</code> | Grammy context |
+| [options] | <code>Object</code> | answerCallbackQuery options |
+
 <a name="taskReviewKeyboard"></a>
 
 ## taskReviewKeyboard(taskId, [actionType]) ⇒ <code>InlineKeyboard</code>
@@ -3360,9 +3452,9 @@ Build an inline keyboard for task review.
 | taskId | <code>string</code> |  | The TickTick task ID. |
 | [actionType] | <code>string</code> | <code>&quot;&#x27;update&#x27;&quot;</code> | The action type: 'update', 'complete', or 'delete'. |
 
-<a name="registerCallbacks"></a>
+<a name="sendNextPendingTask"></a>
 
-## registerCallbacks(bot, adapter, pipeline)
+## sendNextPendingTask(bot, adapter, pipeline)
 Register all inline keyboard callback handlers.
 
 **Kind**: global function  

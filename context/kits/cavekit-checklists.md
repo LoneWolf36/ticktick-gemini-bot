@@ -14,9 +14,9 @@ Checklist/subtask extraction, creation, and clarification for create-time task o
 ## Requirements
 
 ### R1: Checklist Intent Extraction
-**Description:** AX extraction supports an optional `checklistItems` field for create actions.
+**Description:** Intent extraction supports an optional `checklistItems` field for create actions.
 **Acceptance Criteria:**
-- [x] Given "plan trip: book flights, pack bags, renew travel card", AX extracts one create action with `checklistItems: [{title: "Book flights"}, {title: "Pack bags"}, {title: "Renew travel card"}]`
+- [x] Given "plan trip: book flights, pack bags, renew travel card", intent extraction extracts one create action with `checklistItems: [{title: "Book flights"}, {title: "Pack bags"}, {title: "Renew travel card"}]`
 - [x] Given a long task with primary objective and sub-steps, primary objective becomes title and sub-steps become checklist items
 - [x] Checklist item objects have `{ title, status?, sortOrder? }`
 - [x] This extension does not affect mutation actions from cavekit-task-pipeline
@@ -54,7 +54,7 @@ Checklist/subtask extraction, creation, and clarification for create-time task o
 ### R6: Checklist Pipeline Logging
 **Description:** Logging includes extracted checklist items, normalized checklist items, and adapter payload mapping.
 **Acceptance Criteria:**
-- [x] Logs show extracted checklist items from AX
+- [x] Logs show extracted checklist items from intent extraction
 - [x] Logs show normalized checklist items after cleaning
 - [x] Logs show adapter payload mapping for checklist creation
 **Dependencies:** cavekit-task-pipeline R12
@@ -83,14 +83,14 @@ Checklist/subtask extraction, creation, and clarification for create-time task o
 
 ## Validation Action Items — 2026-04-19
 
-- [x] Audit R1 (Checklist Intent Extraction): `tests/intent-extraction.test.js` verifies AX emits one create action with structured `checklistItems`, preserving a single parent objective plus ordered sub-steps without changing mutation intent shapes.
+- [x] Audit R1 (Checklist Intent Extraction): `tests/intent-extraction.test.js` verifies intent extraction emits one create action with structured `checklistItems`, preserving a single parent objective plus ordered sub-steps without changing mutation intent shapes.
 - [x] Audit R2 (Checklist vs Multi-Task Disambiguation): `tests/regression.checklist-clarification.test.js` verifies one-parent checklist creation, separate multi-task creation, and clarification / conservative fallback when phrasing is ambiguous.
 - [x] Audit R3 (Checklist Item Normalization): `services/normalizer.js` cleans checklist item titles independently, flattens to one checklist level, caps items at 30 with warnings, and normalizes status/sortOrder; `tests/normalizer.test.js` covers trimming, truncation, invalid-item dropping, and over-limit behavior.
 - [x] Audit R4 (Adapter Checklist Creation): `services/ticktick-adapter.js` maps optional `checklistItems` into TickTick payload `items`, assigns stable sort order, and drops malformed items safely; `tests/regression.adapter-execution-reorg.test.js` verifies payload mapping directly.
 - [x] `tests/e2e-live-checklist.mjs` excluded from drift checks — it is a mocked logic validator redundant with `tests/regression.checklist-clarification.test.js`, kept only for interactive debugging.
 - [x] Audit R7 (Regression Coverage): `tests/regression.checklist-clarification.test.js` now provides dedicated pipeline-harness coverage for parent-task checklist creation, separate multi-task creation, and ambiguous clarification, `tests/regression.checklist-r7-truncation.test.js` adds the missing over-limit truncation proof through the same harness path, and the focused/full regression suites remain green.
 - [x] Audit R5 (Terse Checklist Confirmations): `services/pipeline.js` now keeps single checklist-create confirmations terse by appending only the checklist item count, and `tests/regression.checklist-clarification.test.js` verifies both standard and urgent responses stay compact without listing sub-items.
-- [x] Audit R6 (Checklist Pipeline Logging): `services/pipeline.js` now emits privacy-safe checklist count/shape metadata at AX extraction and normalization stages, `services/ticktick-adapter.js` logs structured checklist payload-mapping counts at create time, and `tests/regression.checklist-r6-logging.test.js` verifies the extracted → normalized → adapter chain without leaking raw checklist titles or message text.
+- [x] Audit R6 (Checklist Pipeline Logging): `services/pipeline.js` now emits privacy-safe checklist count/shape metadata at intent extraction and normalization stages, `services/ticktick-adapter.js` logs structured checklist payload-mapping counts at create time, and `tests/regression.checklist-r6-logging.test.js` verifies the extracted → normalized → adapter chain without leaking raw checklist titles or message text.
 
 ## Changelog
 - 2026-04-24: R7 completed — checklist flows now have dedicated pipeline-harness regression coverage for parent creation, separate multi-task creation, ambiguity clarification, and over-limit truncation, with checklist suites and full regression remaining green.

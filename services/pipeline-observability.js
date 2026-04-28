@@ -112,8 +112,28 @@ export function createPipelineObservability({
         return event;
     }
 
+    /**
+     * Emits a latency histogram event for a pipeline stage.
+     * @param {Object} payload - Event payload
+     * @param {string} payload.stage - Stage name
+     * @param {number} payload.durationMs - Duration in milliseconds
+     */
+    function emitLatencyHistogram({ stage, durationMs }) {
+        const bucket = durationMs < 1000 ? '<1s'
+            : durationMs < 3000 ? '<3s'
+                : durationMs < 6000 ? '<6s'
+                    : durationMs < 10000 ? '<10s'
+                        : durationMs < 30000 ? '<30s'
+                            : '>30s';
+        const line = `[PipelineLatency] ${JSON.stringify({ eventType: 'pipeline.latency.histogram', stage, bucket, durationMs })}`;
+        if (logger && typeof logger.log === 'function') {
+            logger.log(line);
+        }
+    }
+
     return {
         emit,
+        emitLatencyHistogram,
         normalizeEntryPoint,
     };
 }

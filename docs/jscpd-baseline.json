@@ -136,7 +136,7 @@
             "newDuplicatedLines": 0,
             "newClones": 0
           },
-          "/home/lonewolf09/Documents/Projects/ticktick-gemini/tests/ax-intent.test.js": {
+          "/home/lonewolf09/Documents/Projects/ticktick-gemini/tests/intent-extraction.test.js": {
             "lines": 328,
             "tokens": 2662,
             "sources": 1,
@@ -692,7 +692,7 @@
     {
       "format": "javascript",
       "lines": 12,
-      "fragment": ";\n        try {\n            const actions = await axIntent.extractIntents(message, {\n                currentDate: '2026-03-31',\n            });\n            assert.ok(Array.isArray(actions));\n        } catch (error) {\n            assert.ok(true);\n        }\n    });\n\n    it('handles null/undefined options gracefully'",
+      "fragment": ";\n        try {\n            const actions = await intentExtractor.extractIntents(message, {\n                currentDate: '2026-03-31',\n            });\n            assert.ok(Array.isArray(actions));\n        } catch (error) {\n            assert.ok(true);\n        }\n    });\n\n    it('handles null/undefined options gracefully'",
       "tokens": 0,
       "firstFile": {
         "name": "/home/lonewolf09/Documents/Projects/ticktick-gemini/tests/integration/ax-integration.test.js",
@@ -1163,7 +1163,7 @@
       "fragment": ", () => {\n    let mockKeyManager;\n\n    beforeEach(() => {\n        mockKeyManager = {\n            getActiveKey: mock.fn(() => 'test-key'),\n            markKeyUnavailable: mock.fn(),\n            rotateKey: mock.fn(async () => false),\n            getKeyCount: mock.fn(() => 1),\n        };\n    });\n\n    describe",
       "tokens": 0,
       "firstFile": {
-        "name": "/home/lonewolf09/Documents/Projects/ticktick-gemini/tests/ax-intent.test.js",
+        "name": "/home/lonewolf09/Documents/Projects/ticktick-gemini/tests/intent-extraction.test.js",
         "start": 5,
         "end": 17,
         "startLoc": {
@@ -1196,10 +1196,10 @@
     {
       "format": "javascript",
       "lines": 11,
-      "fragment": ", async () => {\n            const mockKeyManager = {\n                getActiveKey: mock.fn(() => 'key-1'),\n                markKeyUnavailable: mock.fn(),\n                rotateKey: mock.fn(async () => false),\n                getKeyCount: mock.fn(() => 1),\n            };\n\n            const axIntent = createAxIntent(mockKeyManager);\n\n            // Without AX mock, we can't fully test this flow",
+      "fragment": ", async () => {\n            const mockKeyManager = {\n                getActiveKey: mock.fn(() => 'key-1'),\n                markKeyUnavailable: mock.fn(),\n                rotateKey: mock.fn(async () => false),\n                getKeyCount: mock.fn(() => 1),\n            };\n\n            const intentExtractor = createIntentExtractor(mockKeyManager);\n\n            // Without intent extraction mock, we can't fully test this flow",
       "tokens": 0,
       "firstFile": {
-        "name": "/home/lonewolf09/Documents/Projects/ticktick-gemini/tests/ax-intent.test.js",
+        "name": "/home/lonewolf09/Documents/Projects/ticktick-gemini/tests/intent-extraction.test.js",
         "start": 295,
         "end": 305,
         "startLoc": {

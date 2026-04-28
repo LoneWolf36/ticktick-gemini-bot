@@ -1,9 +1,9 @@
 /**
  * services/normalizer.js
- * Transforms raw AX intent actions into clean, validated, execution-ready normalised actions.
+ * Transforms raw extracted intent actions into clean, validated, execution-ready normalised actions.
  *
  * Mutation support for task-update normalization:
- * - Mutation actions (update/complete/delete) carry targetQuery from AX and resolved
+ * - Mutation actions (update/complete/delete) carry targetQuery from extracted intent and resolved
  *   taskId/originalProjectId from the task resolver.
  * - Mutation actions require resolved task context (taskId) to pass validation.
  * - Content is preserved on updates unless explicit replacement is requested.
@@ -177,7 +177,7 @@ function _formatISO(date, timezone = 'Europe/Dublin', endOfDay = true) {
  * 7. Capitalize first letter (sentence case)
  * 8. Truncate to maxLength at word boundary with ellipsis
  * 
- * @param {string} rawTitle - The raw title from AX intent
+ * @param {string} rawTitle - The raw title from extracted intent
  * @param {number} maxLength - Maximum character limit (default 100)
  * @returns {string} Cleaned, verb-led title
  */
@@ -234,7 +234,7 @@ function _normalizeTitle(rawTitle, maxLength = 100, isMutation = false) {
  * 4. Preserve actionable sub-step lists
  * 5. For updates: merge with existing content if new content adds value
  * 
- * @param {string|null} rawContent - Raw content from AX intent
+ * @param {string|null} rawContent - Raw content from extracted intent
  * @param {string|null} existingContent - Existing task content (for updates)
  * @returns {string|null} Cleaned content or null if empty
  */
@@ -391,16 +391,16 @@ function _cleanChecklistItemTitle(rawTitle) {
 }
 
 /**
- * Normalizes and validates raw AX checklist items.
+ * Normalizes and validates raw extracted checklist items.
  *
- * Accept raw AX checklistItems, return clean items or empty array.
+ * Accept raw extracted checklistItems, return clean items or empty array.
  * Clean item text — trim, strip filler, drop empty, truncate ~50 chars.
  * Cap at 30 items, log truncation.
  * Assign zero-based sort order when absent.
  * Validate — require non-empty title, default status to 0 (incomplete),
  *        reject nested checklist structures.
  *
- * @param {Array|null} rawItems - Raw checklistItems from AX intent
+ * @param {Array|null} rawItems - Raw checklistItems from extracted intent
  * @returns {Array} Clean, validated checklist items (may be empty)
  */
 function _normalizeChecklistItems(rawItems) {
@@ -746,6 +746,19 @@ export function validateMutationBatch(actions) {
     // Multiple mutations: out of scope for v1 (single-target only)
     const mutationCount = types.filter(t => mutationTypes.includes(t)).length;
     if (mutationCount > 1) {
+        const mutationActions = actions.filter(a => mutationTypes.includes(a.type));
+
+        // Allow if all mutations target the same resolved task
+        const allSameTask = mutationActions.every(a => a.taskId === mutationActions[0].taskId);
+        if (allSameTask && mutationActions[0].taskId) {
+            return { valid: true, reason: null };
+        }
+
+        // Allow small, semantically coherent batches (all updates, <=3 actions)
+        if (mutationCount <= 3 && mutationActions.every(a => a.type === 'update')) {
+            return { valid: true, reason: null };
+        }
+
         return { valid: false, reason: 'multiple_mutations' };
     }
 
@@ -843,7 +856,7 @@ function _resolveActionType(intentAction, existingTask) {
  * Mutation support:
  * - `options.resolvedTask` carries the resolver's selected task { id, projectId, title }.
  * - `options.existingTaskContent` preserves the original task description on updates.
- * - `targetQuery` is passed through from AX for logging/diagnostics.
+ * - `targetQuery` is passed through from extracted intent for logging/diagnostics.
  * - Mutation actions without a resolved taskId fail validation (fail-closed).
  */
 export function normalizeAction(intentAction, options = {}) {

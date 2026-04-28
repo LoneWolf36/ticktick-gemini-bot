@@ -78,7 +78,7 @@
 
 ## Intent Action
 
-**Definition:** A structured object produced by the AX (intent extraction) layer representing a single unit of user intent. Contains fields: `type`, `title`, `content`, `priority`, `projectHint`, `dueDate`, `repeatHint`, `splitStrategy`, `confidence`.
+**Definition:** A structured object produced by the intent extraction layer representing a single unit of user intent. Contains fields: `type`, `title`, `content`, `priority`, `projectHint`, `dueDate`, `repeatHint`, `splitStrategy`, `confidence`.
 
 **Owner Spec:** Spec 001 (Task Operations Pipeline)
 
@@ -148,7 +148,7 @@
 
 ## Pipeline Contract
 
-**Definition:** The shared input/output shape that all pipeline modules (AX, normalizer, adapter) must adhere to. Defines the data structures, field types, and error shapes that flow between modules.
+**Definition:** The shared input/output shape that all pipeline modules (intent extraction, normalizer, adapter) must adhere to. Defines the data structures, field types, and error shapes that flow between modules.
 
 **Owner Spec:** Spec 001 (Task Operations Pipeline)
 

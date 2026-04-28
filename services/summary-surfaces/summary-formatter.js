@@ -67,22 +67,25 @@ function formatBriefing(summary = {}, context = {}) {
 
     const focus = normalizeInline(summary.focus) || EMPTY_LABEL;
     const startNow = normalizeInline(summary.start_now) || EMPTY_LABEL;
+    const sections = [];
 
-    if (urgentMode) {
-        return [
-            `**Focus**: ${focus}`,
-            `**Priorities**:\n${renderNumberedList(priorities.slice(0, 2))}`,
-            `**Start now**: ${startNow}`,
-        ].join('\n\n').trim();
+    sections.push(`**Focus**: ${focus}`);
+
+    if (priorities.length > 0) {
+        sections.push(`**Priorities**:\n${urgentMode ? renderNumberedList(priorities.slice(0, 2)) : renderNumberedList(priorities)}`);
     }
 
-    return [
-        `**Focus**: ${focus}`,
-        `**Priorities**:\n${renderNumberedList(priorities)}`,
-        `**Why now**:\n${renderList(summary.why_now)}`,
-        `**Start now**: ${startNow}`,
-        `**Notices**:\n${formatNotices(summary.notices)}`,
-    ].join('\n\n').trim();
+    if (!urgentMode && Array.isArray(summary.why_now) && summary.why_now.length > 0) {
+        sections.push(`**Why now**:\n${renderList(summary.why_now)}`);
+    }
+
+    sections.push(`**Start now**: ${startNow}`);
+
+    if (!urgentMode) {
+        sections.push(`**Notices**:\n${formatNotices(summary.notices)}`);
+    }
+
+    return sections.join('\n\n').trim();
 }
 
 function formatWeekly(summary = {}, context = {}) {
@@ -105,21 +108,25 @@ function formatWeekly(summary = {}, context = {}) {
         })
         .filter(Boolean);
 
+    const sections = [];
+
     if (urgentMode) {
-        return [
-            `**Progress**:\n${renderList((Array.isArray(summary.progress) ? summary.progress : []).slice(0, 2))}`,
-            `**Next focus**:\n${renderNumberedList((Array.isArray(summary.next_focus) ? summary.next_focus : []).slice(0, 2))}`,
-            `**Watchouts**:\n${renderList(watchouts)}`,
-        ].join('\n\n').trim();
+        sections.push(`**Progress**:\n${renderList((Array.isArray(summary.progress) ? summary.progress : []).slice(0, 2))}`);
+        if (Array.isArray(summary.next_focus) && summary.next_focus.length > 0) {
+            sections.push(`**Next focus**:\n${renderNumberedList(summary.next_focus.slice(0, 2))}`);
+        }
+        sections.push(`**Watchouts**:\n${renderList(watchouts)}`);
+    } else {
+        sections.push(`**Progress**:\n${renderList(summary.progress)}`);
+        sections.push(`**Carry forward**:\n${renderList(carryForward)}`);
+        if (Array.isArray(summary.next_focus) && summary.next_focus.length > 0) {
+            sections.push(`**Next focus**:\n${renderNumberedList(summary.next_focus)}`);
+        }
+        sections.push(`**Watchouts**:\n${renderList(watchouts)}`);
+        sections.push(`**Notices**:\n${formatNotices(summary.notices)}`);
     }
 
-    return [
-        `**Progress**:\n${renderList(summary.progress)}`,
-        `**Carry forward**:\n${renderList(carryForward)}`,
-        `**Next focus**:\n${renderNumberedList(summary.next_focus)}`,
-        `**Watchouts**:\n${renderList(watchouts)}`,
-        `**Notices**:\n${formatNotices(summary.notices)}`,
-    ].join('\n\n').trim();
+    return sections.join('\n\n').trim();
 }
 
 function formatDailyClose(summary = {}, context = {}) {

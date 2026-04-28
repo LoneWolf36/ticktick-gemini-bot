@@ -243,16 +243,48 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             return;
         }
         await store.resetAll();
-        await ctx.reply('🗑️ All bot data has been wiped. Fresh start.\n\nRun /scan to re-analyze your tasks.');
+        let backendCount = 0;
+        try {
+            const activeTasks = await adapter.listActiveTasks(true);
+            backendCount = activeTasks.length;
+        } catch (err) {
+            console.error('Reset: failed to fetch backend count:', err.message);
+        }
+        await ctx.reply(`🗑️ Local review state cleared. TickTick still has ${backendCount} active task(s).`);
     });
 
     // ─── /status ──────────────────────────────────────────────
     async function cmdStatus(ctx) {
         if (!await guardAccess(ctx)) return;
-        const stats = store.getStats();
-        const pendingCount = store.getPendingCount();
+
+        let backendCount = 0;
+        try {
+            const activeTasks = await adapter.listActiveTasks(true);
+            backendCount = activeTasks.length;
+        } catch (err) {
+            console.error('Status: failed to fetch backend count:', err.message);
+        }
+
+        const snapshot = store.getOperationalSnapshot();
+        const stats = snapshot.cumulative;
+        const local = snapshot.localWorkflow;
+
         const lines = [
             '**📊 System Status**\n',
+            '**Backend Snapshot**',
+            `Active tasks in TickTick: ${backendCount}`,
+            '',
+            '**Local Workflow**',
+            `Pending review: ${local.pendingReview}`,
+            `Failed / parked: ${local.failedParked}`,
+            `Deferred intents: ${local.deferredIntents}`,
+            `Clarifications waiting: ${local.clarifications}`,
+            '',
+            '**Cumulative Stats**',
+            `Analyzed: ${stats.tasksAnalyzed}  |  Approved: ${stats.tasksApproved}`,
+            `Skipped: ${stats.tasksSkipped}  |  Dropped: ${stats.tasksDropped}`,
+            `Auto-applied: ${stats.tasksAutoApplied || 0}`,
+            '',
             '**Connection**',
             `TickTick: ${ticktick.isAuthenticated() ? '✅ Connected' : '❌ Not connected'}`,
         ];
@@ -268,10 +300,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
 
         lines.push(
-            '',
-            '**Pipeline Stats**',
-            `Analyzed: ${stats.tasksAnalyzed}  |  Approved: ${stats.tasksApproved}  |  Auto-applied: ${stats.tasksAutoApplied || 0}`,
-            `Skipped: ${stats.tasksSkipped}  |  Pending review: ${pendingCount}`,
             '',
             '**Settings**',
             `Auto-apply life-admin: ${autoApplyLifeAdmin ? 'ON' : 'OFF'}`,
@@ -459,14 +487,15 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     });
 
 
-    // ─── /scan — manual poll, BATCHED (5 at a time) ───────────
+    // ─── /scan — manual poll, BATCHED (up to soft-cap slots) ──
     async function cmdScan(ctx) {
         if (!await guardAccess(ctx)) return;
         if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected. Run the OAuth flow first.'); return; }
 
-        const pendingCount = store.getPendingCount();
-        if (pendingCount > 0) {
-            await ctx.reply(`⏳ You have ${pendingCount} task(s) pending review. Run /pending first.`);
+        const MAX_PENDING_REVIEW = 5;
+        const availableSlots = MAX_PENDING_REVIEW - store.getPendingCount();
+        if (availableSlots <= 0) {
+            await ctx.reply(`⏳ Review queue full (${MAX_PENDING_REVIEW}/${MAX_PENDING_REVIEW}). Run /pending to clear.`);
             return;
         }
 
@@ -475,16 +504,22 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         try {
             await ctx.reply('🔍 Scanning for new tasks...');
             const allTasks = await adapter.listActiveTasks(true);
+
+            const { removedPending, removedFailed } = await store.reconcileTaskState(allTasks);
+            if (removedPending > 0 || removedFailed > 0) {
+                console.log(`🧹 Scan reconciled: removed ${removedPending} pending, ${removedFailed} failed`);
+            }
+
             const availableProjects = await adapter.listProjects();
             const workStyleMode = await resolveCurrentWorkStyleMode(ctx);
             const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
-                await ctx.reply('✅ No new tasks found.');
+                await ctx.reply('No new tasks found.');
                 return;
             }
 
-            const batch = targetTasks.slice(0, 5);
+            const batch = targetTasks.slice(0, availableSlots);
             await ctx.reply(`📬 Found ${targetTasks.length} new task(s). Processing first ${batch.length} through pipeline...`);
 
             let confirmations = [];
@@ -525,7 +560,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                             await store.markTaskPending(task.id, pendingData);
 
                             const card = buildTaskCardFromAction(task, action, availableProjects);
-                            await replyWithMarkdown(ctx, card, { reply_markup: taskReviewKeyboard(task.id, pendingData.actionType) });
+                            await replyWithMarkdown(ctx, `[Preview]\n\n${card}`, { reply_markup: taskReviewKeyboard(task.id, pendingData.actionType) });
                             await sleep(1000);
 
                             confirmations.push(`📋 Queued for review: ${task.title}`);
@@ -565,7 +600,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
             const lines = [];
             if (queuedCount > 0) {
-                lines.push(`📋 **${queuedCount} task(s) queued for review.** Tap ✅ Apply changes or ⏭ Keep original on each card above.`);
+                lines.push(`📋 **[Preview] ${queuedCount} task(s) queued for review.** Tap ✅ Apply changes or ⏭ Keep original on each card above.`);
             }
             if (failedCount > 0) {
                 lines.push(`❌ ${failedCount} failed or need clarification.`);
@@ -577,20 +612,20 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 lines.push(`📝 ${parkedCount} parked for retry (quota exhausted).`);
             }
 
-            if (targetTasks.length > 5) {
-                lines.push(`\n📝 ${targetTasks.length - 5} more remain. Run /scan again after reviewing.`);
+            if (targetTasks.length > availableSlots) {
+                lines.push(`\n📝 ${targetTasks.length - availableSlots} more remain. Run /scan again after reviewing.`);
             }
 
             if (lines.length > 0) {
                 const doneMsg = lines.join('\n');
-                if (targetTasks.length > 5) {
+                if (targetTasks.length > availableSlots) {
                     const nextKeyboard = new InlineKeyboard().text('🔄 Continue', 'menu:scan');
                     await replyWithMarkdown(ctx, doneMsg.trim(), { reply_markup: nextKeyboard });
                 } else {
                     await replyWithMarkdown(ctx, doneMsg.trim());
                 }
             } else {
-                await ctx.reply('✅ Scan complete. No tasks to review.');
+                await ctx.reply('Scan complete. No tasks to review.');
             }
 
         } catch (err) {
@@ -608,17 +643,16 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     // ─── /pending — re-surface un-reviewed tasks ──────────────
     async function cmdPending(ctx) {
         if (!await guardAccess(ctx)) return;
-        const pending = store.getPendingTasks();
-        const entries = Object.entries(pending);
+        const pendingCount = store.getPendingCount();
 
-        if (entries.length === 0) {
-            await ctx.reply('✅ No pending tasks! Everything has been reviewed.');
+        if (pendingCount === 0) {
+            await ctx.reply('No pending tasks. Everything has been reviewed.');
             return;
         }
 
-        await ctx.reply(`⏳ You have ${entries.length} task(s) awaiting review. Re-sending...`);
+        await ctx.reply(`⏳ You have ${pendingCount} task(s) awaiting review. Re-sending...`);
 
-        const batch = entries.slice(0, 5);
+        const batch = store.getPendingBatch({ limit: 5, sortBy: 'sentAt' });
         for (const [taskId, data] of batch) {
             const analysis = pendingToAnalysis(data);
             const card = buildTaskCard({ title: data.originalTitle, projectName: data.projectName }, analysis);
@@ -626,9 +660,9 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             await sleep(1000);
         }
 
-        if (entries.length > 5) {
+        if (pendingCount > 5) {
             const nextKeyboard = new InlineKeyboard().text('🔄 Continue', 'menu:pending');
-                await ctx.reply(`📝 Sent 5 of ${entries.length}.`, { reply_markup: nextKeyboard });
+            await ctx.reply(`📝 Sent 5 of ${pendingCount}.`, { reply_markup: nextKeyboard });
         }
     };
 
@@ -884,11 +918,12 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     // ─── /review ──────────────────────────────────────────────
     async function cmdReview(ctx) {
         if (!await guardAccess(ctx)) return;
-        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
+        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected. Run the OAuth flow first.'); return; }
 
-        const pendingCount = store.getPendingCount();
-        if (pendingCount > 0) {
-            await ctx.reply(`⏳ You have ${pendingCount} task(s) pending review.\nRun /pending first, or /scan for new tasks.`);
+        const MAX_PENDING_REVIEW = 5;
+        const availableSlots = MAX_PENDING_REVIEW - store.getPendingCount();
+        if (availableSlots <= 0) {
+            await ctx.reply(`⏳ Review queue full (${MAX_PENDING_REVIEW}/${MAX_PENDING_REVIEW}). Run /pending to clear.`);
             return;
         }
 
@@ -897,15 +932,21 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         try {
             await ctx.reply('📋 Checking for unreviewed tasks...');
             const allTasks = await adapter.listActiveTasks(true);
+
+            const { removedPending, removedFailed } = await store.reconcileTaskState(allTasks);
+            if (removedPending > 0 || removedFailed > 0) {
+                console.log(`🧹 Review reconciled: removed ${removedPending} pending, ${removedFailed} failed`);
+            }
+
             const availableProjects = await adapter.listProjects();
             const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
-                await ctx.reply('✅ All tasks reviewed!');
+                await ctx.reply('All tasks reviewed.');
                 return;
             }
 
-            const batch = targetTasks.slice(0, 5);
+            const batch = targetTasks.slice(0, availableSlots);
             await ctx.reply(`📬 ${targetTasks.length} task(s) to review. Processing ${batch.length} through pipeline...`);
             const workStyleMode = await resolveCurrentWorkStyleMode(ctx);
 
@@ -947,7 +988,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                             await store.markTaskPending(task.id, pendingData);
 
                             const card = buildTaskCardFromAction(task, action, availableProjects);
-                            await replyWithMarkdown(ctx, card, { reply_markup: taskReviewKeyboard(task.id, pendingData.actionType) });
+                            await replyWithMarkdown(ctx, `[Preview]\n\n${card}`, { reply_markup: taskReviewKeyboard(task.id, pendingData.actionType) });
                             await sleep(1000);
 
                             confirmations.push(`📋 Queued for review: ${task.title}`);
@@ -987,7 +1028,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
             const lines = [];
             if (queuedCount > 0) {
-                lines.push(`📋 **${queuedCount} task(s) queued for review.** Tap ✅ Apply changes or ⏭ Keep original on each card above.`);
+                lines.push(`📋 **[Preview] ${queuedCount} task(s) queued for review.** Tap ✅ Apply changes or ⏭ Keep original on each card above.`);
             }
             if (failedCount > 0) {
                 lines.push(`❌ ${failedCount} failed or need clarification.`);
@@ -999,20 +1040,20 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 lines.push(`📝 ${parkedCount} parked for retry (quota exhausted).`);
             }
 
-            if (targetTasks.length > 5) {
-                lines.push(`\n📝 ${targetTasks.length - 5} more remain. Run /review again after reviewing.`);
+            if (targetTasks.length > availableSlots) {
+                lines.push(`\n📝 ${targetTasks.length - availableSlots} more remain. Run /review again after reviewing.`);
             }
 
             if (lines.length > 0) {
                 const doneMsg = lines.join('\n');
-                if (targetTasks.length > 5) {
+                if (targetTasks.length > availableSlots) {
                     const nextKeyboard = new InlineKeyboard().text('🔄 Continue', 'menu:review');
                     await replyWithMarkdown(ctx, doneMsg.trim(), { reply_markup: nextKeyboard });
                 } else {
                     await replyWithMarkdown(ctx, doneMsg.trim());
                 }
             } else {
-                await ctx.reply('✅ Review complete. No tasks to review.');
+                await ctx.reply('Review complete. No tasks to review.');
             }
 
         } catch (err) {
@@ -1092,9 +1133,10 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         await ctx.reply(formatPipelineFailure(result));
                     } else if (result.type === 'task') {
                         await store.markTaskProcessed(pendingRefinementId, { originalTitle: data.originalTitle, autoApplied: true });
-                        await replyWithMarkdown(ctx, truncateMessage(`✅ Refined and applied:\n\n${result.confirmationText}`, 4000));
+                        const text = result.dryRun ? `[Preview] ${result.confirmationText}` : result.confirmationText;
+                        await replyWithMarkdown(ctx, truncateMessage(`Refined:\n\n${text}`, 4000));
                     } else {
-                        await ctx.reply(result.confirmationText || '✅ Done.');
+                        await ctx.reply(result.confirmationText || 'Done.');
                     }
                 } catch (err) {
                     await ctx.reply(`❌ Refinement error: ${err.message}`);
@@ -1159,11 +1201,12 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         workStyleMode,
                     });
                     if (result.type === 'task') {
-                        await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                        const text = result.dryRun ? `[Preview] ${result.confirmationText}` : result.confirmationText;
+                        await replyWithMarkdown(ctx, truncateMessage(text, 4000));
                     } else if (result.type === 'error') {
                         await ctx.reply(formatPipelineFailure(result));
                     } else {
-                        await ctx.reply(result.confirmationText || '✅ Created as a single task.');
+                        await ctx.reply(result.confirmationText || 'Created as a single task.');
                     }
                     return;
                 }
@@ -1178,11 +1221,12 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         workStyleMode,
                     });
                     if (result.type === 'task') {
-                        await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                        const text = result.dryRun ? `[Preview] ${result.confirmationText}` : result.confirmationText;
+                        await replyWithMarkdown(ctx, truncateMessage(text, 4000));
                     } else if (result.type === 'error') {
                         await ctx.reply(formatPipelineFailure(result));
                     } else {
-                        await ctx.reply(result.confirmationText || '✅ Done.');
+                        await ctx.reply(result.confirmationText || 'Done.');
                     }
                     return;
                 }
@@ -1197,11 +1241,12 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     workStyleMode,
                 });
                 if (result.type === 'task') {
-                    await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                    const text = result.dryRun ? `[Preview] ${result.confirmationText}` : result.confirmationText;
+                    await replyWithMarkdown(ctx, truncateMessage(text, 4000));
                 } else if (result.type === 'error') {
                     await ctx.reply(formatPipelineFailure(result));
                 } else {
-                    await ctx.reply(result.confirmationText || '✅ Created as a single task.');
+                    await ctx.reply(result.confirmationText || 'Created as a single task.');
                 }
                 return;
             }
@@ -1213,7 +1258,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             });
 
             if (result.type === 'task') {
-                await replyWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                const text = result.dryRun ? `[Preview] ${result.confirmationText}` : result.confirmationText;
+                await replyWithMarkdown(ctx, truncateMessage(text, 4000));
             } else if (result.type === 'non-task') {
                 // Fall back to conversational handling if no intent extracted
                 if (gemini.isQuotaExhausted()) {
@@ -1300,7 +1346,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 // apply flow (bot.callbackQuery /^reorg:(apply|refine|cancel)$/).
 //
 // Primary task creation/mutation for bot-driven flows uses the
-// structured pipeline path: AX intent -> normalizer -> ticktick-adapter.
+// structured pipeline path: intent extraction -> normalizer -> ticktick-adapter.
 // This helper is NOT a general-purpose task writer — it exists solely
 // to apply Gemini-generated reorg actions (update/drop/create/complete)
 // that come from the /reorg command or policy-sweep automation.

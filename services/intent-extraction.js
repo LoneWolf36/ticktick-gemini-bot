@@ -122,10 +122,10 @@ export class QuotaExhaustedError extends Error {
 }
 
 /**
- * Validates and normalizes checklist items from AX intent output.
+ * Validates and normalizes checklist items from extracted intent output.
  * Caps at MAX_CHECKLIST_ITEMS, validates each item has a title,
  * and strips invalid entries.
- * @param {Array} items - Raw checklist items from AX output
+ * @param {Array} items - Raw checklist items from extracted output
  * @returns {{valid: boolean, items: Array, errors: string[], wasCapped: boolean}} Validation result
  */
 export function validateChecklistItems(items) {
@@ -290,7 +290,7 @@ export function validateIntentAction(action, index, { requireR1Fields = false } 
 
 /**
  * System prompt for Gemini-based intent extraction.
- * This prompt was preserved from the AX framework instruction text.
+ * This prompt was preserved from the original framework instruction text.
  */
 const INTENT_EXTRACTION_PROMPT = `Extract structured task/intent actions from the user's message.
 
@@ -714,6 +714,27 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
         ? `${contextSection}\nUser message:\n${userMessage}`
         : `User message:\n${userMessage}`;
 
+    // Large-message guard: don't send oversized prompts into fragile extraction path
+    const promptCharCount = fullPrompt.length;
+    const promptLineCount = fullPrompt.split('\n').length;
+    if (promptCharCount > 7000 || promptLineCount > 80) {
+        return [{
+            type: 'create',
+            targetQuery: null,
+            title: 'Parse large message',
+            content: null,
+            priority: null,
+            projectHint: null,
+            dueDate: null,
+            repeatHint: null,
+            splitStrategy: null,
+            checklistItems: null,
+            clarification: true,
+            clarificationQuestion: 'Message too large to parse reliably. Please split into smaller blocks.',
+            confidence: 0.3,
+        }];
+    }
+
     const apiCallFn = async (ai, prompt, model) => {
         return ai.models.generateContent({
             model,
@@ -728,10 +749,14 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
 
     let response;
     try {
-        response = await gemini._executeWithFailover(fullPrompt, apiCallFn, { modelTier: 'fast' });
+        response = await gemini._executeWithFailover(fullPrompt, apiCallFn, { modelTier: 'fast', interactiveWritePath: true });
     } catch (err) {
+        // Typed AI errors from _executeWithFailover
+        if (err?.kind === 'hard_quota' || err?.kind === 'service_unavailable' || err?.kind === 'invalid_key') {
+            throw new QuotaExhaustedError('All API keys exhausted');
+        }
+        // Legacy string fallback
         const errMsg = err.message || '';
-        // _executeWithFailover throws 'QUOTA_EXHAUSTED' or 'API_KEYS_UNAVAILABLE' when all models/keys are exhausted
         if (errMsg === 'QUOTA_EXHAUSTED' || errMsg === 'API_KEYS_UNAVAILABLE') {
             throw new QuotaExhaustedError('All API keys exhausted');
         }

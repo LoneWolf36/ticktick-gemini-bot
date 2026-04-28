@@ -137,7 +137,7 @@ async function testTickTickConnectivity(ticktick, adapter) {
 async function testR1_IntentExtraction(pipeline, adapter, projects) {
     console.log('\n═══ R1: Structured Intent Extraction ═══');
 
-    // R1-AC1: AX produces action objects with required fields
+    // R1-AC1: Intent extraction produces action objects with required fields
     const msg1 = `${PREFIX} Buy groceries tomorrow`;
     const r1 = await callPipelineWithRetry(msg1, { availableProjects: projects });
     await delayAfterCreate();
@@ -600,7 +600,7 @@ async function testGracefulDegradation(pipeline, projects) {
     console.log('\n═══ Pipeline Hardening: R12 Graceful Degradation ═══');
 
     // Test that the pipeline handles invalid input gracefully
-    // Use a non-empty string that AX should classify as non-task (not empty string which crashes buildRequestContext)
+    // Use a non-empty string that intent extraction should classify as non-task (not empty string which crashes buildRequestContext)
     const result = await callPipelineWithRetry('asdfghjkl qwertyuiop zxcvbnm', { availableProjects: projects });
     await delay();
 

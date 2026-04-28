@@ -136,7 +136,7 @@ export const WEEKLY_WATCHOUT_EVIDENCE_SOURCES = Object.freeze([
 
 // ─── Intent Action Schemas ─────────────────────────────────────
 //
-// SCOPED FOR AX INTENT EXTRACTION: These schemas validate the
+// SCOPED FOR INTENT EXTRACTION: These schemas validate the
 // structured output from Gemini's intent extraction pipeline.
 // They govern create/update/complete/delete actions including
 // checklist subtask support.
@@ -148,7 +148,7 @@ export const WEEKLY_WATCHOUT_EVIDENCE_SOURCES = Object.freeze([
 export const MAX_CHECKLIST_ITEMS = 30;
 
 /**
- * Shape descriptor for checklist items in AX intent output.
+ * Shape descriptor for checklist items in extracted intent output.
  * Used by validateIntentAction to check checklistItems arrays.
  */
 export const CHECKLIST_ITEM_SHAPE = Object.freeze({

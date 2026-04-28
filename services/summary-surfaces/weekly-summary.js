@@ -212,6 +212,11 @@ function buildDeferredCarryForward(processedHistory = [], activeTasks = []) {
 }
 
 function buildNextFocus(activeTasks = [], rankingResult = null, excludedTaskIds = []) {
+    const shouldSkipRanking = rankingResult?.degraded === true || rankingResult?.ranked?.length === 0;
+    if (shouldSkipRanking) {
+        return [];
+    }
+
     const excluded = new Set(Array.isArray(excludedTaskIds) ? excludedTaskIds : []);
     const ranked = Array.isArray(rankingResult?.ranked) ? rankingResult.ranked : [];
     if (ranked.length > 0) {
@@ -265,6 +270,7 @@ function describeRationaleTrend(code) {
 }
 
 function buildRankingTrendNotice(rankingResult = null) {
+    if (rankingResult?.degraded === true) return null;
     const ranked = Array.isArray(rankingResult?.ranked) ? rankingResult.ranked.slice(0, 3) : [];
     if (ranked.length === 0) return null;
 

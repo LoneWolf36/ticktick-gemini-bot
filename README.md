@@ -4,7 +4,7 @@ An AI-powered Telegram bot that connects to your TickTick task manager and acts 
 
 ## Features
 
-- **Structured write pipeline** — Natural language → AX intent extraction → deterministic normalizer → TickTick adapter. No model prose writes directly to TickTick.
+- **Structured write pipeline** — Natural language → intent extraction → deterministic normalizer → TickTick adapter. No model prose writes directly to TickTick.
 - **AI task analysis** — Gemini evaluates every new task: is it a needle-mover or busywork? Rewrites vague titles, adds sub-steps, and re-prioritizes based on your real goals
 - **Project reassignment** — suggests moving tasks to the right TickTick project
 - **Smart scheduling** — assigns due dates (today / tomorrow / this-week / next-week / someday) based on urgency and your patterns
@@ -105,7 +105,7 @@ Open your bot in Telegram and send `/start`.
 
 | Command | Description |
 |---------|-------------|
-| `/scan` | Analyze new tasks through the structured pipeline (AX → Normalizer → Adapter, batched 5 at a time) |
+| `/scan` | Analyze new tasks through the structured pipeline (Intent Extraction → Normalizer → Adapter, batched 5 at a time) |
 | `/menu` | Show quick-action shortcut menu |
 | `/pending` | Re-surface tasks awaiting your review |
 | `/briefing` | Daily morning briefing — 3-4 prioritized focus items |
@@ -117,7 +117,7 @@ Open your bot in Telegram and send `/start`.
 | `/reset` | Wipe all bot data and start fresh (requires `/reset CONFIRM`) |
 | `/status` | Bot status, stats, and auto-apply mode |
 
-**Free-form messages:** Any text that isn't a command goes through the structured pipeline (AX → Normalizer → Adapter). You can:
+**Free-form messages:** Any text that isn't a command goes through the structured pipeline (Intent Extraction → Normalizer → Adapter). You can:
 - Give instructions: *"move all gym tasks to next week"*, *"drop everything in Inbox"*
 - Ask questions: *"what should I focus on right now?"*
 - Vent: *"I'm overwhelmed"* — the bot will coach you, not just list tasks
@@ -198,7 +198,7 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 │   ├── ticktick-adapter.js      # TickTick REST API adapter (create/update/complete/delete)
 │   ├── ticktick.js              # Low-level TickTick API client (OAuth2 + CRUD)
 │   ├── gemini.js                # Gemini AI (briefing, weekly, reorg, free-form chat)
-│   ├── pipeline.js              # Orchestrates: message → AX → normalizer → adapter
+│   ├── pipeline.js              # Orchestrates: message → intent extraction → normalizer → adapter
 │   ├── scheduler.js             # Cron jobs (polling, briefings, digest, store pruning)
 │   ├── store.js                 # Redis-backed state store (file fallback for local dev)
 │   ├── user_context.js          # YOUR personal context (gitignored — create from example)
@@ -213,7 +213,7 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 
 ## Key Design Decisions
 
-- **Structured write path (AX → Normalizer → Adapter):** All task creation and mutation flows through a single pipeline. AX (via Gemini 2.5 Flash) extracts a structured `Intent Action` from natural language. The deterministic normalizer cleans and maps it to TickTick-compatible fields. The TickTick adapter executes the mutation against the REST API. This prevents model prose from writing directly to TickTick and keeps the path auditable and testable.
+- **Structured write path (Intent Extraction → Normalizer → Adapter):** All task creation and mutation flows through a single pipeline. Gemini extracts a structured `Intent Action` from natural language. The deterministic normalizer cleans and maps it to TickTick-compatible fields. The TickTick adapter executes the mutation against the REST API. This prevents model prose from writing directly to TickTick and keeps the path auditable and testable.
 - **Two-phase task tracking:** Tasks move `pending → processed`. Nothing is silently lost — `/pending` re-surfaces unanswered cards.
 - **Non-destructive by default:** Nothing written to TickTick without ✅ Apply. Drop actions flag tasks, never delete. Every change has an undo log.
 - **Autonomous mode:** Life-admin and drop-candidate tasks can be auto-applied (configurable). Batched notifications, not per-task spam.
@@ -221,7 +221,7 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 - **Access control:** `TELEGRAM_CHAT_ID` in `.env` ensures only you can use the bot.
 - **Auto-pruning:** Entries older than 30 days are automatically cleaned from the store daily.
 - **Failure boundaries:** When the TickTick API is unavailable, parsed intent is preserved and the user is notified — no silent data loss. When Gemini is unavailable, the pipeline fails closed rather than guessing.
-- **Future simplification (not yet implemented):** AX's text-based schema instructions can be replaced with Gemini's native `responseSchema` for stronger structural guarantees. The current AX path works; replacement is future work.
+- **Future simplification (not yet implemented):** Text-based schema instructions can be replaced with Gemini's native `responseSchema` for stronger structural guarantees. The current intent extraction path works; replacement is future work.
 
 ### Parallel (non-write) paths
 

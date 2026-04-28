@@ -36,7 +36,7 @@ Governing document: `context/refs/product-vision.md`
 | Task Pipeline | Prioritization | project resolution consults ranking |
 | Task Pipeline | Behavioral Memory | logs feed derived metadata only |
 | Pipeline Hardening | Task Pipeline | tests exercise pipeline paths |
-| Checklists | Task Pipeline | extends AX action shape |
+| Checklists | Task Pipeline | extends extracted intent action shape |
 | Briefings | Prioritization | task selection uses ranking |
 | Briefings | Behavioral Memory | pattern callouts in summaries |
 | Briefings | Work Style | tone/verbosity adaptation |

@@ -692,7 +692,7 @@ describe('Integration Tests', () => {
         assert.strictEqual(results[0].repeatFlag, 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR');
     });
 
-    it('should preserve repeatFlag when AX provides it directly', () => {
+    it('should preserve repeatFlag when extracted intent provides it directly', () => {
         const result = normalizeAction({
             type: 'create',
             title: 'Run daily',

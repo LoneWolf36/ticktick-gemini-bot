@@ -29,4 +29,4 @@ See `AGENTS.md` for the full service module descriptions.
 
 ## Historical Notes
 
-- Legacy prompt-driven write paths were removed. Current write behavior is centralized in AX → normalizer → adapter for deterministic, auditable mutations.
+- Legacy prompt-driven write paths were removed. Current write behavior is centralized in intent extraction → normalizer → adapter for deterministic, auditable mutations.

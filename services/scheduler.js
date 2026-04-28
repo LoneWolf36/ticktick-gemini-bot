@@ -567,9 +567,17 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
 
         console.log(`🔄 [${userTimeString()}] Polling for new tasks...`);
 
+        const MAX_PENDING_REVIEW = 5;
         const pendingCount = store.getPendingCount();
-        if (pendingCount > 0) {
-            console.log(`⏸️  Skipping poll - ${pendingCount} tasks already pending review.`);
+        const availableSlots = MAX_PENDING_REVIEW - pendingCount;
+        const queueHealth = store.getQueueHealthSnapshot();
+
+        if (availableSlots <= 0) {
+            console.log(`⏸️  Skipping AI analysis - ${pendingCount} tasks pending review (max ${MAX_PENDING_REVIEW}).`);
+            if (!queueHealth.isBlocked) {
+                await store.setQueueBlocked(true);
+                console.warn(`[QueueHealth] ${JSON.stringify({ eventType: 'queue.backlog.blocked', pendingCount, maxPending: MAX_PENDING_REVIEW, blockedSince: new Date().toISOString() })}`);
+            }
             if (!pendingSuppressionSent) {
                 try {
                     if (!shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.PENDING_SUPPRESSION)) {
@@ -580,9 +588,13 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                     console.error('Failed to send pending suppression notice:', err.message);
                 }
             }
-            return;
+        } else {
+            if (queueHealth.isBlocked) {
+                await store.setQueueBlocked(false);
+                console.log(`[QueueHealth] ${JSON.stringify({ eventType: 'queue.backlog.resumed', pendingCount })}`);
+            }
+            pendingSuppressionSent = false;
         }
-        pendingSuppressionSent = false;
 
         if (!store.tryAcquireIntakeLock()) {
             console.log('⏸️  Skipping poll - intake lock held by an active operation.');
@@ -590,12 +602,44 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
         }
 
         try {
+            // Stale reconciliation always runs
+            let allTasks = [];
+            try {
+                allTasks = await adapter.listActiveTasks(true);
+                const { removedPending, removedFailed } = await store.reconcileTaskState(allTasks);
+                if (removedPending > 0 || removedFailed > 0) {
+                    console.log(`🧹 Reconciled: removed ${removedPending} pending, ${removedFailed} failed (no longer active)`);
+                }
+
+                // State divergence detection
+                const localPending = store.getPendingCount();
+                const backendActive = allTasks.length;
+                const diff = Math.abs(localPending - backendActive);
+                const ratio = backendActive > 0 ? localPending / backendActive : (localPending > 0 ? Infinity : 1);
+                if (diff > 5 || ratio > 2 || (backendActive > 0 && ratio < 0.5 && localPending > 5)) {
+                    console.warn(`[StateDivergence] ${JSON.stringify({
+                        eventType: 'state.divergence.detected',
+                        localPending,
+                        backendActive,
+                        ratio: Number.isFinite(ratio) ? Number(ratio.toFixed(2)) : ratio,
+                    })}`);
+                }
+            } catch (err) {
+                console.error('Reconciliation error:', err.message);
+                try {
+                    allTasks = await adapter.listActiveTasks(true);
+                } catch { /* leave empty */ }
+            }
+
+            if (availableSlots <= 0) {
+                return;
+            }
+
             if (gemini.isQuotaExhausted()) {
                 console.log('⏸️  Skipping poll - Gemini quota cooldown active.');
                 return;
             }
 
-            const allTasks = await adapter.listActiveTasks(true);
             const projects = await adapter.listProjects();
             const newTasks = allTasks.filter((t) => !store.isTaskKnown(t.id));
 
@@ -618,7 +662,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                 return;
             }
 
-            const batch = newTasks.slice(0, 5);
+            const batch = newTasks.slice(0, availableSlots);
             const autoApplied = [];
             const batchId = `auto-${Date.now()}`;
             let quotaHit = false;

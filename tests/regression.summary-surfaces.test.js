@@ -745,11 +745,11 @@ test('formatSummary keeps empty sections compact and Telegram-safe', () => {
   const weeklyResult = formatSummary({ kind: 'weekly', summary: weekly, context: {} });
 
   assert.match(dailyResult.text, /\*\*Focus\*\*: None/);
-  assert.match(dailyResult.text, /\*\*Priorities\*\*:\n1\. None/);
+  assert.equal(dailyResult.text.includes('**Priorities**'), false);
   assert.equal(dailyResult.text.includes('Keep momentum on your top task.'), false);
   assert.match(weeklyResult.text, /\*\*Progress\*\*:\n- None/);
   assert.match(weeklyResult.text, /\*\*Carry forward\*\*:\n- None/);
-  assert.match(weeklyResult.text, /\*\*Next focus\*\*:\n1\. None/);
+  assert.equal(weeklyResult.text.includes('**Next focus**'), false);
   assert.match(weeklyResult.text, /\*\*Watchouts\*\*:\n- None/);
   assert.match(weeklyResult.text, /\[Warning\] Processed-task history was unavailable\./);
 
@@ -1074,7 +1074,9 @@ test('briefing summary keeps degraded recommendations intentionally minimal', ()
     rankingResult,
   });
 
-  assert.equal(result.summary.priorities.length, 1);
+  assert.equal(result.summary.priorities.length, 0);
+  assert.equal(result.summary.why_now.length, 0);
+  assert.ok(!result.formattedText.includes('**Priorities**'));
 });
 
 test('daily briefing output is deterministic for fixed input', () => {

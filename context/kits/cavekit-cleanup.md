@@ -25,7 +25,7 @@ Post-migration cleanup: dead code removal, documentation alignment, env-var stan
 ### R2: README and Architecture Documentation
 **Description:** README and architecture docs are updated to reflect the structured pipeline.
 **Acceptance Criteria:**
-- [x] README describes the current AX → normalizer → adapter pipeline
+- [x] README describes the current intent extraction → normalizer → adapter pipeline
 - [x] Architecture diagram (if present) reflects current data flow
 - [x] Setup instructions reference current env vars and dependencies
 **Dependencies:** R1

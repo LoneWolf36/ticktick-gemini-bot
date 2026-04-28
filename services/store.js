@@ -72,6 +72,9 @@ const DEFAULT_STATE = {
     processedTasks: {},  // User has clicked approve/skip/drop
     failedTasks: {},     // AI analysis failed (rate limit) — parked to prevent re-polling
     undoLog: [],
+    queueHealth: {
+        blockedSince: null,
+    },
     stats: {
         tasksAnalyzed: 0,
         tasksApproved: 0,
@@ -651,6 +654,37 @@ export function isTaskKnown(taskId) {
     return false;
 }
 
+/** Remove pending and failed entries for tasks no longer active in TickTick.
+ *  @returns {{ removedPending: number, removedFailed: number }}
+ */
+export async function reconcileTaskState(activeTasks) {
+    if (!Array.isArray(activeTasks)) return { removedPending: 0, removedFailed: 0 };
+    const activeIds = new Set(activeTasks.map((t) => t?.id).filter(Boolean));
+    let removedPending = 0;
+    let removedFailed = 0;
+
+    for (const taskId of Object.keys(state.pendingTasks)) {
+        if (!activeIds.has(taskId)) {
+            delete state.pendingTasks[taskId];
+            removedPending++;
+        }
+    }
+
+    if (state.failedTasks && typeof state.failedTasks === 'object' && !Array.isArray(state.failedTasks)) {
+        for (const taskId of Object.keys(state.failedTasks)) {
+            if (!activeIds.has(taskId)) {
+                delete state.failedTasks[taskId];
+                removedFailed++;
+            }
+        }
+    }
+
+    if (removedPending > 0 || removedFailed > 0) {
+        await save();
+    }
+    return { removedPending, removedFailed };
+}
+
 /** Park a task that failed analysis — prevents re-polling until retryAfterMs expires.
  *  @param {number} [retryAfterMs=7200000] — ms to park (default 2h; callers can pass quota-aligned duration)
  */
@@ -725,6 +759,74 @@ export function getPendingTasks() {
 
 export function getPendingCount() {
     return Object.keys(state.pendingTasks).length;
+}
+
+/**
+ * Returns a snapshot of queue health for telemetry.
+ * @returns {{ isBlocked: boolean, blockedSinceMs: number, pendingCount: number, processedTodayCount: number, failedCount: number }}
+ */
+export function getQueueHealthSnapshot() {
+    const pendingCount = Object.keys(state.pendingTasks).length;
+    const failedCount = Object.keys(state.failedTasks || {}).length;
+    const dayAgo = Date.now() - 24 * 60 * 60 * 1000;
+    const processedTodayCount = Object.values(state.processedTasks).filter((t) => {
+        const reviewedAt = t?.reviewedAt;
+        if (!reviewedAt) return false;
+        const ms = Date.parse(reviewedAt);
+        return Number.isFinite(ms) && ms >= dayAgo;
+    }).length;
+    const blockedSince = state.queueHealth?.blockedSince || null;
+    const blockedSinceMs = blockedSince ? Date.now() - Date.parse(blockedSince) : 0;
+    return {
+        isBlocked: !!blockedSince,
+        blockedSinceMs,
+        pendingCount,
+        processedTodayCount,
+        failedCount,
+    };
+}
+
+/**
+ * Sets or clears the queue blocked state.
+ * @param {boolean} isBlocked
+ */
+export async function setQueueBlocked(isBlocked) {
+    if (!state.queueHealth || typeof state.queueHealth !== 'object' || Array.isArray(state.queueHealth)) {
+        state.queueHealth = { blockedSince: null };
+    }
+    if (isBlocked && !state.queueHealth.blockedSince) {
+        state.queueHealth.blockedSince = new Date().toISOString();
+        await save();
+    } else if (!isBlocked && state.queueHealth.blockedSince) {
+        state.queueHealth.blockedSince = null;
+        await save();
+    }
+}
+
+/** Return a sorted slice of pending tasks.
+ *  @param {Object} options
+ *  @param {number} [options.limit=5]
+ *  @param {string} [options.sortBy='sentAt']
+ *  @returns {Array} Array of [taskId, data] tuples
+ */
+export function getPendingBatch({ limit = 5, sortBy = 'sentAt' } = {}) {
+    const entries = Object.entries(state.pendingTasks);
+    if (sortBy === 'sentAt') {
+        entries.sort((a, b) => {
+            const aTime = a[1]?.sentAt ? new Date(a[1].sentAt).getTime() : 0;
+            const bTime = b[1]?.sentAt ? new Date(b[1].sentAt).getTime() : 0;
+            return aTime - bTime;
+        });
+    }
+    return entries.slice(0, limit);
+}
+
+/** Return the oldest pending task (by sentAt).
+ *  @returns {Array|null} [taskId, data] or null
+ */
+export function getNextPendingTask() {
+    const batch = getPendingBatch({ limit: 1, sortBy: 'sentAt' });
+    return batch.length > 0 ? batch[0] : null;
 }
 
 // Reorg proposal state
@@ -958,6 +1060,26 @@ export async function removeUndoEntries(entries) {
 }
 
 // ─── Stats ───────────────────────────────────────────────────
+
+export function getOperationalSnapshot() {
+    const pendingCount = Object.keys(state.pendingTasks).length;
+    const failedCount = Object.keys(state.failedTasks || {}).length;
+    const deferredCount = Array.isArray(state.deferredPipelineIntents) ? state.deferredPipelineIntents.length : 0;
+    const clarificationCount = [
+        state.pendingMutationClarification,
+        state.pendingChecklistClarification,
+    ].filter(Boolean).length;
+
+    return {
+        localWorkflow: {
+            pendingReview: pendingCount,
+            failedParked: failedCount,
+            deferredIntents: deferredCount,
+            clarifications: clarificationCount,
+        },
+        cumulative: { ...state.stats },
+    };
+}
 
 export function getStats() {
     return state.stats;

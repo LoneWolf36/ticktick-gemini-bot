@@ -9,18 +9,18 @@ complexity: "complex"
 
 ## Scope
 
-Core task capture and mutation through a structured pipeline. Covers intent extraction from natural-language Telegram messages (via AX), deterministic normalization, single-adapter TickTick execution, and conservative target resolution for mutations. This domain owns the entire path from user message to TickTick write.
+Core task capture and mutation through a structured pipeline. Covers intent extraction from natural-language Telegram messages (via intent extraction), deterministic normalization, single-adapter TickTick execution, and conservative target resolution for mutations. This domain owns the entire path from user message to TickTick write.
 
 See `context/refs/product-vision.md` for governing behavioral scope.
 
 ## Requirements
 
 ### R1: Structured Intent Extraction
-**Description:** System extracts structured intent from free-form Telegram messages using AX, producing typed action objects.
+**Description:** System extracts structured intent from free-form Telegram messages using intent extraction, producing typed action objects.
 **Acceptance Criteria:**
-- [x] AX produces action objects with: `type`, `title`, `content`, `priority`, `projectHint`, `dueDate`, `repeatHint`, `splitStrategy`, `confidence`
-- [x] Given "Book dentist appointment Thursday", AX outputs a create action with title "Book dentist appointment" and dueDate for next Thursday
-- [x] Given "Buy groceries", AX outputs a create action with no due date and default project
+- [x] Intent extraction produces action objects with: `type`, `title`, `content`, `priority`, `projectHint`, `dueDate`, `repeatHint`, `splitStrategy`, `confidence`
+- [x] Given "Book dentist appointment Thursday", intent extraction outputs a create action with title "Book dentist appointment" and dueDate for next Thursday
+- [x] Given "Buy groceries", intent extraction outputs a create action with no due date and default project
 - [x] Given "hello" (non-task content), the system does not create a task and responds conversationally
 **Dependencies:** none
 
@@ -32,12 +32,12 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 **Dependencies:** R1
 
 ### R3: Deterministic Normalization
-**Description:** All AX output is deterministically normalized before execution: title truncation, content suppression, recurrence-hint-to-repeatFlag conversion, due-date expansion, project resolution.
+**Description:** All extracted intent output is deterministically normalized before execution: title truncation, content suppression, recurrence-hint-to-repeatFlag conversion, due-date expansion, project resolution.
 **Acceptance Criteria:**
 - [x] Titles are short, verb-led, free from dates, priorities, project names, or leaked user context
 - [x] Titles never exceed configured character limit; excess detail moves to content or is dropped
 - [x] Content contains only useful references (URLs, locations, instructions) — no coaching prose, motivational filler, or analysis noise
-- [x] AX output with invalid fields, low confidence, or malformed data is rejected; bot asks user to rephrase
+- [x] Extracted intent output with invalid fields, low confidence, or malformed data is rejected; bot asks user to rephrase
 **Dependencies:** R1
 
 ### R4: Single TickTick Adapter
@@ -82,7 +82,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 **Dependencies:** none
 
 ### R9: Free-Form Mutation Intent
-**Description:** System extracts mutation intent (update, complete, delete) from natural language using AX structured output.
+**Description:** System extracts mutation intent (update, complete, delete) from natural language using structured intent extraction output.
 **Acceptance Criteria:**
 - [x] Given "move buy groceries to tomorrow", system extracts update intent with target "buy groceries" and new due date
 - [x] Given "done buy groceries", system extracts completion intent
@@ -111,16 +111,16 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 ### R12: Privacy-Aware Pipeline Logging
 **Description:** Full pipeline is logged with privacy-aware diagnostics. Logs do not persist raw user messages in long-term behavioral memory.
 **Acceptance Criteria:**
-- [x] Logs capture: request metadata, AX intent output, normalized actions, adapter requests, adapter results, validation failures, timing
+- [x] Logs capture: request metadata, intent extraction output, normalized actions, adapter requests, adapter results, validation failures, timing
 - [x] Mutation logs capture: intent, candidate targets, final chosen target, reason for skip
 - [x] Adapter operation logs are consumed by pipeline observability for end-to-end failure tracing
 - [x] Logs and behavioral signals do NOT persist raw user messages, raw task titles, or raw task descriptions unless explicit debug-only transient mode
 **Dependencies:** none
 
 ### R13: Extremely Long Message Handling
-**Description:** AX extracts intent from 500+ word messages and enforcer enforces title/content limits.
+**Description:** Intent extraction extracts intent from 500+ word messages and enforcer enforces title/content limits.
 **Acceptance Criteria:**
-- [x] Given a very long message, AX extracts intent and normalizer enforces length limits
+- [x] Given a very long message, intent extraction extracts intent and normalizer enforces length limits
 **Dependencies:** R1, R3
 
 ### R14: Single-Target Mutation Boundary
@@ -179,12 +179,12 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 
 ## Validation Action Items — 2026-04-19
 
-- [x] R1 (Structured Intent Extraction): all 4 ACs implemented and verified. AX field validation enforced via `R1_INTENT_ACTION_FIELDS`, dentist/groceries/hello regression tests pass in both full and lightweight suites.
+- [x] R1 (Structured Intent Extraction): all 4 ACs implemented and verified. Intent extraction field validation enforced via `R1_INTENT_ACTION_FIELDS`, dentist/groceries/hello regression tests pass in both full and lightweight suites.
 - [x] R2 (Multi-Task Parsing): `services/pipeline.js` now preserves canonical multi-create execution, splits clear create intents from ambiguous create fragments, executes only the clear creates, and surfaces the remaining focused clarification through both pipeline and bot command flows; `tests/regression.pipeline-multi-create-clarification.test.js` plus `tests/regression.work-style-commands-scheduler.test.js` cover canonical multi-create, mixed clear+ambiguous fragments, pure ambiguous clarification, and checklist non-regression.
 - [x] R3 (Deterministic Normalization): `services/normalizer.js` deterministically strips title noise, normalizes repeat/project/date fields, suppresses filler content, and rejects malformed data paths; `tests/normalizer.test.js` covers title, content, checklist, recurrence, and truncation behavior directly.
 - [x] R4 (Single TickTick Adapter): all 3 ACs implemented and verified. All production writes route through adapter, read-only display flows remain allowed per repo guidance, live harnesses were updated, and adapter failure preserves parsed intent with `intents` + `normalizedActions` in failure result.
 - [x] R8 (Terse Responses): `services/pipeline.js` now uses exact terse create confirmations (`Created: {title}` and `Created {N} tasks`), urgent mode continues to compress output without skipping content, and `tests/regression.adapter-execution-reorg.test.js` plus `tests/regression.pipeline-multi-create-clarification.test.js` cover single-create, multi-create, work-style verbosity, and narrow clarification behavior.
-- [x] R13 (Extremely Long Message Handling): `services/normalizer.js` now enforces a bounded content cap in addition to existing title limits, `tests/regression.long-message-handling.test.js` proves the AX extraction seam still accepts 500+ word input, and the same focused suite verifies normalized title/content stay within enforced limits.
+- [x] R13 (Extremely Long Message Handling): `services/normalizer.js` now enforces a bounded content cap in addition to existing title limits, `tests/regression.long-message-handling.test.js` proves the intent extraction seam still accepts 500+ word input, and the same focused suite verifies normalized title/content stay within enforced limits.
 - [x] R15 (Command Surfaces): `/scan`, `/pending`, `/review`, `/undo`, `/menu`, `/status`, and `/reset` are implemented in `bot/commands.js` and now checked explicitly.
 - [x] R10 (Conservative Target Resolution): `services/task-resolver.js` resolves exact/prefix/contains/fuzzy matches conservatively, `services/pipeline.js` routes mutation intents through clarification/not-found handling before execution, `tests/task-resolver.test.js` covers fail-closed ambiguity cases, and `tests/regression.pipeline-hardening-mutation.test.js` covers pronoun references, exact-match wins, not-found, and delete safety.
 - [x] R9 (Free-Form Mutation Intent): `services/intent-extraction.js` now includes explicit free-form mutation mapping guidance/examples for update/complete/delete/rename phrasing, and `tests/intent-extraction.test.js` covers extraction-shape regressions for "move buy groceries to tomorrow", "done buy groceries", "delete old wifi task", and "rename netflix task to finish system design notes".
@@ -195,8 +195,8 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - [x] Validation-facing comments in live harnesses and reorg services were updated to reflect their final Cavekit ownership/exclusion status.
 
 ## Changelog
-- 2026-04-25: R9 completed — AX mutation extraction guidance now includes canonical free-form update/complete/delete/rename examples and focused AX-intent regression coverage verifies expected structured shapes for all four R9 acceptance prompts.
-- 2026-04-24: R13 completed — long-message intake now keeps AX extraction intact for 500+ word inputs while the normalizer enforces bounded title and content lengths via focused regression coverage.
+- 2026-04-25: R9 completed — intent extraction mutation guidance now includes canonical free-form update/complete/delete/rename examples and focused intent extraction regression coverage verifies expected structured shapes for all four R9 acceptance prompts.
+- 2026-04-24: R13 completed — long-message intake now keeps intent extraction intact for 500+ word inputs while the normalizer enforces bounded title and content lengths via focused regression coverage.
 - 2026-04-24: R8 completed — task-operation confirmations now use exact terse create copy, urgent mode keeps the shorter variant, and clarification prompts remain narrow without drifting into multi-paragraph output.
 - 2026-04-23: R2 completed — the pipeline now executes clear create actions from multi-task input while surfacing focused clarification for ambiguous create fragments, preserves canonical multi-create parsing, and keeps checklist clarification behavior fail-closed.
 - 2026-04-23: R12 completed — pipeline diagnostics now preserve request/intent/action tracing while redacting raw user messages, raw task titles, raw task descriptions, and target queries from lifecycle snapshots, observability sink contexts, and console telemetry.
@@ -204,5 +204,5 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - 2026-04-22: R10 completed — mutation target resolution now fails closed on ambiguity, prefers exact matches over fuzzier candidates, returns not-found without writes, and requires clarification for pronoun-only or unsafe delete references.
 - 2026-04-20: R17 completed — autonomous poll auto-apply policy is explicitly owned, documented, and mapped to scheduler/status behavior.
 - 2026-04-20: R15 and R16 completed — command surfaces are explicitly checked, reorg flow is fully mapped, and remaining auto-apply ownership is isolated as the next signal cleanup item.
-- 2026-04-19: R1 and R4 completed — AX field validation, regression coverage, adapter boundary enforcement, intent preservation on failure.
+- 2026-04-19: R1 and R4 completed — intent extraction field validation, regression coverage, adapter boundary enforcement, intent preservation on failure.
 - 2026-04-18: Migrated from kitty-specs 001-task-operations-pipeline and 002-natural-language-task-mutations

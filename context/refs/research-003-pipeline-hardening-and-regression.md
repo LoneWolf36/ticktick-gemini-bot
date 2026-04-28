@@ -33,7 +33,7 @@ Alternatives considered:
 ### 2. Full observability should mean structured logs, counters, and tracing hooks without a new vendor dependency
 
 Decision:
-- Emit structured log events for request receipt, AX extraction, normalization, action execution, rollback, and terminal outcome.
+- Emit structured log events for request receipt, intent extraction, normalization, action execution, rollback, and terminal outcome.
 - Add lightweight metrics hooks for counts, failure classes, retries, and duration measurements.
 - Add tracing scaffolding based on request IDs and step/span names so later instrumentation can forward to a vendor without changing business logic.
 
@@ -46,14 +46,14 @@ Alternatives considered:
 - Logs only: rejected because it does not satisfy the agreed scope.
 - Immediate external telemetry vendor integration: rejected because it adds operational surface area outside the feature's stated scope.
 
-### 3. The pipeline needs one canonical request context assembled before AX runs
+### 3. The pipeline needs one canonical request context assembled before intent extraction runs
 
 Decision:
 - Standardize a single pipeline context object assembled at every entry point before `intentExtractor.extractIntents()` is called.
 - The context should include `requestId`, `entryPoint`, `userMessage`, `currentDate`, canonical timezone from stored user context, available projects, optional existing task snapshot, and the caller-supplied execution mode string (`interactive`, `scan`, `review`, `poll`, or dev/debug aliases).
 
 Rationale:
-- `services/pipeline.js` currently passes inconsistent context fields to AX and normalizer.
+- `services/pipeline.js` currently passes inconsistent context fields to intent extraction and normalizer.
 - The clarified spec makes the user profile timezone from stored context the canonical source, so each call site must produce the same value.
 - A stable request context also enables observability and makes direct pipeline tests straightforward.
 
@@ -64,12 +64,12 @@ Alternatives considered:
 ### 4. Failure handling needs explicit classes and mode-aware message rendering
 
 Decision:
-- Normalize terminal failures into explicit classes: `quota`, `malformed_ax`, `validation`, `adapter`, `rollback`, and `unexpected`.
+- Normalize terminal failures into explicit classes: `quota`, `malformed_intent`, `validation`, `adapter`, `rollback`, and `unexpected`.
 - Keep dev mode responses detailed and keep user mode responses compact by failure class.
 - On quota exhaustion, rotate to another configured Gemini key before surfacing failure. Only return a quota failure if no configured key succeeds.
 
 Rationale:
-- The current pipeline has one broad catch block and does not distinguish empty AX output, malformed AX output, adapter failures, or rollback failures cleanly.
+- The current pipeline has one broad catch block and does not distinguish empty intent output, malformed intent output, adapter failures, or rollback failures cleanly.
 - The feature spec and clarifications require deterministic messaging and preserve request context through quota failover.
 - Explicit failure classes also make regression expectations and telemetry aggregation testable.
 
@@ -81,7 +81,7 @@ Alternatives considered:
 
 Decision:
 - Add direct tests around `createPipeline()` with mocked `intentExtractor`, `normalizer`, and `TickTickAdapter`.
-- Cover create, update, complete, delete, non-task, malformed AX output, validation failure, adapter failure, retry/rollback, and quota rotation through the pipeline surface itself.
+- Cover create, update, complete, delete, non-task, malformed intent output, validation failure, adapter failure, retry/rollback, and quota rotation through the pipeline surface itself.
 - Add a mocked burst-concurrency regression that exercises tens of requests and verifies deterministic outcomes without live API calls.
 
 Rationale:

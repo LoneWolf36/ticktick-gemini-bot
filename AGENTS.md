@@ -41,14 +41,14 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 
 **Redis**: Kept for Render deployment (ephemeral filesystem). For local dev or VPS hosting, JSON file fallback works. Future simplification: remove dual-backend code, commit to one backend, remove separate `user:{userId}:urgent_mode` keys.
 
-**Intent Extraction (@ax-llm/ax successor)**: Direct Gemini API calls using `responseSchema`. The implementation uses `GeminiAnalyzer._executeWithFailover` with structured JSON schema output, giving intent extraction access to model fallback chains and eliminating the dual rotation system.
+**Intent Extraction**: Direct Gemini API calls using `responseSchema`. The implementation uses `GeminiAnalyzer._executeWithFailover` with structured JSON schema output, giving intent extraction access to model fallback chains and eliminating the dual rotation system.
 
 **TickTick Checklist API**: Expected to be supported. Task creation endpoint (`POST /task`) accepts `items` array with `{title, status}` objects based on API structure analysis. No documented item limit. `desc` field provides checklist-level context. No separate checklist endpoint exists — checklists are inline in the task object. **Note**: Not yet used in production code; verify with a live API call before building checklist features (spec 005).
 
 ## Project Structure & Module Organization
 
 ### Service modules (source of truth for business logic)
-- `services/pipeline.js` — Orchestrates the structured write path: message → AX intent extraction → deterministic normalization → TickTick adapter execution. Exposes `processMessageWithContext()` for callers that need automatic context construction. This is the **only** path for new task-writing flows.
+- `services/pipeline.js` — Orchestrates the structured write path: message → intent extraction → deterministic normalization → TickTick adapter execution. Exposes `processMessageWithContext()` for callers that need automatic context construction. This is the **only** path for new task-writing flows.
 - `services/intent-extraction.js` — Extracts structured `Intent Action` objects from natural language using Gemini via direct `responseSchema` API calls.
 - `services/normalizer.js` — Deterministic cleaner that maps intent actions to TickTick-compatible fields (title truncation, filler stripping, repeatHint → RRULE, projectHint → project ID).
 - `services/ticktick-adapter.js` — Executes normalized actions against the TickTick REST API (create/update/complete/delete). Handles retries, OAuth refresh, and project-move rollback.
@@ -89,12 +89,12 @@ See `context/refs/codebase-function-map.md` for a complete registry of all expor
 
 ## Telegram Command Surfaces
 
-All command-triggered write behavior must use `services/pipeline.js` (AX -> normalizer -> adapter):
+All command-triggered write behavior must use `services/pipeline.js` (intent extraction -> normalizer -> adapter):
 
 - `/scan` — batch analysis + apply/review routing through pipeline
 - `/review` — pending review loop (no direct TickTick writes outside adapter)
 - `/reorg` — guided reorganization proposal with apply/refine/cancel flows
-- Free-form text — parsed by AX, normalized, then executed via adapter
+- Free-form text — parsed by intent extraction, normalized, then executed via adapter
 
 Read/summarization surfaces stay outside write path:
 
@@ -115,7 +115,7 @@ Read/summarization surfaces stay outside write path:
 - Follow the existing style: 4-space indentation, semicolons, camelCase for variables/functions, PascalCase for classes.
 - Keep files single-purpose: Telegram interaction in `bot/`, integrations and orchestration in `services/`.
 - Prefer named exports for helpers and service factories.
-- New task-writing flows must stay on the existing path: `AX intent -> normalizer -> ticktick-adapter`. Do not call the low-level TickTick client directly from bot handlers.
+- New task-writing flows must stay on the existing path: `intent extraction -> normalizer -> ticktick-adapter`. Do not call the low-level TickTick client directly from bot handlers.
 
 ## Testing Guidelines
 - Add or update regression coverage in the relevant domain suite under `tests/regression.*.test.js` (or the closest existing test file).

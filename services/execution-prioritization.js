@@ -1,5 +1,7 @@
 import { containsSensitiveContent } from './shared-utils.js';
 
+const recentRankingTelemetry = new Map();
+
 const CAREER_KEYWORDS = [
     'backend', 'career', 'interview', 'system design', 'design', 'leetcode', 'resume',
     'role', 'job', 'application', 'portfolio', 'study', 'exam', 'assignment', 'mock',
@@ -45,7 +47,29 @@ function normalizeWhitespace(value) {
     return asString(value).replace(/\s+/g, ' ').trim();
 }
 
+function shouldThrottleTelemetry(payload, userId) {
+    const keyBase = `${userId || 'default'}:`;
+    const { timestamp, ...rest } = payload;
+    const key = `${keyBase}${JSON.stringify(rest)}`;
+    const now = Date.now();
+    const last = recentRankingTelemetry.get(key);
+    if (last && now - last < 60_000) {
+        return true;
+    }
+    recentRankingTelemetry.set(key, now);
+    for (const [k, ts] of recentRankingTelemetry) {
+        if (now - ts > 60_000) {
+            recentRankingTelemetry.delete(k);
+        }
+    }
+    return false;
+}
+
 function logRankingTelemetry(payload, context) {
+    if (shouldThrottleTelemetry(payload, context?.userId)) {
+        return;
+    }
+
     const sink = typeof context?.rankingTelemetrySink === 'function'
         ? context.rankingTelemetrySink
         : null;
@@ -760,6 +784,7 @@ export function buildRankingContext(options = {}) {
             ? options.rankingTelemetrySink
             : null,
         stateSource: options.stateSource || 'none',
+        userId: options.userId || options.user_id || null,
     };
 }
 

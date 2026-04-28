@@ -21,7 +21,7 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 ### R1: Canonical Pipeline Context
 **Description:** A single pipeline context object carries the full lifecycle state of every request from entry to adapter response.
 **Acceptance Criteria:**
-- [x] Pipeline context includes: request metadata, AX intent output, normalized actions, adapter requests/results, validation failures, timing, and correlation ID
+- [x] Pipeline context includes: request metadata, intent extraction output, normalized actions, adapter requests/results, validation failures, timing, and correlation ID
 - [x] Context is immutable after each stage writes to it — no later stage mutates earlier fields
 - [x] Pipeline context is available to all observability consumers without requiring separate instrumentation
 **Dependencies:** none
@@ -136,7 +136,7 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 
 - [x] R6 audited directly against `tests/pipeline-harness.js` and `context/refs/pipeline-harness.js`: harness accepts structured input, supports `adapterOverrides` for failure-path mocking, uses in-memory fixtures, and runs without Telegram or live TickTick.
 - [x] R9 audited directly against `services/pipeline-observability.js`, `context/refs/telemetry-events.schema.json`, and `tests/regression.pipeline-hardening-mutation.test.js` (`WP06 T017`): emitted events keep the required schema fields, preserve `requestId` tracing across request/execution/result steps, and avoid raw user-message persistence in telemetry payloads.
-- [x] R1 audited directly against `services/pipeline-context.js`, `services/pipeline.js`, `services/pipeline-observability.js`, `tests/pipeline-context.test.js`, and `tests/regression.pipeline-hardening-mutation.test.js`: immutable lifecycle snapshots now capture request metadata, correlation ID, AX output, normalization state, execution requests/results, validation failures, timing, and final result; observability sinks receive the canonical context without changing the telemetry event schema.
+- [x] R1 audited directly against `services/pipeline-context.js`, `services/pipeline.js`, `services/pipeline-observability.js`, `tests/pipeline-context.test.js`, and `tests/regression.pipeline-hardening-mutation.test.js`: immutable lifecycle snapshots now capture request metadata, correlation ID, intent extraction output, normalization state, execution requests/results, validation failures, timing, and final result; observability sinks receive the canonical context without changing the telemetry event schema.
 - [x] R2 completed: `pipeline.js` exposes `createRequestContext()`, `scheduler.js` wraps pipeline calls in `processPipelineMessage()` constructing context first, and bot handlers pass context through pipeline options.
 - [x] R3 audited directly against `services/pipeline.js`, `tests/regression.pipeline-hardening-mutation.test.js`, and `tests/regression.adapter-execution-reorg.test.js`: pipeline failures now classify deterministic transient/permanent/partial categories, transient adapter failures retry once automatically, permanent failures surface corrective user-safe messaging, and partial failures report success/failure counts without exposing internal details.
 - [x] R4 audited directly against `services/ticktick.js`, `services/ticktick-adapter.js`, `services/pipeline.js`, `tests/regression.adapter-execution-reorg.test.js`, and `tests/regression.pipeline-hardening-mutation.test.js`: TickTick 429 responses now retry with configurable exponential backoff, preserve `Retry-After`/`retry_after` ETA metadata, fail fast on oversized retry windows, surface ETA-aware user messaging, and distinguish quota exhaustion from transient rate limiting.
@@ -156,6 +156,6 @@ See `context/refs/telemetry-events.schema.json` for telemetry schema.
 - 2026-04-24: R5 completed — transient non-429 adapter failures now retry with configurable exponential backoff, partial failures surface rolled-back and failed task labels clearly, and execution accounting prevents silent drops for remaining parsed actions.
 - 2026-04-18: Migrated from kitty-specs 003-pipeline-hardening-and-regression
 - 2026-04-20: R6 and R9 completed — offline harness behavior and telemetry contract now have direct code + regression evidence.
-- 2026-04-21: R1 completed — canonical immutable pipeline context now persists across request, AX, normalization, execution, and result stages with observability access.
+- 2026-04-21: R1 completed — canonical immutable pipeline context now persists across request, intent extraction, normalization, execution, and result stages with observability access.
 - 2026-04-22: R3 completed — pipeline failure handling now emits deterministic transient/permanent/partial categories with retry, corrective messaging, and partial-failure reporting covered by regression tests.
 - 2026-04-22: R4 completed — TickTick 429 handling now uses configurable exponential backoff with ETA-aware user messaging, preserves rate-limit metadata through adapter and pipeline layers, and distinguishes quota exhaustion from transient rate limiting in regression coverage.

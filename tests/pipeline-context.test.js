@@ -104,7 +104,7 @@ test('T001: buildRequestContext includes immutable lifecycle envelope and correl
     assert.equal(context.lifecycle.request.metadata.correlationId, 'req-r1-lifecycle');
     assert.equal(context.lifecycle.request.metadata.entryPoint, 'telegram');
     assert.equal(context.lifecycle.request.userMessageLength, 4); // Length of 'Test'
-    assert.deepEqual(context.lifecycle.ax, {
+    assert.deepEqual(context.lifecycle.intent, {
         status: 'pending',
         intentOutput: null,
         failure: null,
@@ -353,28 +353,28 @@ test('T004: validation errors are descriptive and stable', async () => {
 });
 
 // ============================================================
-// T002: AX extraction receives canonical context
+// T002: intent extraction receives canonical context
 // ============================================================
 
-test('T002: pipeline passes canonical context fields to AX extraction', async () => {
-    // This test verifies the pipeline -> AX contract by checking the harness
+test('T002: pipeline passes canonical context fields to intent extraction', async () => {
+    // This test verifies the pipeline -> intent extraction contract by checking the harness
     const { createPipelineHarness } = await import('./pipeline-harness.js');
 
-    let axOptions = null;
+    let extractionOptions = null;
     const harness = createPipelineHarness({
         intents: async (userMessage, options) => {
-            axOptions = options;
+            extractionOptions = options;
             return [];
         },
         now: '2026-04-13T10:00:00Z',
     });
 
-    await harness.processMessage('Test AX context', { entryPoint: 'test' });
+    await harness.processMessage('Test intent extraction context', { entryPoint: 'test' });
 
-    assert.ok(axOptions, 'AX should have been called');
-    assert.equal(axOptions.currentDate, '2026-04-13', 'AX receives currentDate');
-    assert.ok(Array.isArray(axOptions.availableProjects), 'AX receives availableProjects');
-    assert.ok(axOptions.availableProjects.includes('Inbox'), 'AX receives project names');
+    assert.ok(extractionOptions, 'intent extraction should have been called');
+    assert.equal(extractionOptions.currentDate, '2026-04-13', 'intent extraction receives currentDate');
+    assert.ok(Array.isArray(extractionOptions.availableProjects), 'intent extraction receives availableProjects');
+    assert.ok(extractionOptions.availableProjects.includes('Inbox'), 'intent extraction receives project names');
 });
 
 // ============================================================
@@ -476,9 +476,9 @@ test('R1: observability consumers receive canonical immutable pipeline context s
 
     assert.ok(requestEvent?.context, 'request event should receive context');
     assert.ok(finalEvent?.context, 'final event should receive context');
-    assert.equal(requestEvent.context.lifecycle.ax.intentOutput, null, 'request snapshot stays pre-AX');
+    assert.equal(requestEvent.context.lifecycle.intent.intentOutput, null, 'request snapshot stays pre-intent-extraction');
     assert.equal(finalEvent.context.correlationId, 'req-r1-observability');
-    assert.equal(finalEvent.context.lifecycle.ax.status, 'success');
+    assert.equal(finalEvent.context.lifecycle.intent.status, 'success');
     assert.equal(finalEvent.context.lifecycle.normalize.status, 'success');
     assert.equal(finalEvent.context.lifecycle.execute.status, 'success');
     assert.equal(finalEvent.context.lifecycle.result.type, 'task');

@@ -221,7 +221,7 @@ test('store logs work-style transitions as operational telemetry, not behavioral
   assert.equal(payloads[1].nextMode, store.MODE_STANDARD);
 });
 
-test('ax intent detects work-style mode phrases', () => {
+test('intent extraction detects work-style mode phrases', () => {
   assert.deepEqual(detectWorkStyleModeIntent('turn on urgent mode'), {
     type: 'set_work_style_mode',
     mode: store.MODE_URGENT,

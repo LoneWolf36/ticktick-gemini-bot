@@ -37,8 +37,62 @@ if (existsSync(USER_CONTEXT_FILE)) {
 
 export { USER_CONTEXT, USER_CONTEXT_SOURCE };
 
+// ─── Typed AI Errors ─────────────────────────────────────────
+export class AIServiceUnavailableError extends Error {
+    constructor(message, { status, model, keyIndex, retryAfterMs, resumeAt, scope } = {}) {
+        super(message);
+        this.name = 'AIServiceUnavailableError';
+        this.kind = 'service_unavailable';
+        this.status = status ?? 503;
+        this.model = model ?? null;
+        this.keyIndex = keyIndex ?? null;
+        this.retryAfterMs = retryAfterMs ?? null;
+        this.resumeAt = resumeAt ?? null;
+        this.scope = scope ?? 'model_key';
+    }
+}
 
+export class AIHardQuotaError extends Error {
+    constructor(message, { status, model, keyIndex, retryAfterMs, resumeAt, scope } = {}) {
+        super(message);
+        this.name = 'AIHardQuotaError';
+        this.kind = 'hard_quota';
+        this.status = status ?? 429;
+        this.model = model ?? null;
+        this.keyIndex = keyIndex ?? null;
+        this.retryAfterMs = retryAfterMs ?? null;
+        this.resumeAt = resumeAt ?? null;
+        this.scope = scope ?? 'model_key';
+    }
+}
 
+export class AIRateLimitError extends Error {
+    constructor(message, { status, model, keyIndex, retryAfterMs, resumeAt, scope } = {}) {
+        super(message);
+        this.name = 'AIRateLimitError';
+        this.kind = 'rate_limit';
+        this.status = status ?? 429;
+        this.model = model ?? null;
+        this.keyIndex = keyIndex ?? null;
+        this.retryAfterMs = retryAfterMs ?? null;
+        this.resumeAt = resumeAt ?? null;
+        this.scope = scope ?? 'model_key';
+    }
+}
+
+export class AIInvalidKeyError extends Error {
+    constructor(message, { status, model, keyIndex, retryAfterMs, resumeAt, scope } = {}) {
+        super(message);
+        this.name = 'AIInvalidKeyError';
+        this.kind = 'invalid_key';
+        this.status = status ?? 403;
+        this.model = model ?? null;
+        this.keyIndex = keyIndex ?? null;
+        this.retryAfterMs = retryAfterMs ?? null;
+        this.resumeAt = resumeAt ?? null;
+        this.scope = scope ?? 'key';
+    }
+}
 
 // ─── Daily Briefing Prompt ──────────────────────────────────
 const BRIEFING_PROMPT = `${USER_CONTEXT}
@@ -172,6 +226,14 @@ export class GeminiAnalyzer {
         // Per-model+key exhaustion tracking
         // Map<modelName, Array<{ until: number|null, reason: string|null }>>
         this._modelKeyExhaustion = new Map();
+
+        // Per-model circuit breaker
+        // Map<model, { openUntil, failures: Array<{at,kind}>, halfOpen }>
+        this._modelCircuitBreaker = new Map();
+
+        // Per-model failure counters for telemetry
+        // Map<model, { _503, _429_quota, _429_rate, invalid_key, network, total }>
+        this._aiFailureCounts = new Map();
     }
 
     /**
@@ -305,11 +367,40 @@ export class GeminiAnalyzer {
     }
 
     _isDailyQuotaError(err) {
-        const isRateLimit = err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429');
-        const msg = (err.message || '').toLowerCase();
-        // Specifically check for 'per day' or 'perday' to avoid catching 'per minute' or generic '(e.g. check quota)' transient limits
-        const isDailyQuota = msg.includes('perday') || msg.includes('per day');
-        return isRateLimit && isDailyQuota;
+        const status = err?.status;
+        const msg = (err?.message || '').toLowerCase();
+        const isRateLimit = status === 429 || msg.includes('resource_exhausted') || msg.includes('429');
+        if (!isRateLimit) return false;
+
+        // Hard quota indicators (daily / global / free tier)
+        const isHardQuota = msg.includes('per day')
+            || msg.includes('perday')
+            || msg.includes('daily limit')
+            || msg.includes('free tier')
+            || msg.includes('quota exceeded')
+            || msg.includes('exhausted');
+
+        // Parse retry hints if present
+        const retryMatch = (err?.message || '').match(/retry\s+(?:after|in)\s+([\d\.]+)\s*(s|sec|seconds|m|min|minutes|h|hours)?/i)
+            || (err?.message || '').match(/please retry in ([\d\.]+)s/i);
+        if (retryMatch) {
+            const value = parseFloat(retryMatch[1]);
+            const unit = (retryMatch[2] || 's').toLowerCase();
+            let ms = value * 1000;
+            if (unit.startsWith('m')) ms = value * 60 * 1000;
+            if (unit.startsWith('h')) ms = value * 60 * 60 * 1000;
+            err._parsedRetryAfterMs = Math.ceil(ms);
+        }
+
+        return isHardQuota;
+    }
+
+    _isGlobalQuotaError(err) {
+        const msg = (err?.message || '').toLowerCase();
+        return msg.includes('per day')
+            || msg.includes('perday')
+            || msg.includes('daily limit')
+            || msg.includes('free tier');
     }
 
     _isInvalidApiKeyError(err) {
@@ -370,18 +461,17 @@ export class GeminiAnalyzer {
     }
 
     _isModelKeyAvailable(model, keyIndex) {
-        // Per-key check: invalid keys are unavailable for all models
-        if (!this._isKeyAvailable(keyIndex)) return false;
-
-        // Per-model+key check: quota exhaustion
+        // Per-model+key check: model-specific exhaustion
         const state = this._getModelKeyState(model, keyIndex);
         if (state.until && Date.now() < state.until) return false;
-
-        // Clear expired state
         if (state.until && Date.now() >= state.until) {
             state.until = null;
             state.reason = null;
         }
+
+        // Global key check: invalid keys or globally exhausted keys are unavailable for all models
+        if (!this._isKeyAvailable(keyIndex)) return false;
+
         return true;
     }
 
@@ -404,6 +494,93 @@ export class GeminiAnalyzer {
             if (this._isModelKeyAvailable(model, idx)) return idx;
         }
         return -1;
+    }
+
+    _getCircuitState(model) {
+        if (!this._modelCircuitBreaker.has(model)) {
+            this._modelCircuitBreaker.set(model, {
+                openUntil: null,
+                failures: [],
+                halfOpen: false,
+            });
+        }
+        return this._modelCircuitBreaker.get(model);
+    }
+
+    _isCircuitOpen(model) {
+        const state = this._getCircuitState(model);
+        if (state.openUntil && Date.now() < state.openUntil) {
+            console.warn(`[CircuitBreaker] ${JSON.stringify({ eventType: 'ai.circuit_breaker.blocked', model, openUntil: state.openUntil })}`);
+            return true;
+        }
+        if (state.openUntil && Date.now() >= state.openUntil) {
+            state.openUntil = null;
+            state.halfOpen = true;
+        }
+        return false;
+    }
+
+    _recordCircuitFailure(model, kind) {
+        const state = this._getCircuitState(model);
+        const now = Date.now();
+        state.failures.push({ at: now, kind });
+        // Prune failures older than 5 minutes
+        state.failures = state.failures.filter(f => now - f.at <= 5 * 60 * 1000);
+
+        const recent60s503 = state.failures.filter(f => f.kind === '503' && now - f.at <= 60 * 1000);
+        const recent5min503 = state.failures.filter(f => f.kind === '503');
+
+        // Open on 2 consecutive 503s in 60s or 3 in 5 min
+        if (recent60s503.length >= 2 || recent5min503.length >= 3) {
+            const cooldown = 60 * 1000 + Math.random() * 60 * 1000; // 60-120s
+            state.openUntil = now + cooldown;
+            state.halfOpen = false;
+            console.warn(`[CircuitBreaker] ${JSON.stringify({
+                eventType: 'ai.circuit_breaker.open',
+                model,
+                openUntil: state.openUntil,
+                failureCount: state.failures.length,
+                lastFailureKind: kind,
+            })}`);
+        }
+    }
+
+    _recordCircuitSuccess(model) {
+        const state = this._getCircuitState(model);
+        const wasHalfOpen = state.halfOpen;
+        state.failures = [];
+        state.openUntil = null;
+        state.halfOpen = false;
+        if (wasHalfOpen) {
+            console.log(`[CircuitBreaker] ${JSON.stringify({ eventType: 'ai.circuit_breaker.close', model })}`);
+        }
+    }
+
+    _getFailureCounts(model) {
+        if (!this._aiFailureCounts.has(model)) {
+            this._aiFailureCounts.set(model, { _503: 0, _429_quota: 0, _429_rate: 0, invalid_key: 0, network: 0, total: 0 });
+        }
+        return this._aiFailureCounts.get(model);
+    }
+
+    _recordAiFailure(model, kind, keyIndex) {
+        const counts = this._getFailureCounts(model);
+        if (counts[kind] !== undefined) counts[kind]++;
+        counts.total++;
+        console.warn(`[AIFailure] ${JSON.stringify({ eventType: 'ai.failure', model, kind, keyIndex })}`);
+        if (counts.total % 10 === 0) {
+            console.warn(`[AIFailure] ${JSON.stringify({
+                eventType: 'ai.failure.summary',
+                model,
+                counts: {
+                    _503: counts._503,
+                    _429_quota: counts._429_quota,
+                    _429_rate: counts._429_rate,
+                    invalid_key: counts.invalid_key,
+                    network: counts.network,
+                },
+            })}`);
+        }
     }
 
     isTierExhausted(modelTier = 'fast') {
@@ -461,20 +638,30 @@ export class GeminiAnalyzer {
      * @returns {Promise<Object>} Model generation result
      * @private
      */
-    async _executeWithFailover(prompt, apiCallFn, { transientBaseMs = 15, modelTier = 'fast' } = {}) {
+    async _executeWithFailover(prompt, apiCallFn, { transientBaseMs = 15, modelTier = 'fast', interactiveWritePath = false } = {}) {
         // Global pre-checks
         if (this._areAllKeysUnavailable()) {
-            throw new Error('API_KEYS_UNAVAILABLE');
+            throw new AIInvalidKeyError('All API keys are unavailable.', { status: 403, scope: 'account' });
         }
 
         const chain = this._modelTiers[modelTier];
-        const maxTransientRetries = 2;
+        const maxTransientRetries = interactiveWritePath ? 1 : 2;
+
+        let hasQuotaExhaustion = false;
+        let hasServiceUnavailable = false;
+        let hasInvalidKey = false;
 
         for (let modelIndex = 0; modelIndex < chain.length; modelIndex++) {
             const model = chain[modelIndex];
 
             if (modelIndex > 0) {
                 console.log(`⚡ [Gemini] Model fallback: ${chain[modelIndex - 1]} exhausted → trying ${model} (tier: ${modelTier})`);
+            }
+
+            // Circuit breaker check
+            if (this._isCircuitOpen(model)) {
+                console.log(`⏭️ [Gemini] Circuit breaker open for ${model}, skipping to next model in chain`);
+                continue;
             }
 
             if (this._areAllKeysExhaustedForModel(model)) {
@@ -505,6 +692,9 @@ export class GeminiAnalyzer {
                     // Success — update active key index
                     this._activeKeyIndex = currentKeyIndex;
 
+                    // Close circuit breaker on success
+                    this._recordCircuitSuccess(model);
+
                     // Log usage metadata
                     const usage = response?.usageMetadata;
                     if (usage) {
@@ -523,6 +713,8 @@ export class GeminiAnalyzer {
                     console.error(`[DIAGNOSTICS] Key ${currentKeyIndex + 1}/${this._keys.length} [${maskedKey}] exactly threw: [${err.status}] ${err.message}`);
 
                     if (this._isInvalidApiKeyError(err)) {
+                        hasInvalidKey = true;
+                        this._recordAiFailure(model, 'invalid_key', currentKeyIndex);
                         // Expired/leaked keys should be sidelined for longer than daily quota windows.
                         const disableMs = Date.now() + (7 * 24 * 60 * 60 * 1000);
                         this._markActiveKeyUnavailable('invalid_key', disableMs);
@@ -539,10 +731,15 @@ export class GeminiAnalyzer {
                     }
 
                     if (this._isDailyQuotaError(err)) {
-                        // Mark current key as exhausted
+                        hasQuotaExhaustion = true;
+                        this._recordAiFailure(model, '429_quota', currentKeyIndex);
                         const resetMs = this._getQuotaResetMs();
-                        this._markActiveKeyUnavailable('daily_quota', Date.now() + resetMs);
+                        // Mark model+key as exhausted for all quota types
                         this._markModelKeyExhausted(model, currentKeyIndex, 'daily_quota', Date.now() + resetMs);
+                        // Mark whole key only for global quota
+                        if (this._isGlobalQuotaError(err)) {
+                            this._markActiveKeyUnavailable('daily_quota', Date.now() + resetMs);
+                        }
 
                         // Try next key for THIS model before falling through to next model
                         const nextIdx = this._findNextAvailableKeyForModel(model, currentKeyIndex);
@@ -572,29 +769,53 @@ export class GeminiAnalyzer {
                     const isRateLimit = err.status === 429 || err.message?.includes('RESOURCE_EXHAUSTED') || err.message?.includes('429');
                     const isServiceUnavailable = err.status === 503;
                     const isTransient = isRateLimit || isServiceUnavailable;
-                    if (isTransient && transientAttempts < maxTransientRetries) {
-                        let dynamicBackoffMs = transientBaseMs;
-                        const match = err.message?.match(/Please retry in ([\d\.]+)s/);
-                        if (match && match[1]) {
-                            dynamicBackoffMs = parseFloat(match[1]) * 1000 + 2000;
-                        }
-                        // Use longer backoff for 503 (service usually needs more recovery time)
-                        if (isServiceUnavailable) {
-                            dynamicBackoffMs = Math.max(dynamicBackoffMs, 10000);
-                        }
-                        const backoffMs = dynamicBackoffMs + Math.random() * 5000;
-                        const errorType = isServiceUnavailable ? 'service unavailable' : 'rate limited';
-                        console.error(`⏳ ${errorType}, waiting ${Math.round(backoffMs / 1000)}s before retry ${transientAttempts + 1}/${maxTransientRetries}...`);
-                        await new Promise(r => setTimeout(r, backoffMs));
-                        transientAttempts++;
-                        continue;
-                    }
+                    const isNetworkError = !isTransient && (err.message?.includes('network') || err.message?.includes('ECONNRESET') || err.message?.includes('ETIMEDOUT') || err.message?.includes('EAI_AGAIN'));
 
-                    // Transient retries exhausted — try next model in chain
                     if (isTransient) {
+                        if (isServiceUnavailable) {
+                            hasServiceUnavailable = true;
+                            this._recordAiFailure(model, '503', currentKeyIndex);
+                        } else if (isRateLimit) {
+                            this._recordAiFailure(model, '429_rate', currentKeyIndex);
+                        }
+
+                        // Fast-fail 503 on interactive write path: 0 same-model retries
+                        if (isServiceUnavailable && interactiveWritePath) {
+                            this._recordCircuitFailure(model, '503');
+                            console.error(`⏳ Service unavailable for ${model}, fast-falling back to next model (write path)`);
+                            break;
+                        }
+
+                        const effectiveMaxRetries = interactiveWritePath ? 1 : maxTransientRetries;
+                        if (transientAttempts < effectiveMaxRetries) {
+                            let dynamicBackoffMs = transientBaseMs;
+                            const match = err.message?.match(/Please retry in ([\d\.]+)s/);
+                            if (match && match[1]) {
+                                dynamicBackoffMs = parseFloat(match[1]) * 1000 + 2000;
+                            }
+                            // No 10s floor for 503; cap jitter for write path
+                            const jitter = interactiveWritePath
+                                ? 100 + Math.random() * 200  // 100-300ms
+                                : Math.random() * 5000;
+                            const backoffMs = dynamicBackoffMs + jitter;
+                            const errorType = isServiceUnavailable ? 'service unavailable' : 'rate limited';
+                            console.error(`⏳ ${errorType}, waiting ${Math.round(backoffMs / 1000)}s before retry ${transientAttempts + 1}/${effectiveMaxRetries}...`);
+                            await new Promise(r => setTimeout(r, backoffMs));
+                            transientAttempts++;
+                            continue;
+                        }
+
+                        // Transient retries exhausted — try next model in chain
                         const errorType = isServiceUnavailable ? 'Service unavailable' : 'Rate limit';
                         console.error(`⏳ ${errorType} retries exhausted for ${model}, trying next model in chain.`);
-                        break; // Exit inner while, continue to next model in outer for loop
+                        if (isServiceUnavailable) {
+                            this._recordCircuitFailure(model, '503');
+                        }
+                        break;
+                    }
+
+                    if (isNetworkError) {
+                        this._recordAiFailure(model, 'network', currentKeyIndex);
                     }
 
                     throw err;
@@ -602,8 +823,17 @@ export class GeminiAnalyzer {
             }
         }
 
-        // All models in chain exhausted
-        throw new Error('QUOTA_EXHAUSTED');
+        // All models in chain exhausted — throw typed error based on dominant failure
+        if (hasQuotaExhaustion) {
+            throw new AIHardQuotaError('All model fallback keys exhausted due to quota limits.', { status: 429, scope: 'account' });
+        }
+        if (hasInvalidKey) {
+            throw new AIInvalidKeyError('All model fallback keys exhausted due to invalid keys.', { status: 403, scope: 'account' });
+        }
+        if (hasServiceUnavailable) {
+            throw new AIServiceUnavailableError('All model fallback keys exhausted due to service unavailability.', { status: 503, scope: 'account' });
+        }
+        throw new AIServiceUnavailableError('All model fallback keys exhausted.', { status: 503, scope: 'account' });
     }
 
 

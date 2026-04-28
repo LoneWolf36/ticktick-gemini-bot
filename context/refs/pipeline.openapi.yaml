@@ -12,7 +12,7 @@ paths:
   /pipeline/process:
     post:
       operationId: processPipelineMessage
-      summary: Process one user message through AX, normalization, execution, and rollback handling
+      summary: Process one user message through intent extraction, normalization, execution, and rollback handling
       tags:
         - pipeline
       requestBody:
@@ -85,7 +85,7 @@ components:
         currentDate:
           type: string
           format: date
-          description: Normalized YYYY-MM-DD string used for relative-date resolution before AX extraction
+          description: Normalized YYYY-MM-DD string used for relative-date resolution before intent extraction
         timezone:
           type: string
           description: Canonical timezone from stored user context

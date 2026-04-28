@@ -166,21 +166,21 @@ test('pipeline context resolves project hints from available projects', async ()
   assert.equal(adapterCalls.create[0].projectId, DEFAULT_PROJECTS[1].id);
 });
 
-test('pipeline fails safely on malformed AX output', async () => {
+test('pipeline fails safely on malformed intent extraction output', async () => {
   const { processMessage, adapterCalls } = createPipelineHarness({
     intents: { unexpected: true },
   });
 
   const result = await processMessage('make this sane', {
-    requestId: 'req-malformed-ax',
+    requestId: 'req-malformed-intent',
     entryPoint: 'telegram',
     mode: 'interactive',
   });
 
   assert.equal(result.type, 'error');
-  assert.equal(result.failure.class, 'malformed_ax');
+  assert.equal(result.failure.class, 'malformed_intent');
   assert.equal(result.failure.rolledBack, false);
-  assert.equal(result.requestId, 'req-malformed-ax');
+  assert.equal(result.requestId, 'req-malformed-intent');
   assert.equal(result.results.length, 0);
   assert.equal(adapterCalls.create.length, 0);
 });
@@ -243,7 +243,7 @@ test('pipeline returns validation failure when all normalized actions are invali
   assert.equal(adapterCalls.create.length, 0);
 });
 
-test('pipeline classifies quota failures from AX extraction', async () => {
+test('pipeline classifies quota failures from intent extraction', async () => {
   const quotaError = new QuotaExhaustedError('All API keys exhausted');
   const intentExtractor = {
     extractIntents: async () => {
@@ -390,7 +390,7 @@ test('createIntentExtractor propagates QuotaExhaustedError when all models exhau
 
   const intentExtractor = createIntentExtractor(mockGemini);
   await assert.rejects(
-    () => intentExtractor.extractIntents('schedule rent', { currentDate: '2026-03-10', availableProjects: ['Inbox'], requestId: 'req-ax-quota' }),
+    () => intentExtractor.extractIntents('schedule rent', { currentDate: '2026-03-10', availableProjects: ['Inbox'], requestId: 'req-intent-quota' }),
     QuotaExhaustedError,
   );
 
@@ -650,7 +650,8 @@ test('mut:pick resumes through pipeline with resolved task context', async () =>
   assert.equal(store.getPendingMutationClarification(), null);
 
   // Verify user saw success message
-  assert.ok(answers[0].text.includes('Selected'));
+  assert.equal(answers.length, 1);
+  assert.ok(answers[0].text.includes('Processing'));
   assert.ok(edits[0].includes('Updated'));
 });
 
@@ -688,17 +689,19 @@ test('mut:pick rejects cross-user selections', async () => {
   const pickHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:pick'))?.handler;
 
   const answers = [];
+  const edits = [];
   const ctx = {
     match: ['mut:pick:task-1', 'task-1'],
     chat: { id: chatId }, // Same chat (authorized)
     from: { id: 999 }, // Different user
     answerCallbackQuery: async (obj) => { answers.push(obj); },
-    editMessageText: async () => {},
+    editMessageText: async (text) => { edits.push(text); },
   };
 
   await pickHandler(ctx);
 
-  assert.ok(answers[0].text.includes('Wrong user'));
+  assert.equal(answers.length, 1);
+  assert.ok(edits[0].includes('Wrong user'));
   // State should NOT have been cleared
   assert.ok(store.getPendingMutationClarification() !== null);
 });
@@ -750,7 +753,8 @@ test('mut:pick rejects expired clarifications', async () => {
 
   await pickHandler(ctx);
 
-  assert.ok(answers[0].text.includes('Expired'));
+  assert.equal(answers.length, 1);
+  assert.ok(answers[0].text.includes('Processing'));
   assert.ok(edits[0].includes('expired'));
   // State should be cleared
   assert.equal(store.getPendingMutationClarification(), null);
@@ -801,7 +805,7 @@ test('mut:cancel clears pending state safely', async () => {
   await cancelHandler(ctx);
 
   assert.equal(store.getPendingMutationClarification(), null);
-  assert.ok(answers[0].text.includes('Canceled'));
+  assert.equal(answers.length, 1);
   assert.ok(edits[0].includes('canceled'));
 });
 
@@ -842,7 +846,7 @@ test('mut:pick fails safely when no pending state exists', async () => {
 
   await pickHandler(ctx);
 
-  assert.ok(answers[0].text.includes('No pending'));
+  assert.equal(answers.length, 1);
   assert.ok(edits[0].includes('No pending'));
 });
 
@@ -945,7 +949,7 @@ test('WP06 T017: observability failure events include failureClass and rolledBac
 // WP06 — T020: Fail-closed behavior — failure class + user message shape
 // =========================================================================
 
-test('WP06 T020: fail-closed — malformed AX returns user-safe message without leaking diagnostics', async () => {
+test('WP06 T020: fail-closed — malformed intent extraction returns user-safe message without leaking diagnostics', async () => {
   const pipeline = createPipeline({
     intentExtractor: {
       extractIntents: async () => 'garbage: <html>error page</html>',
@@ -966,7 +970,7 @@ test('WP06 T020: fail-closed — malformed AX returns user-safe message without 
   });
 
   assert.equal(result.type, 'error');
-  assert.equal(result.failure.class, 'malformed_ax');
+  assert.equal(result.failure.class, 'malformed_intent');
   // User message MUST be compact and MUST NOT leak raw error text
   assert.match(result.confirmationText, /could not understand/i);
   assert.equal(result.confirmationText.includes('<html>'), false);
@@ -1223,7 +1227,7 @@ test('WP06 R4: pipeline distinguishes quota exhaustion from transient rate limit
 // WP06 — T012: Failure-path regressions (additional coverage)
 // =========================================================================
 
-test('WP06 T012: pipeline classifies malformed AX output when extractIntents returns non-array', async () => {
+test('WP06 T012: pipeline classifies malformed intent extraction output when extractIntents returns non-array', async () => {
   const pipeline = createPipeline({
     intentExtractor: {
       extractIntents: async () => ({ not: 'an array' }),
@@ -1242,10 +1246,10 @@ test('WP06 T012: pipeline classifies malformed AX output when extractIntents ret
   });
 
   assert.equal(result.type, 'error');
-  assert.equal(result.failure.class, 'malformed_ax');
+  assert.equal(result.failure.class, 'malformed_intent');
 });
 
-test('WP06 T012: pipeline handles AX returning null intents', async () => {
+test('WP06 T012: pipeline handles intent extraction returning null intents', async () => {
   const pipeline = createPipeline({
     intentExtractor: {
       extractIntents: async () => null,
@@ -1263,9 +1267,9 @@ test('WP06 T012: pipeline handles AX returning null intents', async () => {
     mode: 'interactive',
   });
 
-  // Null from AX is treated as empty/non-task, not malformed
+  // Null from intent extraction is treated as empty/non-task, not malformed
   assert.equal(result.type, 'error');
-  assert.ok(['malformed_ax', 'unexpected', 'validation'].includes(result.failure.class),
+  assert.ok(['malformed_intent', 'unexpected', 'validation'].includes(result.failure.class),
     `null intents should fail with a known class, got: ${result.failure.class}`);
 });
 

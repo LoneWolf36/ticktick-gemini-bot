@@ -182,7 +182,7 @@ function scoreTask(task, normalizedQuery, originalQuery) {
  * @param {Array<object>} params.activeTasks - Current tasks from TickTick, each with { id, projectId, title, ... }
  * @returns {object} Resolver result: { status, selected, candidates, reason }
  */
-export function resolveTarget({ targetQuery, activeTasks }) {
+export function resolveTarget({ targetQuery, activeTasks, recentTask = null }) {
     if (!targetQuery || typeof targetQuery !== 'string' || !targetQuery.trim()) {
         return {
             status: 'not_found',
@@ -204,6 +204,22 @@ export function resolveTarget({ targetQuery, activeTasks }) {
     const normalizedQuery = normalizeTitle(targetQuery);
 
     if (UNDERSPECIFIED_PRONOUN_QUERY.test(normalizedQuery)) {
+        // Bind pronoun to recently discussed task when exactly one is available
+        if (recentTask && typeof recentTask.id === 'string' && typeof recentTask.title === 'string' && recentTask.title.trim()) {
+            return {
+                status: 'resolved',
+                selected: {
+                    taskId: recentTask.id,
+                    projectId: recentTask.projectId ?? null,
+                    title: recentTask.title,
+                    score: 100,
+                    matchType: 'coreference',
+                },
+                candidates: [],
+                reason: null,
+            };
+        }
+
         const candidates = activeTasks
             .filter((task) => task && typeof task.id === 'string' && typeof task.title === 'string' && task.title.trim())
             .slice(0, 5)

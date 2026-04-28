@@ -37,7 +37,7 @@ Expected:
 Check:
 - `server.js`, `bot/commands.js`, and `services/scheduler.js` all assemble the same pipeline request context.
 - The timezone used for relative-date expansion comes from stored user context.
-- AX receives `currentDate`, canonical timezone context, and available project names on every call path.
+- Intent extraction receives `currentDate`, canonical timezone context, and available project names on every call path.
 
 ### 4. Validate retry and rollback behavior
 
@@ -46,18 +46,18 @@ Check with focused mocks:
 - If the retry still fails, prior successful writes are compensated through `TickTickAdapter`.
 - The final result is a failure with rollback status, not a misleading partial success.
 
-### 5. Validate quota and malformed AX handling
+### 5. Validate quota and malformed intent extraction handling
 
 Check with focused mocks:
 - When one Gemini key is exhausted, the pipeline attempts another configured key before failing.
-- Malformed or empty AX output produces a non-destructive failure path instead of an unhandled exception.
+- Malformed or empty intent extraction output produces a non-destructive failure path instead of an unhandled exception.
 - User-facing failure text stays compact while development mode preserves diagnostic detail.
 
 ### 6. Validate observability output
 
 Check:
 - Each request has a stable `requestId`.
-- Structured telemetry events are emitted for request start, AX extraction, normalization, execution, rollback, and terminal outcome.
+- Structured telemetry events are emitted for request start, intent extraction, normalization, execution, rollback, and terminal outcome.
 - Metrics hooks and tracing scaffolding receive the same failure class and duration data used in logs.
 
 ### 7. Validate burst behavior

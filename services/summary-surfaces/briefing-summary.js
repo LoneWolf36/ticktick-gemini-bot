@@ -192,6 +192,20 @@ function mergeNotices(baseNotices = [], modelNotices = []) {
     return merged;
 }
 
+function deduplicateStrings(items) {
+    return [...new Set((Array.isArray(items) ? items : []).filter((s) => typeof s === 'string'))];
+}
+
+function deduplicateNoticesByMessage(notices) {
+    const seen = new Set();
+    return (Array.isArray(notices) ? notices : []).filter((notice) => {
+        if (!notice || typeof notice.message !== 'string') return false;
+        if (seen.has(notice.message)) return false;
+        seen.add(notice.message);
+        return true;
+    });
+}
+
 function mergePriorities({
     modelPriorities = [],
     fallbackPriorities = [],
@@ -279,7 +293,7 @@ export function composeBriefingSummarySections({
     }), fallbackPriorities), rankingResult);
     const topPriority = priorities[0];
 
-    if (normalizedTasks.length === 0 || priorities.length === 0) {
+    if (normalizedTasks.length === 0) {
         return {
             focus: 'No active tasks right now.',
             priorities: [],
@@ -292,18 +306,26 @@ export function composeBriefingSummarySections({
         };
     }
 
-    const focus = modelNormalized.focus || fallbackFocus;
-    const whyNow = modelNormalized.why_now.length > 0 ? modelNormalized.why_now : fallbackWhyNow;
-    const startNow = modelNormalized.start_now || fallbackStartNow;
+    const shouldSkipRanking = rankingResult?.degraded === true || rankingResult?.ranked?.length === 0;
+
+    let focus = modelNormalized.focus || fallbackFocus;
+    let whyNow = modelNormalized.why_now.length > 0 ? modelNormalized.why_now : fallbackWhyNow;
+    let startNow = modelNormalized.start_now || fallbackStartNow;
+    let finalPriorities = priorities;
+
+    if (shouldSkipRanking) {
+        finalPriorities = [];
+        whyNow = [];
+    }
 
     return {
         focus,
-        priorities,
-        why_now: whyNow,
+        priorities: finalPriorities,
+        why_now: deduplicateStrings(whyNow),
         start_now: startNow,
-        notices: mergeNotices(
+        notices: deduplicateNoticesByMessage(mergeNotices(
             buildNotices({ activeTasks: normalizedTasks, behavioralPatterns, context, rankingResult }),
             modelNormalized.notices,
-        ),
+        )),
     };
 }
