@@ -4,6 +4,9 @@ import { sanitizePipelineContextForDiagnostics } from './pipeline-context.js';
  * Aliases for mapping internal entry point names to display names.
  * @type {Record<string, string>}
  */
+const MAX_RECENT_LATENCIES = 50;
+const recentLatencies = [];
+
 const ENTRY_POINT_ALIASES = {
     telegram: 'telegram_message',
     telegram_message: 'telegram_message',
@@ -125,15 +128,23 @@ export function createPipelineObservability({
                     : durationMs < 10000 ? '<10s'
                         : durationMs < 30000 ? '<30s'
                             : '>30s';
+        const entry = { stage, bucket, durationMs, at: Date.now() };
+        recentLatencies.push(entry);
+        if (recentLatencies.length > MAX_RECENT_LATENCIES) recentLatencies.shift();
         const line = `[PipelineLatency] ${JSON.stringify({ eventType: 'pipeline.latency.histogram', stage, bucket, durationMs })}`;
         if (logger && typeof logger.log === 'function') {
             logger.log(line);
         }
     }
 
+    function getRecentLatencies() {
+        return recentLatencies.slice();
+    }
+
     return {
         emit,
         emitLatencyHistogram,
+        getRecentLatencies,
         normalizeEntryPoint,
     };
 }

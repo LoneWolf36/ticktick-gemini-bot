@@ -1382,4 +1382,34 @@ export class GeminiAnalyzer {
         return cleaned;
     }
 
+    /**
+     * Returns a health snapshot for monitoring /health endpoints.
+     * @returns {{ circuitBreakers: Object<string,{open:boolean,openUntil:number|null,halfOpen:boolean,failureCount:number}>, failureCounts: Object<string,{_503:number,_429_quota:number,_429_rate:number,invalid_key:number,network:number,total:number}>, keysAvailable: number, keyCount: number }}
+     */
+    getHealthSnapshot() {
+        const circuitBreakers = {};
+        for (const [model, state] of this._modelCircuitBreaker.entries()) {
+            circuitBreakers[model] = {
+                open: !!state.openUntil && Date.now() < state.openUntil,
+                openUntil: state.openUntil,
+                halfOpen: state.halfOpen,
+                failureCount: state.failures.length,
+            };
+        }
+        const failureCounts = {};
+        for (const [model, counts] of this._aiFailureCounts.entries()) {
+            failureCounts[model] = { ...counts };
+        }
+        const keysAvailable = this._keys.filter((_, i) => {
+            const exhausted = this._exhaustedUntilByKey[i];
+            return !exhausted || Date.now() >= exhausted;
+        }).length;
+        return {
+            circuitBreakers,
+            failureCounts,
+            keysAvailable,
+            keyCount: this._keys.length,
+        };
+    }
+
 }

@@ -11,6 +11,7 @@ import { TickTickAdapter } from './services/ticktick-adapter.js';
 import { createIntentExtractor } from './services/intent-extraction.js';
 import * as normalizer from './services/normalizer.js';
 import { createPipeline } from './services/pipeline.js';
+import { createPipelineObservability } from './services/pipeline-observability.js';
 import { getUserTimezone } from './services/user-settings.js';
 import * as store from './services/store.js';
 
@@ -107,10 +108,12 @@ const botConfig = {
 const adapter = new TickTickAdapter(ticktick);
 
 const intentExtractor = createIntentExtractor(gemini);
+const observability = createPipelineObservability();
 const pipeline = createPipeline({
     intentExtractor,
     normalizer,
     adapter,
+    observability,
     deferIntent: (entry) => store.appendDeferredPipelineIntent(entry),
     defaultProjectName: DEFAULT_PROJECT_NAME,
 });
@@ -119,7 +122,36 @@ const bot = createBot(TELEGRAM_BOT_TOKEN, ticktick, gemini, adapter, pipeline, b
 const app = express();
 const userTimezone = getUserTimezone();
 
-app.get('/health', (req, res) => res.json({ status: 'ok', authenticated: ticktick.isAuthenticated() }));
+app.get('/health', async (req, res) => {
+    const activeTasks = await adapter.listActiveTasks(true).catch(() => []);
+    const queueHealth = store.getQueueHealthSnapshot();
+    const operational = store.getOperationalSnapshot();
+    const aiHealth = gemini.getHealthSnapshot();
+    const recentLatencies = observability.getRecentLatencies ? observability.getRecentLatencies() : [];
+
+    const latencySummary = {};
+    for (const entry of recentLatencies) {
+        if (!latencySummary[entry.stage]) latencySummary[entry.stage] = { count: 0, buckets: {} };
+        latencySummary[entry.stage].count++;
+        latencySummary[entry.stage].buckets[entry.bucket] = (latencySummary[entry.stage].buckets[entry.bucket] || 0) + 1;
+    }
+
+    const report = {
+        status: 'ok',
+        ticktick: {
+            authenticated: ticktick.isAuthenticated(),
+            activeTasks: activeTasks.length,
+        },
+        queue: queueHealth,
+        workflow: operational.localWorkflow,
+        cumulative: operational.cumulative,
+        ai: aiHealth,
+        latency: latencySummary,
+        uptimeSeconds: Math.floor(process.uptime()),
+    };
+
+    res.json(report);
+});
 
 app.get('/', async (req, res) => {
     const { code } = req.query;
