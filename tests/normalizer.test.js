@@ -1502,4 +1502,36 @@ describe('WP02: Checklist Normalization — T026 (Attach to Create Only)', () =>
 
         assert.strictEqual(result.checklistItems, undefined);
     });
+
+    it('should boost confidence for resolver-confirmed mutations', () => {
+        // Bug: follow-up messages like "make it recurring" get low confidence
+        // from Gemini because the message is ambiguous in isolation. But the
+        // task resolver already confirmed the target — that should override.
+        const result = normalizeAction({
+            type: 'update',
+            title: null,
+            confidence: 0.3,
+            repeatHint: 'daily',
+        }, {
+            existingTask: { id: 'task123', projectId: 'proj456', title: 'Watch AI Coding Videos' },
+            existingTaskContent: null,
+        });
+
+        assert.strictEqual(result.confidence, 0.5);
+        assert.strictEqual(result.valid, true);
+        assert.strictEqual(result.validationErrors.length, 0);
+    });
+
+    it('should not boost confidence for unresolved mutations', () => {
+        const result = normalizeAction({
+            type: 'update',
+            title: null,
+            confidence: 0.3,
+            repeatHint: 'daily',
+        });
+
+        assert.strictEqual(result.confidence, 0.3);
+        assert.strictEqual(result.valid, false);
+        assert.ok(result.validationErrors.some(e => e.includes('Confidence 0.3 below threshold')));
+    });
 });

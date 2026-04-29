@@ -157,6 +157,32 @@ function scoreTask(task, normalizedQuery, originalQuery) {
         };
     }
 
+    // Token-overlap match: e.g. "ai coder task" -> "Watch AI Coding Videos on Udemy"
+    const queryTokens = normalizedQuery.split(/\s+/).filter(t => t.length >= 2);
+    const titleTokens = normalizedTitle.split(/\s+/).filter(t => t.length >= 2);
+    if (queryTokens.length > 0 && titleTokens.length > 0) {
+        const matchedTokens = queryTokens.filter(qt =>
+            titleTokens.some(tt => {
+                if (tt === qt || tt.includes(qt) || qt.includes(tt)) return true;
+                if (tt.length >= 3 && qt.length >= 3 && tt.slice(0, 3) === qt.slice(0, 3)) return true;
+                return fuzzyScore(qt, tt) >= 0.55;
+            })
+        );
+        const overlapRatio = matchedTokens.length / queryTokens.length;
+        // Require at least half the tokens to match for 3+ token queries, higher bar for short queries
+        const minOverlap = queryTokens.length >= 3 ? 0.50 : 0.60;
+        if (overlapRatio >= minOverlap) {
+            const scaledScore = Math.round(FUZZY_SCORE_MIN + overlapRatio * (FUZZY_SCORE_MAX - FUZZY_SCORE_MIN));
+            return {
+                taskId: task.id,
+                projectId: task.projectId ?? null,
+                title: task.title,
+                score: Math.min(scaledScore, FUZZY_SCORE_MAX),
+                matchType: 'token_overlap',
+            };
+        }
+    }
+
     // Conservative fuzzy match: only for close typos
     const fuzzy = fuzzyScore(normalizedTitle, normalizedQuery);
     // Require at least 70% similarity AND the strings must share significant overlap

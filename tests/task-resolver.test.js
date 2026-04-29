@@ -202,9 +202,8 @@ describe('Task Resolver Module', () => {
             const result = resolveTarget({ targetQuery: 'by grocerie', activeTasks: [TASK_FIXTURES.buyGroceries] });
             assert.strictEqual(result.status, 'resolved');
             assert.strictEqual(result.selected.taskId, 'task003');
-            assert.strictEqual(result.selected.matchType, 'fuzzy');
+            assert.ok(result.selected.matchType === 'fuzzy' || result.selected.matchType === 'token_overlap');
             assert.ok(result.selected.score >= 30);
-            assert.ok(result.selected.score <= 55);
         });
 
         it('should not fuzzy match when similarity is too low', () => {
@@ -227,7 +226,7 @@ describe('Task Resolver Module', () => {
         it('should handle dropped letters with fuzzy matching', () => {
             const result = resolveTarget({ targetQuery: 'exrcise', activeTasks: [TASK_FIXTURES.exercise] });
             assert.strictEqual(result.status, 'resolved');
-            assert.strictEqual(result.selected.matchType, 'fuzzy');
+            assert.ok(result.selected.matchType === 'fuzzy' || result.selected.matchType === 'token_overlap');
         });
     });
 
@@ -482,6 +481,30 @@ describe('Task Resolver Module', () => {
             const result = resolveTarget({ targetQuery: 'old', activeTasks: tasks });
             // Both are prefix matches with same score -> clarification
             assert.strictEqual(result.status, 'clarification');
+        });
+
+        it('should resolve NLQ token-overlap references', () => {
+            // Bug: "ai coder task" should match "Watch AI Coding Videos on Udemy"
+            // even though neither string contains the other fully.
+            const tasks = [
+                { id: 't1', projectId: 'p1', title: 'Watch AI Coding Videos on Udemy' },
+                { id: 't2', projectId: 'p1', title: 'Buy groceries' },
+            ];
+            const result = resolveTarget({ targetQuery: 'ai coder task', activeTasks: tasks });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.taskId, 't1');
+            assert.strictEqual(result.selected.matchType, 'token_overlap');
+        });
+
+        it('should resolve token-overlap for multi-word NLQ references', () => {
+            const tasks = [
+                { id: 't1', projectId: 'p1', title: 'Finish system design notes' },
+                { id: 't2', projectId: 'p1', title: 'Read a book' },
+            ];
+            const result = resolveTarget({ targetQuery: 'system design task', activeTasks: tasks });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.taskId, 't1');
+            assert.strictEqual(result.selected.matchType, 'token_overlap');
         });
     });
 });

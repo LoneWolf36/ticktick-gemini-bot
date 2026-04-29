@@ -931,10 +931,18 @@ export function normalizeAction(intentAction, options = {}) {
         : _normalizeTitle(intentAction.title, maxTitleLength, isMutation);
     const normalizedContent = _truncateContent(mutationContent, maxContentLength);
 
+    // When the task resolver already confirmed the target, the resolver's match
+    // is authoritative — boost confidence so low-confidence follow-up messages
+    // (e.g. "make it recurring") aren't filtered by the validation threshold.
+    let effectiveConfidence = intentAction.confidence !== undefined ? intentAction.confidence : 1.0;
+    if (isMutation && resolvedTaskId && options.existingTask?.id) {
+        effectiveConfidence = Math.max(effectiveConfidence, minConfidence);
+    }
+
     const normalized = {
         _index: Number.isInteger(intentAction._index) ? intentAction._index : null,
         type: _resolveActionType(intentAction, options.existingTask),
-        confidence: intentAction.confidence !== undefined ? intentAction.confidence : 1.0,
+        confidence: effectiveConfidence,
         taskId: resolvedTaskId,
         originalProjectId: resolvedOriginalProjectId,
         targetQuery: isMutation ? (intentAction.targetQuery || null) : null,
