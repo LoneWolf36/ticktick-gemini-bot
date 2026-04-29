@@ -69,9 +69,9 @@ test('execution prioritization parses explicit goal themes from user context', (
       priorityOrder: theme.priorityOrder,
     })),
     [
-      { label: 'Land a senior backend role', kind: 'career', priorityOrder: 1 },
-      { label: 'Stabilize finances and pay urgent bills', kind: 'financial', priorityOrder: 2 },
-      { label: 'Protect health and recovery', kind: 'health', priorityOrder: 3 },
+      { label: 'Land a senior backend role', kind: 'custom', priorityOrder: 1 },
+      { label: 'Stabilize finances and pay urgent bills', kind: 'custom', priorityOrder: 2 },
+      { label: 'Protect health and recovery', kind: 'custom', priorityOrder: 3 },
     ]
   );
 });
@@ -755,7 +755,7 @@ test('execution prioritization ignores timezone-ambiguous dueDate strings while 
   assert.equal(result.ranked[0].rationaleCode, 'urgency');
 });
 
-test('execution prioritization elevates blocker removal with explicit exception reason', () => {
+test('execution prioritization ranks goal-aligned work above admin when no strong heuristic exceptions apply', () => {
   const context = buildRankingContext({
     goalThemeProfile: createGoalThemeProfile(`GOALS:
 1. Land a senior backend role`, { source: 'user_context' }),
@@ -769,7 +769,7 @@ test('execution prioritization elevates blocker removal with explicit exception 
       status: 0,
     }),
     normalizePriorityCandidate({
-      id: 'task-blocker',
+      id: 'task-admin',
       title: 'Reset laptop password to unblock applications',
       projectId: 'admin',
       projectName: 'Admin',
@@ -779,13 +779,11 @@ test('execution prioritization elevates blocker removal with explicit exception 
 
   const result = rankPriorityCandidatesForTest(candidates, context);
 
-  assert.equal(result.topRecommendation.taskId, 'task-blocker');
-  assert.equal(result.topRecommendation.exceptionApplied, true);
-  assert.equal(result.topRecommendation.exceptionReason, 'blocker');
-  assert.equal(result.topRecommendation.rationaleCode, 'blocker_removal');
+  assert.equal(result.topRecommendation.taskId, 'task-deep-work');
+  assert.equal(result.topRecommendation.rationaleCode, 'goal_alignment');
 });
 
-test('execution prioritization elevates urgent maintenance with explicit exception reason', () => {
+test('execution prioritization favors goal-aligned work over urgent admin without keyword exceptions', () => {
   const context = buildRankingContext({
     goalThemeProfile: createGoalThemeProfile(`GOALS:
 1. Land a senior backend role`, { source: 'user_context' }),
@@ -811,10 +809,8 @@ test('execution prioritization elevates urgent maintenance with explicit excepti
 
   const result = rankPriorityCandidatesForTest(candidates, context);
 
-  assert.equal(result.topRecommendation.taskId, 'task-urgent-maintenance');
-  assert.equal(result.topRecommendation.exceptionApplied, true);
-  assert.equal(result.topRecommendation.exceptionReason, 'urgent_requirement');
-  assert.equal(result.topRecommendation.rationaleCode, 'urgency');
+  assert.equal(result.topRecommendation.taskId, 'task-deep-work');
+  assert.equal(result.topRecommendation.rationaleCode, 'goal_alignment');
 });
 
 test('execution prioritization boosts urgent tasks ahead of long-term deep work when urgent mode is active', () => {
@@ -883,7 +879,7 @@ test('execution prioritization elevates recovery work when it protects execution
   assert.equal(result.topRecommendation.rationaleCode, 'capacity_protection');
 });
 
-test('execution prioritization can factor high-confidence behavioral avoidance signals', () => {
+test('execution prioritization ranks goal-aligned work above admin even with behavioral signals present', () => {
   const candidates = [
     normalizePriorityCandidate({
       id: 'task-career',
@@ -904,7 +900,7 @@ test('execution prioritization can factor high-confidence behavioral avoidance s
   ];
 
   const result = rankPriorityCandidatesForTest(candidates, buildRankingContext({
-    goalThemeProfile: createGoalThemeProfile('', { source: 'fallback' }),
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
     behavioralSignals: [{
       type: 'category_avoidance',
       category: 'career',
@@ -1073,36 +1069,50 @@ test('execution prioritization is deterministic for identical input and context'
   assert.equal(second.topRecommendation.taskId, first.topRecommendation.taskId);
 });
 
-test('execution prioritization caps recipe and lifestyle tasks at important instead of core goal', () => {
+test('execution prioritization conservative classifier returns safe defaults without strong evidence', () => {
   const options = {
     goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
   };
 
-  // Goal-aligned career task in a routine project -> capped by project name
-  const routineProjectTask = { title: 'Backend interview prep', projectName: 'Routines & Tracking' };
-  assert.equal(executionPrioritization.inferPriorityValueFromTask(routineProjectTask, options), 3);
+  // Recipe task in routine project -> priority 1
+  const recipeTask = { title: 'Try new pasta recipe', projectName: 'Recipes' };
+  assert.equal(executionPrioritization.inferPriorityValueFromTask(recipeTask, options), 1);
 
-  // Goal-aligned career task with recipe keyword -> capped by title keyword
-  const recipeKeywordTask = { title: 'Backend curry prep', projectName: 'Career' };
-  assert.equal(executionPrioritization.inferPriorityValueFromTask(recipeKeywordTask, options), 3);
+  // Short noun fragment -> priority 1
+  const shortFragmentTask = { title: 'Backend prep', projectName: 'Career', dueDate: null };
+  assert.equal(executionPrioritization.inferPriorityValueFromTask(shortFragmentTask, options), 1);
 
-  // Goal-aligned career task that is short and has no due date -> capped by short-title rule
-  const shortNoDueTask = { title: 'Backend prep', projectName: 'Career', dueDate: null };
-  assert.equal(executionPrioritization.inferPriorityValueFromTask(shortNoDueTask, options), 3);
+  // Task in Life Admin project -> priority 1
+  const lifeAdminTask = { title: 'Pay electricity bill', projectName: 'Life Admin' };
+  assert.equal(executionPrioritization.inferPriorityValueFromTask(lifeAdminTask, options), 1);
 
-  // Goal-aligned career task with laundry keyword -> capped by title keyword
-  const laundryKeywordTask = { title: 'Backend laundry prep', projectName: 'Career' };
-  assert.equal(executionPrioritization.inferPriorityValueFromTask(laundryKeywordTask, options), 3);
+  // Task with due date within 7 days -> priority 3
+  const nearDueTask = { title: 'Submit paperwork', projectName: 'Admin', dueDate: '2026-05-02T10:00:00Z' };
+  assert.equal(executionPrioritization.inferPriorityValueFromTask(nearDueTask, options), 3);
+
+  // Task with urgent keyword -> priority 3
+  const urgentTask = { title: 'Reply to email ASAP', projectName: 'Admin' };
+  assert.equal(executionPrioritization.inferPriorityValueFromTask(urgentTask, options), 3);
 });
 
-test('execution prioritization preserves core goal for non-lifestyle strategic work', () => {
+test('execution prioritization conservative classifier returns core goal only for strong strategic signals', () => {
   const options = {
     goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
   };
 
-  const careerTask = { title: 'Prepare backend system design interview notes', projectName: 'Career' };
+  // Career task with action verb in strategic project -> priority 5
+  const careerTask = { title: 'Prepare backend system design interview notes', projectName: 'Career & Job Search' };
   assert.equal(executionPrioritization.inferPriorityValueFromTask(careerTask, options), 5);
 
-  const studyTask = { title: 'Complete leetcode hard problems', projectName: 'Study' };
+  // Study task with action verb and due date -> priority 5
+  const studyTask = { title: 'Complete leetcode hard problems', projectName: 'Studies', dueDate: '2026-04-25T10:00:00Z' };
   assert.equal(executionPrioritization.inferPriorityValueFromTask(studyTask, options), 5);
+
+  // Strategic project but lacks action verb -> priority 3
+  const strategicNoVerb = { title: 'Backend system design notes', projectName: 'Career & Job Search' };
+  assert.equal(executionPrioritization.inferPriorityValueFromTask(strategicNoVerb, options), 3);
+
+  // Action verb + schedule but in routine project -> priority 1
+  const routineProjectTask = { title: 'Prepare interview notes', projectName: 'Routines & Tracking', dueDate: '2026-04-25T10:00:00Z' };
+  assert.equal(executionPrioritization.inferPriorityValueFromTask(routineProjectTask, options), 1);
 });

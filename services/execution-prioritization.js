@@ -2,51 +2,29 @@ import { containsSensitiveContent } from './shared-utils.js';
 
 const recentRankingTelemetry = new Map();
 
-const CAREER_KEYWORDS = [
-    'backend', 'career', 'interview', 'system design', 'design', 'leetcode', 'resume',
-    'role', 'job', 'application', 'portfolio', 'study', 'exam', 'assignment', 'mock',
-];
-const FINANCIAL_KEYWORDS = [
-    'finance', 'financial', 'bill', 'rent', 'money', 'debt', 'budget', 'income',
-    'electricity', 'lease', 'bank', 'apartment', 'insurance',
-];
-const HEALTH_KEYWORDS = [
-    'health', 'therapy', 'doctor', 'mental', 'burnout', 'recovery', 'recover',
-    'rest', 'sleep', 'exercise', 'workout', 'wellness',
-];
-const PERSONAL_KEYWORDS = [
-    'grocery', 'groceries', 'home', 'desk', 'drawer', 'shopping', 'errand',
-];
-const BLOCKER_KEYWORDS = [
-    'unblock', 'blocker', 'reset password', 'password', 'credential', 'login',
-    'access', 'wifi', 'internet',
-];
-const QUICK_WIN_KEYWORDS = [
-    'buy', 'clean', 'desk', 'drawer', 'email', 'groceries', 'grocery', 'inbox',
-    'organize', 'sort', 'tidy', 'quick', 'small', 'admin', 'errand', 'shopping',
-];
-const PLANNING_HEAVY_KEYWORDS = [
-    'analyze', 'analysis', 'brainstorm', 'investigate', 'outline', 'plan', 'planning',
-    'research', 'review notes', 'roadmap', 'strategy', 'think through',
-];
-const EXECUTION_EVIDENCE_KEYWORDS = [
-    'apply', 'book', 'build', 'call', 'complete', 'deliver', 'draft', 'implement',
-    'practice', 'prepare', 'send', 'ship', 'submit', 'update', 'write',
-];
 const STOP_WORDS = new Set([
     'a', 'an', 'and', 'avoid', 'current', 'for', 'from', 'goal', 'goals', 'growth',
     'land', 'notes', 'now', 'of', 'order', 'priority', 'protect', 'role', 'senior',
     'stabilize', 'the', 'to', 'urgent', 'with', 'your',
 ]);
 
-const LIFESTYLE_KEYWORDS = [
-    'recipe', 'masala', 'curry', 'dinner', 'lunch', 'breakfast',
-    'grocery', 'shopping', 'clean', 'laundry', 'routine',
+const VERB_PATTERNS = /^(add|analyze|apply|approve|arrange|assemble|assess|assign|assist|attach|authorize|block|book|build|buy|call|cancel|capture|celebrate|check|claim|clean|coach|collect|communicate|complete|compose|configure|confirm|consolidate|construct|contribute|convert|create|customize|debug|decide|define|delegate|delete|destroy|develop|discard|discover|discuss|distribute|do|document|download|draft|draw|edit|educate|email|emit|encourage|engage|enhance|ensure|enter|establish|evaluate|examine|execute|exercise|explain|explore|facilitate|fetch|file|finalize|finish|fix|follow|force|format|generate|get|give|go|govern|group|guide|have|identify|implement|import|improve|increase|inform|initiate|inspect|install|integrate|interact|investigate|join|keep|launch|lead|learn|limit|locate|log|make|manage|measure|meet|merge|modify|monitor|navigate|negotiate|notify|offer|operate|optimize|organize|outline|pack|participate|pay|perform|persuade|plan|prepare|present|preserve|prioritize|process|produce|practice|publish|purchase|read|receive|record|reduce|refactor|register|reject|release|remove|rename|renew|repair|reply|report|request|resolve|review|rewrite|scaffold|schedule|search|secure|segment|send|set|setup|share|sign|sort|split|start|stop|store|streamline|study|submit|subscribe|suggest|support|take|talk|test|track|train|transfer|transform|translate|update|upload|utilize|verify|visit|wait|walk|warn|watch|write)\b/i;
+
+const ROUTINE_PROJECT_NAMES = [
+    'life admin',
+    'routines & tracking',
+    'recipes',
+    'shopping',
 ];
 
-const LIFESTYLE_PROJECT_NAMES = [
-    'routines & tracking', 'life admin',
+const STRATEGIC_PROJECT_NAMES = [
+    'career & job search',
+    'coaching business',
+    'studies',
+    'growth & learning',
 ];
+
+const URGENT_KEYWORDS = ['today', 'urgent', 'asap', 'tomorrow'];
 
 function asString(value) {
     return typeof value === 'string' ? value : '';
@@ -142,24 +120,6 @@ function extractGoalSection(rawContext) {
 }
 
 function inferThemeKind(label) {
-    const text = label.toLowerCase();
-
-    if (HEALTH_KEYWORDS.some((keyword) => text.includes(keyword)) || text.includes('health')) {
-        return 'health';
-    }
-
-    if (FINANCIAL_KEYWORDS.some((keyword) => text.includes(keyword))) {
-        return 'financial';
-    }
-
-    if (CAREER_KEYWORDS.some((keyword) => text.includes(keyword))) {
-        return 'career';
-    }
-
-    if (PERSONAL_KEYWORDS.some((keyword) => text.includes(keyword))) {
-        return 'personal';
-    }
-
     return 'custom';
 }
 
@@ -171,22 +131,7 @@ function extractLabelTokens(label) {
 }
 
 function inferCandidateKinds(text) {
-    const kinds = new Set();
-
-    if (CAREER_KEYWORDS.some((keyword) => text.includes(keyword))) {
-        kinds.add('career');
-    }
-    if (FINANCIAL_KEYWORDS.some((keyword) => text.includes(keyword))) {
-        kinds.add('financial');
-    }
-    if (HEALTH_KEYWORDS.some((keyword) => text.includes(keyword))) {
-        kinds.add('health');
-    }
-    if (PERSONAL_KEYWORDS.some((keyword) => text.includes(keyword))) {
-        kinds.add('personal');
-    }
-
-    return kinds;
+    return new Set();
 }
 
 function findProjectIdByFragments(projects, fragments) {
@@ -265,8 +210,7 @@ function parseUrgency(candidate, nowIso) {
 }
 
 function isBlockerRemoval(candidate) {
-    const text = `${candidate.title} ${candidate.content || ''}`.toLowerCase();
-    return BLOCKER_KEYWORDS.some((keyword) => text.includes(keyword)) && /\b(unblock|application|apply|applications|access)\b/.test(text);
+    return false;
 }
 
 function isCapacityProtection(candidate, context) {
@@ -279,8 +223,7 @@ function isCapacityProtection(candidate, context) {
 }
 
 function isConsequentialAdmin(candidate) {
-    const text = `${candidate.title} ${candidate.content || ''} ${candidate.projectName || ''}`.toLowerCase();
-    return FINANCIAL_KEYWORDS.some((keyword) => text.includes(keyword));
+    return false;
 }
 
 function priorityWeight(priority) {
@@ -387,22 +330,11 @@ function wordCount(text) {
 }
 
 function isQuickWinTask(candidate) {
-    const title = normalizeWhitespace(candidate.title).toLowerCase();
-    const content = normalizeWhitespace(candidate.content).toLowerCase();
-    const combined = `${title} ${content}`.trim();
-    const shortTitle = wordCount(title) > 0 && wordCount(title) <= 4;
-    const hasQuickWinKeyword = QUICK_WIN_KEYWORDS.some((keyword) => combined.includes(keyword));
-    const hasLittleContext = content.length === 0 || wordCount(content) <= 6;
-
-    return shortTitle && hasQuickWinKeyword && hasLittleContext;
+    return false;
 }
 
 function isPlanningHeavyWithoutExecution(candidate) {
-    const combined = `${candidate.title} ${candidate.content || ''}`.toLowerCase();
-    const hasPlanningKeyword = PLANNING_HEAVY_KEYWORDS.some((keyword) => combined.includes(keyword));
-    const hasExecutionEvidence = EXECUTION_EVIDENCE_KEYWORDS.some((keyword) => combined.includes(keyword));
-
-    return hasPlanningKeyword && !hasExecutionEvidence;
+    return false;
 }
 
 function quickWinPenalty(candidate, { themeMatches, urgency, consequentialAdmin, blockerRemoval, capacityProtection }) {
@@ -804,65 +736,51 @@ export function buildRankingContext(options = {}) {
  * @param {object} [options={}] - Ranking options
  * @returns {string} Priority label
  */
-export function inferPriorityLabelFromTask(task, options = {}) {
-    const normalizedCandidate = task?.taskId ? task : normalizePriorityCandidate(task);
-    const ranking = rankPriorityCandidates([normalizedCandidate], {
-        goalThemeProfile: options.goalThemeProfile,
-        nowIso: options.nowIso,
-        workStyleMode: options.workStyleMode,
-        urgentMode: options.urgentMode,
-        stateSource: options.stateSource,
-    });
-    const decision = ranking.topRecommendation;
-    const rationaleText = decision?.rationaleText?.toLowerCase() || '';
-    const haystack = `${normalizedCandidate.title || ''} ${normalizedCandidate.projectName || ''} ${normalizedCandidate.content || ''}`.toLowerCase();
-
-    if (decision?.rationaleCode === 'goal_alignment') {
-        return 'core_goal';
-    }
-
-    if (decision?.rationaleCode === 'capacity_protection') {
-        return 'important';
-    }
-
-    if (decision?.exceptionReason === 'urgent_requirement') {
-        return 'important';
-    }
-
-    if (decision?.rationaleCode === 'urgency' || decision?.exceptionApplied === true) {
-        if (FINANCIAL_KEYWORDS.some((keyword) => haystack.includes(keyword))) {
-            return 'life-admin';
-        }
-        return 'important';
-    }
-
-    if (rationaleText.includes('career-signaling')) {
-        return 'core_goal';
-    }
-
-    if (rationaleText.includes('consequential admin')) {
-        return 'life-admin';
-    }
-
-    if (/\b(system design|dsa|interview|resume|leetcode|backend|career|study|assignment|exam)\b/i.test(haystack)) {
-        return 'core_goal';
-    }
-
-    if (/\b(bank|bill|grocery|admin|errand|password|credential|home|apartment|rent|insurance)\b/i.test(haystack)) {
-        return 'life-admin';
-    }
-
-    return 'important';
+function hasVerb(title) {
+    return VERB_PATTERNS.test(asString(title));
 }
 
-function isLifestyleOrRoutineTask(task) {
-    const title = asString(task.title).toLowerCase();
-    const projectName = asString(task.projectName).toLowerCase();
+function isRoutineProject(projectName) {
+    const pn = asString(projectName).toLowerCase();
+    return ROUTINE_PROJECT_NAMES.some((name) => pn.includes(name));
+}
 
-    if (LIFESTYLE_KEYWORDS.some((keyword) => title.includes(keyword))) return true;
-    if (LIFESTYLE_PROJECT_NAMES.some((name) => projectName.includes(name))) return true;
-    if (title.length < 15 && !task.dueDate) return true;
-    return false;
+function isStrategicProject(projectName) {
+    const pn = asString(projectName).toLowerCase();
+    return STRATEGIC_PROJECT_NAMES.some((name) => pn.includes(name));
+}
+
+function hasDueDateWithinDays(task, days, nowIso) {
+    const dueDate = asString(task.dueDate).trim();
+    if (!dueDate) return false;
+    const now = nowIso ? Date.parse(nowIso) : Date.now();
+    const dueMs = Date.parse(dueDate);
+    if (Number.isNaN(dueMs) || Number.isNaN(now)) return false;
+    const deltaMs = dueMs - now;
+    return deltaMs >= -24 * 60 * 60 * 1000 && deltaMs <= days * 24 * 60 * 60 * 1000;
+}
+
+function hasUrgentKeyword(title) {
+    const t = asString(title).toLowerCase();
+    return URGENT_KEYWORDS.some((kw) => t.includes(kw));
+}
+
+function hasSchedulingSignal(task) {
+    return asString(task.dueDate).trim().length > 0 || asString(task.repeatFlag).trim().length > 0;
+}
+
+/**
+ * Infers a priority label (e.g., 'core_goal') from a task.
+ *
+ * @param {object} task - Normalized task or candidate
+ * @param {object} [options={}] - Ranking options
+ * @returns {string} Priority label
+ */
+export function inferPriorityLabelFromTask(task, options = {}) {
+    const value = inferPriorityValueFromTask(task, options);
+    if (value === 5) return 'core_goal';
+    if (value === 1) return 'life-admin';
+    return 'important';
 }
 
 /**
@@ -873,14 +791,31 @@ function isLifestyleOrRoutineTask(task) {
  * @returns {number} Priority value
  */
 export function inferPriorityValueFromTask(task, options = {}) {
-    const label = inferPriorityLabelFromTask(task, options);
+    const title = asString(task.title);
+    const projectName = asString(task.projectName);
+    const titleHasVerb = hasVerb(title);
+    const inRoutineProject = isRoutineProject(projectName);
+    const isShortFragment = title.length < 10 && !titleHasVerb;
+    const hasSchedule = hasSchedulingSignal(task);
 
-    if (label === 'core_goal') {
-        if (isLifestyleOrRoutineTask(task)) return 3;
+    // Core Goal: strategic project with execution signal
+    if (isStrategicProject(projectName) && titleHasVerb && !inRoutineProject && !isShortFragment) {
         return 5;
     }
-    if (label === 'life-admin') return 1;
-    return 3;
+
+    // Priority 3 (Important): time-sensitive or strategic-but-weak
+    if (hasDueDateWithinDays(task, 7, options.nowIso)) {
+        return 3;
+    }
+    if (hasUrgentKeyword(title)) {
+        return 3;
+    }
+    if (isStrategicProject(projectName)) {
+        return 3;
+    }
+
+    // Priority 1 (Life Admin): safe default
+    return 1;
 }
 
 /**

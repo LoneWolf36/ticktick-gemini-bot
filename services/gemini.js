@@ -1235,19 +1235,7 @@ export class GeminiAnalyzer {
             if (task.status !== 0 && task.status !== undefined) continue;
             const changes = {};
             if (![1, 3, 5].includes(task.priority)) {
-                changes.priority = inferPriorityValueFromTask(task, {
-                    goalThemeProfile: fallbackGoalThemeProfile,
-                    workStyleMode: options.workStyleMode,
-                    urgentMode: options.urgentMode,
-                    stateSource: options.stateSource,
-                });
-                // Guardrail: recipe/lifestyle/routine tasks should not get Core Goal (priority 5)
-                // because they are personal maintenance, not strategic goals.
-                const lifestyleKeywords = ['recipe', 'masala', 'curry', 'dinner', 'lunch', 'breakfast', 'grocery', 'shopping', 'clean', 'laundry', 'routine'];
-                const titleLower = (task.title || '').toLowerCase();
-                if (changes.priority === 5 && lifestyleKeywords.some((k) => titleLower.includes(k))) {
-                    changes.priority = 3;
-                }
+                changes.priority = 1;
             }
             if ((task.projectName || '').toLowerCase() === 'inbox') {
                 const candidate = inferProjectIdFromTask(task, projects, {
@@ -1374,8 +1362,8 @@ export class GeminiAnalyzer {
                 merged.title = cleanReorgTitle(merged.title);
             }
 
-            if (![0, 1, 3, 5].includes(merged.priority)) {
-                merged.priority = inferPriorityValueFromTask(task, { goalThemeProfile });
+            if (merged.priority !== undefined && ![0, 1, 3, 5].includes(merged.priority)) {
+                delete merged.priority;
             }
             if (!merged.projectId && (task.projectName || '').toLowerCase() === 'inbox') {
                 merged.projectId = inferProjectIdFromTask(task, projects, { goalThemeProfile }) || defaultProjectId;
@@ -1409,7 +1397,6 @@ export class GeminiAnalyzer {
                 taskId: task.id,
                 changes: {
                     projectId: inferredProjectId,
-                    priority: inferPriorityValueFromTask(task, { goalThemeProfile }),
                 },
             });
         }
@@ -1423,7 +1410,6 @@ export class GeminiAnalyzer {
                     type: 'update',
                     taskId: task.id,
                     changes: {
-                        priority: inferPriorityValueFromTask(task, { goalThemeProfile }),
                         projectId: (task.projectName || '').toLowerCase() === 'inbox'
                             ? (inferProjectIdFromTask(task, projects, { goalThemeProfile }) || defaultProjectId)
                             : undefined,

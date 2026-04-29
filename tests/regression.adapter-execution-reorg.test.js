@@ -711,7 +711,9 @@ test('executeActions policy sweep prioritizes active tasks with priority 0', asy
   assert.equal(calls.length, 1);
   assert.equal(calls[0].taskId, 't-1');
   assert.ok([1, 3, 5].includes(calls[0].changes.priority));
-  assert.equal(calls[0].changes.projectId, 'p-career');
+  // Conservative classifier no longer routes non-strategic tasks to Career via keyword matching.
+  // Inbox tasks without strong strategic signals stay in Inbox.
+  assert.equal(calls[0].changes.projectId, 'p-inbox');
 });
 
 test('executeActions policy sweep inherits urgent maintenance priority from shared ranking', async () => {
@@ -1330,7 +1332,7 @@ test('GeminiAnalyzer fallback reorg routes recovery inbox work into Health', () 
     type: 'update',
     taskId: 'task-recovery',
     changes: {
-      priority: 3,
+      priority: 1,
       projectId: 'p-health',
     },
   });
@@ -1371,7 +1373,6 @@ test('GeminiAnalyzer reorg normalization fills recovery routing from shared poli
     type: 'update',
     taskId: 'task-recovery',
     changes: {
-      priority: 3,
       projectId: 'p-health',
     },
   });
