@@ -36,7 +36,7 @@ await loadUserContext();
  * @returns {string} Timezone string (e.g., 'Europe/Dublin')
  */
 export function getUserTimezone() {
-    return userContextTimezone || process.env.USER_TIMEZONE || DEFAULT_TIMEZONE;
+    return process.env.USER_TIMEZONE || userContextTimezone || DEFAULT_TIMEZONE;
 }
 
 /**
@@ -44,6 +44,7 @@ export function getUserTimezone() {
  * @returns {'user_context'|'env'|'default'} Timezone source
  */
 export function getUserTimezoneSource() {
+    if (process.env.USER_TIMEZONE) return 'env';
     if (userContextTimezone) return userContextSource;
-    return process.env.USER_TIMEZONE ? 'env' : 'default';
+    return 'default';
 }
