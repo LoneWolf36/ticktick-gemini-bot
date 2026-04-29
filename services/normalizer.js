@@ -10,16 +10,13 @@
  * - Mixed create+mutation or multi-mutation batches are rejected cleanly.
  */
 
-import { inferProjectIdFromTask } from './execution-prioritization.js';
+import { VERB_PATTERNS, resolveProjectCategory, inferProjectByAliases } from './project-policy.js';
 
 // Title normalization constants
 const DATE_PATTERNS = /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next\s+\w+|this\s+\w+)\b/gi;
 const PRIORITY_PATTERNS = /^(urgent|important|critical|asap|high priority)[:\s-]*/i;
 const BRACKET_PREFIX = /^\[.*?\]\s*/;
 const LEADING_ARTICLES = /^(a|an|the)\s+/i;
-
-// Common verbs to detect verb-led titles (not exhaustive, but covers common cases)
-const VERB_PATTERNS = /^(add|analyze|apply|approve|arrange|assemble|assess|assign|assist|attach|authorize|block|book|build|buy|call|cancel|capture|celebrate|check|claim|clean|coach|collect|communicate|complete|compose|configure|confirm|consolidate|construct|contribute|convert|create|customize|debug|decide|define|delegate|delete|destroy|develop|discard|discover|discuss|distribute|do|document|download|draft|draw|edit|educate|email|emit|encourage|engage|enhance|ensure|enter|establish|evaluate|examine|execute|exercise|explain|explore|facilitate|fetch|file|finalize|finish|fix|follow|force|format|generate|get|give|go|govern|group|guide|have|identify|implement|import|improve|increase|inform|initiate|inspect|install|integrate|interact|investigate|join|keep|launch|lead|learn|limit|locate|log|make|manage|measure|meet|merge|modify|monitor|navigate|negotiate|notify|offer|operate|optimize|organize|outline|pack|participate|pay|perform|persuade|plan|prepare|present|preserve|prioritize|process|produce|practice|publish|purchase|read|receive|record|reduce|refactor|register|reject|release|remove|rename|renew|repair|reply|report|request|resolve|review|rewrite|scaffold|schedule|search|secure|segment|send|set|setup|share|sign|sort|split|start|stop|store|streamline|study|submit|subscribe|suggest|support|take|talk|test|track|train|transfer|transform|translate|update|upload|utilize|verify|visit|wait|walk|warn|watch|write)\b/i;
 
 // Content normalization constants
 const DEFAULT_MAX_CONTENT_LENGTH = 4000;
@@ -536,6 +533,43 @@ function _resolveRepeatFlag(intentAction = {}) {
 
     if (typeof intentAction.repeatFlag === 'string' && intentAction.repeatFlag.trim()) {
         return intentAction.repeatFlag.trim();
+    }
+
+    return null;
+}
+
+/**
+ * Infers a project ID for a task from available projects using project-policy.
+ *
+ * @param {object} task - Normalized task or candidate
+ * @param {object[]} projects - List of available projects
+ * @returns {string|null} Project ID or null
+ */
+function inferProjectIdFromTask(task, projects) {
+    if (!Array.isArray(projects) || projects.length === 0) {
+        return null;
+    }
+
+    const haystack = `${task?.title || ''} ${task?.content || ''}`.trim().toLowerCase();
+    if (!haystack) {
+        return null;
+    }
+
+    // 1. Try exact project name match via resolveProjectCategory
+    for (const p of projects) {
+        const category = resolveProjectCategory(p.name);
+        if (category && haystack.includes(p.name.toLowerCase())) {
+            return p.id;
+        }
+    }
+
+    // 2. Try alias-based inference
+    const aliasMatch = inferProjectByAliases(haystack, 1);
+    if (aliasMatch) {
+        const matched = projects.find(p => p.name.toLowerCase() === aliasMatch.toLowerCase());
+        if (matched) {
+            return matched.id;
+        }
     }
 
     return null;

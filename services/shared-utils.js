@@ -1,6 +1,7 @@
 // Shared domain utilities — used by both services/ and bot/
 // Keeps dependency direction: services/ ← bot/ (never services/ → bot/)
 import { InlineKeyboard } from 'grammy';
+import { FOLLOWUP_PRONOUNS, FOLLOWUP_TIME_SHIFTS } from './project-policy.js';
 
 // ─── Priority Map (Gemini label → TickTick priority number) ─
 
@@ -902,8 +903,7 @@ export function validateChecklistItems(items, options = {}) {
     return validItems;
 }
 
-export const FOLLOWUP_PRONOUNS = /\b(it|this|that|them|its)\b/;
-export const FOLLOWUP_TIME_SHIFTS = /\b(tomorrow|next week|instead|postpone|reschedule|move to|change to|later|earlier|rename)\b/;
+
 
 /**
  * Detects if a freeform message is likely a follow-up referring to a recent task.

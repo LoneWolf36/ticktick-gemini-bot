@@ -19,6 +19,7 @@ import {
 } from './utils.js';
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
+import { projectPolicy } from '../services/project-policy.js';
 import { detectWorkStyleModeIntent } from '../services/intent-extraction.js';
 import { detectBehavioralPatterns } from '../services/behavioral-patterns.js';
 import { PRIORITY_LABEL } from '../services/shared-utils.js';
@@ -1683,13 +1684,13 @@ export async function executeActions(actions, adapter, currentTasks, options = {
             const hasValidPlannedPriority = [1, 3, 5].includes(plannedPriority);
             const hasValidCurrentPriority = [1, 3, 5].includes(task.priority);
             if (!hasValidPlannedPriority && !hasValidCurrentPriority) {
-                fix.priority = inferPriorityValueFromTask(task, { goalThemeProfile: policyGoalThemeProfile, nowIso: options.nowIso, workStyleMode: options.workStyleMode, urgentMode: options.urgentMode });
+                fix.priority = inferPriorityValueFromTask(task, { goalThemeProfile: policyGoalThemeProfile, nowIso: options.nowIso, workStyleMode: options.workStyleMode, urgentMode: options.urgentMode, projectPolicy });
             } else if (plannedPriority === 0) {
-                fix.priority = inferPriorityValueFromTask(task, { goalThemeProfile: policyGoalThemeProfile, nowIso: options.nowIso, workStyleMode: options.workStyleMode, urgentMode: options.urgentMode });
+                fix.priority = inferPriorityValueFromTask(task, { goalThemeProfile: policyGoalThemeProfile, nowIso: options.nowIso, workStyleMode: options.workStyleMode, urgentMode: options.urgentMode, projectPolicy });
             }
 
             if (inInbox && !pendingUpdate?.changes?.projectId) {
-                const targetProjectId = inferProjectIdFromTask(task, projects, { goalThemeProfile: policyGoalThemeProfile, nowIso: options.nowIso, workStyleMode: options.workStyleMode, urgentMode: options.urgentMode });
+                const targetProjectId = inferProjectIdFromTask(task, projects, { goalThemeProfile: policyGoalThemeProfile, nowIso: options.nowIso, workStyleMode: options.workStyleMode, urgentMode: options.urgentMode, projectPolicy });
                 if (targetProjectId && targetProjectId !== task.projectId) {
                     fix.projectId = targetProjectId;
                 }

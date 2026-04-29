@@ -1079,7 +1079,7 @@ test('execution prioritization conservative classifier returns safe defaults wit
   assert.equal(executionPrioritization.inferPriorityValueFromTask(recipeTask, options), 1);
 
   // Short noun fragment -> priority 1
-  const shortFragmentTask = { title: 'Backend prep', projectName: 'Career', dueDate: null };
+  const shortFragmentTask = { title: 'Backend prep', projectName: 'Home', dueDate: null };
   assert.equal(executionPrioritization.inferPriorityValueFromTask(shortFragmentTask, options), 1);
 
   // Task in Life Admin project -> priority 1

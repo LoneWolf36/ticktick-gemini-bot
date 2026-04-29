@@ -1377,3 +1377,43 @@ test('GeminiAnalyzer reorg normalization fills recovery routing from shared poli
     },
   });
 });
+
+test('GeminiAnalyzer reorg normalization fills recovery routing from shared policy', () => {
+  const analyzer = new GeminiAnalyzer(['dummy-key']);
+  const tasks = [
+    {
+      id: 'task-recovery',
+      title: 'Book therapy session for burnout recovery',
+      projectId: 'p-inbox',
+      projectName: 'Inbox',
+      priority: 0,
+      status: 0,
+    },
+  ];
+  const projects = [
+    { id: 'p-inbox', name: 'Inbox' },
+    { id: 'p-health', name: 'Health' },
+    { id: 'p-admin', name: 'Admin' },
+  ];
+
+  const normalized = analyzer._normalizeReorgProposal({
+    summary: 'Reorganize',
+    questions: [],
+    actions: [
+      {
+        type: 'update',
+        taskId: 'task-recovery',
+        changes: {},
+      },
+    ],
+  }, tasks, projects);
+
+  assert.equal(normalized.actions.length, 1);
+  assert.deepEqual(normalized.actions[0], {
+    type: 'update',
+    taskId: 'task-recovery',
+    changes: {
+      projectId: 'p-health',
+    },
+  });
+});

@@ -3,7 +3,7 @@
 <h2 id="features" class="tsd-anchor-link">Features<a href="#features" aria-label="Permalink" class="tsd-anchor-icon"><svg viewBox="0 0 24 24" aria-hidden="true"><use href="assets/icons.svg#icon-anchor"></use></svg></a></h2>
 <ul>
 <li><strong>Structured write pipeline</strong> — Natural language → intent extraction → deterministic normalizer → TickTick adapter. No model prose writes directly to TickTick.</li>
-<li><strong>AI task analysis</strong> — Gemini evaluates every new task: is it a needle-mover or busywork? Rewrites vague titles, adds sub-steps, and re-prioritizes based on your real goals</li>
+<li><strong>Structured intent extraction</strong> — parses natural language into deterministic actions (create, update, complete, delete) via Gemini, then validates and executes through the TickTick adapter</li>
 <li><strong>Project reassignment</strong> — suggests moving tasks to the right TickTick project</li>
 <li><strong>Smart scheduling</strong> — assigns due dates (today / tomorrow / this-week / next-week / someday) based on urgency and your patterns</li>
 <li><strong>Native TickTick priority flags</strong> — maps to 🔴🟡🔵 priority levels</li>
@@ -93,11 +93,35 @@
 </tr>
 <tr>
 <td><code>/urgent</code></td>
-<td>Toggle urgent mode on/off — sharper tone, deadline-first prioritization</td>
+<td>Activate urgent mode (also: /focus, /normal, /mode to query)</td>
+</tr>
+<tr>
+<td><code>/focus</code></td>
+<td>Switch to focus mode</td>
+</tr>
+<tr>
+<td><code>/normal</code></td>
+<td>Switch to normal mode</td>
+</tr>
+<tr>
+<td><code>/mode</code></td>
+<td>Query current mode</td>
 </tr>
 <tr>
 <td><code>/undo</code></td>
 <td>Revert last auto-applied change</td>
+</tr>
+<tr>
+<td><code>/memory</code></td>
+<td>Behavioral memory summary</td>
+</tr>
+<tr>
+<td><code>/forget</code></td>
+<td>Reset behavioral memory</td>
+</tr>
+<tr>
+<td><code>/daily_close</code></td>
+<td>End-of-day reflection</td>
 </tr>
 <tr>
 <td><code>/reset</code></td>

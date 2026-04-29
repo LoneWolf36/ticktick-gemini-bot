@@ -1,30 +1,18 @@
 import { containsSensitiveContent } from './shared-utils.js';
+import {
+    projectPolicy,
+    resolveProjectCategory,
+    getCategoryConfig,
+    inferProjectByAliases,
+    VERB_PATTERNS,
+    URGENT_KEYWORDS,
+    STOP_WORDS,
+    FOLLOWUP_PRONOUNS,
+    FOLLOWUP_TIME_SHIFTS,
+    scoring,
+} from './project-policy.js';
 
 const recentRankingTelemetry = new Map();
-
-const STOP_WORDS = new Set([
-    'a', 'an', 'and', 'avoid', 'current', 'for', 'from', 'goal', 'goals', 'growth',
-    'land', 'notes', 'now', 'of', 'order', 'priority', 'protect', 'role', 'senior',
-    'stabilize', 'the', 'to', 'urgent', 'with', 'your',
-]);
-
-const VERB_PATTERNS = /^(add|analyze|apply|approve|arrange|assemble|assess|assign|assist|attach|authorize|block|book|build|buy|call|cancel|capture|celebrate|check|claim|clean|coach|collect|communicate|complete|compose|configure|confirm|consolidate|construct|contribute|convert|create|customize|debug|decide|define|delegate|delete|destroy|develop|discard|discover|discuss|distribute|do|document|download|draft|draw|edit|educate|email|emit|encourage|engage|enhance|ensure|enter|establish|evaluate|examine|execute|exercise|explain|explore|facilitate|fetch|file|finalize|finish|fix|follow|force|format|generate|get|give|go|govern|group|guide|have|identify|implement|import|improve|increase|inform|initiate|inspect|install|integrate|interact|investigate|join|keep|launch|lead|learn|limit|locate|log|make|manage|measure|meet|merge|modify|monitor|navigate|negotiate|notify|offer|operate|optimize|organize|outline|pack|participate|pay|perform|persuade|plan|prepare|present|preserve|prioritize|process|produce|practice|publish|purchase|read|receive|record|reduce|refactor|register|reject|release|remove|rename|renew|repair|reply|report|request|resolve|review|rewrite|scaffold|schedule|search|secure|segment|send|set|setup|share|sign|sort|split|start|stop|store|streamline|study|submit|subscribe|suggest|support|take|talk|test|track|train|transfer|transform|translate|update|upload|utilize|verify|visit|wait|walk|warn|watch|write)\b/i;
-
-const ROUTINE_PROJECT_NAMES = [
-    'life admin',
-    'routines & tracking',
-    'recipes',
-    'shopping',
-];
-
-const STRATEGIC_PROJECT_NAMES = [
-    'career & job search',
-    'coaching business',
-    'studies',
-    'growth & learning',
-];
-
-const URGENT_KEYWORDS = ['today', 'urgent', 'asap', 'tomorrow'];
 
 function asString(value) {
     return typeof value === 'string' ? value : '';
@@ -40,12 +28,12 @@ function shouldThrottleTelemetry(payload, userId) {
     const key = `${keyBase}${JSON.stringify(rest)}`;
     const now = Date.now();
     const last = recentRankingTelemetry.get(key);
-    if (last && now - last < 60_000) {
+    if (last && now - last < scoring.telemetryThrottleMs) {
         return true;
     }
     recentRankingTelemetry.set(key, now);
     for (const [k, ts] of recentRankingTelemetry) {
-        if (now - ts > 60_000) {
+        if (now - ts > scoring.telemetryThrottleMs) {
             recentRankingTelemetry.delete(k);
         }
     }
@@ -130,10 +118,6 @@ function extractLabelTokens(label) {
         .filter((token) => token.length > 2 && !STOP_WORDS.has(token));
 }
 
-function inferCandidateKinds(text) {
-    return new Set();
-}
-
 function findProjectIdByFragments(projects, fragments) {
     for (const fragment of fragments) {
         const match = projects.find((project) => (project.name || '').toLowerCase().includes(fragment));
@@ -147,13 +131,8 @@ function findProjectIdByFragments(projects, fragments) {
 
 function inferThemeMatches(candidate, goalThemeProfile) {
     const haystack = `${candidate.title} ${candidate.projectName || ''} ${candidate.content || ''}`.toLowerCase();
-    const candidateKinds = inferCandidateKinds(haystack);
 
     return goalThemeProfile.themes.filter((theme) => {
-        if (theme.kind !== 'custom' && candidateKinds.has(theme.kind)) {
-            return true;
-        }
-
         const labelTokens = extractLabelTokens(theme.label);
         return labelTokens.some((token) => haystack.includes(token));
     });
@@ -197,20 +176,16 @@ function parseUrgency(candidate, nowIso) {
         const nowMs = Date.parse(nowIso);
         if (!Number.isNaN(dueMs) && !Number.isNaN(nowMs)) {
             const deltaHours = (dueMs - nowMs) / (1000 * 60 * 60);
-            if (deltaHours <= 24) {
+            if (deltaHours <= scoring.highUrgencyHours) {
                 return 'high';
             }
-            if (deltaHours <= 72) {
+            if (deltaHours <= scoring.mediumUrgencyHours) {
                 return 'medium';
             }
         }
     }
 
     return 'low';
-}
-
-function isBlockerRemoval(candidate) {
-    return false;
 }
 
 function isCapacityProtection(candidate, context) {
@@ -222,14 +197,10 @@ function isCapacityProtection(candidate, context) {
     return /\b(therapy|burnout|recovery|recover|rest|sleep|doctor|mental)\b/.test(text);
 }
 
-function isConsequentialAdmin(candidate) {
-    return false;
-}
-
 function priorityWeight(priority) {
-    if (priority === 5) return 36;
-    if (priority === 3) return 22;
-    if (priority === 1) return 10;
+    if (priority === 5) return scoring.priorityWeights.coreGoal;
+    if (priority === 3) return scoring.priorityWeights.important;
+    if (priority === 1) return scoring.priorityWeights.lifeAdmin;
     return 0;
 }
 
@@ -237,8 +208,9 @@ function goalAlignmentWeight(themeMatches) {
     if (themeMatches.length === 0) return 0;
 
     const bestPriorityOrder = Math.min(...themeMatches.map((theme) => theme.priorityOrder || 99));
-    const orderBoost = bestPriorityOrder === 1 ? 8 : bestPriorityOrder === 2 ? 4 : 2;
-    return 34 + orderBoost;
+    const boosts = scoring.orderBoosts;
+    const orderBoost = bestPriorityOrder === 1 ? boosts[0] : bestPriorityOrder === 2 ? boosts[1] : boosts[2];
+    return scoring.baseGoalAlignment + orderBoost;
 }
 
 function urgentModeWeight(candidate, urgency, context) {
@@ -246,17 +218,17 @@ function urgentModeWeight(candidate, urgency, context) {
 
     let boost = 0;
     if (urgency === 'high') {
-        boost += 70;
+        boost += scoring.urgentModeBoosts.high;
     } else if (urgency === 'medium') {
-        boost += 24;
+        boost += scoring.urgentModeBoosts.medium;
     }
 
     if (candidate.priority === 5) {
-        boost += 10;
+        boost += scoring.priorityBoosts.high;
     } else if (candidate.priority === 3) {
-        boost += 6;
+        boost += scoring.priorityBoosts.medium;
     } else if (candidate.priority === 1 && urgency !== 'low') {
-        boost += 4;
+        boost += scoring.priorityBoosts.low;
     }
 
     return boost;
@@ -301,70 +273,6 @@ function normalizeBehavioralSignals(signals = [], threshold = 'strong') {
         .filter(Boolean);
 }
 
-function inferCandidateCategory(candidate) {
-    const haystack = `${candidate.title} ${candidate.projectName || ''} ${candidate.content || ''}`.toLowerCase();
-    const kinds = inferCandidateKinds(haystack);
-    if (kinds.has('career')) return 'career';
-    if (kinds.has('financial')) return 'financial';
-    if (kinds.has('health')) return 'health';
-    if (kinds.has('personal')) return 'personal';
-    return null;
-}
-
-function behavioralAdjustment(candidate, context) {
-    const candidateCategory = inferCandidateCategory(candidate);
-    if (!candidateCategory) return { score: 0, confidence: null };
-
-    const match = (context.behavioralSignals || [])
-        .find((signal) => signal.type === 'category_avoidance' && signal.category === candidateCategory);
-    if (!match) return { score: 0, confidence: null };
-
-    return {
-        score: match.confidence === 'high' ? 12 : 6,
-        confidence: match.confidence,
-    };
-}
-
-function wordCount(text) {
-    return normalizeWhitespace(text).split(/\s+/).filter(Boolean).length;
-}
-
-function isQuickWinTask(candidate) {
-    return false;
-}
-
-function isPlanningHeavyWithoutExecution(candidate) {
-    return false;
-}
-
-function quickWinPenalty(candidate, { themeMatches, urgency, consequentialAdmin, blockerRemoval, capacityProtection }) {
-    if (!isQuickWinTask(candidate)) {
-        return 0;
-    }
-
-    if (urgency === 'high' || consequentialAdmin || blockerRemoval || capacityProtection) {
-        return 0;
-    }
-
-    if (themeMatches.length > 0 && candidate.priority === 5) {
-        return 0;
-    }
-
-    return 18;
-}
-
-function planningHeavyPenalty(candidate, { urgency, blockerRemoval, capacityProtection }) {
-    if (!isPlanningHeavyWithoutExecution(candidate)) {
-        return 0;
-    }
-
-    if (urgency === 'high' || blockerRemoval || capacityProtection) {
-        return 0;
-    }
-
-    return 26;
-}
-
 function summarizeCandidateForTelemetry(candidate) {
     return {
         taskId: candidate.taskId,
@@ -392,8 +300,6 @@ function summarizeAssessmentForTelemetry(assessment) {
         urgency: assessment.urgency || 'low',
         goalMatchCount: Array.isArray(assessment.themeMatches) ? assessment.themeMatches.length : 0,
         behavioralSignalApplied: assessment.behavioralSignalApplied === true,
-        quickWinSuppressed: isQuickWinTask(assessment.candidate),
-        planningHeavyWithoutExecution: isPlanningHeavyWithoutExecution(assessment.candidate),
     };
 }
 
@@ -517,24 +423,7 @@ function buildRationaleText(rationaleCode, candidate, themeMatches, inferenceCon
         if (inferenceConfidence === 'weak') {
             return 'Possibly time-sensitive work; verify the deadline before treating it as urgent.';
         }
-        if (isConsequentialAdmin(candidate)) {
-            return 'Consequential admin with real urgency.';
-        }
         return 'Time-sensitive work that should move now.';
-    }
-
-    if (rationaleCode === 'behavioral_signal') {
-        if (inferenceConfidence === 'weak') {
-            return 'Behavioral evidence weakly suggests this category is being avoided, so one concrete step is surfaced.';
-        }
-        return 'Behavioral evidence suggests this category is being avoided, so one concrete step is surfaced.';
-    }
-
-    if (isConsequentialAdmin(candidate)) {
-        if (inferenceConfidence === 'weak') {
-            return 'Potentially consequential admin surfaced under degraded goal context.';
-        }
-        return 'Consequential admin surfaced under degraded goal context.';
     }
 
     return 'Possible next candidate under degraded goal context.';
@@ -545,7 +434,7 @@ function assessCandidate(candidate, context) {
     if (priorityOverride) {
         return {
             candidate,
-            score: 10_000,
+            score: scoring.priorityOverrideScore,
             rationaleCode: 'user_override',
             rationaleText: 'You marked this task as the top priority for now.',
             inferenceConfidence: 'strong',
@@ -559,9 +448,6 @@ function assessCandidate(candidate, context) {
     const urgency = parseUrgency(candidate, context.nowIso);
     const degraded = context.goalThemeProfile.confidence !== 'explicit';
     const capacityProtection = isCapacityProtection(candidate, context);
-    const blockerRemoval = isBlockerRemoval(candidate);
-    const consequentialAdmin = isConsequentialAdmin(candidate);
-    const behavioralBoost = behavioralAdjustment(candidate, context);
 
     let rationaleCode = 'fallback';
     let exceptionApplied = false;
@@ -569,20 +455,10 @@ function assessCandidate(candidate, context) {
     let score = priorityWeight(candidate.priority);
 
     if (capacityProtection) {
-        score = 120 + priorityWeight(candidate.priority);
+        score = scoring.capacityProtectionScore + priorityWeight(candidate.priority);
         rationaleCode = 'capacity_protection';
         exceptionApplied = true;
         exceptionReason = 'capacity_protection';
-    } else if (blockerRemoval) {
-        score = 115 + priorityWeight(candidate.priority);
-        rationaleCode = 'blocker_removal';
-        exceptionApplied = true;
-        exceptionReason = 'blocker';
-    } else if (urgency === 'high' && consequentialAdmin) {
-        score = 108 + priorityWeight(candidate.priority);
-        rationaleCode = 'urgency';
-        exceptionApplied = true;
-        exceptionReason = 'urgent_requirement';
     } else {
         if (themeMatches.length > 0 && !degraded) {
             score += goalAlignmentWeight(themeMatches);
@@ -590,38 +466,15 @@ function assessCandidate(candidate, context) {
         }
 
         if (urgency === 'high') {
-            score += 28;
+            score += scoring.highUrgencyScore;
             if (rationaleCode === 'fallback') {
                 rationaleCode = 'urgency';
             }
         } else if (urgency === 'medium') {
-            score += 14;
-        }
-
-        if (consequentialAdmin) {
-            score += 12;
-        }
-
-        if (behavioralBoost.score > 0) {
-            score += behavioralBoost.score;
-            if (rationaleCode === 'fallback') {
-                rationaleCode = 'behavioral_signal';
-            }
+            score += scoring.mediumUrgencyScore;
         }
 
         score += urgentModeWeight(candidate, urgency, context);
-        score -= quickWinPenalty(candidate, {
-            themeMatches,
-            urgency,
-            consequentialAdmin,
-            blockerRemoval,
-            capacityProtection,
-        });
-        score -= planningHeavyPenalty(candidate, {
-            urgency,
-            blockerRemoval,
-            capacityProtection,
-        });
     }
 
     const inferenceConfidence = inferInferenceConfidence({
@@ -630,7 +483,6 @@ function assessCandidate(candidate, context) {
         degraded,
         themeMatches,
         exceptionApplied,
-        behavioralConfidence: behavioralBoost.confidence,
     });
 
     return {
@@ -641,7 +493,7 @@ function assessCandidate(candidate, context) {
         inferenceConfidence,
         themeMatches,
         urgency,
-        behavioralSignalApplied: behavioralBoost.score > 0,
+        behavioralSignalApplied: false,
         exceptionApplied,
         exceptionReason,
         fallbackUsed: degraded || rationaleCode === 'fallback',
@@ -741,13 +593,13 @@ function hasVerb(title) {
 }
 
 function isRoutineProject(projectName) {
-    const pn = asString(projectName).toLowerCase();
-    return ROUTINE_PROJECT_NAMES.some((name) => pn.includes(name));
+    const resolved = resolveProjectCategory(projectName);
+    return resolved?.category === 'routine';
 }
 
 function isStrategicProject(projectName) {
-    const pn = asString(projectName).toLowerCase();
-    return STRATEGIC_PROJECT_NAMES.some((name) => pn.includes(name));
+    const resolved = resolveProjectCategory(projectName);
+    return resolved?.category === 'strategic';
 }
 
 function hasDueDateWithinDays(task, days, nowIso) {
@@ -792,30 +644,30 @@ export function inferPriorityLabelFromTask(task, options = {}) {
  */
 export function inferPriorityValueFromTask(task, options = {}) {
     const title = asString(task.title);
-    const projectName = asString(task.projectName);
+    const projectName = asString(task.projectName || task.project);
+    const category = resolveProjectCategory(projectName)?.category || 'uncategorized';
+    const config = getCategoryConfig(category);
     const titleHasVerb = hasVerb(title);
-    const inRoutineProject = isRoutineProject(projectName);
     const isShortFragment = title.length < 10 && !titleHasVerb;
-    const hasSchedule = hasSchedulingSignal(task);
 
-    // Core Goal: strategic project with execution signal
-    if (isStrategicProject(projectName) && titleHasVerb && !inRoutineProject && !isShortFragment) {
-        return 5;
-    }
-
-    // Priority 3 (Important): time-sensitive or strategic-but-weak
-    if (hasDueDateWithinDays(task, 7, options.nowIso)) {
-        return 3;
-    }
-    if (hasUrgentKeyword(title)) {
-        return 3;
-    }
-    if (isStrategicProject(projectName)) {
-        return 3;
+    if (category === 'strategic') {
+        if (titleHasVerb && !isShortFragment) {
+            return config.priorityCap || 5;
+        }
+        return config.defaultPriority || 3;
     }
 
-    // Priority 1 (Life Admin): safe default
-    return 1;
+    if (category === 'routine' || category === 'admin' || category === 'uncategorized') {
+        if (hasDueDateWithinDays(task, 7, options.nowIso) || hasUrgentKeyword(title)) {
+            return 3;
+        }
+        return config.defaultPriority || 1;
+    }
+
+    if (hasDueDateWithinDays(task, 7, options.nowIso) || hasUrgentKeyword(title)) {
+        return 3;
+    }
+    return config.defaultPriority || 1;
 }
 
 /**
@@ -832,27 +684,18 @@ export function inferProjectIdFromTask(task, projects = [], options = {}) {
     }
 
     const normalizedCandidate = task?.taskId ? task : normalizePriorityCandidate(task);
-    const ranking = rankPriorityCandidates([normalizedCandidate], {
-        goalThemeProfile: options.goalThemeProfile,
-        nowIso: options.nowIso,
-        workStyleMode: options.workStyleMode,
-        urgentMode: options.urgentMode,
-        stateSource: options.stateSource,
-    });
-    const decision = ranking.topRecommendation;
     const haystack = `${normalizedCandidate.title || ''} ${normalizedCandidate.projectName || ''} ${normalizedCandidate.content || ''}`.toLowerCase();
-    const inferredPriorityLabel = inferPriorityLabelFromTask(normalizedCandidate, options);
 
-    if (decision?.exceptionReason === 'capacity_protection' || /\b(health|sleep|exercise|workout|doctor|therapy|recovery|burnout|mental)\b/.test(haystack)) {
-        return findProjectIdByFragments(projects, ['health', 'personal']);
-    }
-
-    if (inferredPriorityLabel === 'core_goal') {
-        return findProjectIdByFragments(projects, ['career', 'study']);
-    }
-
-    if (inferredPriorityLabel === 'life-admin' || /\b(bank|bill|grocery|get |print|admin|errand|shopping|passport|visa|password|credential|wifi|home)\b/.test(haystack)) {
-        return findProjectIdByFragments(projects, ['admin', 'personal']);
+    const aliasMatch = inferProjectByAliases(haystack);
+    if (aliasMatch) {
+        const matchedProject = projects.find((project) => {
+            const pn = (project.name || '').toLowerCase();
+            const am = aliasMatch.toLowerCase();
+            return pn === am || pn.includes(am) || am.includes(pn);
+        });
+        if (matchedProject?.id) {
+            return matchedProject.id;
+        }
     }
 
     return findProjectIdByFragments(projects, ['admin', 'personal']);
