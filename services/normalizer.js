@@ -925,10 +925,23 @@ export function normalizeAction(intentAction, options = {}) {
         ? _normalizeChecklistItems(intentAction.checklistItems)
         : undefined;
 
-    // Pre-compute title and content for project inference
-    const normalizedTitle = isMutation && !intentAction.title
-        ? (resolvedTask?.title || _normalizeTitle(intentAction.title, maxTitleLength, isMutation))
-        : _normalizeTitle(intentAction.title, maxTitleLength, isMutation);
+    // Pre-compute title and content
+    // For mutations: title is only included if it's an explicit rename
+    // (differs from targetQuery and existing title), not task identification.
+    let normalizedTitle;
+    if (isMutation) {
+        const intentTitle = intentAction.title?.trim().toLowerCase();
+        const intentTarget = intentAction.targetQuery?.trim().toLowerCase();
+        const existingTitle = options.existingTask?.title?.trim().toLowerCase();
+        const isRename = intentTitle
+            && intentTitle !== intentTarget
+            && intentTitle !== existingTitle;
+        normalizedTitle = isRename
+            ? _normalizeTitle(intentAction.title, maxTitleLength, isMutation)
+            : undefined;
+    } else {
+        normalizedTitle = _normalizeTitle(intentAction.title, maxTitleLength, false);
+    }
     const normalizedContent = _truncateContent(mutationContent, maxContentLength);
 
     // When the task resolver already confirmed the target, the resolver's match
@@ -938,6 +951,10 @@ export function normalizeAction(intentAction, options = {}) {
     if (isMutation && resolvedTaskId && options.existingTask?.id) {
         effectiveConfidence = Math.max(effectiveConfidence, minConfidence);
     }
+
+    // For mutations: only include fields the user explicitly changed.
+    // undefined = "don't touch" (adapter skips); explicit value = "change to this".
+    const hasRepeatIntent = intentAction.repeatHint != null || intentAction.repeatFlag != null;
 
     const normalized = {
         _index: Number.isInteger(intentAction._index) ? intentAction._index : null,
@@ -949,11 +966,13 @@ export function normalizeAction(intentAction, options = {}) {
         title: normalizedTitle,
         content: normalizedContent,
         mergeContent: (isMutation && existingTaskContent !== null && !normalizedContent) ? false : undefined,
-        priority: normalizedPriority,
+        priority: isMutation && intentAction.priority == null ? undefined : normalizedPriority,
         originalPriority: originalPriority,  // Keep for validation
-        projectId: _resolveProject(intentAction.projectHint, projects, defaultProjectId, normalizedTitle, normalizedContent),
+        projectId: isMutation && !intentAction.projectHint
+            ? undefined
+            : _resolveProject(intentAction.projectHint, projects, defaultProjectId, normalizedTitle || '', normalizedContent),
         dueDate: isMutation && intentAction.dueDate == null ? undefined : _expandDueDate(intentAction.dueDate, options),
-        repeatFlag: _resolveRepeatFlag(intentAction),
+        repeatFlag: isMutation && !hasRepeatIntent ? undefined : _resolveRepeatFlag(intentAction),
         splitStrategy: intentAction.splitStrategy || 'single',
         valid: true,
         validationErrors: []

@@ -819,7 +819,7 @@ describe('WP03: Mutation Action Normalization', () => {
             assert.ok(result.content.includes('organic produce'));
         });
 
-        it('should use resolved task title when no new title is provided', () => {
+        it('should omit title for mutations when no rename is intended', () => {
             const result = normalizeAction({
                 type: 'update',
                 targetQuery: 'buy groceries',
@@ -829,7 +829,8 @@ describe('WP03: Mutation Action Normalization', () => {
                 resolvedTask: { id: 'abc123', projectId: null, title: 'Buy groceries' }
             });
 
-            assert.strictEqual(result.title, 'Buy groceries');
+            // undefined = "don't touch" — adapter skips the field, preserving existing title
+            assert.strictEqual(result.title, undefined);
         });
 
         it('should apply new title when explicitly provided in rename', () => {
@@ -1533,5 +1534,78 @@ describe('WP02: Checklist Normalization — T026 (Attach to Create Only)', () =>
         assert.strictEqual(result.confidence, 0.3);
         assert.strictEqual(result.valid, false);
         assert.ok(result.validationErrors.some(e => e.includes('Confidence 0.3 below threshold')));
+    });
+});
+
+describe('Mutation-safe field preservation', () => {
+    it('should not wipe title, repeatFlag, or priority when only changing dueDate', () => {
+        // Bug: "change Huzzi's periods to 29th april" wiped title, recurrence, and priority
+        // because normalizer sent empty/null values for fields user never mentioned.
+        const result = normalizeAction({
+            type: 'update',
+            title: "Huzzi's periods",           // Gemini echoes task name for identification
+            targetQuery: "Huzzi's periods",      // same as title — not a rename
+            dueDate: '2026-04-29',
+            confidence: 0.9,
+            // No repeatHint, no repeatFlag, no priority — user didn't mention these
+        }, {
+            existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: "Huzzi's periods" },
+            existingTaskContent: 'Some existing content',
+        });
+
+        // Title should be undefined (don't touch) — not a rename
+        assert.strictEqual(result.title, undefined);
+        // RepeatFlag should be undefined (don't touch) — user didn't mention recurrence
+        assert.strictEqual(result.repeatFlag, undefined);
+        // Priority should be undefined (don't touch) — user didn't set priority
+        assert.strictEqual(result.priority, undefined);
+        // DueDate should be set — user explicitly changed it
+        assert.ok(result.dueDate !== undefined);
+        // ProjectId should be undefined (don't touch) — no projectHint
+        assert.strictEqual(result.projectId, undefined);
+        assert.strictEqual(result.valid, true);
+    });
+
+    it('should include title when it is an explicit rename', () => {
+        const result = normalizeAction({
+            type: 'update',
+            title: 'New task name',
+            targetQuery: "Huzzi's periods",
+            dueDate: '2026-04-29',
+            confidence: 0.9,
+        }, {
+            existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: "Huzzi's periods" },
+        });
+
+        // Title differs from targetQuery and existingTask — genuine rename
+        assert.ok(result.title !== undefined);
+        assert.ok(result.title.length > 0);
+    });
+
+    it('should include repeatFlag when user explicitly sets recurrence', () => {
+        const result = normalizeAction({
+            type: 'update',
+            title: null,
+            repeatHint: 'daily',
+            confidence: 0.9,
+        }, {
+            existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: 'Morning routine' },
+        });
+
+        assert.ok(result.repeatFlag !== undefined);
+        assert.ok(result.repeatFlag.includes('FREQ=DAILY'));
+    });
+
+    it('should include priority when user explicitly sets it', () => {
+        const result = normalizeAction({
+            type: 'update',
+            title: null,
+            priority: 5,
+            confidence: 0.9,
+        }, {
+            existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: 'Important task' },
+        });
+
+        assert.strictEqual(result.priority, 5);
     });
 });
