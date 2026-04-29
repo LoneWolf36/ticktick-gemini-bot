@@ -45,6 +45,8 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 
 **TickTick Checklist API**: Expected to be supported. Task creation endpoint (`POST /task`) accepts `items` array with `{title, status}` objects based on API structure analysis. No documented item limit. `desc` field provides checklist-level context. No separate checklist endpoint exists — checklists are inline in the task object. **Note**: Not yet used in production code; verify with a live API call before building checklist features (spec 005).
 
+**Project Policy Config**: All hardcoded keyword lists, project names, and scoring magic numbers have been extracted from the codebase into a configurable `PROJECT_POLICY` exported from `services/user_context.js`. The `services/project-policy.js` loader normalizes this config and provides lookup maps. This replaces the brittle keyword-classification system with explicit user-owned policy. If `PROJECT_POLICY` is absent, the system falls back to safe `uncategorized` defaults (priority cap 3, default 1) — no task is ever auto-promoted to Core Goal without explicit configuration.
+
 ## Project Structure & Module Organization
 
 ### Service modules (source of truth for business logic)
@@ -63,6 +65,7 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - `services/task-resolver.js` — Resolves task references from natural language into TickTick task IDs.
 - `services/user-settings.js` — User-level configuration (timezone, preferences).
 - `services/user_context.js` — **Gitignored.** Personal behavioral context — goals, patterns, challenges. Create from `user_context.example.js`.
+- `services/project-policy.js` — Loads structured `PROJECT_POLICY`, `KEYWORDS`, `VERB_LIST`, and `SCORING` from `user_context.js`. Provides normalized lookup maps, project category resolution, and alias-based inference. Replaces all hardcoded keyword lists, project names, and magic numbers from earlier versions.
 - `services/summary-surfaces/` — Summary composition, formatting, and context normalization for briefing, weekly digest, and daily close surfaces. Includes behavioral pattern notices, intervention profiling, and reflection recompute logic.
 
 ### Bot module (Telegram-facing behavior only)

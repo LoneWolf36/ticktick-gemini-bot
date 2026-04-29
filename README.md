@@ -87,6 +87,36 @@ cp services/user_context.example.js services/user_context.js
 
 Edit `services/user_context.js` to describe your situation, goals, and behavioral patterns. **This file is gitignored — your personal data stays local.** For cloud deployments, set it as the `USER_CONTEXT` env var instead.
 
+#### Project Policy (IMPORTANT)
+
+The bot uses a configurable `PROJECT_POLICY` to set priority caps and make safe defaults. Open `services/user_context.js` and edit the `PROJECT_POLICY` section to match your actual TickTick project names:
+
+```js
+export const PROJECT_POLICY = {
+    projects: [
+        // Strategic — eligible for Core Goal (priority 5)
+        { match: '👜Career & Job Search', category: 'strategic', aliases: ['career', 'job', 'interview'] },
+        { match: '📖Studies', category: 'strategic', aliases: ['study', 'exam', 'course'] },
+
+        // Admin — cap at Important (3)
+        { match: '💡Review Later', category: 'admin', aliases: ['review', 'read'] },
+
+        // Routine — cap at Life Admin (1)
+        { match: '⏱️Routines & Tracking', category: 'routine', aliases: ['routine', 'habit'] },
+    ],
+    categories: {
+        strategic: { priorityCap: 5, defaultPriority: 3 },
+        admin:     { priorityCap: 3, defaultPriority: 1 },
+        routine:   { priorityCap: 1, defaultPriority: 1 },
+        uncategorized: { priorityCap: 3, defaultPriority: 1 },
+    },
+};
+```
+
+**Use your exact TickTick project names** (including emojis) in the `match` field. The system normalizes names for matching, but exact names prevent ambiguity.
+
+If you omit `PROJECT_POLICY`, the system falls back to safe defaults: every project is `uncategorized` (priority cap 3, default 1). No task will ever be auto-promoted to Core Goal without explicit configuration.
+
 ### 5. Authorize TickTick
 
 ```bash

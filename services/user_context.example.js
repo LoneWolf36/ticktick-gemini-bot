@@ -72,24 +72,27 @@ ACCOUNTABILITY STYLE:
  * - uncategorized (default): cap at Important (3), default Life Admin (1)
  *
  * Aliases help the system match tasks when project is not explicitly set.
+ *
+ * DEFAULTS: If you omit PROJECT_POLICY entirely, the system falls back to
+ * uncategorized for everything (safe default: priority cap 3, default 1).
+ * If you omit KEYWORDS, VERB_LIST, or SCORING, sensible defaults are used.
+ * Only USER_CONTEXT and USER_TIMEZONE are truly required.
  */
 export const PROJECT_POLICY = {
     projects: [
         // Strategic — needle-movers, goal-aligned work
+        // IMPORTANT: use your EXACT TickTick project names (including emojis) in `match`
         { match: 'Career & Job Search', category: 'strategic', aliases: ['career', 'job', 'interview', 'cv', 'resume'] },
         { match: 'Studies', category: 'strategic', aliases: ['study', 'course', 'exam', 'degree', 'certification'] },
         { match: 'Coaching Business', category: 'strategic', aliases: ['coaching', 'client', 'business'] },
         { match: 'Growth & Learning', category: 'strategic', aliases: ['learn', 'skill', 'growth'] },
 
         // Admin — necessary but not needle-moving
-        { match: 'Life Admin', category: 'admin', aliases: ['bill', 'bank', 'passport', 'tax', 'insurance'] },
-        { match: 'Reference', category: 'admin', aliases: ['reference', 'doc', 'link'] },
         { match: 'Review Later', category: 'admin', aliases: ['review', 'read later'] },
+        { match: 'Reference', category: 'admin', aliases: ['reference', 'doc', 'link'] },
 
         // Routine — recurring, lifestyle, low leverage
         { match: 'Routines & Tracking', category: 'routine', aliases: ['routine', 'habit', 'track', 'log'] },
-        { match: 'Recipes', category: 'routine', aliases: ['recipe', 'cook', 'food', 'meal'] },
-        { match: 'Shopping', category: 'routine', aliases: ['shop', 'buy', 'grocery', 'purchase'] },
         { match: 'Health & Life', category: 'routine', aliases: ['health', 'therapy', 'doctor', 'gym', 'exercise'] },
     ],
     categories: {
