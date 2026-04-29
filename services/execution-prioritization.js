@@ -39,6 +39,15 @@ const STOP_WORDS = new Set([
     'stabilize', 'the', 'to', 'urgent', 'with', 'your',
 ]);
 
+const LIFESTYLE_KEYWORDS = [
+    'recipe', 'masala', 'curry', 'dinner', 'lunch', 'breakfast',
+    'grocery', 'shopping', 'clean', 'laundry', 'routine',
+];
+
+const LIFESTYLE_PROJECT_NAMES = [
+    'routines & tracking', 'life admin',
+];
+
 function asString(value) {
     return typeof value === 'string' ? value : '';
 }
@@ -846,6 +855,16 @@ export function inferPriorityLabelFromTask(task, options = {}) {
     return 'important';
 }
 
+function isLifestyleOrRoutineTask(task) {
+    const title = asString(task.title).toLowerCase();
+    const projectName = asString(task.projectName).toLowerCase();
+
+    if (LIFESTYLE_KEYWORDS.some((keyword) => title.includes(keyword))) return true;
+    if (LIFESTYLE_PROJECT_NAMES.some((name) => projectName.includes(name))) return true;
+    if (title.length < 15 && !task.dueDate) return true;
+    return false;
+}
+
 /**
  * Infers a TickTick priority value (1, 3, 5) from a task.
  *
@@ -856,7 +875,10 @@ export function inferPriorityLabelFromTask(task, options = {}) {
 export function inferPriorityValueFromTask(task, options = {}) {
     const label = inferPriorityLabelFromTask(task, options);
 
-    if (label === 'core_goal') return 5;
+    if (label === 'core_goal') {
+        if (isLifestyleOrRoutineTask(task)) return 3;
+        return 5;
+    }
     if (label === 'life-admin') return 1;
     return 3;
 }

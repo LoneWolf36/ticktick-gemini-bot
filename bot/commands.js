@@ -60,17 +60,13 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         .text('📈 Status', 'menu:status');
 
     const reorgKeyboard = () => new InlineKeyboard()
-        .text('Apply Reorg', 'reorg:apply')
-        .text('🛠️ Refine', 'reorg:refine')
-        .row()
-        .text('❌ Cancel', 'reorg:cancel');
+        .text('Apply', 'reorg:apply')
+        .text('Refine', 'reorg:refine')
+        .text('Cancel', 'reorg:cancel');
 
     const summarizeReorg = (proposal, tasks = [], projects = []) => {
         const byId = new Map(tasks.map(t => [t.id, t]));
         const projectMap = new Map(projects.map(p => [p.id, p.name || 'Unknown']));
-        const lines = [`**🧭 Reorg Proposal**`];
-        if (proposal.summary) lines.push(proposal.summary);
-
         const actions = Array.isArray(proposal.actions) ? proposal.actions : [];
         const byType = { create: [], update: [], complete: [], drop: [] };
 
@@ -122,22 +118,45 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
         }
 
+        const cards = [];
+        const typeLabels = {
+            create: 'Creating',
+            update: 'Updating',
+            complete: 'Completing',
+            drop: 'Dropping',
+        };
+
         for (const type of ['create', 'update', 'complete', 'drop']) {
             const items = byType[type];
             if (!items || items.length === 0) continue;
-            lines.push(`\n**${type} (${items.length})**`);
-            for (const item of items.slice(0, 5)) {
+            const lines = [`**${typeLabels[type]} ${items.length} ${items.length === 1 ? 'task' : 'tasks'}**`];
+            for (const item of items) {
                 lines.push(`  • ${item}`);
             }
-            if (items.length > 5) lines.push(`  ...+${items.length - 5} more`);
+            cards.push(lines.join('\n'));
+        }
+
+        return cards;
+    };
+
+    const sendReorgCards = async (ctx, proposal, tasks, projects) => {
+        const cards = summarizeReorg(proposal, tasks, projects);
+
+        if (proposal.summary) {
+            const isBehavioral = /avoidance|over-planning|zero tasks|not moving/i.test(proposal.summary);
+            const prefix = isBehavioral ? '🎯 Insight:' : '💡';
+            await replyWithMarkdown(ctx, `${prefix} ${proposal.summary}`);
+        }
+
+        for (const card of cards) {
+            await replyWithMarkdown(ctx, card, { reply_markup: reorgKeyboard() });
         }
 
         const questions = Array.isArray(proposal.questions) ? proposal.questions : [];
         if (questions.length > 0) {
-            lines.push(`\n**❓ Need your input:**`);
-            questions.slice(0, 3).forEach((q, i) => lines.push(`  ${i + 1}. ${q}`));
+            const question = questions[0];
+            await replyWithMarkdown(ctx, `❓ One question before I apply this: ${question}\n\nReply to this message to answer.`);
         }
-        return lines.join('\n');
     };
 
     const buildAiUnavailableMessage = () => {
@@ -259,7 +278,12 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             await replyWithMarkdown(ctx, buildQuotaExhaustedMessage(gemini));
             return;
         }
-        await ctx.reply('🧭 Building reorganization proposal...');
+        const pending = store.getPendingReorg();
+        if (pending) {
+            await ctx.reply('Replacing previous proposal...');
+            await store.clearPendingReorg();
+        }
+        const buildingMsg = await ctx.reply('🧭 Building reorganization proposal...');
         try {
             const tasks = await adapter.listActiveTasks();
             const projects = await adapter.listProjects();
@@ -269,7 +293,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 awaitingRefine: false,
                 createdAt: new Date().toISOString(),
             });
-            await replyWithMarkdown(ctx, summarizeReorg(proposal, tasks, projects), { reply_markup: reorgKeyboard() });
+            await ctx.api.editMessageText(ctx.chat.id, buildingMsg.message_id, 'Ready:');
+            await sendReorgCards(ctx, proposal, tasks, projects);
         } catch (err) {
             await ctx.reply(`❌ Reorg failed: ${err.message}`);
         }
@@ -1321,7 +1346,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     awaitingRefine: false,
                     createdAt: pendingReorg.createdAt || new Date().toISOString(),
                 });
-                await replyWithMarkdown(ctx, summarizeReorg(refined, tasks, projects), { reply_markup: reorgKeyboard() });
+                await sendReorgCards(ctx, refined, tasks, projects);
             } catch (err) {
                 await ctx.reply(`❌ Reorg refinement failed: ${err.message}`);
             }

@@ -234,6 +234,34 @@ export class GeminiAnalyzer {
         // Per-model failure counters for telemetry
         // Map<model, { _503, _429_quota, _429_rate, invalid_key, network, total }>
         this._aiFailureCounts = new Map();
+
+        // Models where all keys hit quota exhaustion — cached for 24h to avoid
+        // burning time rotating through every key on each request.
+        // Map<model, expiresAtMs>
+        this._permanentlyExhaustedModels = new Map();
+    }
+
+    _isModelPermanentlyExhausted(model) {
+        const expiresAt = this._permanentlyExhaustedModels.get(model);
+        if (!expiresAt) return false;
+        if (Date.now() > expiresAt) {
+            this._permanentlyExhaustedModels.delete(model);
+            return false;
+        }
+        return true;
+    }
+
+    _markModelPermanentlyExhausted(model) {
+        const ttlMs = 24 * 60 * 60 * 1000; // 24 hours
+        this._permanentlyExhaustedModels.set(model, Date.now() + ttlMs);
+    }
+
+    /**
+     * Clears the permanently-exhausted model cache. Use for manual reset
+     * or when daily quotas are known to have reset.
+     */
+    clearPermanentlyExhaustedModels() {
+        this._permanentlyExhaustedModels.clear();
     }
 
     /**
@@ -620,12 +648,30 @@ export class GeminiAnalyzer {
      * @returns {boolean} True if quota is exhausted across all keys
      */
     isQuotaExhausted() {
+        let allKeysQuotaExhausted = true;
         for (let i = 0; i < this._keys.length; i++) {
             const until = this._exhaustedUntilByKey[i];
-            if (!until || Date.now() > until) return false;
-            if (this._keyUnavailableReason[i] !== 'daily_quota') return false;
+            if (!until || Date.now() > until) { allKeysQuotaExhausted = false; break; }
+            if (this._keyUnavailableReason[i] !== 'daily_quota') { allKeysQuotaExhausted = false; break; }
         }
-        return true;
+        if (allKeysQuotaExhausted) return true;
+
+        const allModels = new Set();
+        for (const tierChain of Object.values(this._modelTiers)) {
+            for (const model of tierChain) allModels.add(model);
+        }
+        if (allModels.size > 0) {
+            let allPermanentlyExhausted = true;
+            for (const model of allModels) {
+                if (!this._isModelPermanentlyExhausted(model)) {
+                    allPermanentlyExhausted = false;
+                    break;
+                }
+            }
+            if (allPermanentlyExhausted) return true;
+        }
+
+        return false;
     }
 
     /**
@@ -654,6 +700,11 @@ export class GeminiAnalyzer {
         for (let modelIndex = 0; modelIndex < chain.length; modelIndex++) {
             const model = chain[modelIndex];
 
+            if (this._isModelPermanentlyExhausted(model)) {
+                console.log(`[Gemini] Model ${model} permanently exhausted, skipping`);
+                continue;
+            }
+
             if (modelIndex > 0) {
                 console.log(`⚡ [Gemini] Model fallback: ${chain[modelIndex - 1]} exhausted → trying ${model} (tier: ${modelTier})`);
             }
@@ -672,6 +723,7 @@ export class GeminiAnalyzer {
             let currentKeyIndex = this._activeKeyIndex;
             let rotations = 0;
             let transientAttempts = 0;
+            let modelHitQuota = false;
             const maxRotations = this._keys.length - 1;
 
             while (true) {
@@ -732,6 +784,7 @@ export class GeminiAnalyzer {
 
                     if (this._isDailyQuotaError(err)) {
                         hasQuotaExhaustion = true;
+                        modelHitQuota = true;
                         this._recordAiFailure(model, '429_quota', currentKeyIndex);
                         const resetMs = this._getQuotaResetMs();
                         // Mark model+key as exhausted for all quota types
@@ -820,6 +873,11 @@ export class GeminiAnalyzer {
 
                     throw err;
                 }
+            }
+
+            if (modelHitQuota && this._areAllKeysExhaustedForModel(model)) {
+                this._markModelPermanentlyExhausted(model);
+                console.log(`[Gemini] Model ${model} marked permanently exhausted (all keys quota-depleted)`);
             }
         }
 
@@ -1183,6 +1241,13 @@ export class GeminiAnalyzer {
                     urgentMode: options.urgentMode,
                     stateSource: options.stateSource,
                 });
+                // Guardrail: recipe/lifestyle/routine tasks should not get Core Goal (priority 5)
+                // because they are personal maintenance, not strategic goals.
+                const lifestyleKeywords = ['recipe', 'masala', 'curry', 'dinner', 'lunch', 'breakfast', 'grocery', 'shopping', 'clean', 'laundry', 'routine'];
+                const titleLower = (task.title || '').toLowerCase();
+                if (changes.priority === 5 && lifestyleKeywords.some((k) => titleLower.includes(k))) {
+                    changes.priority = 3;
+                }
             }
             if ((task.projectName || '').toLowerCase() === 'inbox') {
                 const candidate = inferProjectIdFromTask(task, projects, {

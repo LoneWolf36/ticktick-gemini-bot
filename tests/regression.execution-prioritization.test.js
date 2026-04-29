@@ -1072,3 +1072,37 @@ test('execution prioritization is deterministic for identical input and context'
   assert.deepEqual(second.ranked, first.ranked);
   assert.equal(second.topRecommendation.taskId, first.topRecommendation.taskId);
 });
+
+test('execution prioritization caps recipe and lifestyle tasks at important instead of core goal', () => {
+  const options = {
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+  };
+
+  // Goal-aligned career task in a routine project -> capped by project name
+  const routineProjectTask = { title: 'Backend interview prep', projectName: 'Routines & Tracking' };
+  assert.equal(executionPrioritization.inferPriorityValueFromTask(routineProjectTask, options), 3);
+
+  // Goal-aligned career task with recipe keyword -> capped by title keyword
+  const recipeKeywordTask = { title: 'Backend curry prep', projectName: 'Career' };
+  assert.equal(executionPrioritization.inferPriorityValueFromTask(recipeKeywordTask, options), 3);
+
+  // Goal-aligned career task that is short and has no due date -> capped by short-title rule
+  const shortNoDueTask = { title: 'Backend prep', projectName: 'Career', dueDate: null };
+  assert.equal(executionPrioritization.inferPriorityValueFromTask(shortNoDueTask, options), 3);
+
+  // Goal-aligned career task with laundry keyword -> capped by title keyword
+  const laundryKeywordTask = { title: 'Backend laundry prep', projectName: 'Career' };
+  assert.equal(executionPrioritization.inferPriorityValueFromTask(laundryKeywordTask, options), 3);
+});
+
+test('execution prioritization preserves core goal for non-lifestyle strategic work', () => {
+  const options = {
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+  };
+
+  const careerTask = { title: 'Prepare backend system design interview notes', projectName: 'Career' };
+  assert.equal(executionPrioritization.inferPriorityValueFromTask(careerTask, options), 5);
+
+  const studyTask = { title: 'Complete leetcode hard problems', projectName: 'Study' };
+  assert.equal(executionPrioritization.inferPriorityValueFromTask(studyTask, options), 5);
+});
