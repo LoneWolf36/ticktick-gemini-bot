@@ -872,7 +872,21 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
     }
 
     if (validationErrors.length > 0) {
-        throw new Error(`Intent validation failed: ${validationErrors.join('; ')}`);
+        console.warn(`[IntentExtraction:${requestId}] Intent validation failed, falling back to clarification: ${validationErrors.join('; ')}`);
+        return [{
+            type: 'create',
+            clarification: true,
+            clarificationQuestion: `I wasn't quite sure what you meant or which task to update. Could you clarify?`,
+            confidence: 0,
+            title: 'Ambiguous Request',
+            targetQuery: null,
+            content: null,
+            priority: null,
+            projectHint: null,
+            dueDate: null,
+            repeatHint: null,
+            splitStrategy: null
+        }];
     }
 
     return actions;
