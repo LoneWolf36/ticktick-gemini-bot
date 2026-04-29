@@ -940,8 +940,13 @@ export class TickTickAdapter {
                 updatePayload.originalProjectId = sourceProjectId;
             }
 
-            const updatedTask = await this._client.updateTask(taskId, updatePayload);
+            let updatedTask = await this._client.updateTask(taskId, updatePayload);
             const elapsed = Date.now() - start;
+
+            // Normalize empty string responses from Axios for in-place updates
+            if (typeof updatedTask !== 'object' || updatedTask === null) {
+                updatedTask = { id: taskId, projectId: targetProjectId, ...updatePayload };
+            }
 
             // Optional post-mutation verification
             if (options.verifyAfterWrite) {
