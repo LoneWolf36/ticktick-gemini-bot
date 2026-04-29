@@ -128,6 +128,155 @@ Read/summarization surfaces stay outside write path:
 - Name tests by behavior, for example: `executeActions accepts suggested_schedule update alias`.
 - Mock TickTick and Gemini integrations in automated tests; keep live API calls in opt-in scripts only.
 
+## Agent Workflow Guardrails
+
+### 1. Mandatory Plan Before Coding
+
+Every non-trivial task must begin with a written plan that the user can review before any code is written.
+
+**Trivial changes exempt:** comments, copy-only docs edits, formatting, renames with zero behavior change.
+**Everything else requires a mini-plan.**
+
+The plan must include:
+
+- **Root cause** (1-2 sentences): What is actually broken and why?
+  - If the root cause is unknown, say so explicitly and frame the plan as diagnosis first.
+- **Architectural vs band-aid**: Is this a structural fix or a rule addition to a broken system?
+- **Files to change**: code files, tests, docs, config templates.
+- **Safe failure mode**: if inference/classification is wrong or uncertain, what default happens?
+- **Doc updates list**: Which files will change? If none, state why explicitly.
+
+**The user must approve the plan before coding begins.** If the user says "just do it," the agent may proceed but must still produce the plan for the record.
+
+### 2. Band-Aid Prohibition Rule
+
+**Never fix wrong classification/behavior by adding more rules to the broken system.**
+
+When a classifier or inference path produces wrong results, the correct response is to **redesign the classifier's architecture** — not to add keyword guards, regex exceptions, special-case handlers, or hardcoded lists.
+
+**Forbidden patterns:**
+- Adding keyword arrays to suppress false positives
+- Adding regex guards for specific inputs
+- Hardcoding user-specific data (names, foods, projects, locations) in source code
+- Adding more heuristics to an already over-complicated heuristic chain
+
+**Allowed exception:** User-specific or policy-specific behavior belongs in `user_context.js` / `PROJECT_POLICY`, not source heuristics. Move it to config.
+
+**Required response:**
+- Redesign the inference path with conservative defaults
+- Move user-specific rules into `user_context.js`
+- Add confidence gating: low confidence → safe default, never aggressive guess
+
+If you catch yourself writing `if (title.includes('masala')) return 1`, stop. That is a band-aid.
+
+### 3. Root-Cause Statement Required
+
+Before writing any fix, state the root cause in 1-2 sentences. If the proposed fix is "add more rules/heuristics/special-cases," the agent must instead propose an architectural fix.
+
+**Bad:** "Recipes are getting Core Goal, so I'll add a food keyword list to catch them."
+**Good:** "The absolute priority classifier uses the same broad matching as the relative ranking engine, so any task with slight goal overlap gets promoted. I will split ranking from classification and add project-category caps."
+
+### 4. Safe-Default Rule for Inference / Classification
+
+**Inference systems must fail conservative.** Low confidence, ambiguous mapping, or missing config must resolve to safe default, not aggressive guess or promotion.
+
+- Unclear priority → default to lowest safe tier (1 or 3), never 5
+- Missing project category → `uncategorized` (cap 3, default 1)
+- Ambiguous target task → clarification, not best-guess update
+
+### 5. Docs-With-Code Rule
+
+Every behavior, config, or interface change must update durable docs in the same change set, or explicitly state why no doc surface changed.
+
+| Change Type | Required Doc Update |
+|-------------|-------------------|
+| New feature / command | README.md command table + AGENTS.md module list |
+| Configurable behavior | `services/user_context.example.js` + README setup section |
+| Architecture change | AGENTS.md Architectural Decisions + `docs/ARCHITECTURE.md` |
+| New endpoint / health metric | `docs/ARCHITECTURE.md` + README monitoring section |
+| API change (exported function signature) | `context/refs/codebase-function-map.md` via `npm run docs:map` and API docs via `npm run docs:typedoc` |
+
+### 6. Source-of-Truth Rule
+
+When behavior moves from code to config, remove old in-code constants/heuristics in the same change. Do not leave dual sources of truth.
+
+**Bad:** Move project names to `PROJECT_POLICY` but leave old `STRATEGIC_PROJECT_NAMES` array in code.
+**Good:** Delete the old array, update all call sites to use the loader, verify no references remain.
+
+### 7. Async Safety Rules
+
+Any code involving promises, locks, background processing, or callbacks must obey these hard rules:
+
+**Rule A — No variable first declared inside `try` may be referenced from `catch` or `finally`.** Declare it before `try` with a safe initial value.
+
+Example:
+```javascript
+let backgroundPromise = Promise.resolve();
+let releaseLock = null;
+try {
+    backgroundPromise = processBatch();
+    releaseLock = () => store.releaseIntakeLock();
+} finally {
+    await backgroundPromise;
+    if (releaseLock) releaseLock();
+}
+```
+
+**Rule B — For locks/cleanup handlers, initialize no-op or null and guard before calling.**
+
+**Rule C — Mental checklist for async code:**
+- [ ] What happens if an error throws **before** the promise is assigned?
+- [ ] Is the lock released in **all** error paths including `throw`, `return`, and `break`?
+- [ ] Can a second call start while the first is still running (race condition)?
+- [ ] Is there a test that throws mid-async-operation and verifies cleanup?
+
+### 8. Config Parity Rule
+
+Changes to configurable systems must update **all four**:
+1. The runtime code
+2. `services/user_context.example.js` (or equivalent template)
+3. The loader's fallback defaults (missing config → safe behavior, not crash)
+4. `.env.example` and `render.yaml` if environment variables changed
+
+**If the example file would be broken for a new user copying it, the change is incomplete.**
+
+### 9. Bug-Fix Regression Rule
+
+**No bug fix without reproduction.** Before fixing a bug, add or identify a test that fails for the current behavior. Fix, then make it pass.
+
+If no automated test is possible, state why and provide manual reproduction steps.
+
+### 10. Self-Review Checklist Before "Done"
+
+Before declaring a task complete, verify:
+
+- [ ] All tests pass (`npm test`)
+- [ ] Bug fix includes regression test (or explicit justification if impossible)
+- [ ] Every new export has a known consumer or documented external contract; obvious dead code removed
+- [ ] No hardcoded personal data in code (names, projects, foods, locations)
+- [ ] Docs updated for all behavior changes (or explicit "no doc change needed because …")
+- [ ] Example config updated if config system changed
+- [ ] Relevant edge cases covered: empty input, error mid-flow, timeout, quota exhaustion, ambiguous input — where applicable
+- [ ] Async safety rules passed (if applicable)
+- [ ] Config parity verified (if applicable)
+
+### 11. Council / Review Escalation Protocol
+
+Multi-agent council review is for:
+- Architectural decisions with long-term impact
+- High-risk refactors touching >3 service files
+- Security / data integrity concerns
+- Costly trade-offs (performance vs maintainability)
+
+Council review is **not** for catching:
+- Syntax errors
+- Missing tests
+- Docs not updated
+- Async scoping bugs
+- Config example drift
+
+**Do not request council/review until the self-review checklist is complete and reported.** These are the implementer's responsibility.
+
 ## Commit & Pull Request Guidelines
 - Match the existing Conventional Commit pattern from history: `feat: ...`, `chore: ...`, `feat(scope): ...`.
 - Keep each commit focused to one behavior change or one work package.
