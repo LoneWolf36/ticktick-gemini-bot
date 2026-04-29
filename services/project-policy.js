@@ -1,9 +1,26 @@
-import {
-    PROJECT_POLICY as rawProjectPolicy,
-    KEYWORDS as rawKeywords,
-    VERB_LIST as rawVerbList,
-    SCORING as rawScoring,
-} from './user_context.js';
+import { fileURLToPath } from 'url';
+import { existsSync } from 'fs';
+import path from 'path';
+
+const __dirname = path.dirname(fileURLToPath(import.meta.url));
+const USER_CONTEXT_FILE = path.join(__dirname, 'user_context.js');
+
+let rawProjectPolicy = null;
+let rawKeywords = null;
+let rawVerbList = null;
+let rawScoring = null;
+
+if (existsSync(USER_CONTEXT_FILE)) {
+    try {
+        const mod = await import('./user_context.js');
+        rawProjectPolicy = mod.PROJECT_POLICY;
+        rawKeywords = mod.KEYWORDS;
+        rawVerbList = mod.VERB_LIST;
+        rawScoring = mod.SCORING;
+    } catch (e) {
+        console.warn('⚠️  Failed to load user_context.js for policy configs:', e.message);
+    }
+}
 
 function normalizePolicy(raw) {
     if (!raw || typeof raw !== 'object') {
