@@ -941,6 +941,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     currentDate: context.currentDate,
                     availableProjects: context.availableProjectNames,
                     requestId: context.requestId,
+                    existingTask: context.existingTask,
                 });
             } catch (error) {
                 const failureClass = isQuotaFailure(error) ? FAILURE_CLASSES.QUOTA : FAILURE_CLASSES.UNEXPECTED;

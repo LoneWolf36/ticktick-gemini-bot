@@ -189,7 +189,7 @@ export function validateChecklistItems(items) {
  * @param {boolean} [options.requireR1Fields] - Whether to require the R1 action field set
  * @returns {{valid: boolean, errors: string[]}} Validation result with error messages
  */
-export function validateIntentAction(action, index, { requireR1Fields = false } = {}) {
+export function validateIntentAction(action, index, { requireR1Fields = false, allowEmptyTargetQuery = false } = {}) {
     const errors = [];
 
     if (!action || typeof action !== 'object') {
@@ -224,8 +224,8 @@ export function validateIntentAction(action, index, { requireR1Fields = false } 
             errors.push(`Action ${index}: Create action requires a non-empty title`);
         }
     } else if (isMutation) {
-        // Mutation actions MUST have targetQuery
-        if (!action.targetQuery || typeof action.targetQuery !== 'string' || action.targetQuery.trim().length === 0) {
+        // Mutation actions MUST have targetQuery, unless allowEmptyTargetQuery is true
+        if (!allowEmptyTargetQuery && (!action.targetQuery || typeof action.targetQuery !== 'string' || action.targetQuery.trim().length === 0)) {
             errors.push(`Action ${index}: Mutation action requires a non-empty targetQuery`);
         }
         // Title is optional for mutations (only present when renaming)
@@ -725,13 +725,16 @@ const intentActionSchema = {
  * @throws {QuotaExhaustedError} When all API keys are exhausted
  * @throws {Error} When generation fails or validation fails
  */
-async function extractIntentsWithGemini(gemini, userMessage, { currentDate, availableProjects, requestId } = {}) {
+async function extractIntentsWithGemini(gemini, userMessage, { currentDate, availableProjects, requestId, existingTask } = {}) {
     const projects = Array.isArray(availableProjects) ? availableProjects : [];
 
     // Build context for the prompt
     let contextSection = '';
     if (currentDate) {
         contextSection += `Current date: ${currentDate}\n`;
+    }
+    if (existingTask?.title) {
+        contextSection += `Context Task: The user is currently interacting with an existing task titled "${existingTask.title}". If their message implies an update to this task without explicitly naming it, use this exact title as the targetQuery.\n`;
     }
     if (projects.length > 0) {
         contextSection += `Available projects: ${projects.join(', ')}\n`;
@@ -865,7 +868,10 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
     // Runtime validation (defense in depth)
     const validationErrors = [];
     for (let i = 0; i < actions.length; i++) {
-        const validation = validateIntentAction(actions[i], i, { requireR1Fields: true });
+        const validation = validateIntentAction(actions[i], i, { 
+            requireR1Fields: true,
+            allowEmptyTargetQuery: !!existingTask
+        });
         if (!validation.valid) {
             validationErrors.push(...validation.errors);
         }
