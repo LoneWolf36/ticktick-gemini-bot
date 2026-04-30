@@ -10,14 +10,14 @@ An AI-powered Telegram bot that connects to your TickTick task manager and acts 
 - **Smart scheduling** — assigns due dates (today / tomorrow / this-week / next-week / someday) based on urgency and your patterns
 - **Native TickTick priority flags** — maps to 🔴🟡🔵 priority levels
 - **Autonomous mode** — auto-applies low-risk changes (life-admin tasks) without needing your tap. One compact notification per batch
-- **Free-form instructions** — send natural language messages like *"move all gym tasks to next week"* or *"what should I focus on today?"*
+- **Free-form instructions with receipts** — send natural language messages like *"move all gym tasks to next week"* or *"what should I focus on today?"* and get a structured receipt showing what changed
 - **Quick command menu** — use `/menu` to access inline shortcuts and avoid command discovery friction
 - **Guided full-system reorg** — use `/reorg` to generate a proposal, refine it, and apply it safely
 - **Urgent mode** — `/urgent on` switches to sharper tone with deadline-first prioritization; `/urgent off` returns to standard baseline
 - **Daily morning briefing** — 3-4 prioritized focus items, leading with what you've been avoiding
 - **Weekly accountability digest** — honest review of wins, avoidance patterns, and next week's top 3
 - **Proactive polling** — detects new tasks every 5 minutes and notifies you
-- **Undo** — revert any applied change with `/undo`
+- **Undo** — revert the latest undoable free-form, review, reorg, or auto-applied change with `/undo` or the inline undo button on task receipts
 - **Redis-backed persistence** — state survives server restarts and cloud redeploys
 - **Render deployment ready** — webhook mode, `render.yaml` blueprint included
 
@@ -146,7 +146,7 @@ Open your bot in Telegram and send `/start`.
 | `/focus` | Switch to focus mode |
 | `/normal` | Switch to normal mode |
 | `/mode` | Query current mode |
-| `/undo` | Revert last auto-applied change |
+| `/undo` | Revert the latest undoable change or latest undoable batch |
 | `/memory` | Behavioral memory summary |
 | `/forget` | Reset behavioral memory |
 | `/daily_close` | End-of-day reflection |
@@ -159,6 +159,8 @@ Open your bot in Telegram and send `/start`.
 - Vent: *"I'm overwhelmed"* — the bot will coach you, not just list tasks
 
 For update/complete/delete requests, exact task-title matches execute directly. Non-exact matches (partial/fuzzy/recent-task references) pause for a confirm/cancel tap before TickTick is modified.
+
+Successful task-writing messages return a Telegram receipt that names the task, shows old → new field changes when a snapshot is available, and includes an inline `↩️ Undo` button when rollback metadata was safely stored. `/undo` uses the same rollback path. Completed or deleted tasks may be restored by recreating the saved snapshot because TickTick does not expose a reliable uncomplete operation.
 
 ---
 

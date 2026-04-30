@@ -8,6 +8,8 @@ import { taskReviewKeyboard } from './callbacks.js';
 import {
     buildTaskCard, buildTaskCardFromAction,
     sleep, userLocaleString, isAuthorized, guardAccess, buildUndoEntry,
+    buildUndoEntryFromRollbackStep,
+    buildFreeformReceipt,
     filterProcessedThisWeek, buildQuotaExhaustedMessage,
     parseDateStringToTickTickISO, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent, pendingToAnalysis,
     buildMutationCandidateKeyboard,
@@ -18,6 +20,7 @@ import {
     formatPipelineFailure,
     retryWithBackoff,
     isFollowUpMessage,
+    executeUndoBatch,
 } from './utils.js';
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
@@ -299,7 +302,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             await ctx.api.editMessageText(ctx.chat.id, buildingMsg.message_id, 'Ready:');
             await sendReorgCards(ctx, proposal, tasks, projects);
         } catch (err) {
-            await ctx.reply(`❌ Reorg failed: ${err.message}`);
+            console.error('Reorg error:', err.message);
+            await ctx.reply('Could not build the reorganization proposal. Try again in a moment.');
         }
     };
 
@@ -458,7 +462,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             await ctx.reply(formatModeReply(state, confirmationMap[mode] || 'Work style updated.'));
             return true;
         } catch (err) {
-            await ctx.reply(`Could not update work style: ${err.message}`);
+            console.error('Work style update error:', err.message);
+            await ctx.reply('Could not update work style right now. Try again in a moment.');
             return false;
         }
     };
@@ -475,7 +480,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             await ctx.reply(formatModeReply(state, 'Mode status.'));
             return true;
         } catch (err) {
-            await ctx.reply(`Could not read current mode: ${err.message}`);
+            console.error('Work style read error:', err.message);
+            await ctx.reply('Could not read current mode right now. Try again in a moment.');
             return false;
         }
     };
@@ -605,7 +611,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 if (hasUndoableActions) msg += '\n\nRun /undo to revert the last change.';
                 await replyWithMarkdown(ctx, truncateMessage(msg, 4000));
             } catch (err) {
-                await ctx.reply(`❌ Failed to apply reorg: ${err.message}`);
+                console.error('Reorg apply error:', err.message);
+                await ctx.reply('Could not apply the reorganization safely. Nothing else will be changed until you try again.');
             }
         }
     });
@@ -635,7 +642,9 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 console.log(`🧹 Scan reconciled: removed ${removedPending} pending, ${removedFailed} failed`);
             }
 
-            const availableProjects = await adapter.listProjects();
+            const availableProjects = typeof adapter.listProjects === 'function'
+                ? await adapter.listProjects()
+                : [];
             const workStyleMode = await resolveCurrentWorkStyleMode(ctx);
             const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
@@ -772,7 +781,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
             } else {
                 console.error('Scan error:', err.message);
-                await ctx.reply(`❌ Scan error: ${err.message}`);
+                await ctx.reply('Could not scan tasks right now. Try again, or run /status.');
             }
         } finally {
             try {
@@ -801,7 +810,13 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         if (next) {
             const [taskId, data] = next;
             const analysis = pendingToAnalysis(data);
-            const card = buildTaskCard({ title: data.originalTitle, projectName: data.projectName }, analysis);
+            const card = buildTaskCard({
+                title: data.originalTitle,
+                projectName: data.projectName,
+                priority: data.originalPriority,
+                content: data.originalContent,
+                dueDate: data.originalDueDate,
+            }, analysis);
             const msg = await replyWithMarkdown(ctx, card, { reply_markup: taskReviewKeyboard(taskId, data.actionType) });
             await store.setCurrentReviewSession(ctx.chat.id, {
                 messageId: msg.message_id,
@@ -817,8 +832,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
     };
 
-    // ─── /undo — revert last auto-applied change (or entire batch) ──
-    // RETAINED BOUNDARY: /undo restores a previously applied structured change
+    // ─── /undo — revert last applied change (single or batch) ──
+    // RETAINED BOUNDARY: /undo restores previously applied structured changes
     // directly through the adapter. It is an operational recovery path, not a
     // product-feature drift from the canonical pipeline write path.
     bot.command('undo', async (ctx) => {
@@ -831,71 +846,34 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
 
         try {
-            // If last entry is auto-apply with a batch, revert the entire batch
-            if (last.action === 'auto-apply') {
+            // Determine entries to revert: batch or single
+            let entries = [last];
+
+            // New-style batch: entries share a batchId
+            if (last.batchId) {
+                const batch = store.getUndoBatch(last.batchId);
+                if (batch.length > 1) entries = batch;
+            } else if (last.action === 'auto-apply') {
+                // Legacy auto-apply batch
                 const batch = store.getLastAutoApplyBatch();
-                if (batch.length > 1) {
-                    // Batch undo — revert all entries in the batch
-                    const reverted = [];
-                    const successfulEntries = [];
-                    for (const entry of batch) {
-                        try {
-                            await adapter.updateTask(entry.taskId, {
-                                originalProjectId: entry.appliedProjectId || entry.originalProjectId,
-                                projectId: entry.originalProjectId,
-                                title: entry.originalTitle,
-                                content: entry.originalContent,
-                                priority: entry.originalPriority,
-                            });
-                            reverted.push(entry.originalTitle);
-                            successfulEntries.push(entry);
-                        } catch (err) {
-                            console.error(`[UNDO] Failed to revert "${entry.originalTitle}": ${err.message}`);
-                        }
-                    }
-                    if (successfulEntries.length > 0) {
-                        await store.removeUndoEntries(successfulEntries);
-                    }
-                    await replyWithMarkdown(ctx,
-                        `↩️ **Reverted ${reverted.length} auto-applied change(s):**\n` +
-                        reverted.map(t => `• "${t}"`).join('\n') +
-                        '\n\nAll tasks restored to their original state.');
-                    console.log(`[UNDO] Reverted batch of ${reverted.length} auto-apply changes at ${new Date().toISOString()}`);
-                    return;
-                }
+                if (batch.length > 1) entries = batch;
             }
 
-            // Single-entry undo (approve, reorg-update, or legacy auto-apply without batch)
-            await adapter.updateTask(last.taskId, {
-                originalProjectId: last.appliedProjectId || last.originalProjectId,
-                projectId: last.originalProjectId,
-                title: last.originalTitle,
-                content: last.originalContent,
-                priority: last.originalPriority,
-            });
-            await store.removeLastUndoEntry();
+            const { reverted, successful } = await executeUndoBatch(entries, adapter);
 
-            // Build detailed context of what was reverted
-            const lines = [`↩️ **Reverted:** "${last.originalTitle}"`];
-            if (last.appliedTitle && last.appliedTitle !== last.originalTitle) {
-                lines.push(`  Title: "${last.appliedTitle}" → "${last.originalTitle}"`);
+            if (successful.length > 0) {
+                await store.removeUndoEntries(successful);
             }
-            if (last.appliedPriority != null && last.appliedPriority !== last.originalPriority) {
-                lines.push(`  Priority: ${last.appliedPriority} → ${last.originalPriority}`);
-            }
-            if (last.appliedProject) {
-                lines.push(`  Project: ${last.appliedProject} → original`);
-            }
-            if (last.appliedSchedule) {
-                lines.push(`  Schedule: ${last.appliedSchedule} → removed`);
-            }
-            lines.push('\nTask restored to its original state.');
-            await replyWithMarkdown(ctx, lines.join('\n'));
 
-            console.log(`[UNDO] Reverted "${last.originalTitle}" (${last.action}) at ${new Date().toISOString()}`);
+            const msg = reverted.length > 0
+                ? `↩️ **Reverted ${reverted.length} change(s):**\n${reverted.map(t => `• "${t}"`).join('\n')}`
+                : '↩️ **Nothing was reverted.** Check the adapter logs for details.';
+
+            await replyWithMarkdown(ctx, msg);
+            console.log(`[UNDO] Reverted ${reverted.length} change(s) (${successful.length} successful) at ${new Date().toISOString()}`);
         } catch (err) {
             console.error('Undo error:', err.message);
-            await ctx.reply(`❌ Undo failed: ${err.message}`);
+            await ctx.reply('Undo failed. The task may have changed in TickTick. Try /status.');
         }
     });
 
@@ -930,7 +908,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
                 return;
             }
-            await ctx.reply(`❌ Briefing error: ${err.message}`);
+            await ctx.reply('Could not generate the briefing right now. Try again in a moment.');
         }
     };
 
@@ -979,7 +957,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
                 return;
             }
-            await ctx.reply(`❌ Weekly digest error: ${err.message}`);
+            await ctx.reply('Could not generate the weekly digest right now. Try again in a moment.');
         }
     };
 
@@ -1026,7 +1004,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
                 return;
             }
-            await ctx.reply(`❌ Daily close error: ${err.message}`);
+            await ctx.reply('Could not generate the daily close right now. Try again in a moment.');
         }
     };
 
@@ -1090,7 +1068,9 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 console.log(`🧹 Review reconciled: removed ${removedPending} pending, ${removedFailed} failed`);
             }
 
-            const availableProjects = await adapter.listProjects();
+            const availableProjects = typeof adapter.listProjects === 'function'
+                ? await adapter.listProjects()
+                : [];
             const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
@@ -1226,7 +1206,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
             } else {
                 console.error('Review error:', err.message);
-                await ctx.reply(`❌ Review error: ${err.message}`);
+                await ctx.reply('Could not start review right now. Try again, or run /status.');
             }
         } finally {
             try {
@@ -1330,7 +1310,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                             await ctx.reply(result.confirmationText || 'Done.');
                         }
                     } catch (err) {
-                        await ctx.reply(`❌ Refinement error: ${err.message}`);
+                        console.error('Refinement error:', err.message);
+                        await ctx.reply('Could not apply that refinement safely. Try rephrasing it.');
                     }
                     return;
                 } else {
@@ -1361,7 +1342,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 });
                 await sendReorgCards(ctx, refined, tasks, projects);
             } catch (err) {
-                await ctx.reply(`❌ Reorg refinement failed: ${err.message}`);
+                console.error('Reorg refinement error:', err.message);
+                await ctx.reply('Could not refine the reorganization proposal. Try again in a moment.');
             }
             return;
         }
@@ -1477,9 +1459,13 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
 
             // Follow-up detection: bind short/pronoun messages to recently discussed task
+            const availableProjects = typeof adapter.listProjects === 'function'
+                ? await adapter.listProjects()
+                : [];
             let pipelineOptions = {
                 entryPoint: 'telegram:freeform',
                 mode: 'interactive',
+                availableProjects,
                 workStyleMode: await resolveCurrentWorkStyleMode(ctx),
             };
             let recentTask = null;
@@ -1499,31 +1485,30 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             const result = await processPipelineMessage(userMessage, pipelineOptions);
 
             if (result.type === 'task') {
-                let text = result.dryRun ? `${result.confirmationText} (preview)` : result.confirmationText;
-                const diffLines = [];
-                for (const record of result.results || []) {
-                    if (record.status === 'succeeded' && record.action?.type === 'update') {
-                        const snapshot = record.rollbackStep?.payload?.snapshot;
-                        const oldTitle = snapshot?.title || 'Task';
-                        const newTitle = record.action.title;
-                        if (newTitle && newTitle !== oldTitle) {
-                            diffLines.push(`Updated: "${oldTitle}" → "${newTitle}"`);
-                        } else {
-                            const changedFields = [];
-                            if (record.action.content && record.action.content !== snapshot?.content) changedFields.push('content');
-                            if (record.action.dueDate && record.action.dueDate !== snapshot?.dueDate) changedFields.push('due date');
-                            if (record.action.priority !== undefined && record.action.priority !== snapshot?.priority) changedFields.push('priority');
-                            if (record.action.projectId && record.action.projectId !== snapshot?.projectId) changedFields.push('project');
-                            if (changedFields.length > 0) {
-                                diffLines.push(`Updated "${oldTitle}": ${changedFields.join(', ')} changed`);
-                            }
-                        }
+                // ─── Persist undo entries for successful mutations ───
+                const batchId = `undo_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+                let undoCount = 0;
+
+                for (const record of (result.results || [])) {
+                    if (record.status === 'succeeded' && record.rollbackStep) {
+                        const entry = buildUndoEntryFromRollbackStep(record.rollbackStep, record.action);
+                        entry.batchId = batchId;
+                        await store.addUndoEntry(entry);
+                        undoCount++;
                     }
                 }
-                if (diffLines.length > 0) {
-                    text += '\n\n' + diffLines.join('\n');
+
+                // ─── Build transparent receipt ───
+                const receipt = result.dryRun
+                    ? `${result.confirmationText} (preview)`
+                    : (buildFreeformReceipt(result, { projects: availableProjects }) || result.confirmationText || 'Done.');
+
+                const replyExtra = {};
+                if (undoCount > 0 && !result.dryRun) {
+                    replyExtra.reply_markup = new InlineKeyboard().text('↩️ Undo', 'undo:last');
                 }
-                await replyWithMarkdown(ctx, truncateMessage(text, 4000));
+
+                await replyWithMarkdown(ctx, truncateMessage(receipt, 4000), replyExtra);
 
                 // Store recent task context after successful create/update/complete/delete
                 if (userId) {
@@ -1909,7 +1894,8 @@ export async function executeActions(actions, adapter, currentTasks, options = {
                 outcomes.push(`⚠️ Skipped invalid/unsupported action: ${action.type}`);
             }
         } catch (err) {
-            outcomes.push(`❌ Failed on "${action.taskId}": ${err.message}`);
+            console.error('executeActions action failed:', err.message);
+            outcomes.push(`❌ Failed on "${action.taskId}": could not apply safely`);
         }
     }
     return { outcomes, hasUndoableActions };

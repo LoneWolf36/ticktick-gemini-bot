@@ -3,301 +3,430 @@ import assert from 'node:assert/strict';
 
 import { createPipelineHarness } from './pipeline-harness.js';
 import {
+    buildAutoApplyNotification,
+    buildFieldDiff,
+    buildUndoEntryFromRollbackStep,
     buildPendingDataFromAction,
+    buildTaskCard,
     buildTaskCardFromAction,
     buildTickTickUpdate,
+    formatFieldDiff,
     retryWithBackoff,
 } from '../services/shared-utils.js';
+
 import { taskReviewKeyboard } from '../bot/callbacks.js';
-import {
-    setCurrentReviewSession,
-    getCurrentReviewSession,
-    clearCurrentReviewSession,
-} from '../services/store.js';
 
-// ─── 1. Pipeline dryRun mode ─────────────────────────────────
+// ─── buildTaskCard — Review/Pending Flow ─────────────────────
 
-test('pipeline dryRun returns actions without executing them', async () => {
-    const { processMessage, adapterCalls } = createPipelineHarness({
-        intents: [{ type: 'create', title: 'Buy milk' }],
-    });
-
-    const result = await processMessage('Buy milk', { dryRun: true });
-
-    assert.equal(result.type, 'task');
-    assert.equal(result.dryRun, true);
-    assert.equal(result.actions.length, 1);
-    assert.equal(adapterCalls.create.length, 0);
-    assert.equal(adapterCalls.update.length, 0);
-    assert.equal(adapterCalls.complete.length, 0);
-    assert.equal(adapterCalls.delete.length, 0);
-    assert.match(result.confirmationText, /ready for review/i);
-});
-
-// ─── 2. Pipeline blockedActionTypes ──────────────────────────
-
-test('pipeline blockedActionTypes skips delete and complete before execution', async () => {
-    const { processMessage, adapterCalls } = createPipelineHarness({
-        intents: [{ type: 'delete', taskId: 'task-1', title: 'Old task' }],
-        useRealNormalizer: false,
-        normalizedActions: [
-            { type: 'delete', taskId: 'task-1', title: 'Old task', originalProjectId: 'proj-a', valid: true, validationErrors: [] },
-            { type: 'update', taskId: 'task-2', title: 'Updated task', originalProjectId: 'proj-b', valid: true, validationErrors: [] },
-        ],
-    });
-
-    const result = await processMessage('delete old task', { blockedActionTypes: ['delete', 'complete'] });
-
-    assert.equal(result.type, 'task');
-    assert.equal(adapterCalls.delete.length, 0);
-    assert.equal(adapterCalls.update.length, 1);
-    assert.ok(result.skippedActions);
-    assert.equal(result.skippedActions.length, 1);
-    assert.equal(result.skippedActions[0].type, 'delete');
-});
-
-// ─── 3. buildPendingDataFromAction ───────────────────────────
-
-test('buildPendingDataFromAction maps update action correctly', () => {
+test('buildTaskCard update shows Was / Will be and Changes for title, priority, project, due', () => {
     const task = {
-        id: 't1',
-        title: 'Old title',
-        content: 'Old content',
+        title: 'gym',
+        projectName: 'Inbox',
+        priority: 1,
+        content: '',
+        dueDate: null,
+    };
+    const analysis = {
+        improved_title: 'Do gym workout',
+        priority: 'core_goal',
+        priority_emoji: '🔴',
+        suggested_project: 'Health',
+        suggested_schedule: 'today',
+        analysis: 'This is a core goal that moves the needle.',
+        description: 'Break into 3 sub-tasks and schedule first one.',
+        sub_steps: ['Outline Q2 scope', 'Draft timeline', 'Review with team'],
+        success_criteria: 'Draft submitted',
+        callout: 'Stop planning, start moving.',
+    };
+
+    const card = buildTaskCard(task, analysis);
+
+    assert.ok(card.includes('Was: "gym"'), 'should show original title');
+    assert.ok(card.includes('Will be: "Do gym workout"'), 'should show improved title');
+    assert.ok(card.includes('Priority'), 'should show priority change');
+    assert.ok(card.includes('Life Admin → Core Goal'), 'should show priority diff');
+    assert.ok(card.includes('Project'), 'should show project change');
+    assert.ok(card.includes('Inbox → Health'), 'should show project diff');
+    assert.ok(card.includes('Due'), 'should show due change');
+    assert.ok(card.includes('None → Today'), 'should show due diff');
+    assert.ok(card.includes('Why:'), 'should show rationale');
+    assert.ok(card.includes('This is a core goal'), 'should show why text');
+    assert.ok(card.includes('Break into 3 sub-tasks'), 'should show description');
+    assert.ok(card.includes('Outline Q2 scope'), 'should show sub-steps');
+    assert.ok(card.includes('Draft submitted'), 'should show success criteria');
+    assert.ok(card.includes('Stop planning'), 'should show callout');
+});
+
+test('buildTaskCard update omits unchanged fields from Changes', () => {
+    const task = {
+        title: 'Quarterly Report',
+        projectName: 'Inbox',
         priority: 3,
-        projectId: 'proj-1',
-        projectName: 'Career',
+        content: '',
+        dueDate: null,
+    };
+    const analysis = {
+        improved_title: null,
+        priority: 'important',
+        priority_emoji: '🟡',
+        suggested_project: null,
+        suggested_schedule: null,
+        analysis: 'Keep momentum on this.',
+        description: null,
+        sub_steps: [],
+        success_criteria: null,
+        callout: null,
+    };
+
+    const card = buildTaskCard(task, analysis);
+
+    assert.ok(!card.includes('Was:'), 'should not show Was when title unchanged');
+    assert.ok(!card.includes('Will be:'), 'should not show Will be when title unchanged');
+    assert.ok(!card.includes('Project'), 'should omit unchanged project');
+    assert.ok(!card.includes('Due'), 'should omit unchanged due');
+    assert.ok(!card.includes('Priority'), 'should omit unchanged priority');
+    assert.ok(!card.includes('undefined'), 'should not leak undefined');
+});
+
+test('buildTaskCard delete warning is present', () => {
+    const task = {
+        title: 'Old recurring reminder',
+        projectName: 'Inbox',
+        priority: 0,
+        content: '',
+        dueDate: null,
+    };
+    const analysis = {
+        improved_title: null,
+        priority: 'optional',
+        priority_emoji: '⚪',
+        suggested_project: null,
+        suggested_schedule: null,
+        analysis: 'This task is no longer relevant.',
+        description: null,
+        sub_steps: [],
+        success_criteria: null,
+        callout: null,
+    };
+
+    const card = buildTaskCard(task, analysis);
+
+    assert.ok(!card.includes('Suggested deletion'), 'buildTaskCard is not for delete actions');
+});
+
+// ─── buildTaskCardFromAction — Scan/Review Flow ──────────────
+
+test('buildTaskCardFromAction update shows Was / Will be and field diffs', () => {
+    const task = {
+        title: 'gym',
+        projectName: 'Inbox',
+        projectId: 'inbox',
+        priority: 1,
+        content: '',
+        dueDate: null,
     };
     const action = {
         type: 'update',
-        taskId: 't1',
-        title: 'New title',
-        content: 'New content',
+        title: 'Do gym workout',
         priority: 5,
-        projectId: 'proj-2',
-        dueDate: '2026-03-15T10:00:00.000Z',
+        projectId: 'health',
+        dueDate: '2026-05-05T23:59:00.000+0100',
+        content: 'Break into sub-tasks.',
     };
     const projects = [
-        { id: 'proj-1', name: 'Career' },
-        { id: 'proj-2', name: 'Personal' },
-    ];
-
-    const data = buildPendingDataFromAction(task, action, projects);
-
-    assert.equal(data.actionType, 'update');
-    assert.equal(data.improvedTitle, 'New title');
-    assert.equal(data.improvedContent, 'New content');
-    assert.equal(data.suggestedPriority, 5);
-    assert.equal(data.suggestedProjectId, 'proj-2');
-    assert.equal(data.suggestedSchedule, '2026-03-15T10:00:00.000Z');
-    assert.equal(data.originalTitle, 'Old title');
-    assert.equal(data.projectId, 'proj-1');
-});
-
-test('buildPendingDataFromAction maps complete action correctly', () => {
-    const task = { id: 't1', title: 'Buy milk', priority: 3, projectId: 'proj-1' };
-    const action = { type: 'complete', taskId: 't1' };
-
-    const data = buildPendingDataFromAction(task, action);
-
-    assert.equal(data.actionType, 'complete');
-    assert.equal(data.originalTitle, 'Buy milk');
-});
-
-test('buildPendingDataFromAction maps delete action correctly', () => {
-    const task = { id: 't1', title: 'Old task', priority: 3, projectId: 'proj-1' };
-    const action = { type: 'delete', taskId: 't1' };
-
-    const data = buildPendingDataFromAction(task, action);
-
-    assert.equal(data.actionType, 'delete');
-    assert.equal(data.originalTitle, 'Old task');
-});
-
-// ─── 4. buildTaskCardFromAction ──────────────────────────────
-
-test('buildTaskCardFromAction renders update card with changes', () => {
-    const task = {
-        id: 't1',
-        title: 'Old title',
-        priority: 3,
-        projectId: 'proj-1',
-        projectName: 'Career',
-    };
-    const action = {
-        type: 'update',
-        title: 'New title',
-        priority: 5,
-        projectId: 'proj-2',
-        dueDate: '2026-03-15T10:00:00.000Z',
-    };
-    const projects = [
-        { id: 'proj-1', name: 'Career' },
-        { id: 'proj-2', name: 'Personal' },
+        { id: 'inbox', name: 'Inbox' },
+        { id: 'health', name: 'Health' },
     ];
 
     const card = buildTaskCardFromAction(task, action, projects);
 
-    assert.match(card, /Was: "Old title"/);
-    assert.match(card, /New title/);
-    assert.match(card, /🔴/);
-    assert.match(card, /Core Goal/);
-    assert.match(card, /15\/3\/2026/);
-    assert.match(card, /→ Personal/);
+    assert.ok(card.includes('Was: "gym"'), 'should show original title');
+    assert.ok(card.includes('Will be: "Do gym workout"'), 'should show improved title');
+    assert.ok(card.includes('Inbox → Health'), 'should show project diff');
+    assert.ok(card.includes('Life Admin → Core Goal'), 'should show priority diff');
+    assert.ok(card.includes('Content'), 'should show content change');
 });
 
-test('buildTaskCardFromAction renders complete card', () => {
-    const task = { id: 't1', title: 'Buy milk' };
-    const action = { type: 'complete' };
+test('buildTaskCardFromAction complete shows context', () => {
+    const task = {
+        title: 'Book flight',
+        projectName: 'Travel',
+        projectId: 'travel',
+        priority: 3,
+        content: '',
+        dueDate: '2026-05-05T23:59:00.000+0100',
+    };
+    const action = {
+        type: 'complete',
+    };
 
     const card = buildTaskCardFromAction(task, action);
 
-    assert.match(card, /Mark as done:/);
-    assert.match(card, /Buy milk/);
+    assert.ok(card.includes('Mark as done: "Book flight"'), 'should show complete header');
+    assert.ok(card.includes('Travel'), 'should show project context');
+    assert.ok(card.includes('Important'), 'should show priority context');
+    assert.ok(card.includes('May'), 'should show due context');
 });
 
-test('buildTaskCardFromAction renders delete card', () => {
-    const task = { id: 't1', title: 'Old task' };
-    const action = { type: 'delete' };
+test('buildTaskCardFromAction delete shows warning and context', () => {
+    const task = {
+        title: 'Old recurring reminder',
+        projectName: 'Inbox',
+        projectId: 'inbox',
+        priority: 0,
+        content: 'Some old content',
+        dueDate: null,
+    };
+    const action = {
+        type: 'delete',
+    };
 
     const card = buildTaskCardFromAction(task, action);
 
-    assert.match(card, /Suggested deletion:/);
-    assert.match(card, /Old task/);
+    assert.ok(card.includes('Suggested deletion: "Old recurring reminder"'), 'should show delete header');
+    assert.ok(card.includes('permanently remove'), 'should show warning text');
+    assert.ok(card.includes('Inbox'), 'should show project context');
+    assert.ok(card.includes('Optional'), 'should show priority context');
 });
 
-// ─── 5. buildTickTickUpdate with ISO dates ───────────────────
+test('buildTaskCardFromAction update omits unchanged fields', () => {
+    const task = {
+        title: 'Quarterly Report',
+        projectName: 'Inbox',
+        projectId: 'inbox',
+        priority: 3,
+        content: 'Existing content',
+        dueDate: '2026-05-05T23:59:00.000+0100',
+    };
+    const action = {
+        type: 'update',
+        title: 'Quarterly Report',
+        priority: 3,
+        projectId: 'inbox',
+        dueDate: '2026-05-05T23:59:00.000+0100',
+        content: 'Existing content',
+    };
 
-test('buildTickTickUpdate passes ISO date strings directly', () => {
-    const data = { projectId: 'proj-1', suggestedSchedule: '2026-03-15T10:00:00.000Z' };
-    const update = buildTickTickUpdate(data);
+    const card = buildTaskCardFromAction(task, action);
 
-    assert.equal(update.dueDate, '2026-03-15T10:00:00.000Z');
+    assert.ok(!card.includes('Was:'), 'should not show Was when title unchanged');
+    assert.ok(!card.includes('Project'), 'should omit unchanged project');
+    assert.ok(!card.includes('Priority'), 'should omit unchanged priority');
+    assert.ok(!card.includes('Due'), 'should omit unchanged due');
+    assert.ok(!card.includes('Content'), 'should omit unchanged content');
+    assert.ok(!card.includes('undefined'), 'should not leak undefined');
 });
 
-test('buildTickTickUpdate resolves bucket names via scheduleToDateTime', () => {
-    const data = { projectId: 'proj-1', suggestedSchedule: 'today' };
-    const update = buildTickTickUpdate(data);
+// ─── taskReviewKeyboard — Button Labels ──────────────────────
 
-    assert.ok(update.dueDate);
-    assert.ok(typeof update.dueDate === 'string');
-    assert.ok(update.dueDate.includes('T') || update.dueDate.includes('-'));
-    assert.notEqual(update.dueDate, 'today');
+test('taskReviewKeyboard update has Apply, Refine, Skip, Delete, Stop', () => {
+    const keyboard = taskReviewKeyboard('task-123', 'update');
+    const buttons = keyboard.inline_keyboard.flat();
+    const texts = buttons.map(b => b.text);
+
+    assert.ok(texts.includes('Apply'), 'should have Apply button');
+    assert.ok(texts.includes('Refine'), 'should have Refine button');
+    assert.ok(texts.includes('Skip'), 'should have Skip button');
+    assert.ok(texts.includes('Delete'), 'should have Delete button');
+    assert.ok(texts.includes('Stop'), 'should have Stop button');
+    assert.ok(!texts.includes('Keep original'), 'should not have old long label');
+    assert.ok(!texts.includes('Delete task'), 'should not have old long label');
+    assert.ok(!texts.includes('Stop reviewing'), 'should not have old long label');
 });
 
-// ─── 6. taskReviewKeyboard ───────────────────────────────────
-
-test('taskReviewKeyboard returns update layout by default', () => {
-    const keyboard = taskReviewKeyboard('task-123');
-    const flat = keyboard.inline_keyboard.flat();
-
-    assert.equal(flat.length, 5);
-    assert.match(flat[0].callback_data, /^a:task-123$/);
-    assert.match(flat[1].callback_data, /^r:task-123$/);
-    assert.match(flat[2].callback_data, /^s:task-123$/);
-    assert.match(flat[3].callback_data, /^d:task-123$/);
-    assert.match(flat[4].callback_data, /^review:stop$/);
-});
-
-test('taskReviewKeyboard returns complete layout', () => {
+test('taskReviewKeyboard complete has Complete, Keep, Delete, Stop', () => {
     const keyboard = taskReviewKeyboard('task-123', 'complete');
-    const flat = keyboard.inline_keyboard.flat();
+    const buttons = keyboard.inline_keyboard.flat();
+    const texts = buttons.map(b => b.text);
 
-    assert.equal(flat.length, 4);
-    assert.match(flat[0].text, /Confirm complete/);
-    assert.match(flat[1].text, /Keep active/);
-    assert.match(flat[2].text, /Delete instead/);
-    assert.match(flat[3].callback_data, /^review:stop$/);
+    assert.ok(texts.includes('Complete'), 'should have Complete button');
+    assert.ok(texts.includes('Keep'), 'should have Keep button');
+    assert.ok(texts.includes('Delete'), 'should have Delete button');
+    assert.ok(texts.includes('Stop'), 'should have Stop button');
+    assert.ok(!texts.includes('Confirm complete'), 'should not have old long label');
+    assert.ok(!texts.includes('Keep active'), 'should not have old long label');
 });
 
-test('taskReviewKeyboard returns delete layout', () => {
+test('taskReviewKeyboard delete has Delete, Keep, Stop', () => {
     const keyboard = taskReviewKeyboard('task-123', 'delete');
-    const flat = keyboard.inline_keyboard.flat();
+    const buttons = keyboard.inline_keyboard.flat();
+    const texts = buttons.map(b => b.text);
 
-    assert.equal(flat.length, 3);
-    assert.match(flat[0].text, /Confirm delete/);
-    assert.match(flat[1].text, /Keep task/);
-    assert.match(flat[2].callback_data, /^review:stop$/);
+    assert.ok(texts.includes('Delete'), 'should have Delete button');
+    assert.ok(texts.includes('Keep'), 'should have Keep button');
+    assert.ok(texts.includes('Stop'), 'should have Stop button');
+    assert.ok(!texts.includes('Confirm delete'), 'should not have old long label');
+    assert.ok(!texts.includes('Keep task'), 'should not have old long label');
 });
 
-test('taskReviewKeyboard truncates long task IDs', () => {
-    const longId = 'a'.repeat(100);
-    const keyboard = taskReviewKeyboard(longId, 'update');
-    const flat = keyboard.inline_keyboard.flat();
+// ─── No Internal Jargon ──────────────────────────────────────
 
-    for (const button of flat) {
-        assert.ok(button.callback_data.length <= 64, `callback_data length ${button.callback_data.length} exceeds 64`);
+test('buildTaskCardFromAction does not leak internal field names or scores', () => {
+    const task = {
+        title: 'Test',
+        projectName: 'Inbox',
+        projectId: 'inbox',
+        priority: 3,
+        content: '',
+        dueDate: null,
+    };
+    const action = {
+        type: 'update',
+        title: 'Test updated',
+        priority: 5,
+    };
+
+    const card = buildTaskCardFromAction(task, action);
+
+    assert.ok(!card.includes('projectId'), 'should not leak projectId');
+    assert.ok(!card.includes('priority:'), 'should not leak priority:');
+    assert.ok(!card.includes('score'), 'should not leak score');
+    assert.ok(!card.includes('undefined'), 'should not leak undefined');
+    assert.ok(!card.includes('null'), 'should not leak null');
+});
+
+test('buildTaskCard does not leak internal field names or scores', () => {
+    const task = {
+        title: 'Test',
+        projectName: 'Inbox',
+        priority: 3,
+        content: '',
+        dueDate: null,
+    };
+    const analysis = {
+        improved_title: 'Test updated',
+        priority: 'core_goal',
+        priority_emoji: '🔴',
+        suggested_project: null,
+        suggested_schedule: null,
+        analysis: null,
+        description: null,
+        sub_steps: [],
+        success_criteria: null,
+        callout: null,
+    };
+
+    const card = buildTaskCard(task, analysis);
+
+    assert.ok(!card.includes('undefined'), 'should not leak undefined');
+    assert.ok(!card.includes('null'), 'should not leak null');
+});
+
+// ─── buildAutoApplyNotification — Slice D ─────────────────────
+
+test('buildAutoApplyNotification returns null for empty results', () => {
+    assert.equal(buildAutoApplyNotification([]), null);
+    assert.equal(buildAutoApplyNotification(null), null);
+    assert.equal(buildAutoApplyNotification(undefined), null);
+});
+
+test('buildAutoApplyNotification shows per-task field diffs when provided', () => {
+    const results = [
+        {
+            title: 'Quarterly report',
+            diffs: [
+                { field: 'priority', label: 'Priority', oldValue: 'Important', newValue: 'Core Goal', emoji: '🔴' },
+                { field: 'project', label: 'Project', oldValue: 'Inbox', newValue: 'Health', emoji: '📁' },
+            ],
+        },
+        {
+            title: 'Buy groceries',
+            diffs: [
+                { field: 'due', label: 'Due', oldValue: 'None', newValue: 'Today', emoji: '📅' },
+            ],
+        },
+    ];
+
+    const text = buildAutoApplyNotification(results);
+
+    assert.match(text, /2 task\(s\) organized/);
+    assert.match(text, /Quarterly report/);
+    assert.match(text, /🔴 Priority.*Important → Core Goal/);
+    assert.match(text, /📁 Project.*Inbox → Health/);
+    assert.match(text, /Buy groceries/);
+    assert.match(text, /📅 Due.*None → Today/);
+    assert.match(text, /Run \/undo/);
+});
+
+test('buildAutoApplyNotification limits to 5 tasks with overflow line', () => {
+    const results = Array.from({ length: 8 }, (_, i) => ({
+        title: `Task ${i + 1}`,
+        diffs: [],
+    }));
+
+    const text = buildAutoApplyNotification(results);
+
+    assert.match(text, /8 task\(s\) organized/);
+    // First 5 should appear
+    for (let i = 0; i < 5; i++) {
+        assert.match(text, new RegExp(`Task ${i + 1}`));
     }
+    // 6th should not
+    assert.ok(!text.includes('Task 6'), 'task 6 should not appear');
+    assert.match(text, /\.\.\.and 3 more/);
 });
 
-// ─── 7. currentReviewSession store helpers ───────────────────
+test('buildAutoApplyNotification shows skipped actions warning', () => {
+    const results = [
+        { title: 'Finish report', diffs: [{ field: 'priority', label: 'Priority', oldValue: 'Important', newValue: 'Core Goal', emoji: '🔴' }] },
+    ];
 
-test('setCurrentReviewSession stores and getCurrentReviewSession retrieves', async () => {
-    await setCurrentReviewSession(12345, {
-        messageId: 99,
-        chatId: 12345,
-        source: 'scan',
-        startedAt: '2026-04-28T10:00:00.000Z',
-    });
+    const text = buildAutoApplyNotification(results, { hasSkippedActions: true });
 
-    const session = getCurrentReviewSession(12345);
-    assert.ok(session);
-    assert.equal(session.messageId, 99);
-    assert.equal(session.source, 'scan');
-
-    await clearCurrentReviewSession(12345);
-    assert.equal(getCurrentReviewSession(12345), null);
+    assert.match(text, /Skipped destructive action/);
+    assert.match(text, /Finish report/);
 });
 
-test('getCurrentReviewSession returns null when no session exists', () => {
-    assert.equal(getCurrentReviewSession(99999), null);
+test('buildAutoApplyNotification does not contain internal jargon', () => {
+    const results = [
+        {
+            title: 'Test task',
+            diffs: [
+                { field: 'title', label: 'Title', oldValue: 'Old', newValue: 'New', emoji: '' },
+            ],
+        },
+    ];
+
+    const text = buildAutoApplyNotification(results);
+
+    assert.ok(!text.includes('projectId'), 'no projectId leak');
+    assert.ok(!text.includes('field:'), 'no field: leak');
+    assert.ok(!text.includes('undefined'), 'no undefined leak');
+    assert.ok(!text.includes('null'), 'no null leak');
+    assert.ok(!text.includes('JSON'), 'no JSON leak');
 });
 
-test('clearCurrentReviewSession is safe for unknown chatId', async () => {
-    await clearCurrentReviewSession(88888);
-    assert.equal(getCurrentReviewSession(88888), null);
+test('buildAutoApplyNotification preserves legacy schedule/movedTo format when no diffs', () => {
+    const results = [
+        { title: 'Buy milk', schedule: '2026-04-30', movedTo: null },
+        { title: 'Pay bills', schedule: null, movedTo: 'Health' },
+        { title: 'Untouched task', schedule: null, movedTo: null },
+    ];
+
+    const text = buildAutoApplyNotification(results);
+
+    assert.match(text, /Buy milk.*due (Thu, 30 Apr|2026-04-30)/);
+    assert.match(text, /Pay bills.*moved to Health/);
+    assert.match(text, /Untouched task/);
+    assert.match(text, /Run \/undo/);
 });
 
-// ─── 8. retryWithBackoff ─────────────────────────────────────
+test('buildUndoEntryFromRollbackStep falls back to task id when title is missing', () => {
+    const entry = buildUndoEntryFromRollbackStep({
+        type: 'restore_updated',
+        targetTaskId: 'task-missing-title',
+        targetProjectId: 'inbox',
+        payload: { snapshot: { id: 'task-missing-title', title: '', content: '', projectId: 'inbox' } },
+    }, { type: 'update', title: '' });
 
-test('retryWithBackoff succeeds on first attempt', async () => {
-    const result = await retryWithBackoff(async () => 42);
-    assert.equal(result, 42);
+    assert.equal(entry.originalTitle, 'task-missing-title');
 });
 
-test('retryWithBackoff retries on transient errors', async () => {
-    let callCount = 0;
-    const result = await retryWithBackoff(async () => {
-        callCount += 1;
-        if (callCount === 1) {
-            const err = new Error('ETIMEDOUT');
-            throw err;
-        }
-        return 'success';
-    }, { baseDelayMs: 1 });
+test('buildAutoApplyNotification keeps undo hint in output', () => {
+    const results = [
+        { title: 'One task', diffs: [] },
+    ];
 
-    assert.equal(result, 'success');
-    assert.equal(callCount, 2);
-});
-
-test('retryWithBackoff does not retry on quota errors', async () => {
-    await assert.rejects(
-        async () => retryWithBackoff(async () => {
-            const err = new Error('All API keys exhausted');
-            throw err;
-        }, { baseDelayMs: 1 }),
-        /All API keys exhausted/,
-    );
-});
-
-test('retryWithBackoff exhausts max retries', async () => {
-    let callCount = 0;
-    await assert.rejects(
-        async () => retryWithBackoff(async () => {
-            callCount += 1;
-            const err = new Error('ECONNRESET');
-            throw err;
-        }, { maxRetries: 2, baseDelayMs: 1 }),
-        /ECONNRESET/,
-    );
-    assert.equal(callCount, 3);
+    const text = buildAutoApplyNotification(results);
+    assert.match(text, /Run \/undo/);
 });

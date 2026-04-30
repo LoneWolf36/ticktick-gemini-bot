@@ -6,6 +6,7 @@ import {
     buildTickTickUpdate, isAuthorized, buildUndoEntry, PRIORITY_LABEL,
     editWithMarkdown, truncateMessage, buildTaskCard, pendingToAnalysis,
     replyWithMarkdown, sleep,
+    executeUndoBatch,
 } from './utils.js';
 
 // Pending mutation clarification expiry: 10 minutes
@@ -46,28 +47,28 @@ export function taskReviewKeyboard(taskId, actionType = 'update') {
     const id = taskId.length > 50 ? taskId.slice(0, 50) : taskId;
     if (actionType === 'complete') {
         return new InlineKeyboard()
-            .text('Confirm complete', `a:${id}`)
-            .text('⏭ Keep active', `s:${id}`)
+            .text('Complete', `a:${id}`)
+            .text('Keep', `s:${id}`)
             .row()
-            .text('🗑️ Delete instead', `d:${id}`)
+            .text('Delete', `d:${id}`)
             .row()
-            .text('⏹ Stop reviewing', 'review:stop');
+            .text('Stop', 'review:stop');
     }
     if (actionType === 'delete') {
         return new InlineKeyboard()
-            .text('🗑️ Confirm delete', `a:${id}`)
-            .text('⏭ Keep task', `s:${id}`)
+            .text('Delete', `a:${id}`)
+            .text('Keep', `s:${id}`)
             .row()
-            .text('⏹ Stop reviewing', 'review:stop');
+            .text('Stop', 'review:stop');
     }
     return new InlineKeyboard()
-        .text('Apply changes', `a:${id}`)
-        .text('✏️ Refine', `r:${id}`)
+        .text('Apply', `a:${id}`)
+        .text('Refine', `r:${id}`)
         .row()
-        .text('⏭ Keep original', `s:${id}`)
-        .text('🗑️ Delete task', `d:${id}`)
+        .text('Skip', `s:${id}`)
+        .text('Delete', `d:${id}`)
         .row()
-        .text('⏹ Stop reviewing', 'review:stop');
+        .text('Stop', 'review:stop');
 }
 
 // ─── Register Callback Handlers ─────────────────────────────
@@ -125,7 +126,13 @@ async function advanceReviewCard(ctx, prefix = '') {
 
     const [taskId, data] = next;
     const analysis = pendingToAnalysis(data);
-    const card = buildTaskCard({ title: data.originalTitle, projectName: data.projectName }, analysis);
+    const card = buildTaskCard({
+        title: data.originalTitle,
+        projectName: data.projectName,
+        priority: data.originalPriority,
+        content: data.originalContent,
+        dueDate: data.originalDueDate,
+    }, analysis);
     const totalTasks = session?.totalTasks || 0;
     const progressLine = totalTasks > 0
         ? `Task ${reviewed + 1} of ${totalTasks} · ${remaining} remaining\n\n`
@@ -775,5 +782,70 @@ export function registerCallbacks(bot, adapter, pipeline) {
             skipChecklist: true,
             successPrefix: 'Single task.',
         });
+    });
+
+    // ─── Undo Inline Button ──────────────────────────────────
+    // Handles the ↩️ Undo button on freeform receipts.
+    // Reuses executeUndoBatch for consistent undo logic with /undo command.
+    bot.callbackQuery(/^undo:last$/, async (ctx) => {
+        if (!isAuthorized(ctx)) {
+            await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
+            return;
+        }
+
+        const last = store.getLastUndoEntry();
+
+        if (!last) {
+            await safeAnswerCallbackQuery(ctx, { text: 'Nothing to undo.' });
+            try {
+                await editWithMarkdown(ctx, '↩️ Nothing to undo.', { reply_markup: new InlineKeyboard() });
+            } catch {
+                /* best-effort edit; fall back to alert only */
+            }
+            return;
+        }
+
+        await safeAnswerCallbackQuery(ctx, { text: '↩️ Undoing...' });
+
+        try {
+            // Determine entries to revert: batch or single
+            let entries = [last];
+
+            if (last.batchId) {
+                const batch = store.getUndoBatch(last.batchId);
+                if (batch.length > 1) entries = batch;
+            }
+
+            const { reverted, successful } = await executeUndoBatch(entries, adapter);
+
+            if (successful.length > 0) {
+                await store.removeUndoEntries(successful);
+            }
+
+            const msg = reverted.length > 0
+                ? `↩️ **Reverted ${reverted.length} change(s):**\n${reverted.map(t => `• "${t}"`).join('\n')}`
+                : '↩️ **Nothing was reverted.**';
+
+            // Edit the original receipt message, removing the inline keyboard.
+            // Fallback to reply if the message is too old to edit.
+            try {
+                await editWithMarkdown(ctx, msg, { reply_markup: new InlineKeyboard() });
+            } catch (err) {
+                const errMsg = String(err?.message || '').toLowerCase();
+                if (errMsg.includes('message is not modified') || errMsg.includes('message to edit not found') || errMsg.includes('message_id_invalid') || errMsg.includes('too old')) {
+                    await replyWithMarkdown(ctx, msg);
+                } else {
+                    throw err;
+                }
+            }
+        } catch (err) {
+            console.error('[UNDO:last] Error:', err.message);
+            const safeMessage = 'Undo failed. The task may have changed in TickTick. Try /status.';
+            try {
+                await editWithMarkdown(ctx, safeMessage, { reply_markup: new InlineKeyboard() });
+            } catch {
+                await ctx.reply(safeMessage);
+            }
+        }
     });
 }

@@ -36,3 +36,6 @@ docs/jscpd-baseline.html/
 
 # Generated API reference (local fallback only; do not commit)
 docs/api/
+
+# Local production/debug logs
+logs.md

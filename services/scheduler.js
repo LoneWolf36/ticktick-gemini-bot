@@ -2,7 +2,7 @@
 import cron from 'node-cron';
 import * as store from './store.js';
 import { computeNextAttemptAt } from './store.js';
-import { buildAutoApplyNotification, buildUndoEntry, userTimeString, filterProcessedThisWeek, sendWithMarkdown } from './shared-utils.js';
+import { buildAutoApplyNotification, buildFieldDiff, buildUndoEntry, userTimeString, filterProcessedThisWeek, sendWithMarkdown } from './shared-utils.js';
 import { logSummarySurfaceEvent } from './summary-surfaces/index.js';
 
 /**
@@ -762,6 +762,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
             const autoApplied = [];
             const batchId = `auto-${Date.now()}`;
             let quotaHit = false;
+            let totalSkipped = 0;
 
             for (const task of batch) {
                 try {
@@ -784,6 +785,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                         console.error(`  ❌ Failed: "${task.title}": ${reason}`);
                     } else if (result.type === 'task') {
                         if (result.skippedActions?.length > 0) {
+                            totalSkipped += result.skippedActions.length;
                             console.log(`  ⚠️ Skipped ${result.skippedActions.length} destructive action(s) in auto-apply`);
                         }
 
@@ -801,6 +803,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                                 movedTo: action.projectId && action.projectId !== task.projectId
                                     ? (projects.find(p => p.id === action.projectId)?.name || action.projectId)
                                     : null,
+                                diffs: buildFieldDiff(task, action, { projects }),
                             });
                         }
                         // Create undo entry per task with batchId for batch undo
@@ -842,7 +845,9 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
             }
 
             if (autoApplied.length > 0) {
-                const notification = buildAutoApplyNotification(autoApplied);
+                const notification = buildAutoApplyNotification(autoApplied, {
+                    hasSkippedActions: totalSkipped > 0,
+                });
                 if (notification && !shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY)) {
                     await sendWithMarkdown(bot.api, chatId, notification);
                 }

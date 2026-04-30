@@ -80,6 +80,8 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 ### Integration rule
 **Bot handlers must never bypass the pipeline for new task-writing flows.** Operational mutations (approve/skip/drop in callbacks) directly call the adapter as a retained boundary for interactive UX. All new free-form text flows must route through `pipeline.js` → `normalizer.js` → `ticktick-adapter.js`. Bot handlers may read from TickTick directly only for display purposes (e.g., `/pending`, `/status`).
 
+**Undo/rollback boundary:** Free-form task mutations still execute through the pipeline, then the Telegram handler persists the pipeline-provided rollback metadata into the undo log and renders a receipt with an inline undo affordance when rollback metadata exists. `/undo` and `undo:last` callbacks are operational recovery surfaces that call the adapter directly to restore the captured snapshot. Complete/delete rollback may recreate a task from the saved snapshot rather than truly reopening the original TickTick task because TickTick does not expose a reliable uncomplete API.
+
 ### Function Map
 
 See `context/refs/codebase-function-map.md` for the generated export/signature index. Use it to find public helpers, classes, constants, and likely edit targets; do not treat it as behavior truth. Source files, tests, Cavekit kits, and this AGENTS.md override generated docs.
@@ -109,6 +111,7 @@ Read/summarization surfaces stay outside write path:
 - `/briefing`, `/weekly`, `/daily_close`, scheduler briefings/digests/poll notifications are non-write surfaces
 - `/status`, `/pending`, `/menu`, `/memory`, `/mode` are operational/read-only command surfaces
 - `/focus`, `/normal`, `/urgent`, `/forget` are work-style/behavioral command surfaces (bot-local state only, no TickTick mutation)
+- `/undo` and inline `undo:last` are operational recovery surfaces for the latest undoable single action or batch. They must use stored rollback snapshots and safe user-facing failure copy; do not expose raw adapter errors.
 
 ### Destructive/Non-Exact Mutation Confirmation Gate
 

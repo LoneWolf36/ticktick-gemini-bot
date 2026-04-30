@@ -133,10 +133,6 @@ Used by validateIntentAction to check checklistItems arrays.</p>
 <dd><p>Maps mutation action types to user-facing labels.
 Centralized to prevent duplication across pipeline and shared-utils.</p>
 </dd>
-<dt><a href="#MATCH_TYPE_LABELS">MATCH_TYPE_LABELS</a> : <code>Object.&lt;string, string&gt;</code></dt>
-<dd><p>Maps resolver match types to user-facing descriptions.
-Centralized to prevent duplication across pipeline and shared-utils.</p>
-</dd>
 <dt><a href="#MUTATION_CONFIRMATION_TTL_MS">MUTATION_CONFIRMATION_TTL_MS</a></dt>
 <dd><p>Mutation confirmation TTL: 10 minutes</p>
 </dd>
@@ -305,7 +301,6 @@ Strategy: strip examples, strip verbose filler, keep schema + core rules.</p>
 <li>Strip priority markers (e.g., &quot;URGENT: &quot;, &quot;Critical - &quot;)</li>
 <li>Strip date references (e.g., &quot;tomorrow&quot;, &quot;next week&quot;)</li>
 <li>Strip leading articles (&quot;A&quot;, &quot;An&quot;, &quot;The&quot;)</li>
-<li>Ensure verb-led (add &quot;Do&quot; prefix if no verb detected)</li>
 <li>Capitalize first letter (sentence case)</li>
 <li>Truncate to maxLength at word boundary with ellipsis</li>
 </ol>
@@ -582,6 +577,12 @@ Base notices take precedence over model notices for same code.</p>
 <dt><a href="#buildUndoEntry">buildUndoEntry(params)</a> ⇒ <code>Object</code></dt>
 <dd><p>Builds an undo entry for the state store to allow reverting mutations.</p>
 </dd>
+<dt><a href="#buildFieldDiff">buildFieldDiff(snapshot, action, [options])</a> ⇒ <code>Array.&lt;{field:string, label:string, oldValue:string, newValue:string, emoji:string}&gt;</code></dt>
+<dd><p>Builds user-facing old-to-new field diffs for task mutations.</p>
+</dd>
+<dt><a href="#formatFieldDiff">formatFieldDiff(diffs, [options])</a> ⇒ <code>string</code></dt>
+<dd><p>Formats task field diffs into compact Telegram-safe lines.</p>
+</dd>
 <dt><a href="#userNow">userNow()</a> ⇒ <code>Object</code></dt>
 <dd><p>Get the user&#39;s current time as date components in their timezone.</p>
 </dd>
@@ -634,8 +635,11 @@ following Postel&#39;s Law to shield against messy LLM output.</p>
 <dt><a href="#pendingToAnalysis">pendingToAnalysis(data)</a> ⇒ <code>Object</code></dt>
 <dd><p>Maps a stored pending record back to an analysis object shape.</p>
 </dd>
-<dt><a href="#buildAutoApplyNotification">buildAutoApplyNotification(results)</a> ⇒ <code>string</code> | <code>null</code></dt>
-<dd><p>Builds a notification message for auto-applied task updates.</p>
+<dt><a href="#buildAutoApplyNotification">buildAutoApplyNotification(results, [options])</a> ⇒ <code>string</code> | <code>null</code></dt>
+<dd><p>Builds a notification message for auto-applied task updates.
+Shows per-task field diffs when available (via <code>diffs</code> array on each result),
+falls back to legacy schedule/movedTo format for entries without diffs.
+Limits visible tasks to 5 with overflow line.</p>
 </dd>
 <dt><a href="#sleep">sleep(ms)</a> ⇒ <code>Promise.&lt;void&gt;</code></dt>
 <dd><p>Utility to pause execution for a given duration.</p>
@@ -696,6 +700,15 @@ Used by both normalizer (post-cleaning) and adapter (pre-API).</p>
 <dd><p>Validates and normalizes an array of checklist items.
 Applies structural validation, defaults, and sort order assignment.</p>
 </dd>
+<dt><a href="#buildUndoEntryFromRollbackStep">buildUndoEntryFromRollbackStep(rollbackStep, action)</a> ⇒ <code>Object</code></dt>
+<dd><p>Builds an undo entry from a pipeline rollbackStep and action.
+Maps pipeline rollback types (delete_created, restore_updated, recreate_deleted, uncomplete_task)
+to undo entries that can be persisted via store.addUndoEntry and executed by executeUndoEntry.</p>
+</dd>
+<dt><a href="#buildFreeformReceipt">buildFreeformReceipt(result, [options])</a> ⇒ <code>string</code></dt>
+<dd><p>Builds a transparent receipt from a pipeline result for freeform task mutations.
+Shows per-action type with title, field diffs for updates, and skipped-action warnings.</p>
+</dd>
 <dt><a href="#isFollowUpMessage">isFollowUpMessage(text)</a> ⇒ <code>boolean</code></dt>
 <dd><p>Detects if a freeform message is likely a follow-up referring to a recent task.</p>
 </dd>
@@ -739,6 +752,9 @@ Mode transitions are explicit — never changes without user action or auto-expi
 </dd>
 <dt><a href="#updateDeferredPipelineIntent">updateDeferredPipelineIntent(updatedEntry)</a></dt>
 <dd><p>Update a deferred pipeline intent in place (e.g., increment retry count).</p>
+</dd>
+<dt><a href="#getUndoBatch">getUndoBatch(batchId)</a> ⇒ <code>Array.&lt;Object&gt;</code></dt>
+<dd><p>Get all undo entries sharing a batchId.</p>
 </dd>
 <dt><a href="#getLastAutoApplyBatch">getLastAutoApplyBatch()</a> ⇒ <code>Array.&lt;Object&gt;</code></dt>
 <dd><p>Get all undo entries from the most recent auto-apply batch.
@@ -833,6 +849,10 @@ Returns a candidate object or null if no meaningful match.</p>
 <dd><p>Build a terse clarification prompt from a clarification result.
 Returns a string suitable for user-facing clarification.</p>
 </dd>
+<dt><a href="#areEquivalentDueDates">areEquivalentDueDates(expected, actual)</a> ⇒ <code>boolean</code></dt>
+<dd><p>Compares TickTick due-date values by instant, not string offset.
+TickTick may return UTC for a date sent with a local timezone offset.</p>
+</dd>
 <dt><a href="#buildErrorText">buildErrorText(error)</a> ⇒ <code>string</code></dt>
 <dd><p>Extracts and concatenates error message chunks from an error object or API response.</p>
 </dd>
@@ -870,6 +890,14 @@ Never throws — returns { mod, source, path } with null mod on complete failure
 </dd>
 <dt><a href="#formatPipelineFailure">formatPipelineFailure(result, [options])</a> ⇒ <code>string</code></dt>
 <dd><p>Format a pipeline error result for user-facing display.</p>
+</dd>
+<dt><a href="#executeUndoEntry">executeUndoEntry(entry, adapter)</a> ⇒ <code>Promise.&lt;{reverted: Array.&lt;string&gt;}&gt;</code></dt>
+<dd><p>Execute a single undo entry against the TickTick adapter.
+Handles all rollback types: delete_created, restore_updated, recreate_deleted, uncomplete_task,
+plus legacy update-based restore for pre-rollback entries.</p>
+</dd>
+<dt><a href="#executeUndoBatch">executeUndoBatch(entries, adapter)</a> ⇒ <code>Promise.&lt;{reverted: Array.&lt;string&gt;, successful: Array.&lt;Object&gt;}&gt;</code></dt>
+<dd><p>Execute a batch of undo entries, tolerating individual failures.</p>
 </dd>
 </dl>
 
@@ -1457,13 +1485,6 @@ Maps mutation action types to user-facing labels.
 Centralized to prevent duplication across pipeline and shared-utils.
 
 **Kind**: global constant  
-<a name="MATCH_TYPE_LABELS"></a>
-
-## MATCH\_TYPE\_LABELS : <code>Object.&lt;string, string&gt;</code>
-Maps resolver match types to user-facing descriptions.
-Centralized to prevent duplication across pipeline and shared-utils.
-
-**Kind**: global constant  
 <a name="MUTATION_CONFIRMATION_TTL_MS"></a>
 
 ## MUTATION\_CONFIRMATION\_TTL\_MS
@@ -1875,12 +1896,11 @@ Transformations applied in order:
 3. Strip priority markers (e.g., "URGENT: ", "Critical - ")
 4. Strip date references (e.g., "tomorrow", "next week")
 5. Strip leading articles ("A", "An", "The")
-6. Ensure verb-led (add "Do" prefix if no verb detected)
-7. Capitalize first letter (sentence case)
-8. Truncate to maxLength at word boundary with ellipsis
+6. Capitalize first letter (sentence case)
+7. Truncate to maxLength at word boundary with ellipsis
 
 **Kind**: global function  
-**Returns**: <code>string</code> - Cleaned, verb-led title  
+**Returns**: <code>string</code> - Cleaned title  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -2805,6 +2825,33 @@ Builds an undo entry for the state store to allow reverting mutations.
 | [params.applied] | <code>Object</code> | <code>{}</code> | The specific fields applied during mutation |
 | [params.appliedTaskId] | <code>string</code> \| <code>null</code> | <code>null</code> | The ID of the task after mutation (if different) |
 
+<a name="buildFieldDiff"></a>
+
+## buildFieldDiff(snapshot, action, [options]) ⇒ <code>Array.&lt;{field:string, label:string, oldValue:string, newValue:string, emoji:string}&gt;</code>
+Builds user-facing old-to-new field diffs for task mutations.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| snapshot | <code>Object</code> \| <code>null</code> |  | Task state before mutation |
+| action | <code>Object</code> \| <code>null</code> |  | Normalized action or proposed mutation |
+| [options] | <code>Object</code> |  |  |
+| [options.projects] | <code>Array.&lt;Object&gt;</code> | <code>[]</code> | Known TickTick projects for names |
+
+<a name="formatFieldDiff"></a>
+
+## formatFieldDiff(diffs, [options]) ⇒ <code>string</code>
+Formats task field diffs into compact Telegram-safe lines.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| diffs | <code>Array.&lt;Object&gt;</code> |  | Output from buildFieldDiff |
+| [options] | <code>Object</code> |  |  |
+| [options.urgentMode] | <code>boolean</code> | <code>false</code> | Use shorter labels |
+
 <a name="userNow"></a>
 
 ## userNow() ⇒ <code>Object</code>
@@ -2989,15 +3036,20 @@ Maps a stored pending record back to an analysis object shape.
 
 <a name="buildAutoApplyNotification"></a>
 
-## buildAutoApplyNotification(results) ⇒ <code>string</code> \| <code>null</code>
+## buildAutoApplyNotification(results, [options]) ⇒ <code>string</code> \| <code>null</code>
 Builds a notification message for auto-applied task updates.
+Shows per-task field diffs when available (via `diffs` array on each result),
+falls back to legacy schedule/movedTo format for entries without diffs.
+Limits visible tasks to 5 with overflow line.
 
 **Kind**: global function  
 **Returns**: <code>string</code> \| <code>null</code> - Formatted notification or null if no results  
 
-| Param | Type | Description |
-| --- | --- | --- |
-| results | <code>Array.&lt;Object&gt;</code> | List of auto-applied results |
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| results | <code>Array.&lt;Object&gt;</code> |  | List of auto-applied results |
+| [options] | <code>Object</code> |  |  |
+| [options.hasSkippedActions] | <code>boolean</code> | <code>false</code> | Whether destructive actions were skipped |
 
 <a name="sleep"></a>
 
@@ -3246,6 +3298,36 @@ Applies structural validation, defaults, and sort order assignment.
 | [options.cleanTitles] | <code>boolean</code> | <code>false</code> | Whether to apply text cleaning (normalizer's concern) |
 | [options.titleCleaner] | <code>function</code> | <code></code> | Custom title cleaner function |
 
+<a name="buildUndoEntryFromRollbackStep"></a>
+
+## buildUndoEntryFromRollbackStep(rollbackStep, action) ⇒ <code>Object</code>
+Builds an undo entry from a pipeline rollbackStep and action.
+Maps pipeline rollback types (delete_created, restore_updated, recreate_deleted, uncomplete_task)
+to undo entries that can be persisted via store.addUndoEntry and executed by executeUndoEntry.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - Undo entry object with rollbackType, snapshot, batchId-compatible fields  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| rollbackStep | <code>Object</code> | Pipeline rollback step from result.results[].rollbackStep |
+| action | <code>Object</code> | The normalized action that was executed |
+
+<a name="buildFreeformReceipt"></a>
+
+## buildFreeformReceipt(result, [options]) ⇒ <code>string</code>
+Builds a transparent receipt from a pipeline result for freeform task mutations.
+Shows per-action type with title, field diffs for updates, and skipped-action warnings.
+
+**Kind**: global function  
+**Returns**: <code>string</code> - Formatted receipt text (Markdown)  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| result | <code>Object</code> |  | Pipeline result object with results[] and skippedActions[] |
+| [options] | <code>Object</code> |  |  |
+| [options.projects] | <code>Array.&lt;Object&gt;</code> | <code>[]</code> | Known TickTick projects for name resolution in diffs |
+
 <a name="isFollowUpMessage"></a>
 
 ## isFollowUpMessage(text) ⇒ <code>boolean</code>
@@ -3390,6 +3472,18 @@ Update a deferred pipeline intent in place (e.g., increment retry count).
 | Param | Type | Description |
 | --- | --- | --- |
 | updatedEntry | <code>Object</code> | Entry with updated fields (must have id) |
+
+<a name="getUndoBatch"></a>
+
+## getUndoBatch(batchId) ⇒ <code>Array.&lt;Object&gt;</code>
+Get all undo entries sharing a batchId.
+
+**Kind**: global function  
+**Returns**: <code>Array.&lt;Object&gt;</code> - Array of undo entries with matching batchId  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| batchId | <code>string</code> | The batch identifier |
 
 <a name="getLastAutoApplyBatch"></a>
 
@@ -3778,6 +3872,19 @@ Returns a string suitable for user-facing clarification.
 | --- | --- | --- |
 | result | <code>object</code> | A resolver result with status 'clarification' |
 
+<a name="areEquivalentDueDates"></a>
+
+## areEquivalentDueDates(expected, actual) ⇒ <code>boolean</code>
+Compares TickTick due-date values by instant, not string offset.
+TickTick may return UTC for a date sent with a local timezone offset.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| expected | <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+| actual | <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+
 <a name="buildErrorText"></a>
 
 ## buildErrorText(error) ⇒ <code>string</code>
@@ -3928,4 +4035,29 @@ Format a pipeline error result for user-facing display.
 | result | <code>Object</code> |  | Pipeline error result with `confirmationText`, `isDevMode`, `diagnostics` |
 | [options] | <code>Object</code> |  |  |
 | [options.compact] | <code>boolean</code> | <code>false</code> | When true, collapse newlines to single-line separators |
+
+<a name="executeUndoEntry"></a>
+
+## executeUndoEntry(entry, adapter) ⇒ <code>Promise.&lt;{reverted: Array.&lt;string&gt;}&gt;</code>
+Execute a single undo entry against the TickTick adapter.Handles all rollback types: delete_created, restore_updated, recreate_deleted, uncomplete_task,plus legacy update-based restore for pre-rollback entries.
+
+**Kind**: global function  
+**Returns**: <code>Promise.&lt;{reverted: Array.&lt;string&gt;}&gt;</code> - Array of reverted task titles  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| entry | <code>Object</code> | Undo entry from the store |
+| adapter | [<code>TickTickAdapter</code>](#TickTickAdapter) | TickTick adapter instance |
+
+<a name="executeUndoBatch"></a>
+
+## executeUndoBatch(entries, adapter) ⇒ <code>Promise.&lt;{reverted: Array.&lt;string&gt;, successful: Array.&lt;Object&gt;}&gt;</code>
+Execute a batch of undo entries, tolerating individual failures.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| entries | <code>Array.&lt;Object&gt;</code> | Undo entries to execute |
+| adapter | [<code>TickTickAdapter</code>](#TickTickAdapter) | TickTick adapter instance |
 

@@ -166,6 +166,127 @@ export function buildUndoEntry({ source, action, applied = {}, appliedTaskId = n
     };
 }
 
+// ─── Transparent Field Diffs ─────────────────────────────────
+
+const FIELD_DIFF_MAX_VALUE_LENGTH = 35;
+
+function normalizeComparableValue(value) {
+    if (value === undefined || value === null || value === '') return null;
+    return value;
+}
+
+function truncateDiffValue(value, maxLength = FIELD_DIFF_MAX_VALUE_LENGTH) {
+    const text = value === undefined || value === null || value === '' ? 'None' : String(value);
+    return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
+}
+
+function projectNameFor(projectId, projects = [], fallback = null) {
+    if (!projectId) return fallback || 'None';
+    return projects.find((project) => project?.id === projectId)?.name || fallback || projectId;
+}
+
+function priorityLabelFor(priority) {
+    const normalized = Number(priority);
+    if (Number.isNaN(normalized)) return priority === null || priority === undefined ? 'None' : String(priority);
+    return PRIORITY_LABEL[normalized] || String(priority);
+}
+
+function priorityEmojiFor(priority) {
+    const normalized = Number(priority);
+    return PRIORITY_EMOJI[normalized] || '⚪';
+}
+
+function dateLabelFor(value) {
+    if (!value) return 'None';
+    if (typeof value === 'string' && scheduleLabel(value)) return scheduleLabel(value);
+    const timestamp = Date.parse(value);
+    if (Number.isNaN(timestamp)) return String(value);
+    return new Date(timestamp).toLocaleDateString('en-IE', {
+        timeZone: USER_TZ,
+        weekday: 'short',
+        day: 'numeric',
+        month: 'short',
+    });
+}
+
+function pushDiff(diffs, field, label, oldValue, newValue, emoji) {
+    if (normalizeComparableValue(oldValue) === normalizeComparableValue(newValue)) return;
+    diffs.push({
+        field,
+        label,
+        oldValue: truncateDiffValue(oldValue),
+        newValue: truncateDiffValue(newValue),
+        emoji,
+    });
+}
+
+/**
+ * Builds user-facing old-to-new field diffs for task mutations.
+ * @param {Object|null} snapshot - Task state before mutation
+ * @param {Object|null} action - Normalized action or proposed mutation
+ * @param {Object} [options]
+ * @param {Array<Object>} [options.projects=[]] - Known TickTick projects for names
+ * @returns {Array<{field:string,label:string,oldValue:string,newValue:string,emoji:string}>}
+ */
+export function buildFieldDiff(snapshot = {}, action = {}, { projects = [] } = {}) {
+    const source = snapshot || {};
+    const change = action || {};
+    const diffs = [];
+
+    pushDiff(diffs, 'title', 'Title', source.title, change.title, '');
+
+    const oldProjectId = source.projectId || source.originalProjectId || null;
+    const newProjectId = change.projectId || change.appliedProjectId || null;
+    if (newProjectId && oldProjectId !== newProjectId) {
+        pushDiff(
+            diffs,
+            'project',
+            'Project',
+            projectNameFor(oldProjectId, projects, source.projectName || source.originalProjectName || null),
+            projectNameFor(newProjectId, projects, change.projectName || change.appliedProject || null),
+            '📁',
+        );
+    }
+
+    if (change.priority !== undefined && normalizeComparableValue(source.priority) !== normalizeComparableValue(change.priority)) {
+        pushDiff(diffs, 'priority', 'Priority', priorityLabelFor(source.priority), priorityLabelFor(change.priority), priorityEmojiFor(change.priority));
+    }
+
+    const oldDue = source.dueDate || source.schedule || source.originalSchedule || null;
+    const newDue = change.dueDate || change.schedule || change.appliedSchedule || null;
+    if (newDue && normalizeComparableValue(oldDue) !== normalizeComparableValue(newDue)) {
+        pushDiff(diffs, 'due', 'Due', dateLabelFor(oldDue), dateLabelFor(newDue), '📅');
+    }
+
+    if (change.content !== undefined && normalizeComparableValue(source.content) !== normalizeComparableValue(change.content)) {
+        pushDiff(diffs, 'content', 'Content', source.content || 'None', change.content || 'None', '📝');
+    }
+
+    if (change.repeatFlag !== undefined && normalizeComparableValue(source.repeatFlag) !== normalizeComparableValue(change.repeatFlag)) {
+        pushDiff(diffs, 'repeat', 'Repeat', source.repeatFlag || 'None', change.repeatFlag || 'None', '🔄');
+    }
+
+    return diffs;
+}
+
+/**
+ * Formats task field diffs into compact Telegram-safe lines.
+ * @param {Array<Object>} diffs - Output from buildFieldDiff
+ * @param {Object} [options]
+ * @param {boolean} [options.urgentMode=false] - Use shorter labels
+ * @returns {string}
+ */
+export function formatFieldDiff(diffs = [], { urgentMode = false } = {}) {
+    if (!Array.isArray(diffs) || diffs.length === 0) return '';
+    return diffs
+        .map((diff) => {
+            const emoji = diff.emoji ? `${diff.emoji} ` : '';
+            const label = urgentMode ? '' : `${diff.label}  `;
+            return `${emoji}${label}${truncateDiffValue(diff.oldValue)} → ${truncateDiffValue(diff.newValue)}`.trim();
+        })
+        .join('\n');
+}
+
 // ─── Timezone Helpers (single source of truth) ──────────────
 // ALL date formatting in the entire app must use these helpers.
 // Never call new Date().toLocaleDateString() without passing USER_TZ.
@@ -406,44 +527,77 @@ export function buildTickTickUpdate(data, options = {}) {
 export function buildTaskCard(task, analysis) {
     const lines = [];
 
-    // Header — punchy project and original vs suggested
+    // Header
     lines.push(`**${task.projectName || 'Inbox'}**`);
 
+    // Title: Was / Will be when changed
     if (analysis.improved_title && analysis.improved_title !== task.title) {
-        lines.push(`_Was: "${task.title}"_`);
-        lines.push(`**${analysis.improved_title}**`);
+        lines.push(`Was: "${task.title}"`);
+        lines.push(`Will be: "${analysis.improved_title}"`);
     } else {
         lines.push(`**${task.title}**`);
     }
 
-    // Key decisions (pipe-separated on one line)
-    const decisions = [];
-    decisions.push(`${analysis.priority_emoji || '🟡'} ${analysis.priority}`);
-    const schedLabel = scheduleLabel(analysis.suggested_schedule);
-    if (schedLabel) decisions.push(schedLabel);
+    // Changes: field diff list (only changed fields)
+    const changes = [];
+
+    if (task.priority !== undefined && analysis.priority) {
+        const originalPriorityLabel = PRIORITY_LABEL[task.priority] || 'None';
+        const newPriorityNumber = PRIORITY_MAP[analysis.priority];
+        if (newPriorityNumber !== undefined && newPriorityNumber !== task.priority) {
+            const newPriorityLabel = PRIORITY_LABEL[newPriorityNumber] || analysis.priority;
+            changes.push(`${analysis.priority_emoji || '⚪'} Priority  ${originalPriorityLabel} → ${newPriorityLabel}`);
+        }
+    }
+
     if (analysis.suggested_project && analysis.suggested_project !== (task.projectName || 'Inbox')) {
-        decisions.push(`→ ${analysis.suggested_project}`);
-    }
-    if (analysis.needle_mover !== undefined) {
-        decisions.push(analysis.needle_mover ? 'High Leverage' : 'Routine');
+        changes.push(`📁 Project  ${task.projectName || 'Inbox'} → ${analysis.suggested_project}`);
     }
 
-    lines.push(decisions.join('  |  '));
+    if (analysis.suggested_schedule && analysis.suggested_schedule !== (task.dueDate || null)) {
+        changes.push(`📅 Due  ${dateLabelFor(task.dueDate)} → ${dateLabelFor(analysis.suggested_schedule)}`);
+    }
 
-    // Supporting detail (only if present)
-    if (analysis.analysis) lines.push(`*Why:* ${analysis.analysis}`);
-    if (analysis.description) lines.push(`📝 ${analysis.description}`);
+    const hasNewContent = (analysis.description || '') + (analysis.sub_steps?.join('') || '');
+    const hasOldContent = task.content || '';
+    if (hasNewContent && hasNewContent !== hasOldContent) {
+        changes.push(`📝 Content  ${task.content ? 'Updated' : 'Added'}`);
+    }
 
+    if (changes.length > 0) {
+        lines.push(...changes);
+    }
+
+    // Why / rationale
+    if (analysis.analysis) {
+        lines.push(`*Why:* ${analysis.analysis}`);
+    }
+
+    // Description
+    if (analysis.description) {
+        lines.push(`📝 ${analysis.description}`);
+    }
+
+    // Action steps
     if (analysis.sub_steps?.length > 0) {
-        lines.push('**Action Steps:**');
-        analysis.sub_steps.slice(0, 4).forEach((step, i) => {
+        lines.push('📋 Action Steps:');
+        analysis.sub_steps.slice(0, 3).forEach((step, i) => {
             lines.push(`  ${i + 1}. ${step}`);
         });
-        if (analysis.sub_steps.length > 4) lines.push(`  ...+${analysis.sub_steps.length - 4} more`);
+        if (analysis.sub_steps.length > 3) {
+            lines.push(`  …+${analysis.sub_steps.length - 3} more`);
+        }
     }
 
-    if (analysis.success_criteria) lines.push(`**Done when:** ${analysis.success_criteria}`);
-    if (analysis.callout) lines.push(`**Coach:** *${analysis.callout}*`);
+    // Success criteria
+    if (analysis.success_criteria) {
+        lines.push(`🎯 Done when: ${analysis.success_criteria}`);
+    }
+
+    // Callout
+    if (analysis.callout) {
+        lines.push(`💬 ${analysis.callout}`);
+    }
 
     return truncateMessage(lines.join('\n'));
 }
@@ -459,28 +613,29 @@ export function buildTaskCardFromAction(task, action, projects = []) {
     const lines = [];
 
     if (action.type === 'complete') {
-        lines.push(`**Mark as done:** "${task.title}"`);
-        if (action.title && action.title !== task.title) {
-            lines.push(`**${action.title}**`);
+        lines.push(`✅ Mark as done: "${task.title}"`);
+        const context = [];
+        context.push(`${PRIORITY_EMOJI[task.priority] || '⚪'} ${PRIORITY_LABEL[task.priority] || 'unknown'}`);
+        context.push(`📁 ${task.projectName || 'Inbox'}`);
+        if (task.dueDate) {
+            context.push(`📅 ${dateLabelFor(task.dueDate)}`);
         }
-        if (action.priority !== undefined && action.priority !== task.priority) {
-            lines.push(`${PRIORITY_EMOJI[action.priority] || '⚪'} ${PRIORITY_LABEL[action.priority] || 'unknown'}`);
-        }
-        if (action.projectId && action.projectId !== task.projectId) {
-            const project = projects.find(p => p.id === action.projectId);
-            lines.push(`→ ${project?.name || 'Inbox'}`);
-        }
-        if (action.dueDate) {
-            const schedLabel = action.dueDate.includes('T') || action.dueDate.includes('-')
-                ? userLocaleString(action.dueDate)
-                : scheduleLabel(action.dueDate);
-            if (schedLabel) lines.push(schedLabel);
-        }
+        lines.push(context.join('  |  '));
         return truncateMessage(lines.join('\n'));
     }
 
     if (action.type === 'delete') {
-        lines.push(`🗑️ **Suggested deletion:** "${task.title}"`);
+        lines.push(`🗑️ Suggested deletion: "${task.title}"`);
+        lines.push('');
+        lines.push('⚠️ This will permanently remove the task from TickTick.');
+        lines.push('');
+        const context = [];
+        context.push(`${PRIORITY_EMOJI[task.priority] || '⚪'} ${PRIORITY_LABEL[task.priority] || 'unknown'}`);
+        context.push(`📁 ${task.projectName || 'Inbox'}`);
+        if (task.dueDate) {
+            context.push(`📅 ${dateLabelFor(task.dueDate)}`);
+        }
+        lines.push(context.join('  |  '));
         return truncateMessage(lines.join('\n'));
     }
 
@@ -488,32 +643,22 @@ export function buildTaskCardFromAction(task, action, projects = []) {
     lines.push(`**${task.projectName || 'Inbox'}**`);
 
     if (action.title && action.title !== task.title) {
-        lines.push(`_Was: "${task.title}"_`);
-        lines.push(`**${action.title}**`);
+        lines.push(`Was: "${task.title}"`);
+        lines.push(`Will be: "${action.title}"`);
     } else {
         lines.push(`**${task.title}**`);
     }
 
-    const decisions = [];
-    const effectivePriority = action.priority ?? task.priority;
-    decisions.push(`${PRIORITY_EMOJI[effectivePriority] || '⚪'} ${PRIORITY_LABEL[effectivePriority] || 'unknown'}`);
-
-    if (action.dueDate) {
-        const schedLabel = action.dueDate.includes('T') || action.dueDate.includes('-')
-            ? userLocaleString(action.dueDate)
-            : scheduleLabel(action.dueDate);
-        if (schedLabel) decisions.push(schedLabel);
+    // Changes using buildFieldDiff
+    const diffs = buildFieldDiff(task, action, { projects });
+    const diffText = formatFieldDiff(diffs);
+    if (diffText) {
+        lines.push(diffText);
     }
 
-    if (action.projectId && action.projectId !== task.projectId) {
-        const project = projects.find(p => p.id === action.projectId);
-        decisions.push(`→ ${project?.name || 'Inbox'}`);
-    }
-
-    lines.push(decisions.join('  |  '));
-
-    if (action.content) {
-        lines.push(action.content);
+    // Content change indicator (don't dump full content)
+    if (action.content && action.content !== task.content) {
+        lines.push(`📝 Content ${task.content ? 'Updated' : 'Added'}`);
     }
 
     return truncateMessage(lines.join('\n'));
@@ -563,6 +708,7 @@ export function buildPendingData(task, analysis, projects = []) {
         originalTitle: task.title,
         originalContent: task.content || '',
         originalPriority: task.priority,
+        originalDueDate: task.dueDate || null,
         improvedTitle: analysis.improved_title,
         improvedContent: buildImprovedContent(analysis),
         suggestedPriority: PRIORITY_MAP[analysis.priority] ?? task.priority,
@@ -601,6 +747,7 @@ export function buildPendingDataFromAction(task, action, projects = []) {
         originalContent: task.content || '',
         originalPriority: task.priority,
         originalProjectId: task.projectId,
+        originalDueDate: task.dueDate || null,
         projectId: task.projectId,
         projectName: task.projectName || 'Inbox',
 
@@ -649,21 +796,46 @@ export function pendingToAnalysis(data) {
 
 /**
  * Builds a notification message for auto-applied task updates.
+ * Shows per-task field diffs when available (via `diffs` array on each result),
+ * falls back to legacy schedule/movedTo format for entries without diffs.
+ * Limits visible tasks to 5 with overflow line.
  * @param {Array<Object>} results - List of auto-applied results
+ * @param {Object} [options]
+ * @param {boolean} [options.hasSkippedActions=false] - Whether destructive actions were skipped
  * @returns {string|null} Formatted notification or null if no results
  */
-export function buildAutoApplyNotification(results) {
+export function buildAutoApplyNotification(results, { hasSkippedActions = false } = {}) {
     if (!results || results.length === 0) return null;
+
+    const MAX_VISIBLE = 5;
+    const total = results.length;
+    const shown = results.slice(0, MAX_VISIBLE);
+
+    const skipped = hasSkippedActions ? ' ⚠️ Skipped destructive action(s)' : '';
     const lines = [
-        `**${results.length} task(s) organized while you were away:**`,
+        `**${total} task(s) organized while you were away${skipped}:**`,
     ];
-    for (const r of results) {
-        const parts = [];
-        if (r.schedule) parts.push(`due ${r.schedule}`);
-        if (r.movedTo) parts.push(`moved to ${r.movedTo}`);
-        const detail = parts.length > 0 ? ` → ${parts.join(', ')}` : '';
-        lines.push(`• "${r.title}"${detail}`);
+
+    for (const r of shown) {
+        if (r.diffs && r.diffs.length > 0) {
+            lines.push(`• "${r.title}"`);
+            for (const d of r.diffs) {
+                const emoji = d.emoji ? `${d.emoji} ` : '';
+                lines.push(`  ${emoji}${d.label}: ${d.oldValue} → ${d.newValue}`);
+            }
+        } else {
+            const parts = [];
+            if (r.schedule) parts.push(`due ${dateLabelFor(r.schedule)}`);
+            if (r.movedTo) parts.push(`moved to ${r.movedTo}`);
+            const detail = parts.length > 0 ? ` → ${parts.join(', ')}` : '';
+            lines.push(`• "${r.title}"${detail}`);
+        }
     }
+
+    if (total > MAX_VISIBLE) {
+        lines.push(`...and ${total - MAX_VISIBLE} more`);
+    }
+
     lines.push(`*Run /undo if anything looks off.*`);
     return lines.join('\n');
 }
@@ -1022,6 +1194,98 @@ export function validateChecklistItems(items, options = {}) {
 }
 
 
+
+// ─── Undo Entry from RollbackStep ────────────────────────────
+
+/**
+ * Builds an undo entry from a pipeline rollbackStep and action.
+ * Maps pipeline rollback types (delete_created, restore_updated, recreate_deleted, uncomplete_task)
+ * to undo entries that can be persisted via store.addUndoEntry and executed by executeUndoEntry.
+ *
+ * @param {Object} rollbackStep - Pipeline rollback step from result.results[].rollbackStep
+ * @param {Object} action - The normalized action that was executed
+ * @returns {Object} Undo entry object with rollbackType, snapshot, batchId-compatible fields
+ */
+export function buildUndoEntryFromRollbackStep(rollbackStep, action) {
+    const entry = {
+        taskId: rollbackStep.targetTaskId,
+        originalTaskId: rollbackStep.targetTaskId,
+        rollbackType: rollbackStep.type,
+        originalTitle: action?.title || rollbackStep.targetTaskId || 'Task',
+        originalContent: action?.content || '',
+        timestamp: new Date().toISOString(),
+        targetProjectId: rollbackStep.targetProjectId || null,
+    };
+
+    if (rollbackStep.payload?.snapshot) {
+        const snap = rollbackStep.payload.snapshot;
+        entry.snapshot = snap;
+        entry.originalTitle = snap.title || entry.originalTitle || rollbackStep.targetTaskId || 'Task';
+        entry.originalContent = snap.content || '';
+        entry.originalPriority = snap.priority;
+        entry.originalProjectId = snap.projectId;
+    }
+
+    return entry;
+}
+
+// ─── Freeform Receipt Builder ──────────────────────────────────
+
+/**
+ * Builds a transparent receipt from a pipeline result for freeform task mutations.
+ * Shows per-action type with title, field diffs for updates, and skipped-action warnings.
+ *
+ * @param {Object} result - Pipeline result object with results[] and skippedActions[]
+ * @param {Object} [options]
+ * @param {Array<Object>} [options.projects=[]] - Known TickTick projects for name resolution in diffs
+ * @returns {string} Formatted receipt text (Markdown)
+ */
+export function buildFreeformReceipt(result, { projects = [] } = {}) {
+    const lines = [];
+    const records = result.results || [];
+    const skippedActions = result.skippedActions || [];
+
+    for (const record of records) {
+        if (record.status !== 'succeeded') continue;
+        const action = record.action;
+        const rollbackStep = record.rollbackStep;
+        const snapshot = rollbackStep?.payload?.snapshot;
+
+        if (action.type === 'create') {
+            lines.push(`✅ **Created:** "${action.title || 'Task'}"`);
+            const checklistCount = Array.isArray(action.checklistItems) ? action.checklistItems.length : 0;
+            if (checklistCount > 0) {
+                lines.push(`  📋 ${checklistCount} item(s)`);
+            }
+        } else if (action.type === 'update') {
+            const oldTitle = snapshot?.title || 'Task';
+            const newTitle = action.title;
+            if (newTitle && newTitle !== oldTitle) {
+                lines.push(`✅ **Updated:** "${oldTitle}" → "${newTitle}"`);
+            } else {
+                lines.push(`✅ **Updated:** "${oldTitle}"`);
+            }
+            if (snapshot) {
+                const diffs = buildFieldDiff(snapshot, action, { projects });
+                const diffText = formatFieldDiff(diffs);
+                if (diffText) {
+                    lines.push(diffText);
+                }
+            }
+        } else if (action.type === 'complete') {
+            lines.push(`✅ **Completed:** "${snapshot?.title || action.title || 'Task'}"`);
+        } else if (action.type === 'delete') {
+            lines.push(`🗑️ **Deleted:** "${snapshot?.title || action.title || 'Task'}"`);
+        }
+    }
+
+    if (skippedActions.length > 0) {
+        const labels = skippedActions.map(a => a.type).join(', ');
+        lines.push(`⚠️ **Skipped:** ${labels} (blocked in this mode)`);
+    }
+
+    return lines.join('\n');
+}
 
 /**
  * Detects if a freeform message is likely a follow-up referring to a recent task.

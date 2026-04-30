@@ -1186,6 +1186,16 @@ export async function removeLastUndoEntry() {
 }
 
 /**
+ * Get all undo entries sharing a batchId.
+ * @param {string} batchId - The batch identifier
+ * @returns {Array<Object>} Array of undo entries with matching batchId
+ */
+export function getUndoBatch(batchId) {
+    if (!batchId) return [];
+    return state.undoLog.filter(e => e.batchId === batchId);
+}
+
+/**
  * Get all undo entries from the most recent auto-apply batch.
  * Groups by batchId; if no batchId, falls back to the single most recent auto-apply entry.
  * @returns {Array<Object>} Array of undo entries from the same batch
