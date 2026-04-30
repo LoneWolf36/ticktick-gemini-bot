@@ -6,8 +6,8 @@ import {
     buildTickTickUpdate, isAuthorized, buildUndoEntry, PRIORITY_LABEL,
     editWithMarkdown, truncateMessage, buildTaskCard, pendingToAnalysis,
     replyWithMarkdown, sleep,
-    executeUndoBatch,
-} from './utils.js';
+} from '../services/shared-utils.js';
+import { executeUndoBatch } from '../services/undo-executor.js';
 
 // Pending mutation clarification expiry: 10 minutes
 const MUTATION_CLARIFICATION_TTL_MS = 10 * 60 * 1000;

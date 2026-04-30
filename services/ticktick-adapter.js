@@ -278,20 +278,6 @@ export class TickTickAdapter {
     }
 
     /**
-     * Validates and sanitizes a checklist item.
-     * Delegates to shared validateChecklistItem for consistency.
-     * @param {Object} item - Checklist item to validate
-     * @param {string} item.title - Item title (required, non-empty string)
-     * @param {number} [item.status] - Item status (default: 0 for incomplete)
-     * @param {number} [item.sortOrder] - Item sort order (default: auto-assigned)
-     * @returns {Object|null} Validated checklist item with {title, status, sortOrder} or null if invalid
-     * @private
-     */
-    _validateChecklistItem(item) {
-        return validateChecklistItem(item);
-    }
-
-    /**
      * Validates and maps checklist items to TickTick payload format.
      * @param {Array<Object>|null|undefined} items - Raw checklist items
      * @returns {Array<Object>|null} Mapped items or null if empty/invalid
@@ -307,7 +293,7 @@ export class TickTickAdapter {
         let sortOrder = 0;
 
         for (const item of items) {
-            const validated = this._validateChecklistItem(item);
+            const validated = validateChecklistItem(item);
             if (validated) {
                 validated.sortOrder = sortOrder++;
                 validItems.push(validated);

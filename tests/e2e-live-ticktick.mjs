@@ -20,7 +20,7 @@ import { GeminiAnalyzer } from '../services/gemini.js';
 import { TickTickClient } from '../services/ticktick.js';
 import { TickTickAdapter } from '../services/ticktick-adapter.js';
 import * as store from '../services/store.js';
-import { scheduleToDateTime } from '../bot/utils.js';
+import { scheduleToDateTime } from '../services/shared-utils.js';
 
 const CHAT_ID = Number(process.env.TELEGRAM_CHAT_ID || 0);
 const STORE_PATH = path.resolve('data/store.json');

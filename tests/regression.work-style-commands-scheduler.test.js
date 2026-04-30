@@ -52,9 +52,15 @@ import {
     buildDailyCloseSummaryFixture,
 } from './helpers/regression-fixtures.js';
 
-test('default timezone remains Europe/Dublin when USER_TIMEZONE is unset', () => {
-  const source = readFileSync('services/shared-utils.js', 'utf8');
-  assert.match(source, /USER_TZ\s*=\s*process\.env\.USER_TIMEZONE\s*\|\|\s*'Europe\/Dublin'/);
+test('default timezone remains Europe/Dublin when USER_TIMEZONE is unset', async () => {
+  // Behavioral test: USER_TZ from shared-utils must match the canonical getUserTimezone()
+  const { USER_TZ: sharedUserTz } = await import('../services/shared-utils.js');
+  const { getUserTimezone } = await import('../services/user-settings.js');
+  assert.equal(sharedUserTz, getUserTimezone());
+  // When USER_TIMEZONE env is absent, the default fallback is Europe/Dublin
+  if (!process.env.USER_TIMEZONE) {
+    assert.equal(sharedUserTz, 'Europe/Dublin');
+  }
 });
 
 test('store documents the work-style mode Redis key schema', () => {

@@ -692,7 +692,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
             }
         }
 
-        if (!store.tryAcquireIntakeLock()) {
+        if (!store.tryAcquireIntakeLock({ owner: 'scheduler:poll' })) {
             console.log('⏸️  Skipping poll - intake lock held by an active operation.');
             return;
         }

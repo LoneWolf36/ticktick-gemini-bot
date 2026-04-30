@@ -18,7 +18,7 @@ import { registerCommands } from '../bot/commands.js';
 import { registerCallbacks } from '../bot/callbacks.js';
 import { GeminiAnalyzer } from '../services/gemini.js';
 import * as store from '../services/store.js';
-import { scheduleToDateTime } from '../bot/utils.js';
+import { scheduleToDateTime } from '../services/shared-utils.js';
 
 const CHAT_ID = Number(process.env.TELEGRAM_CHAT_ID || 738158868);
 const PREFIX = `E2E-${Date.now()}`;

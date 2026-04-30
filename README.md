@@ -230,17 +230,30 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 ├── bot/
 │   ├── index.js                 # Bot factory
 │   ├── commands.js              # All slash commands + pipeline integration
-│   ├── callbacks.js             # Inline keyboard handlers (approve/skip/drop/reorg)
-│   └── utils.js                 # Card builders, formatters, priority map, schedule logic
+│   └── callbacks.js             # Inline keyboard handlers (approve/skip/drop/reorg)
 ├── services/
-│   ├── intent-extraction.js        # Structured intent extraction (Gemini-backed)
+│   ├── pipeline.js              # Orchestrates: message → intent extraction → normalizer → adapter
+│   ├── intent-extraction.js     # Structured intent extraction (Gemini-backed)
 │   ├── normalizer.js            # Deterministic normalizer (intent → TickTick fields)
 │   ├── ticktick-adapter.js      # TickTick REST API adapter (create/update/complete/delete)
 │   ├── ticktick.js              # Low-level TickTick API client (OAuth2 + CRUD)
 │   ├── gemini.js                # Gemini AI (briefing, weekly, reorg, free-form chat)
-│   ├── pipeline.js              # Orchestrates: message → intent extraction → normalizer → adapter
-│   ├── scheduler.js             # Cron jobs (polling, briefings, digest, store pruning)
+│   ├── scheduler.js             # Cron jobs (polling, briefings, digest, deferred retry)
 │   ├── store.js                 # Redis-backed state store (file fallback for local dev)
+│   ├── schemas.js               # Structured data schemas (intent actions, normalized actions)
+│   ├── shared-utils.js          # Shared utility functions across services
+│   ├── task-resolver.js         # Resolves task references from natural language to TickTick IDs
+│   ├── user-context-loader.js   # Shared loader for gitignored/root/Render-secret user_context.js
+│   ├── user-settings.js         # User-level configuration (timezone, preferences)
+│   ├── project-policy.js        # POLICY config normalization and lookup maps
+│   ├── pipeline-context.js      # Structured context through pipeline execution stages
+│   ├── pipeline-observability.js# Pipeline execution metrics and logging
+│   ├── execution-prioritization.js # Leverage-based ranking and priority inference
+│   ├── behavioral-signals.js    # Task event → behavioral signal classification
+│   ├── behavioral-patterns.js   # Signal → behavioral pattern detection
+│   ├── reorg-executor.js        # Reorg action dispatch against TickTick adapter
+│   ├── undo-executor.js         # Undo execution helpers (revert pipeline mutations)
+│   ├── summary-surfaces/        # Briefing, weekly digest, daily close composition
 │   ├── user_context.js          # YOUR personal context (gitignored — create from example)
 │   └── user_context.example.js  # Template to copy from
 ├── context/kits/                # Cavekit domain kits (current source of truth)

@@ -287,22 +287,78 @@ async function save() {
 await load();
 
 // ─── Shared Analysis Lock ────────────────────────────────────
-let intakeLock = false;
-export function tryAcquireIntakeLock() {
-    if (intakeLock) return false;
-    intakeLock = true;
+const DEFAULT_INTAKE_LOCK_TTL_MS = 5 * 60 * 1000;
+let intakeLock = null;
+
+/**
+ * Try to acquire the shared TickTick intake lock.
+ *
+ * The lock prevents overlapping poll/scan/review cycles from mutating the same
+ * TickTick intake stream at once. Expired locks self-heal on the next acquire
+ * attempt instead of blocking forever after a crash.
+ *
+ * @param {Object} [options]
+ * @param {string} [options.owner='unknown'] - Human-readable lock owner for diagnostics.
+ * @param {number} [options.ttlMs=300000] - Lock time-to-live in milliseconds.
+ * @param {number} [options.now=Date.now()] - Current timestamp override for tests.
+ * @returns {boolean} True when acquired; false when another unexpired owner holds it.
+ */
+export function tryAcquireIntakeLock({ owner = 'unknown', ttlMs = DEFAULT_INTAKE_LOCK_TTL_MS, now = Date.now() } = {}) {
+    if (intakeLock && intakeLock.expiresAt > now) return false;
+
+    intakeLock = {
+        owner,
+        acquiredAt: now,
+        expiresAt: now + Math.max(1, ttlMs),
+    };
     return true;
 }
+
+/**
+ * Release the shared TickTick intake lock.
+ *
+ * Callers should release only locks they acquired. The lock also expires by TTL
+ * as a defensive fallback for process crashes or interrupted async flows.
+ *
+ * @returns {void}
+ */
 export function releaseIntakeLock() {
-    intakeLock = false;
+    intakeLock = null;
+}
+
+/**
+ * Get diagnostic metadata for the shared TickTick intake lock.
+ *
+ * @param {Object} [options]
+ * @param {number} [options.now=Date.now()] - Current timestamp override for tests.
+ * @returns {{locked: false}|{locked: true, owner: string, acquiredAt: number, expiresAt: number}}
+ */
+export function getIntakeLockStatus({ now = Date.now() } = {}) {
+    if (!intakeLock || intakeLock.expiresAt <= now) return { locked: false };
+
+    return {
+        locked: true,
+        owner: intakeLock.owner,
+        acquiredAt: intakeLock.acquiredAt,
+        expiresAt: intakeLock.expiresAt,
+    };
 }
 
 // ─── Chat ID ─────────────────────────────────────────────────
 
+/**
+ * Get the stored Telegram chat ID.
+ * @returns {number|null} Chat ID or null if not set
+ */
 export function getChatId() {
     return state.chatId;
 }
 
+/**
+ * Persist a Telegram chat ID to the store.
+ * @param {number} id - Telegram chat ID
+ * @returns {Promise<void>}
+ */
 export async function setChatId(id) {
     state.chatId = id;
     await save();
@@ -759,8 +815,28 @@ export async function resolveTask(taskId, status) {
     return state.processedTasks[taskId];
 }
 
+/**
+ * Approve a pending task, marking it as processed.
+ * Delegates to resolveTask with status 'approve'.
+ * @param {string} taskId - Task ID to approve
+ * @returns {Promise<Object|null>} The processed task entry, or null if not pending
+ */
 export async function approveTask(taskId) { return resolveTask(taskId, 'approve'); }
+
+/**
+ * Skip a pending task, marking it as processed without taking action.
+ * Delegates to resolveTask with status 'skip'.
+ * @param {string} taskId - Task ID to skip
+ * @returns {Promise<Object|null>} The processed task entry, or null if not pending
+ */
 export async function skipTask(taskId) { return resolveTask(taskId, 'skip'); }
+
+/**
+ * Drop a pending task, marking it as processed and deprioritized.
+ * Delegates to resolveTask with status 'drop'.
+ * @param {string} taskId - Task ID to drop
+ * @returns {Promise<Object|null>} The processed task entry, or null if not pending
+ */
 export async function dropTask(taskId) { return resolveTask(taskId, 'drop'); }
 
 export async function markTaskProcessed(taskId, data) {
@@ -1251,19 +1327,36 @@ export function getOperationalSnapshot() {
     };
 }
 
+/**
+ * Get the cumulative stats snapshot.
+ * @returns {{ tasksAnalyzed: number, tasksApproved: number, tasksSkipped: number, tasksDropped: number, tasksAutoApplied: number, lastDailyBriefing: string|null, lastWeeklyDigest: string|null }}
+ */
 export function getStats() {
     return state.stats;
 }
 
+/**
+ * Merge partial updates into the cumulative stats.
+ * @param {Object} updates - Partial stats object with fields to update
+ * @returns {Promise<void>}
+ */
 export async function updateStats(updates) {
     Object.assign(state.stats, updates);
     await save();
 }
 
+/**
+ * Get all processed task entries.
+ * @returns {Object.<string, Object>} Map of taskId → processed task entry
+ */
 export function getProcessedTasks() {
     return state.processedTasks;
 }
 
+/**
+ * Count the total number of processed task entries.
+ * @returns {number}
+ */
 export function getProcessedCount() {
     return Object.keys(state.processedTasks).length;
 }

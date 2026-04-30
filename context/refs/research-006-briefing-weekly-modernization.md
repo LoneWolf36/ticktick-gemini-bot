@@ -18,7 +18,7 @@ This research resolves how to modernize `/briefing` and `/weekly` into a shared 
 
 Decision:
 - Introduce one small feature-local folder under `services/` with `index.js`, `briefing-summary.js`, `weekly-summary.js`, and `summary-formatter.js`.
-- Keep modules function-based and reuse existing `services/gemini.js`, `services/execution-prioritization.js`, `bot/utils.js`, and `services/store.js`.
+- Keep modules function-based and reuse existing `services/gemini.js`, `services/execution-prioritization.js`, `services/shared-utils.js`, and `services/store.js`.
 
 Rationale:
 - Current daily and weekly paths live in `services/gemini.js`, `bot/commands.js`, and `services/scheduler.js`, which would become merge hotspots for parallel agents.
@@ -47,7 +47,7 @@ Alternatives considered:
 ### 3. Preserve headers and tone through deterministic formatting rather than prompt mirroring
 
 Decision:
-- Move formatting responsibility into a deterministic renderer that reuses current header and urgent reminder helpers from `bot/utils.js`.
+- Move formatting responsibility into a deterministic renderer that reuses current header and urgent reminder helpers from `services/shared-utils.js`.
 - Treat wording changes as regression-sensitive; keep copy close to current surfaces unless honesty or missing-data fallbacks require explicit notices.
 
 Rationale:

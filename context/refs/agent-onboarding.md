@@ -27,13 +27,14 @@ When understanding the codebase, consult sources in this priority order:
 | `services/gemini.js` | Gemini AI client (briefing, digest, reorg, chat, intent extraction) |
 | `services/task-resolver.js` | Resolves natural-language task references → TickTick task IDs |
 | `services/shared-utils.js` | Shared labels, keyboards, message builders, date helpers |
+| `services/undo-executor.js` | Executes undo rollback entries against the TickTick adapter |
+| `services/reorg-executor.js` | Dispatches single reorg actions against the TickTick adapter |
 | `services/store.js` | State persistence (Redis or JSON file). Pending tasks, modes, clarifications |
 | `services/scheduler.js` | Cron jobs: polling, briefings, deferred retry |
 | `services/project-policy.js` | Configurable project categories, priorities, scoring |
 | `services/pipeline-context.js` | Pipeline context construction and lifecycle management |
 | `bot/commands.js` | Telegram slash command handlers + free-form message handler |
 | `bot/callbacks.js` | Inline keyboard callback handlers (approve, skip, confirm, cancel) |
-| `bot/utils.js` | Re-exports shared-utils. Bot-specific formatting |
 | `bot/index.js` | Bot factory. Configures Telegraf instance |
 
 ---

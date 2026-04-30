@@ -2,6 +2,7 @@
 // Keeps dependency direction: services/ ← bot/ (never services/ → bot/)
 import { InlineKeyboard } from 'grammy';
 import { FOLLOWUP_PRONOUNS, FOLLOWUP_TIME_SHIFTS } from './project-policy.js';
+import { getUserTimezone } from './user-settings.js';
 
 // ─── Generic Data Helpers (shared across summary surfaces) ───
 
@@ -287,15 +288,17 @@ export function formatFieldDiff(diffs = [], { urgentMode = false } = {}) {
         .join('\n');
 }
 
-// ─── Timezone Helpers (single source of truth) ──────────────
+// ─── Timezone Helpers ───────────────────────────────────────
 // ALL date formatting in the entire app must use these helpers.
 // Never call new Date().toLocaleDateString() without passing USER_TZ.
+// Canonical timezone source: user-settings.js → getUserTimezone()
+// Priority chain: env USER_TIMEZONE → user_context USER_TIMEZONE → Europe/Dublin
 
 /**
- * The user's timezone from environment variables or default.
+ * The user's timezone, resolved from the canonical getUserTimezone().
  * @type {string}
  */
-export const USER_TZ = process.env.USER_TIMEZONE || 'Europe/Dublin';
+export const USER_TZ = getUserTimezone();
 
 /**
  * Get the user's current time as date components in their timezone.
@@ -1136,61 +1139,6 @@ export function validateChecklistItem(item) {
         status: typeof item.status === 'number' ? item.status : 0,
         sortOrder: typeof item.sortOrder === 'number' ? item.sortOrder : 0,
     };
-}
-
-/**
- * Validates and normalizes an array of checklist items.
- * Applies structural validation, defaults, and sort order assignment.
- *
- * @param {Array|null} items - Raw checklist items
- * @param {Object} [options]
- * @param {number} [options.maxItems=30] - Maximum items to keep
- * @param {boolean} [options.cleanTitles=false] - Whether to apply text cleaning (normalizer's concern)
- * @param {Function} [options.titleCleaner=null] - Custom title cleaner function
- * @returns {Array} Validated, normalized items
- */
-export function validateChecklistItems(items, options = {}) {
-    const { maxItems = 30, titleCleaner = null } = options;
-
-    if (!items || !Array.isArray(items) || items.length === 0) return [];
-
-    const validItems = [];
-    let droppedCount = 0;
-
-    for (let i = 0; i < items.length; i++) {
-        const raw = items[i];
-
-        // Reject nested checklist structures
-        if (raw && typeof raw === 'object' && raw.items && Array.isArray(raw.items)) {
-            droppedCount++;
-            continue;
-        }
-
-        // Apply title cleaning if requested
-        const itemToValidate = titleCleaner && (raw?.title ?? raw)
-            ? { ...raw, title: titleCleaner(raw?.title ?? raw) }
-            : raw;
-
-        const validated = validateChecklistItem(itemToValidate);
-        if (!validated) {
-            droppedCount++;
-            continue;
-        }
-
-        validated.sortOrder = i;
-        validItems.push(validated);
-    }
-
-    // Cap at maxItems
-    if (validItems.length > maxItems) {
-        validItems.length = maxItems;
-    }
-
-    if (droppedCount > 0) {
-        console.warn(`[validateChecklistItems] Dropped ${droppedCount} invalid item(s), kept ${validItems.length}`);
-    }
-
-    return validItems;
 }
 
 

@@ -578,7 +578,7 @@ test('registerCallbacks wires mut:pick and mut:cancel callback families', async 
 test('mut:pick resumes through pipeline with resolved task context', async () => {
   const { registerCallbacks } = await import('../bot/callbacks.js');
   const store = await import('../services/store.js');
-  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../services/shared-utils.js');
 
   // Set up pending clarification state
   const userId = 12345;
@@ -660,7 +660,7 @@ test('mut:pick resumes through pipeline with resolved task context', async () =>
 test('mut:pick rejects cross-user selections', async () => {
   const { registerCallbacks } = await import('../bot/callbacks.js');
   const store = await import('../services/store.js');
-  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../services/shared-utils.js');
 
   const userId = 111;
   const chatId = AUTHORIZED_CHAT_ID || 222;
@@ -711,7 +711,7 @@ test('mut:pick rejects cross-user selections', async () => {
 test('mut:pick rejects expired clarifications', async () => {
   const { registerCallbacks } = await import('../bot/callbacks.js');
   const store = await import('../services/store.js');
-  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../services/shared-utils.js');
 
   // Set expired state (1 hour ago, well past the 10-minute TTL)
   const expiredTime = new Date(Date.now() - 60 * 60 * 1000).toISOString();
@@ -765,7 +765,7 @@ test('mut:pick rejects expired clarifications', async () => {
 test('mut:cancel clears pending state safely', async () => {
   const { registerCallbacks } = await import('../bot/callbacks.js');
   const store = await import('../services/store.js');
-  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../services/shared-utils.js');
 
   const chatId = AUTHORIZED_CHAT_ID || 300;
   await store.setPendingMutationClarification({
@@ -814,7 +814,7 @@ test('mut:cancel clears pending state safely', async () => {
 test('mut:pick fails safely when no pending state exists', async () => {
   const { registerCallbacks } = await import('../bot/callbacks.js');
   const store = await import('../services/store.js');
-  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../services/shared-utils.js');
 
   // Ensure no pending state
   await store.clearPendingMutationClarification();
@@ -876,7 +876,7 @@ test('registerCallbacks wires mut:confirm and mut:confirm:cancel callback famili
 test('mut:confirm resumes through pipeline with skipMutationConfirmation', async () => {
   const { registerCallbacks } = await import('../bot/callbacks.js');
   const store = await import('../services/store.js');
-  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../services/shared-utils.js');
 
   const userId = 12345;
   const chatId = AUTHORIZED_CHAT_ID || 67890;
@@ -947,7 +947,7 @@ test('mut:confirm resumes through pipeline with skipMutationConfirmation', async
 test('mut:confirm blocks expired pending confirmations fail-closed', async () => {
   const { registerCallbacks } = await import('../bot/callbacks.js');
   const store = await import('../services/store.js');
-  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../services/shared-utils.js');
 
   const chatId = AUTHORIZED_CHAT_ID || 777;
   await store.clearPendingMutationConfirmation();
@@ -995,7 +995,7 @@ test('mut:confirm blocks expired pending confirmations fail-closed', async () =>
 test('mut:confirm:cancel clears pending mutation confirmation safely', async () => {
   const { registerCallbacks } = await import('../bot/callbacks.js');
   const store = await import('../services/store.js');
-  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../services/shared-utils.js');
 
   const chatId = AUTHORIZED_CHAT_ID || 888;
   await store.clearPendingMutationConfirmation();
@@ -1380,7 +1380,7 @@ test('processMessageWithContext injects recentTask as existingTask', async () =>
 test('registerCallbacks r: handler sets force_reply refinement mode', async () => {
   const { registerCallbacks } = await import('../bot/callbacks.js');
   const store = await import('../services/store.js');
-  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../services/shared-utils.js');
 
   const chatId = AUTHORIZED_CHAT_ID || 999;
   const userId = 123;

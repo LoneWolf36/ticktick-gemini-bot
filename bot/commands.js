@@ -7,27 +7,27 @@ import { USER_CONTEXT } from '../services/gemini.js';
 import { taskReviewKeyboard } from './callbacks.js';
 import {
     buildTaskCard, buildTaskCardFromAction,
-    sleep, userLocaleString, isAuthorized, guardAccess, buildUndoEntry,
+    sleep, userLocaleString, isAuthorized, guardAccess,
     buildUndoEntryFromRollbackStep,
     buildFreeformReceipt,
     filterProcessedThisWeek, buildQuotaExhaustedMessage,
-    parseDateStringToTickTickISO, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent, pendingToAnalysis,
+    replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, pendingToAnalysis,
     buildMutationCandidateKeyboard,
     buildMutationClarificationMessage,
     buildMutationConfirmationMessage,
     buildMutationConfirmationKeyboard,
     buildPendingDataFromAction,
-    formatPipelineFailure,
+    PRIORITY_LABEL,
     retryWithBackoff,
     isFollowUpMessage,
-    executeUndoBatch,
-} from './utils.js';
+} from '../services/shared-utils.js';
+import { executeReorgAction } from '../services/reorg-executor.js';
+import { formatPipelineFailure, executeUndoBatch } from '../services/undo-executor.js';
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
 import { projectPolicy } from '../services/project-policy.js';
 import { detectWorkStyleModeIntent } from '../services/intent-extraction.js';
 import { detectBehavioralPatterns } from '../services/behavioral-patterns.js';
-import { PRIORITY_LABEL } from '../services/shared-utils.js';
 
 // Rate limiter removed 2026-04-19 (cavekit-validate Phase 3): YAGNI for 1-user MVP.
 // Heavy-command rate limiting listed as out-of-scope in cavekit-task-pipeline.md.
@@ -630,7 +630,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             return;
         }
 
-        if (!store.tryAcquireIntakeLock()) { await ctx.reply('⏳ A scan or poll is already running.'); return; }
+        if (!store.tryAcquireIntakeLock({ owner: 'bot:scan' })) { await ctx.reply('⏳ A scan or poll is already running.'); return; }
 
         let backgroundPromise = Promise.resolve();
         try {
@@ -1056,7 +1056,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             return;
         }
 
-        if (!store.tryAcquireIntakeLock()) { await ctx.reply('⏳ A scan or poll is already running.'); return; }
+        if (!store.tryAcquireIntakeLock({ owner: 'bot:review' })) { await ctx.reply('⏳ A scan or poll is already running.'); return; }
 
         let backgroundPromise = Promise.resolve();
         try {
@@ -1750,152 +1750,36 @@ export async function executeActions(actions, adapter, currentTasks, options = {
         }
     }
 
-    const resolveDueDate = (value, explicitPriority) => {
-        if (!value) return null;
-        const priorityLabel = explicitPriority === 5 ? 'core_goal' : explicitPriority === 1 ? 'life-admin' : 'important';
-        return scheduleToDate(value, { priorityLabel }) || parseDateStringToTickTickISO(value, { priorityLabel, slotMode: 'priority' });
-    };
-
-    const projectMap = new Map((options.projects || []).map(p => [p.id, p.name || 'Unknown']));
-
     for (const action of plannedActions) {
         if (!action || typeof action !== 'object' || !action.type) continue;
 
-        try {
-            if (action.type === 'create') {
-                const changes = action.changes || {};
-                if (changes.title) {
-                    let safeDueDate = resolveDueDate(changes.dueDate, changes.priority);
-                    const createPayload = { ...changes, title: changes.title };
-                    if (safeDueDate) createPayload.dueDate = safeDueDate;
+        const task = action.taskId ? currentTasks.find(t => t.id === action.taskId) : null;
 
-                    await adapter.createTask(createPayload);
-                    const createParts = [];
-                    if (changes.projectId) {
-                        const projName = projectMap.get(changes.projectId) || 'new project';
-                        createParts.push(`Project: ${projName}`);
-                    }
-                    if (changes.priority !== undefined) {
-                        createParts.push(`Priority: ${PRIORITY_LABEL[changes.priority] || changes.priority}`);
-                    }
-                    if (safeDueDate) {
-                        createParts.push(`Due: ${safeDueDate}`);
-                    }
-                    const detail = createParts.length > 0 ? ` → ${createParts.join(', ')}` : '';
-                    outcomes.push(`Created: "${changes.title}"${detail}`);
-                } else {
-                    outcomes.push(`⚠️ Cannot create task: Missing title`);
-                }
-                continue;
-            }
+        const result = await executeReorgAction(action, task, adapter, {
+            projects: options.projects,
+        });
 
-            if (!action.taskId) {
-                outcomes.push(`⚠️ Skipped '${action.type}' action: AI did not provide a valid Task ID.`);
-                continue;
-            }
+        if (result.error) {
+            outcomes.push(result.error);
+            continue;
+        }
 
-            const task = currentTasks.find(t => t.id === action.taskId);
-            if (!task) {
-                outcomes.push(`⚠️ Task not found: ${action.taskId}`);
-                continue;
-            }
+        if (result.outcomes && result.outcomes.length > 0) {
+            outcomes.push(...result.outcomes);
+        }
 
-            if (action.type === 'complete') {
-                await adapter.completeTask(task.id, task.projectId);
-                outcomes.push(`Complete: "${task.title}"`);
-                continue;
-            }
+        if (result.undoEntry) {
+            await store.addUndoEntry(result.undoEntry);
+            hasUndoableActions = true;
+        }
 
-            if (action.type === 'update') {
-                const changes = action.changes || {};
-                if (Object.keys(changes).length === 0) {
-                    outcomes.push(`⚠️ Skipped invalid/unsupported action: update (No valid schema changes found)`);
-                    continue;
-                }
-
-                let safeDueDate = resolveDueDate(changes.dueDate || changes.suggested_schedule, changes.priority);
-
-                const updatePayload = {
-                    ...changes,
-                    projectId: changes.projectId || task.projectId,
-                    originalProjectId: task.projectId
-                };
-                if (safeDueDate) updatePayload.dueDate = safeDueDate;
-                if (changes.dueDate === null) updatePayload.dueDate = null;
-
-                if (updatePayload.content !== undefined && containsSensitiveContent(task.content || '')) {
-                    delete updatePayload.content;
-                    outcomes.push(`⚠️ Preserved sensitive content for "${task.title}" (content rewrite blocked)`);
-                }
-
-                const updatedTask = await adapter.updateTask(task.id, updatePayload);
-
-                await store.addUndoEntry(buildUndoEntry({
-                    source: task,
-                    action: 'reorg-update',
-                    appliedTaskId: updatedTask.id,
-                    applied: {
-                        title: changes.title ?? null,
-                        projectId: (changes.projectId && changes.projectId !== task.projectId) ? changes.projectId : null,
-                        schedule: updatePayload.dueDate ?? null,
-                    }
-                }));
-
-                const changeParts = [];
-                if (changes.projectId && changes.projectId !== task.projectId) {
-                    const projName = projectMap.get(changes.projectId) || 'new project';
-                    changeParts.push(`moved to ${projName}`);
-                }
-                if (changes.priority !== undefined && changes.priority !== task.priority) {
-                    changeParts.push(`priority ${PRIORITY_LABEL[changes.priority] || changes.priority}`);
-                }
-                if (changes.title && changes.title !== task.title) {
-                    changeParts.push(`renamed to "${changes.title}"`);
-                }
-                if (changes.dueDate) {
-                    changeParts.push(`due ${changes.dueDate}`);
-                }
-                const detail = changeParts.length > 0 ? ` → ${changeParts.join(', ')}` : '';
-                outcomes.push(`Updated: "${task.title}"${detail}`);
-                hasUndoableActions = true;
-            } else if (action.type === 'drop') {
-                const dropChanges = action.changes || {};
-                const hasTickTickMutation =
-                    dropChanges.projectId !== undefined ||
-                    dropChanges.priority !== undefined ||
-                    dropChanges.title !== undefined ||
-                    dropChanges.content !== undefined ||
-                    dropChanges.dueDate !== undefined;
-
-                if (hasTickTickMutation) {
-                    const safeDueDate = resolveDueDate(dropChanges.dueDate, 0);
-                    const updatePayload = {
-                        projectId: dropChanges.projectId || task.projectId,
-                        originalProjectId: task.projectId,
-                        priority: dropChanges.priority ?? 0,
-                    };
-                    if (dropChanges.title !== undefined) updatePayload.title = dropChanges.title;
-                    if (dropChanges.content !== undefined && !containsSensitiveContent(task.content || '')) {
-                        updatePayload.content = dropChanges.content;
-                    }
-                    if (safeDueDate !== undefined) updatePayload.dueDate = safeDueDate;
-                    await adapter.updateTask(task.id, updatePayload);
-                    outcomes.push(`Drop: "${task.title}"`);
-                } else {
-                    outcomes.push(`Drop: "${task.title}" (not deleted — mark complete in TickTick if you agree)`);
-                }
-
-                await store.markTaskProcessed(task.id, {
-                    originalTitle: task.title,
-                    dropped: true,
-                    droppedByReorg: true,
-                });
-            } else {
-                outcomes.push(`⚠️ Skipped invalid/unsupported action: ${action.type}`);
-            }
-        } catch (err) {
-            console.error('executeActions action failed:', err.message);
-            outcomes.push(`❌ Failed on "${action.taskId}": could not apply safely`);
+        // Drop actions mark tasks as processed (orchestration, not adapter dispatch)
+        if (result.actionType === 'drop' && task) {
+            await store.markTaskProcessed(task.id, {
+                originalTitle: task.title,
+                dropped: true,
+                droppedByReorg: true,
+            });
         }
     }
     return { outcomes, hasUndoableActions };

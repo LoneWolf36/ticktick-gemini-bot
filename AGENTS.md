@@ -49,6 +49,16 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 
 **TickTick Task API**: Task updates must follow official OpenAPI contracts. `POST /task/{taskId}` bodies include both `id` and `projectId`; project moves use official `POST /task/move` instead of create/delete copy workarounds; active task retrieval prefers `POST /task/filter { status: [0] }` with project-loop fallback so Inbox tasks are visible to the resolver. Completed-task retrieval is exposed via `POST /task/completed` for analysis plumbing only; completed tasks are not mixed into mutation resolution by default.
 
+**Timezone Canonical Source**: Canonical timezone resolved via `getUserTimezone()` in `services/user-settings.js`. Priority: `process.env.USER_TIMEZONE` → `user_context.js` `USER_TIMEZONE` export → `Europe/Dublin` default. All timezone-dependent code imports `USER_TZ` from `services/shared-utils.js`, which calls `getUserTimezone()` at module init time. A regression test in `tests/regression.work-style-commands-scheduler.test.js` verifies the shared constant stays in sync with the canonical source.
+
+**Checklist Validation Split**: Three-layer validation: `services/intent-extraction.js` `validateChecklistItems()` validates extracted output structure (capped at `MAX_CHECKLIST_ITEMS=30` from `services/schemas.js`); `services/normalizer.js` cleans TickTick-ready items (also caps at its own `MAX_CHECKLIST_ITEMS=30` from `services/schemas.js`); `services/shared-utils.js` exports only the singular `validateChecklistItem()` — no batch or cap logic at the utility layer. The adapter consumes the validated items directly.
+
+**Intake Lock**: `services/store.js` exports `tryAcquireIntakeLock()`, `releaseIntakeLock()`, and `getIntakeLockStatus()` for mutual exclusion over the TickTick poll-analysis cycle. Lock has configurable `ttlMs` (default 5min) and `owner` metadata. `getIntakeLockStatus()` returns `{ locked, owner, acquiredAt, expiresAt }`. Used by `services/scheduler.js` to prevent concurrent scan/poll cycles.
+
+**Reorg Apply Boundary**: Reorg action execution uses `services/reorg-executor.js`, which dispatches single actions (create/update/complete/drop) against the adapter and returns structured results including undo entries. The caller (`bot/callbacks.js` approve-reorg path) persists undo logs and processed marks. Full consolidation into the pipeline (`services/pipeline.js`) remains deferred — the reorg executor is a narrow extraction from `bot/commands.js` `executeActions()`, not a pipeline-internal path.
+
+**Deferred Pipeline Intents**: When the TickTick API is unavailable, `services/pipeline.js` defers the parsed normalized intent into `services/store.js` `deferredPipelineIntents` (max 200 entries). `services/scheduler.js` exports `retryDeferredIntents()` which processes the queue with health-check gating and exponential backoff (max 15min). Intents that exhaust 3 retries are moved to `failedDeferredIntents` (dead-letter queue, max 50 entries). The user is notified on permanent failure. See `docs/ARCHITECTURE.md` Resilience Patterns for details.
+
 ## Project Structure & Module Organization
 
 ### Service modules (source of truth for business logic)
@@ -56,6 +66,8 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - `services/intent-extraction.js` — Extracts structured `Intent Action` objects from natural language using Gemini via direct `responseSchema` API calls.
 - `services/normalizer.js` — Deterministic cleaner that maps intent actions to TickTick-compatible fields (title truncation, filler stripping, repeatHint → RRULE, projectHint → project ID).
 - `services/ticktick-adapter.js` — Executes normalized actions against the TickTick REST API (create/update/complete/delete). Handles retries, OAuth refresh, active-task listing, and completed-task plumbing.
+- `services/reorg-executor.js` — Single-action reorg dispatch against the adapter (create/update/complete/drop) for Gemini reorg proposals and policy sweeps. Returns structured results; caller persists state.
+- `services/undo-executor.js` — Executes undo/rollback entries against the adapter. Handles all rollback types (delete_created, restore_updated, recreate_deleted, uncomplete_task, plus legacy pre-rollback restore).
 - `services/ticktick.js` — Low-level TickTick API client with OAuth2 token management, CRUD operations, official task move, task filter, and completed-task endpoints.
 - `services/gemini.js` — Gemini AI client for briefing, weekly digest, reorg proposals, free-form chat, and intent extraction. Manages API key rotation.
 - `services/scheduler.js` — Cron-driven jobs: proactive TickTick polling, daily/weekly briefings, deferred intent retry, queue health checks
@@ -64,6 +76,9 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - `services/pipeline-observability.js` — Pipeline execution metrics and logging.
 - `services/schemas.js` — Structured data schemas for intent actions and normalized actions.
 - `services/shared-utils.js` — Shared utility functions used across service modules.
+- `services/execution-prioritization.js` — Leverage-based ranking, priority inference, and recommendation result building for task prioritization.
+- `services/behavioral-signals.js` — Classifies task events into derived behavioral signal types (snooze, commitment overload, avoidance, etc.) using metadata only — never raw titles/text.
+- `services/behavioral-patterns.js` — Detects higher-level behavioral patterns by analyzing signal clusters over time.
 - `services/task-resolver.js` — Resolves task references from natural language into TickTick task IDs.
 - `services/user-settings.js` — User-level configuration (timezone, preferences).
 - `services/user-context-loader.js` — Shared loader for gitignored/root/Render-secret `user_context.js` modules used by Gemini, project policy, and user settings.
@@ -75,7 +90,6 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - `bot/index.js` — Bot factory. Creates and configures the Telegraf bot instance.
 - `bot/commands.js` — Slash command handlers. **Must not** call the TickTick client directly for write operations — always route through the pipeline.
 - `bot/callbacks.js` — Inline keyboard callback handlers (approve/skip/drop/reorg flows).
-- `bot/utils.js` — Card builders, message formatters, priority maps, and schedule display logic.
 
 ### Integration rule
 **Bot handlers must never bypass the pipeline for new task-writing flows.** Operational mutations (approve/skip/drop in callbacks) directly call the adapter as a retained boundary for interactive UX. All new free-form text flows must route through `pipeline.js` → `normalizer.js` → `ticktick-adapter.js`. Bot handlers may read from TickTick directly only for display purposes (e.g., `/pending`, `/status`).
@@ -347,4 +361,4 @@ Before any coding:
 **Source-of-truth priority**: AGENTS.md → agent-onboarding.md → Cavekit kits → source files/tests → codebase-function-map.md (generated index) → local `docs/api/` output (fallback only).
 
 ### Agent Protocol: Codebase Function Map
-Use `context/refs/codebase-function-map.md` as a fast export index before broad searching or changing public surfaces. Whenever you add, remove, or change the signature of any exported function, class, or constant, run `npm run docs:map` and commit the updated map. `npm run docs:typedoc` may be run to validate local API docs, but generated `docs/api/` output is ignored and not committed.
+Use `context/refs/codebase-function-map.md` as a fast export index before broad searching or changing public surfaces. It is generated from JSDoc annotations via `jsdoc2md` (`npm run docs:map`). Whenever you add, remove, or change the signature of any exported function, class, or constant, or update JSDoc on any export surface, **run `npm run docs:map` and commit the updated map**. `npm run docs:typedoc` may be run to validate local API docs, but generated `docs/api/` output is ignored and not committed.

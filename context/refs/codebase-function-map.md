@@ -10,6 +10,18 @@ descriptions, or message text.</p>
 Pattern signals classify the 8 behavioral-memory pattern families using
 derived metadata only — never raw titles, descriptions, or message text.</p>
 </dd>
+<dt><a href="#module_services/reorg-executor">services/reorg-executor</a></dt>
+<dd><p>Reorg action executor — single action dispatch against the TickTick adapter.</p>
+<p>Extracted from bot/commands.js executeActions(). Handles create, update,
+complete, and drop action types for Gemini reorg proposals and policy sweeps.
+Returns structured results; caller persists state (undo logs, processed marks).</p>
+</dd>
+<dt><a href="#module_services/undo-executor">services/undo-executor</a></dt>
+<dd><p>Undo execution helpers — revert pipeline mutations through the TickTick adapter.</p>
+<p>Moved from bot/utils.js to eliminate the passthrough re-export layer.
+These helpers are consumed by bot/commands.js (/undo command) and
+bot/callbacks.js (undo:last inline button). Both call executeUndoBatch directly.</p>
+</dd>
 </dl>
 
 ## Classes
@@ -127,7 +139,7 @@ Used by validateIntentAction to check checklistItems arrays.</p>
 <dd><p>The authorized Telegram chat ID from environment variables.</p>
 </dd>
 <dt><a href="#USER_TZ">USER_TZ</a> : <code>string</code></dt>
-<dd><p>The user&#39;s timezone from environment variables or default.</p>
+<dd><p>The user&#39;s timezone, resolved from the canonical getUserTimezone().</p>
 </dd>
 <dt><a href="#MUTATION_TYPE_LABELS">MUTATION_TYPE_LABELS</a> : <code>Object.&lt;string, string&gt;</code></dt>
 <dd><p>Maps mutation action types to user-facing labels.
@@ -364,7 +376,7 @@ Expects a list of projects from the TickTick API.</p>
 </dd>
 <dt><a href="#_expandDueDate">_expandDueDate()</a></dt>
 <dd><p>Expands relative dates to absolute ISO strings.
-We cheat here and use <code>bot/utils.js</code> if we need to, but implementing simple resolution is OK too.</p>
+Keeps simple relative-date handling inside the normalizer to avoid bot-layer coupling.</p>
 </dd>
 <dt><a href="#_normalizeContentForMutation">_normalizeContentForMutation(newContent, existingContent)</a> ⇒ <code>string</code> | <code>null</code></dt>
 <dd><p>Normalizes content for mutation actions (update/complete/delete).</p>
@@ -696,10 +708,6 @@ Limits visible tasks to 5 with overflow line.</p>
 <dd><p>Validates a single checklist item&#39;s structural integrity.
 Used by both normalizer (post-cleaning) and adapter (pre-API).</p>
 </dd>
-<dt><a href="#validateChecklistItems">validateChecklistItems(items, [options])</a> ⇒ <code>Array</code></dt>
-<dd><p>Validates and normalizes an array of checklist items.
-Applies structural validation, defaults, and sort order assignment.</p>
-</dd>
 <dt><a href="#buildUndoEntryFromRollbackStep">buildUndoEntryFromRollbackStep(rollbackStep, action)</a> ⇒ <code>Object</code></dt>
 <dd><p>Builds an undo entry from a pipeline rollbackStep and action.
 Maps pipeline rollback types (delete_created, restore_updated, recreate_deleted, uncomplete_task)
@@ -715,6 +723,26 @@ Shows per-action type with title, field diffs for updates, and skipped-action wa
 <dt><a href="#retryWithBackoff">retryWithBackoff(fn, [options])</a> ⇒ <code>Promise.&lt;*&gt;</code></dt>
 <dd><p>Retry an async operation with exponential backoff for transient failures.</p>
 </dd>
+<dt><a href="#tryAcquireIntakeLock">tryAcquireIntakeLock([options])</a> ⇒ <code>boolean</code></dt>
+<dd><p>Try to acquire the shared TickTick intake lock.</p>
+<p>The lock prevents overlapping poll/scan/review cycles from mutating the same
+TickTick intake stream at once. Expired locks self-heal on the next acquire
+attempt instead of blocking forever after a crash.</p>
+</dd>
+<dt><a href="#releaseIntakeLock">releaseIntakeLock()</a> ⇒ <code>void</code></dt>
+<dd><p>Release the shared TickTick intake lock.</p>
+<p>Callers should release only locks they acquired. The lock also expires by TTL
+as a defensive fallback for process crashes or interrupted async flows.</p>
+</dd>
+<dt><a href="#getIntakeLockStatus">getIntakeLockStatus([options])</a> ⇒ <code>Object</code> | <code>Object</code></dt>
+<dd><p>Get diagnostic metadata for the shared TickTick intake lock.</p>
+</dd>
+<dt><a href="#getChatId">getChatId()</a> ⇒ <code>number</code> | <code>null</code></dt>
+<dd><p>Get the stored Telegram chat ID.</p>
+</dd>
+<dt><a href="#setChatId">setChatId(id)</a> ⇒ <code>Promise.&lt;void&gt;</code></dt>
+<dd><p>Persist a Telegram chat ID to the store.</p>
+</dd>
 <dt><a href="#getWorkStyleMode">getWorkStyleMode()</a></dt>
 <dd><p>Get the current work-style mode for a user.
 Returns the active mode, automatically reverting to standard if expired.</p>
@@ -728,6 +756,18 @@ Mode transitions are explicit — never changes without user action or auto-expi
 </dd>
 <dt><a href="#markTaskFailed">markTaskFailed([retryAfterMs])</a></dt>
 <dd><p>Park a task that failed analysis — prevents re-polling until retryAfterMs expires.</p>
+</dd>
+<dt><a href="#approveTask">approveTask(taskId)</a> ⇒ <code>Promise.&lt;(Object|null)&gt;</code></dt>
+<dd><p>Approve a pending task, marking it as processed.
+Delegates to resolveTask with status &#39;approve&#39;.</p>
+</dd>
+<dt><a href="#skipTask">skipTask(taskId)</a> ⇒ <code>Promise.&lt;(Object|null)&gt;</code></dt>
+<dd><p>Skip a pending task, marking it as processed without taking action.
+Delegates to resolveTask with status &#39;skip&#39;.</p>
+</dd>
+<dt><a href="#dropTask">dropTask(taskId)</a> ⇒ <code>Promise.&lt;(Object|null)&gt;</code></dt>
+<dd><p>Drop a pending task, marking it as processed and deprioritized.
+Delegates to resolveTask with status &#39;drop&#39;.</p>
 </dd>
 <dt><a href="#getQueueHealthSnapshot">getQueueHealthSnapshot()</a> ⇒ <code>Object</code></dt>
 <dd><p>Returns a snapshot of queue health for telemetry.</p>
@@ -762,6 +802,18 @@ Groups by batchId; if no batchId, falls back to the single most recent auto-appl
 </dd>
 <dt><a href="#removeUndoEntries">removeUndoEntries(entries)</a></dt>
 <dd><p>Remove specific undo entries by reference identity.</p>
+</dd>
+<dt><a href="#getStats">getStats()</a> ⇒ <code>Object</code></dt>
+<dd><p>Get the cumulative stats snapshot.</p>
+</dd>
+<dt><a href="#updateStats">updateStats(updates)</a> ⇒ <code>Promise.&lt;void&gt;</code></dt>
+<dd><p>Merge partial updates into the cumulative stats.</p>
+</dd>
+<dt><a href="#getProcessedTasks">getProcessedTasks()</a> ⇒ <code>Object.&lt;string, Object&gt;</code></dt>
+<dd><p>Get all processed task entries.</p>
+</dd>
+<dt><a href="#getProcessedCount">getProcessedCount()</a> ⇒ <code>number</code></dt>
+<dd><p>Count the total number of processed task entries.</p>
 </dd>
 <dt><a href="#resetAll">resetAll()</a></dt>
 <dd><p>Wipe all data and start fresh</p>
@@ -887,17 +939,6 @@ Never throws — returns { mod, source, path } with null mod on complete failure
 </dd>
 <dt><a href="#createBot">createBot(token, ticktick, gemini, adapter, pipeline, [config])</a> ⇒ <code>Bot</code></dt>
 <dd><p>Factory function to create and configure a Telegram bot instance.</p>
-</dd>
-<dt><a href="#formatPipelineFailure">formatPipelineFailure(result, [options])</a> ⇒ <code>string</code></dt>
-<dd><p>Format a pipeline error result for user-facing display.</p>
-</dd>
-<dt><a href="#executeUndoEntry">executeUndoEntry(entry, adapter)</a> ⇒ <code>Promise.&lt;{reverted: Array.&lt;string&gt;}&gt;</code></dt>
-<dd><p>Execute a single undo entry against the TickTick adapter.
-Handles all rollback types: delete_created, restore_updated, recreate_deleted, uncomplete_task,
-plus legacy update-based restore for pre-rollback entries.</p>
-</dd>
-<dt><a href="#executeUndoBatch">executeUndoBatch(entries, adapter)</a> ⇒ <code>Promise.&lt;{reverted: Array.&lt;string&gt;, successful: Array.&lt;Object&gt;}&gt;</code></dt>
-<dd><p>Execute a batch of undo entries, tolerating individual failures.</p>
 </dd>
 </dl>
 
@@ -1270,6 +1311,164 @@ Task mutation event passed into the classifier.
 | [planningSubtypeB] | <code>boolean</code> \| <code>null</code> | Overload planning marker |
 | timestamp | <code>string</code> | ISO timestamp of the event |
 
+<a name="module_services/reorg-executor"></a>
+
+## services/reorg-executor
+Reorg action executor — single action dispatch against the TickTick adapter.
+
+Extracted from bot/commands.js executeActions(). Handles create, update,
+complete, and drop action types for Gemini reorg proposals and policy sweeps.
+Returns structured results; caller persists state (undo logs, processed marks).
+
+
+* [services/reorg-executor](#module_services/reorg-executor)
+    * _static_
+        * [.executeReorgAction(action, task, adapter, [options])](#module_services/reorg-executor.executeReorgAction) ⇒ <code>Promise.&lt;{outcomes: Array.&lt;string&gt;, undoEntry: (Object\|null), taskId: (string\|null), actionType: (string\|null), error: (string\|null)}&gt;</code>
+    * _inner_
+        * [~resolveDueDate(value, [explicitPriority])](#module_services/reorg-executor..resolveDueDate) ⇒ <code>string</code> \| <code>null</code>
+        * [~buildProjectMap([projects])](#module_services/reorg-executor..buildProjectMap) ⇒ <code>Map.&lt;string, string&gt;</code>
+        * [~describeUpdateChanges(changes, task, projectMap)](#module_services/reorg-executor..describeUpdateChanges) ⇒ <code>string</code>
+        * [~describeCreateDetails(changes, projectMap, resolvedDueDate)](#module_services/reorg-executor..describeCreateDetails) ⇒ <code>string</code>
+
+<a name="module_services/reorg-executor.executeReorgAction"></a>
+
+### services/reorg-executor.executeReorgAction(action, task, adapter, [options]) ⇒ <code>Promise.&lt;{outcomes: Array.&lt;string&gt;, undoEntry: (Object\|null), taskId: (string\|null), actionType: (string\|null), error: (string\|null)}&gt;</code>
+Execute a single reorg action against TickTick via the adapter.
+
+Handles action types:
+- `create`: Creates a new task via `adapter.createTask`
+- `update`: Updates a task via `adapter.updateTask`, returns an undo entry
+- `complete`: Completes a task via `adapter.completeTask`
+- `drop`: Deprioritizes a task via `adapter.updateTask` (does not delete)
+
+**Kind**: static method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)
+**Returns**: <code>Promise.&lt;{outcomes: Array.&lt;string&gt;, undoEntry: (Object\|null), taskId: (string\|null), actionType: (string\|null), error: (string\|null)}&gt;</code> - Structured result:
+  - `outcomes`: Outcome message(s) for the action (may include multiple messages
+    e.g. sensitive-content warning + update description)
+  - `undoEntry`: Undo entry object for update actions (null otherwise)
+  - `taskId`: The task ID involved in the action
+  - `actionType`: The action type ('create', 'update', 'complete', 'drop')
+  - `error`: Error message if the action failed; null on success
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| action | <code>Object</code> |  | The action to execute ({ type, taskId, changes }) |
+| task | <code>Object</code> \| <code>null</code> |  | Current TickTick task object (null for create actions) |
+| adapter | <code>Object</code> |  | TickTick adapter instance (createTask, updateTask, completeTask) |
+| [options] | <code>Object</code> | <code>{}</code> | Execution options |
+| [options.projectMap] | <code>Map.&lt;string, string&gt;</code> |  | Pre-built project ID-to-name map |
+| [options.projects] | <code>Array.&lt;Object&gt;</code> |  | Raw project array (fallback for building projectMap) |
+
+<a name="module_services/reorg-executor..resolveDueDate"></a>
+
+### services/reorg-executor~resolveDueDate(value, [explicitPriority]) ⇒ <code>string</code> \| <code>null</code>
+Resolve a due date string to TickTick ISO format.
+Uses priority-based label mapping for schedule slot resolution.
+
+**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)
+**Returns**: <code>string</code> \| <code>null</code> - Resolved ISO due date string, or null if input is empty
+
+| Param | Type | Description |
+| --- | --- | --- |
+| value | <code>string</code> \| <code>null</code> \| <code>undefined</code> | Raw due date value |
+| [explicitPriority] | <code>number</code> | Priority value guiding label choice (1, 3, 5, etc.) |
+
+<a name="module_services/reorg-executor..buildProjectMap"></a>
+
+### services/reorg-executor~buildProjectMap([projects]) ⇒ <code>Map.&lt;string, string&gt;</code>
+Build a project ID-to-name map from a project array.
+
+**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)
+**Returns**: <code>Map.&lt;string, string&gt;</code> - Map of project ID to project name
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [projects] | <code>Array.&lt;Object&gt;</code> | <code>[]</code> | Array of project objects with `id` and `name` fields |
+
+<a name="module_services/reorg-executor..describeUpdateChanges"></a>
+
+### services/reorg-executor~describeUpdateChanges(changes, task, projectMap) ⇒ <code>string</code>
+Describe priority/project/title/due changes for an update action.
+
+**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)
+**Returns**: <code>string</code> - Formatted change description (empty string if no changes)
+
+| Param | Type | Description |
+| --- | --- | --- |
+| changes | <code>Object</code> | The update changes object |
+| task | <code>Object</code> | The current task object for comparison |
+| projectMap | <code>Map.&lt;string, string&gt;</code> | Project ID to name map |
+
+<a name="module_services/reorg-executor..describeCreateDetails"></a>
+
+### services/reorg-executor~describeCreateDetails(changes, projectMap, resolvedDueDate) ⇒ <code>string</code>
+Describe priority/project/title/due aspects for a create action.
+
+**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)
+**Returns**: <code>string</code> - Formatted detail string (empty string if no extras)
+
+| Param | Type | Description |
+| --- | --- | --- |
+| changes | <code>Object</code> | The create changes object |
+| projectMap | <code>Map.&lt;string, string&gt;</code> | Project ID to name map |
+| resolvedDueDate | <code>string</code> \| <code>null</code> | Resolved ISO due date string |
+
+<a name="module_services/undo-executor"></a>
+
+## services/undo-executor
+Undo execution helpers — revert pipeline mutations through the TickTick adapter.
+
+Moved from bot/utils.js to eliminate the passthrough re-export layer.
+These helpers are consumed by bot/commands.js (/undo command) and
+bot/callbacks.js (undo:last inline button). Both call executeUndoBatch directly.
+
+
+* [services/undo-executor](#module_services/undo-executor)
+    * [.formatPipelineFailure(result, [options])](#module_services/undo-executor.formatPipelineFailure) ⇒ <code>string</code>
+    * [.executeUndoEntry(entry, adapter)](#module_services/undo-executor.executeUndoEntry) ⇒ <code>Promise.&lt;{reverted: Array.&lt;string&gt;}&gt;</code>
+    * [.executeUndoBatch(entries, adapter)](#module_services/undo-executor.executeUndoBatch) ⇒ <code>Promise.&lt;{reverted: Array.&lt;string&gt;, successful: Array.&lt;Object&gt;}&gt;</code>
+
+<a name="module_services/undo-executor.formatPipelineFailure"></a>
+
+### services/undo-executor.formatPipelineFailure(result, [options]) ⇒ <code>string</code>
+Format a pipeline error result for user-facing display.
+
+**Kind**: static method of [<code>services/undo-executor</code>](#module_services/undo-executor)
+**Returns**: <code>string</code> - User-safe error message (never leaks internal diagnostics unless isDevMode)
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| result | <code>Object</code> |  | Pipeline error result with `confirmationText`, `isDevMode`, `diagnostics` |
+| [options] | <code>Object</code> |  |  |
+| [options.compact] | <code>boolean</code> | <code>false</code> | When true, collapse newlines to single-line separators |
+
+<a name="module_services/undo-executor.executeUndoEntry"></a>
+
+### services/undo-executor.executeUndoEntry(entry, adapter) ⇒ <code>Promise.&lt;{reverted: Array.&lt;string&gt;}&gt;</code>
+Execute a single undo entry against the TickTick adapter.
+Handles all rollback types: delete_created, restore_updated, recreate_deleted, uncomplete_task,
+plus legacy update-based restore for pre-rollback entries.
+
+**Kind**: static method of [<code>services/undo-executor</code>](#module_services/undo-executor)
+**Returns**: <code>Promise.&lt;{reverted: Array.&lt;string&gt;}&gt;</code> - Array of reverted task titles
+
+| Param | Type | Description |
+| --- | --- | --- |
+| entry | <code>Object</code> | Undo entry from the store |
+| adapter | [<code>TickTickAdapter</code>](#TickTickAdapter) | TickTick adapter instance |
+
+<a name="module_services/undo-executor.executeUndoBatch"></a>
+
+### services/undo-executor.executeUndoBatch(entries, adapter) ⇒ <code>Promise.&lt;{reverted: Array.&lt;string&gt;, successful: Array.&lt;Object&gt;}&gt;</code>
+Execute a batch of undo entries, tolerating individual failures.
+
+**Kind**: static method of [<code>services/undo-executor</code>](#module_services/undo-executor)
+
+| Param | Type | Description |
+| --- | --- | --- |
+| entries | <code>Array.&lt;Object&gt;</code> | Undo entries to execute |
+| adapter | [<code>TickTickAdapter</code>](#TickTickAdapter) | TickTick adapter instance |
+
 <a name="SCHEDULER_NOTIFICATION_TYPES"></a>
 
 ## SCHEDULER\_NOTIFICATION\_TYPES : <code>enum</code>
@@ -1373,7 +1572,8 @@ User-facing messages for different failure classes.
 <a name="reorgSchema"></a>
 
 ## reorgSchema
-Gemini response schema for reorganization proposals.Cavekit ownership: Task Pipeline R16 (Guided Reorg).
+Gemini response schema for reorganization proposals.
+Cavekit ownership: Task Pipeline R16 (Guided Reorg).
 
 **Kind**: global constant  
 <a name="BRIEFING_SUMMARY_SECTION_KEYS"></a>
@@ -1421,13 +1621,15 @@ Evidence sources for weekly watchouts.
 <a name="MAX_CHECKLIST_ITEMS"></a>
 
 ## MAX\_CHECKLIST\_ITEMS
-Maximum number of checklist items allowed in a single create action.Prevents brain-dump overload and keeps checklists execution-friendly.
+Maximum number of checklist items allowed in a single create action.
+Prevents brain-dump overload and keeps checklists execution-friendly.
 
 **Kind**: global constant  
 <a name="CHECKLIST_ITEM_SHAPE"></a>
 
 ## CHECKLIST\_ITEM\_SHAPE
-Shape descriptor for checklist items in extracted intent output.Used by validateIntentAction to check checklistItems arrays.
+Shape descriptor for checklist items in extracted intent output.
+Used by validateIntentAction to check checklistItems arrays.
 
 **Kind**: global constant  
 <a name="briefingSummarySchema"></a>
@@ -1475,7 +1677,7 @@ The authorized Telegram chat ID from environment variables.
 <a name="USER_TZ"></a>
 
 ## USER\_TZ : <code>string</code>
-The user's timezone from environment variables or default.
+The user's timezone, resolved from the canonical getUserTimezone().
 
 **Kind**: global constant  
 <a name="MUTATION_TYPE_LABELS"></a>
@@ -2036,7 +2238,7 @@ Resolution order:
 
 ## \_expandDueDate()
 Expands relative dates to absolute ISO strings.
-We cheat here and use `bot/utils.js` if we need to, but implementing simple resolution is OK too.
+Keeps simple relative-date handling inside the normalizer to avoid bot-layer coupling.
 
 **Kind**: global function  
 <a name="_normalizeContentForMutation"></a>
@@ -2548,10 +2750,12 @@ Builds a structured pipeline failure result object.
 <a name="createPipeline"></a>
 
 ## createPipeline(options) ⇒ <code>Object</code>
-Create a pipeline instance that orchestrates intent extraction, normalization,and TickTick adapter execution.
+Create a pipeline instance that orchestrates intent extraction, normalization,
+and TickTick adapter execution.
 
 **Kind**: global function  
-**Returns**: <code>Object</code> - - `processMessage(userMessage, options?)` → `{ type: 'task'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`  - `getTelemetry()` → the observability instance for this pipeline  
+**Returns**: <code>Object</code> - - `processMessage(userMessage, options?)` → `{ type: 'task'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`
+  - `getTelemetry()` → the observability instance for this pipeline
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -2564,7 +2768,10 @@ Create a pipeline instance that orchestrates intent extraction, normalization,a
 <a name="createPipeline..processMessageWithContext"></a>
 
 ### createPipeline~processMessageWithContext()
-Builds a request context then runs processMessage — canonicalcontext-wired entry point.  All bot handlers, callbacks, andscheduler poll paths should call this instead of duplicatingthe createRequestContext → processMessage dance locally.
+Builds a request context then runs processMessage — canonical
+context-wired entry point.  All bot handlers, callbacks, and
+scheduler poll paths should call this instead of duplicating
+the createRequestContext → processMessage dance locally.
 
 **Kind**: inner method of [<code>createPipeline</code>](#createPipeline)  
 <a name="resolveProjectCategory"></a>
@@ -2684,7 +2891,9 @@ Executes the weekly digest job, analyzing processed tasks from the past week.
 <a name="retryDeferredIntents"></a>
 
 ## retryDeferredIntents(deps, [options]) ⇒ <code>Object</code>
-Retry deferred pipeline intents that were saved when the TickTick APIwas unavailable (R12 graceful degradation).  Runs on startup andperiodically during the poll cycle.
+Retry deferred pipeline intents that were saved when the TickTick API
+was unavailable (R12 graceful degradation).  Runs on startup and
+periodically during the poll cycle.
 
 **Kind**: global function  
 
@@ -3281,23 +3490,6 @@ Used by both normalizer (post-cleaning) and adapter (pre-API).
 | --- | --- | --- |
 | item | <code>Object</code> \| <code>null</code> | Raw or cleaned checklist item |
 
-<a name="validateChecklistItems"></a>
-
-## validateChecklistItems(items, [options]) ⇒ <code>Array</code>
-Validates and normalizes an array of checklist items.
-Applies structural validation, defaults, and sort order assignment.
-
-**Kind**: global function  
-**Returns**: <code>Array</code> - Validated, normalized items  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| items | <code>Array</code> \| <code>null</code> |  | Raw checklist items |
-| [options] | <code>Object</code> |  |  |
-| [options.maxItems] | <code>number</code> | <code>30</code> | Maximum items to keep |
-| [options.cleanTitles] | <code>boolean</code> | <code>false</code> | Whether to apply text cleaning (normalizer's concern) |
-| [options.titleCleaner] | <code>function</code> | <code></code> | Custom title cleaner function |
-
 <a name="buildUndoEntryFromRollbackStep"></a>
 
 ## buildUndoEntryFromRollbackStep(rollbackStep, action) ⇒ <code>Object</code>
@@ -3355,16 +3547,76 @@ Retry an async operation with exponential backoff for transient failures.
 | [options.baseDelayMs] | <code>number</code> | <code>1000</code> | Initial delay in ms |
 | [options.isRetryable] | <code>function</code> |  | Predicate to determine if error is retryable |
 
+<a name="tryAcquireIntakeLock"></a>
+
+## tryAcquireIntakeLock([options]) ⇒ <code>boolean</code>
+Try to acquire the shared TickTick intake lock.
+
+The lock prevents overlapping poll/scan/review cycles from mutating the same
+TickTick intake stream at once. Expired locks self-heal on the next acquire
+attempt instead of blocking forever after a crash.
+
+**Kind**: global function
+**Returns**: <code>boolean</code> - True when acquired; false when another unexpired owner holds it.
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [options] | <code>Object</code> |  |  |
+| [options.owner] | <code>string</code> | <code>&quot;&#x27;unknown&#x27;&quot;</code> | Human-readable lock owner for diagnostics. |
+| [options.ttlMs] | <code>number</code> | <code>300000</code> | Lock time-to-live in milliseconds. |
+| [options.now] | <code>number</code> | <code>Date.now()</code> | Current timestamp override for tests. |
+
+<a name="releaseIntakeLock"></a>
+
+## releaseIntakeLock() ⇒ <code>void</code>
+Release the shared TickTick intake lock.
+
+Callers should release only locks they acquired. The lock also expires by TTL
+as a defensive fallback for process crashes or interrupted async flows.
+
+**Kind**: global function
+<a name="getIntakeLockStatus"></a>
+
+## getIntakeLockStatus([options]) ⇒ <code>Object</code> \| <code>Object</code>
+Get diagnostic metadata for the shared TickTick intake lock.
+
+**Kind**: global function
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [options] | <code>Object</code> |  |  |
+| [options.now] | <code>number</code> | <code>Date.now()</code> | Current timestamp override for tests. |
+
+<a name="getChatId"></a>
+
+## getChatId() ⇒ <code>number</code> \| <code>null</code>
+Get the stored Telegram chat ID.
+
+**Kind**: global function
+**Returns**: <code>number</code> \| <code>null</code> - Chat ID or null if not set
+<a name="setChatId"></a>
+
+## setChatId(id) ⇒ <code>Promise.&lt;void&gt;</code>
+Persist a Telegram chat ID to the store.
+
+**Kind**: global function
+
+| Param | Type | Description |
+| --- | --- | --- |
+| id | <code>number</code> | Telegram chat ID |
+
 <a name="getWorkStyleMode"></a>
 
 ## getWorkStyleMode()
-Get the current work-style mode for a user.Returns the active mode, automatically reverting to standard if expired.
+Get the current work-style mode for a user.
+Returns the active mode, automatically reverting to standard if expired.
 
 **Kind**: global function  
 <a name="setWorkStyleMode"></a>
 
 ## setWorkStyleMode(userId, mode, options)
-Set the work-style mode for a user.Mode transitions are explicit — never changes without user action or auto-expiry.
+Set the work-style mode for a user.
+Mode transitions are explicit — never changes without user action or auto-expiry.
 
 **Kind**: global function  
 
@@ -3393,6 +3645,45 @@ Park a task that failed analysis — prevents re-polling until retryAfterMs expi
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
 | [retryAfterMs] | <code>number</code> | <code>7200000</code> | — ms to park (default 2h; callers can pass quota-aligned duration) |
+
+<a name="approveTask"></a>
+
+## approveTask(taskId) ⇒ <code>Promise.&lt;(Object\|null)&gt;</code>
+Approve a pending task, marking it as processed.
+Delegates to resolveTask with status 'approve'.
+
+**Kind**: global function
+**Returns**: <code>Promise.&lt;(Object\|null)&gt;</code> - The processed task entry, or null if not pending
+
+| Param | Type | Description |
+| --- | --- | --- |
+| taskId | <code>string</code> | Task ID to approve |
+
+<a name="skipTask"></a>
+
+## skipTask(taskId) ⇒ <code>Promise.&lt;(Object\|null)&gt;</code>
+Skip a pending task, marking it as processed without taking action.
+Delegates to resolveTask with status 'skip'.
+
+**Kind**: global function
+**Returns**: <code>Promise.&lt;(Object\|null)&gt;</code> - The processed task entry, or null if not pending
+
+| Param | Type | Description |
+| --- | --- | --- |
+| taskId | <code>string</code> | Task ID to skip |
+
+<a name="dropTask"></a>
+
+## dropTask(taskId) ⇒ <code>Promise.&lt;(Object\|null)&gt;</code>
+Drop a pending task, marking it as processed and deprioritized.
+Delegates to resolveTask with status 'drop'.
+
+**Kind**: global function
+**Returns**: <code>Promise.&lt;(Object\|null)&gt;</code> - The processed task entry, or null if not pending
+
+| Param | Type | Description |
+| --- | --- | --- |
+| taskId | <code>string</code> | Task ID to drop |
 
 <a name="getQueueHealthSnapshot"></a>
 
@@ -3488,7 +3779,8 @@ Get all undo entries sharing a batchId.
 <a name="getLastAutoApplyBatch"></a>
 
 ## getLastAutoApplyBatch() ⇒ <code>Array.&lt;Object&gt;</code>
-Get all undo entries from the most recent auto-apply batch.Groups by batchId; if no batchId, falls back to the single most recent auto-apply entry.
+Get all undo entries from the most recent auto-apply batch.
+Groups by batchId; if no batchId, falls back to the single most recent auto-apply entry.
 
 **Kind**: global function  
 **Returns**: <code>Array.&lt;Object&gt;</code> - Array of undo entries from the same batch  
@@ -3503,6 +3795,36 @@ Remove specific undo entries by reference identity.
 | --- | --- | --- |
 | entries | <code>Array.&lt;Object&gt;</code> | Entries to remove |
 
+<a name="getStats"></a>
+
+## getStats() ⇒ <code>Object</code>
+Get the cumulative stats snapshot.
+
+**Kind**: global function
+<a name="updateStats"></a>
+
+## updateStats(updates) ⇒ <code>Promise.&lt;void&gt;</code>
+Merge partial updates into the cumulative stats.
+
+**Kind**: global function
+
+| Param | Type | Description |
+| --- | --- | --- |
+| updates | <code>Object</code> | Partial stats object with fields to update |
+
+<a name="getProcessedTasks"></a>
+
+## getProcessedTasks() ⇒ <code>Object.&lt;string, Object&gt;</code>
+Get all processed task entries.
+
+**Kind**: global function
+**Returns**: <code>Object.&lt;string, Object&gt;</code> - Map of taskId → processed task entry
+<a name="getProcessedCount"></a>
+
+## getProcessedCount() ⇒ <code>number</code>
+Count the total number of processed task entries.
+
+**Kind**: global function
 <a name="resetAll"></a>
 
 ## resetAll()
@@ -4021,43 +4343,4 @@ Factory function to create and configure a Telegram bot instance.
 | adapter | [<code>TickTickAdapter</code>](#TickTickAdapter) |  | Structured adapter for TickTick writes. |
 | pipeline | <code>Object</code> |  | Processing pipeline for task mutations. |
 | [config] | <code>Object</code> | <code>{}</code> | Optional configuration for bot behavior. |
-
-<a name="formatPipelineFailure"></a>
-
-## formatPipelineFailure(result, [options]) ⇒ <code>string</code>
-Format a pipeline error result for user-facing display.
-
-**Kind**: global function  
-**Returns**: <code>string</code> - User-safe error message (never leaks internal diagnostics unless isDevMode)  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| result | <code>Object</code> |  | Pipeline error result with `confirmationText`, `isDevMode`, `diagnostics` |
-| [options] | <code>Object</code> |  |  |
-| [options.compact] | <code>boolean</code> | <code>false</code> | When true, collapse newlines to single-line separators |
-
-<a name="executeUndoEntry"></a>
-
-## executeUndoEntry(entry, adapter) ⇒ <code>Promise.&lt;{reverted: Array.&lt;string&gt;}&gt;</code>
-Execute a single undo entry against the TickTick adapter.Handles all rollback types: delete_created, restore_updated, recreate_deleted, uncomplete_task,plus legacy update-based restore for pre-rollback entries.
-
-**Kind**: global function  
-**Returns**: <code>Promise.&lt;{reverted: Array.&lt;string&gt;}&gt;</code> - Array of reverted task titles  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| entry | <code>Object</code> | Undo entry from the store |
-| adapter | [<code>TickTickAdapter</code>](#TickTickAdapter) | TickTick adapter instance |
-
-<a name="executeUndoBatch"></a>
-
-## executeUndoBatch(entries, adapter) ⇒ <code>Promise.&lt;{reverted: Array.&lt;string&gt;, successful: Array.&lt;Object&gt;}&gt;</code>
-Execute a batch of undo entries, tolerating individual failures.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| entries | <code>Array.&lt;Object&gt;</code> | Undo entries to execute |
-| adapter | [<code>TickTickAdapter</code>](#TickTickAdapter) | TickTick adapter instance |
 

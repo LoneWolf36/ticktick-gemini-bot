@@ -629,7 +629,7 @@ function _resolveProject(projectHint, projects = [], defaultProjectId = null, ta
 
 /**
  * Expands relative dates to absolute ISO strings.
- * We cheat here and use `bot/utils.js` if we need to, but implementing simple resolution is OK too.
+ * Keeps simple relative-date handling inside the normalizer to avoid bot-layer coupling.
  */
 function _expandDueDate(dueDateString, { currentDate = new Date(), timezone = 'Europe/Dublin' } = {}) {
     if (!dueDateString) return null;

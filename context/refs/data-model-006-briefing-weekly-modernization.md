@@ -22,7 +22,7 @@ Core fields used by current summary paths:
 
 ### Processed Task History Entry
 
-Observed in `services/store.js`, `bot/utils.js`, and the current `/weekly` command and scheduler flow.
+Observed in `services/store.js`, `services/shared-utils.js`, and the current `/weekly` command and scheduler flow.
 
 Core fields used today:
 - `originalTitle`
