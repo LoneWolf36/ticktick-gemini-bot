@@ -1103,7 +1103,7 @@ export class TickTickAdapter {
      * @param {string} [userId=DEFAULT_BEHAVIORAL_USER_ID] - User ID for behavioral signals
      * @param {Object} [options={}] - Adapter options
      * @param {boolean} [options.verifyAfterWrite=false] - Fetch task after complete to verify status
-     * @returns {Promise<{completed: boolean, taskId: string, verified?: boolean, verificationNote?: string}>} Confirmation object
+     * @returns {Promise<Object>} Confirmation object
      * @throws {Error} Classified error with code if API call fails or validation fails
      *
      * @example
@@ -1151,7 +1151,7 @@ export class TickTickAdapter {
      * @param {string} [userId=DEFAULT_BEHAVIORAL_USER_ID] - User ID for behavioral signals
      * @param {Object} [options={}] - Adapter options
      * @param {boolean} [options.verifyAfterWrite=false] - Verify task is no longer in active list
-     * @returns {Promise<{deleted: boolean, taskId: string, verified?: boolean, verificationNote?: string}>} Confirmation object
+     * @returns {Promise<Object>} Confirmation object
      * @throws {Error} Classified error with code if API call fails or validation fails
      *
      * @example

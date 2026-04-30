@@ -524,6 +524,134 @@ export function registerCallbacks(bot, adapter, pipeline) {
         }
     });
 
+    // ─── Mutation Confirmation Confirm ──────────────────────
+    // Handles user confirming a non-exact/destructive mutation.
+    // Resumes through the pipeline with skipMutationConfirmation to avoid loops.
+    bot.callbackQuery(/^mut:confirm$/, async (ctx) => {
+        if (!isAuthorized(ctx)) {
+            await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
+            return;
+        }
+        await safeAnswerCallbackQuery(ctx, { text: 'Confirming...' });
+        const chatId = ctx.chat?.id;
+        const userId = ctx.from?.id;
+
+        const pending = store.getPendingMutationConfirmation();
+
+        // Fail-closed: no pending state
+        if (!pending) {
+            await editWithMarkdown(ctx, '⚠️ **Nothing to confirm.** The request may have expired or was already handled.');
+            return;
+        }
+
+        // Cross-chat/user rejection
+        if (pending.chatId && chatId && pending.chatId !== chatId) {
+            await editWithMarkdown(ctx, '⚠️ Wrong chat.');
+            return;
+        }
+        if (pending.userId && userId && pending.userId !== userId) {
+            await editWithMarkdown(ctx, '⚠️ Wrong user.');
+            return;
+        }
+
+        // TTL check already done by getPendingMutationConfirmation, but double-check
+        const createdAt = pending.createdAt ? new Date(pending.createdAt).getTime() : 0;
+        if (createdAt && (Date.now() - createdAt > store.MUTATION_CONFIRMATION_TTL_MS)) {
+            await store.clearPendingMutationConfirmation();
+            await editWithMarkdown(ctx, '⏰ **Confirmation expired.** Please rephrase your request.');
+            return;
+        }
+
+        // Validate we have enough state to proceed
+        if (!pending.matchedTask || !pending.matchedTask.taskId) {
+            await store.clearPendingMutationConfirmation();
+            await editWithMarkdown(ctx, '⚠️ **Task information missing.** Please rephrase your request.');
+            return;
+        }
+
+        // Duplicate-tap guard: clear pending before execution
+        await store.clearPendingMutationConfirmation();
+
+        // Resume through the pipeline with confirmed task context.
+        // Use skipMutationConfirmation to prevent re-prompting for the same mutation.
+        try {
+            const allTasks = await adapter.listActiveTasks();
+            const availableProjects = await adapter.listProjects();
+
+            // Find the full task object from TickTick cache
+            const resolvedTask = allTasks.find(t => t.id === pending.matchedTask.taskId);
+            if (!resolvedTask) {
+                await editWithMarkdown(ctx, `⚠️ **"${pending.matchedTask.title}"** not found in TickTick. Try again.`);
+                return;
+            }
+
+            const result = await processPipelineMessage(pending.originalMessage, {
+                existingTask: resolvedTask,
+                entryPoint: pending.entryPoint || 'telegram:confirmation-resume',
+                mode: pending.mode || 'interactive',
+                workStyleMode: pending.workStyleMode || null,
+                availableProjects,
+                skipClarification: true,
+                skipMutationConfirmation: true,
+            });
+
+            if (result.type === 'task') {
+                await editWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                const recentUserId = ctx.from?.id;
+                if (recentUserId && resolvedTask) {
+                    await store.setRecentTaskContext(recentUserId, {
+                        taskId: resolvedTask.id,
+                        title: resolvedTask.title,
+                        content: resolvedTask.content || undefined,
+                        projectId: resolvedTask.projectId,
+                        source: 'mutation:confirm',
+                    });
+                }
+            } else if (result.type === 'error') {
+                const diag = result.isDevMode && result.diagnostics?.length > 0
+                    ? `\n\n${result.diagnostics.slice(0, 3).join('\n')}`
+                    : '';
+                await editWithMarkdown(ctx, `❌ ${result.confirmationText}${diag}`);
+            } else {
+                await editWithMarkdown(ctx, `**"${pending.matchedTask.title}"** confirmed. ${result.confirmationText || 'Done.'}`);
+            }
+        } catch (err) {
+            console.error('Mutation confirmation resume error:', err.message);
+            await editWithMarkdown(ctx, '❌ Failed to process the confirmed action. Please try again.');
+        }
+    });
+
+    // ─── Mutation Confirmation Cancel ────────────────────────
+    bot.callbackQuery(/^mut:confirm:cancel$/, async (ctx) => {
+        if (!isAuthorized(ctx)) {
+            await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
+            return;
+        }
+        await safeAnswerCallbackQuery(ctx, );
+        const pending = store.getPendingMutationConfirmation();
+
+        // Missing/expired state: no pending confirmation to cancel
+        if (!pending) {
+            await editWithMarkdown(ctx, '⚠️ **Nothing to cancel.** The confirmation request has expired or was already handled.');
+            return;
+        }
+
+        // Cross-chat/user rejection for cancel too
+        const chatId = ctx.chat?.id;
+        const userId = ctx.from?.id;
+        if (pending.chatId && chatId && pending.chatId !== chatId) {
+            await editWithMarkdown(ctx, '⚠️ Wrong chat.');
+            return;
+        }
+        if (pending.userId && userId && pending.userId !== userId) {
+            await editWithMarkdown(ctx, '⚠️ Wrong user.');
+            return;
+        }
+
+        await store.clearPendingMutationConfirmation();
+        await editWithMarkdown(ctx, '❌ **Cancelled.** Task was not modified.');
+    });
+
     // ─── Mutation Clarification Cancel ───────────────────────
     bot.callbackQuery(/^mut:cancel$/, async (ctx) => {
         if (!isAuthorized(ctx)) {

@@ -15,8 +15,8 @@
         "lint:duplicates": "jscpd",
         "lint:duplicates:fix": "jscpd --mode strict",
         "lint": "npm run check:duplicates",
-        "docs:typedoc": "typedoc --entryPointStrategy expand ./services ./bot server.js --out docs/api",
-        "docs:map": "jsdoc2md 'services/**/*.js' 'bot/**/*.js' server.js > context/refs/codebase-function-map.md"
+        "docs:typedoc": "typedoc --entryPointStrategy expand ./services ./bot server.js --exclude './services/user_context.js' --out docs/api",
+        "docs:map": "jsdoc2md --configure jsdoc.conf.json 'services/**/*.js' 'bot/**/*.js' server.js > context/refs/codebase-function-map.md"
     },
     "dependencies": {
         "@google/genai": "^1.50.1",

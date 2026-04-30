@@ -67,6 +67,7 @@ const DEFAULT_STATE = {
     pendingTasks: {},    // Analyzed + sent to Telegram, awaiting user review
     pendingReorg: null,  // Proposed global reorg plan awaiting apply/refine/cancel
     pendingMutationClarification: null, // Pending mutation clarification state for free-form handler
+    pendingMutationConfirmation: null,   // Pending destructive/non-exact mutation confirmation gate
     pendingChecklistClarification: null, // Pending checklist vs separate-tasks clarification
     deferredPipelineIntents: [], // Pending deferred pipeline intents for API-unavailable recovery
     failedDeferredIntents: [], // Dead-letter queue for intents that exhausted retries
@@ -146,6 +147,7 @@ async function loadFromRedis() {
                 pendingTasks: rest.pendingTasks || {},
                 pendingReorg: rest.pendingReorg || null,
                 pendingMutationClarification: rest.pendingMutationClarification || null,
+                pendingMutationConfirmation: rest.pendingMutationConfirmation || null,
                 pendingChecklistClarification: rest.pendingChecklistClarification || null,
                 deferredPipelineIntents: Array.isArray(rest.deferredPipelineIntents) ? rest.deferredPipelineIntents : [],
                 failedDeferredIntents: Array.isArray(rest.failedDeferredIntents) ? rest.failedDeferredIntents : [],
@@ -220,6 +222,7 @@ function loadFromFile() {
             pendingTasks: rest.pendingTasks || {},
             pendingReorg: rest.pendingReorg || null,
             pendingMutationClarification: rest.pendingMutationClarification || null,
+            pendingMutationConfirmation: rest.pendingMutationConfirmation || null,
             pendingChecklistClarification: rest.pendingChecklistClarification || null,
             deferredPipelineIntents: Array.isArray(rest.deferredPipelineIntents) ? rest.deferredPipelineIntents : [],
             failedDeferredIntents: Array.isArray(rest.failedDeferredIntents) ? rest.failedDeferredIntents : [],
@@ -894,6 +897,44 @@ export async function clearPendingMutationClarification() {
     await save();
 }
 
+// ─── Pending Mutation Confirmation (Destructive/Non-Exact Gate) ──
+// Narrow state for requiring user confirmation before executing
+// mutations resolved via non-exact match (prefix, contains, fuzzy, etc.)
+
+/** Mutation confirmation TTL: 10 minutes */
+export const MUTATION_CONFIRMATION_TTL_MS = 10 * 60 * 1000;
+
+export function getPendingMutationConfirmation() {
+    const pending = state.pendingMutationConfirmation;
+    if (!pending) return null;
+
+    // TTL check — expire silently
+    const createdAt = pending.createdAt ? new Date(pending.createdAt).getTime() : 0;
+    if (createdAt && (Date.now() - createdAt > MUTATION_CONFIRMATION_TTL_MS)) {
+        console.log('[MutationConfirmation] Expired pending state cleared (TTL exceeded)');
+        state.pendingMutationConfirmation = null;
+        save().catch(() => {}); // Best-effort cleanup
+        return null;
+    }
+
+    return pending;
+}
+
+export async function setPendingMutationConfirmation(data) {
+    state.pendingMutationConfirmation = {
+        ...data,
+        createdAt: data.createdAt || new Date().toISOString(),
+    };
+    await save();
+    console.log('[MutationConfirmation] Pending state persisted');
+}
+
+export async function clearPendingMutationConfirmation() {
+    state.pendingMutationConfirmation = null;
+    await save();
+    console.log('[MutationConfirmation] Pending state cleared');
+}
+
 // ─── Pending Checklist Clarification ──────────────────────────
 // Narrow state for resuming ambiguous checklist vs separate-tasks requests.
 // TTL: 24 hours — after expiry, the clarification is ignored and a conservative
@@ -1184,6 +1225,7 @@ export function getOperationalSnapshot() {
     const failedDeferredCount = Array.isArray(state.failedDeferredIntents) ? state.failedDeferredIntents.length : 0;
     const clarificationCount = [
         state.pendingMutationClarification,
+        state.pendingMutationConfirmation,
         state.pendingChecklistClarification,
     ].filter(Boolean).length;
 

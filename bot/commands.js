@@ -12,6 +12,8 @@ import {
     parseDateStringToTickTickISO, replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, scheduleToDate, containsSensitiveContent, pendingToAnalysis,
     buildMutationCandidateKeyboard,
     buildMutationClarificationMessage,
+    buildMutationConfirmationMessage,
+    buildMutationConfirmationKeyboard,
     buildPendingDataFromAction,
     formatPipelineFailure,
     retryWithBackoff,
@@ -684,6 +686,10 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         await store.markTaskFailed(task.id, 'clarification_needed');
                     } else if (result.type === 'non-task') {
                         await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                    } else if (result.type === 'pending-confirmation') {
+                        // Fail-closed: scan/review is automated and cannot handle interactive
+                        // confirmation. Park task as processed so it doesn't re-queue.
+                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false, pendingConfirmation: true });
                     } else {
                         await store.markTaskFailed(task.id, `unknown_result_type: ${result.type}`);
                     }
@@ -745,6 +751,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                                     await store.markTaskFailed(task.id, 'clarification_needed');
                                 } else if (result.type === 'non-task') {
                                     await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                                } else if (result.type === 'pending-confirmation') {
+                                    await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false, pendingConfirmation: true });
                                 } else {
                                     await store.markTaskFailed(task.id, `unknown_result_type: ${result.type}`);
                                 }
@@ -1134,6 +1142,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         await store.markTaskFailed(task.id, 'clarification_needed');
                     } else if (result.type === 'non-task') {
                         await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                    } else if (result.type === 'pending-confirmation') {
+                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false, pendingConfirmation: true });
                     } else {
                         await store.markTaskFailed(task.id, `unknown_result_type: ${result.type}`);
                     }
@@ -1195,6 +1205,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                                     await store.markTaskFailed(task.id, 'clarification_needed');
                                 } else if (result.type === 'non-task') {
                                     await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                                } else if (result.type === 'pending-confirmation') {
+                                    await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false, pendingConfirmation: true });
                                 } else {
                                     await store.markTaskFailed(task.id, `unknown_result_type: ${result.type}`);
                                 }
@@ -1601,6 +1613,28 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         await replyWithMarkdown(ctx, msg, { reply_markup: keyboard });
                     }
                 }
+            } else if (result.type === 'pending-confirmation') {
+                // Non-exact match confirmation gate
+                const userId = ctx.from?.id;
+                await store.setPendingMutationConfirmation({
+                    originalMessage: userMessage,
+                    matchedTask: result.pendingConfirmation?.matchedTask || null,
+                    actionType: result.pendingConfirmation?.actionType || null,
+                    targetQuery: result.pendingConfirmation?.targetQuery || null,
+                    matchConfidence: result.pendingConfirmation?.matchConfidence || null,
+                    matchType: result.pendingConfirmation?.matchType || null,
+                    chatId: ctx.chat?.id ?? null,
+                    userId: userId ?? null,
+                    entryPoint: result.entryPoint || 'telegram:freeform',
+                    mode: result.mode || 'interactive',
+                    workStyleMode: result.workStyleMode || null,
+                });
+                const msg = buildMutationConfirmationMessage(
+                    result.pendingConfirmation,
+                    { workStyleMode: result.workStyleMode || await resolveCurrentWorkStyleMode(ctx) },
+                );
+                const keyboard = buildMutationConfirmationKeyboard();
+                await replyWithMarkdown(ctx, msg, { reply_markup: keyboard });
             } else if (result.type === 'not-found') {
                 const reason = result.notFound?.reason || '';
                 await ctx.reply(`Couldn't find a matching task. ${reason ? reason : 'Try a different name or create a new task.'}`);

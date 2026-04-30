@@ -507,4 +507,80 @@ describe('Task Resolver Module', () => {
             assert.strictEqual(result.selected.matchType, 'token_overlap');
         });
     });
+
+    describe('matchConfidence tiers', () => {
+        it('should set matchConfidence exact for exact string match', () => {
+            const result = resolveTarget({ targetQuery: 'buy groceries', activeTasks: [TASK_FIXTURES.buyGroceries] });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.matchType, 'exact');
+            assert.strictEqual(result.selected.matchConfidence, 'exact');
+        });
+
+        it('should set matchConfidence high for prefix match', () => {
+            const result = resolveTarget({ targetQuery: 'buy', activeTasks: [TASK_FIXTURES.buyGroceries] });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.matchType, 'prefix');
+            assert.strictEqual(result.selected.matchConfidence, 'high');
+        });
+
+        it('should set matchConfidence high for contains match', () => {
+            const result = resolveTarget({ targetQuery: 'groceries', activeTasks: [TASK_FIXTURES.buyGroceries] });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.matchType, 'contains');
+            assert.strictEqual(result.selected.matchConfidence, 'high');
+        });
+
+        it('should set matchConfidence high for coreference match', () => {
+            const result = resolveTarget({
+                targetQuery: 'it',
+                activeTasks: [TASK_FIXTURES.buyGroceries],
+                recentTask: TASK_FIXTURES.callMom,
+            });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.matchType, 'coreference');
+            assert.strictEqual(result.selected.matchConfidence, 'high');
+        });
+
+        it('should set matchConfidence medium for fuzzy/token_overlap match', () => {
+            const result = resolveTarget({ targetQuery: 'grocries', activeTasks: [TASK_FIXTURES.buyGroceries] });
+            assert.strictEqual(result.status, 'resolved');
+            // token_overlap may catch this before pure fuzzy — either is medium confidence
+            assert.ok(['fuzzy', 'token_overlap'].includes(result.selected.matchType),
+                `expected fuzzy/token_overlap, got ${result.selected.matchType}`);
+            assert.strictEqual(result.selected.matchConfidence, 'medium');
+        });
+
+        it('should set matchConfidence medium for token_overlap match', () => {
+            const tasks = [
+                { id: 't1', projectId: 'p1', title: 'Watch AI Coding Videos on Udemy' },
+                { id: 't2', projectId: 'p1', title: 'Buy groceries' },
+            ];
+            const result = resolveTarget({ targetQuery: 'ai coder task', activeTasks: tasks });
+            assert.strictEqual(result.status, 'resolved');
+            assert.strictEqual(result.selected.matchType, 'token_overlap');
+            assert.strictEqual(result.selected.matchConfidence, 'medium');
+        });
+
+        it('should set matchConfidence low for underspecified candidates', () => {
+            const result = resolveTarget({ targetQuery: 'it', activeTasks: [TASK_FIXTURES.buyGroceries] });
+            assert.strictEqual(result.status, 'clarification');
+            for (const c of result.candidates) {
+                assert.strictEqual(c.matchConfidence, 'low');
+            }
+        });
+
+        it('should include matchConfidence in all candidate objects', () => {
+            const tasks = [
+                { id: 't1', projectId: 'p1', title: 'Review PR 123' },
+                { id: 't2', projectId: 'p1', title: 'Review PR 456' },
+            ];
+            const result = resolveTarget({ targetQuery: 'review pr', activeTasks: tasks });
+            // Both prefix, should be clarification
+            assert.strictEqual(result.status, 'clarification');
+            for (const c of result.candidates) {
+                assert.ok(typeof c.matchConfidence === 'string', `candidate missing matchConfidence: ${c.title}`);
+                assert.ok(['exact', 'high', 'medium', 'low'].includes(c.matchConfidence));
+            }
+        });
+    });
 });

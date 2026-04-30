@@ -41,7 +41,7 @@ Telegram Message
          ▼
 ┌─────────────────────┐
 │  TickTick Adapter   │  Strict REST API client (create/update/complete/delete)
-│  (ticktick-adapter) │  OAuth2 refresh, retries, project-move rollback
+│  (ticktick-adapter) │  OAuth2 refresh, retries, official task move/filter APIs
 └────────┬────────────┘
          │
          ▼
@@ -157,6 +157,8 @@ Open your bot in Telegram and send `/start`.
 - Give instructions: *"move all gym tasks to next week"*, *"drop everything in Inbox"*
 - Ask questions: *"what should I focus on right now?"*
 - Vent: *"I'm overwhelmed"* — the bot will coach you, not just list tasks
+
+For update/complete/delete requests, exact task-title matches execute directly. Non-exact matches (partial/fuzzy/recent-task references) pause for a confirm/cancel tap before TickTick is modified.
 
 ---
 

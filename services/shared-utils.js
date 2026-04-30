@@ -837,6 +837,72 @@ export function formatProcessedTask(task) {
     return `- "${task.originalTitle}" -> ${action} [${badge}]`;
 }
 
+// ─── Mutation Confirmation Labels (single source of truth) ──
+
+/**
+ * Maps mutation action types to user-facing labels.
+ * Centralized to prevent duplication across pipeline and shared-utils.
+ * @type {Object<string, string>}
+ */
+export const MUTATION_TYPE_LABELS = {
+    'delete': 'Delete',
+    'complete': 'Complete',
+    'update': 'Update',
+};
+
+/**
+ * Maps resolver match types to user-facing descriptions.
+ * Centralized to prevent duplication across pipeline and shared-utils.
+ * @type {Object<string, string>}
+ */
+export const MATCH_TYPE_LABELS = {
+    'prefix': 'partial name match',
+    'contains': 'contains match',
+    'token_overlap': 'partial word match',
+    'fuzzy': 'fuzzy match',
+    'coreference': 'recent task reference',
+    'underspecified': 'vague reference',
+};
+
+// ─── Mutation Confirmation Gate ────────────────────────────
+
+/**
+ * Builds a confirmation message for destructive/non-exact mutations.
+ * @param {Object|null} pendingConfirmation - The pendingConfirmation object from pipeline result
+ * @param {Object} [options]
+ * @param {string} [options.workStyleMode='standard'] - Current work-style mode
+ * @returns {string} Formatted confirmation message
+ */
+export function buildMutationConfirmationMessage(pendingConfirmation, { workStyleMode = 'standard' } = {}) {
+    if (!pendingConfirmation) return 'Please confirm this action.';
+    const urgentMode = workStyleMode === 'urgent';
+    const actionLabel = MUTATION_TYPE_LABELS[pendingConfirmation.actionType] || 'Modify';
+    const title = pendingConfirmation.matchedTask?.title || 'this task';
+    const matchDesc = MATCH_TYPE_LABELS[pendingConfirmation.matchType] || pendingConfirmation.matchType;
+    const score = pendingConfirmation.score !== undefined ? ` (score: ${pendingConfirmation.score})` : '';
+
+    if (urgentMode) {
+        return `**${actionLabel} "${title}"?** (${matchDesc}${score})`;
+    }
+
+    return `**${actionLabel} "${title}"?**\n\nThis was found via a ${matchDesc}${score}. Confirm to proceed, or cancel.`;
+}
+
+/**
+ * Builds an inline keyboard for mutation confirmation.
+ * @param {Object} [options]
+ * @param {boolean} [options.includeCancel=true] - Whether to include a cancel button
+ * @returns {InlineKeyboard}
+ */
+export function buildMutationConfirmationKeyboard({ includeCancel = true } = {}) {
+    const keyboard = new InlineKeyboard();
+    keyboard.text('✅ Confirm', 'mut:confirm').row();
+    if (includeCancel) {
+        keyboard.text('❌ Cancel', 'mut:confirm:cancel').row();
+    }
+    return keyboard;
+}
+
 // ─── Mutation Candidate Keyboard ────────────────────────────
 
 const MAX_CANDIDATE_LABEL = 30;

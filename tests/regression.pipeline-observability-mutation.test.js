@@ -14,7 +14,7 @@ test('WP07 T073: successful mutation emits diagnostic events with intent and res
 
   const harness = createPipelineHarness({
     intents: [
-      { type: 'update', title: 'Updated title', confidence: 0.95, targetQuery: 'weekly' },
+      { type: 'update', title: 'Updated title', confidence: 0.95, targetQuery: 'Weekly report' },
     ],
     activeTasks: [
       { id: 'task-obs-01', title: 'Weekly report', projectId: 'inbox', projectName: 'Inbox', priority: 5, status: 0 },

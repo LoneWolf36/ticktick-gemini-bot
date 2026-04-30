@@ -7,10 +7,16 @@
  * Output shape (consumed by services/pipeline.js):
  * {
  *   status: 'resolved' | 'clarification' | 'not_found',
- *   selected: { taskId, projectId, title, score, matchType } | null,
- *   candidates: Array<{ taskId, projectId, title, score, matchType }>,
+ *   selected: { taskId, projectId, title, score, matchType, matchConfidence } | null,
+ *   candidates: Array<{ taskId, projectId, title, score, matchType, matchConfidence }>,
  *   reason: string | null
  * }
+ *
+ * matchConfidence tiers:
+ *   exact  — exact string match (title === query)
+ *   high   — prefix, contains, or coreference match
+ *   medium — token_overlap or fuzzy match
+ *   low    — underspecified pronoun/reference (no recent task)
  */
 
 /**
@@ -113,6 +119,29 @@ function fuzzyScore(a, b) {
 }
 
 /**
+ * Derive matchConfidence tier from matchType string.
+ * @param {string} matchType - One of: exact, prefix, contains, coreference, token_overlap, fuzzy, underspecified
+ * @returns {'exact'|'high'|'medium'|'low'}
+ */
+function matchTypeToConfidence(matchType) {
+    switch (matchType) {
+        case 'exact':
+            return 'exact';
+        case 'prefix':
+        case 'contains':
+        case 'coreference':
+            return 'high';
+        case 'token_overlap':
+        case 'fuzzy':
+            return 'medium';
+        case 'underspecified':
+            return 'low';
+        default:
+            return 'low';
+    }
+}
+
+/**
  * Score one task against the target query.
  * Returns a candidate object or null if no meaningful match.
  * @param {object} task - { id, projectId, title, ... }
@@ -124,37 +153,42 @@ function scoreTask(task, normalizedQuery, originalQuery) {
     const normalizedTitle = normalizeTitle(task.title);
     if (!normalizedTitle || !normalizedQuery) return null;
 
+    const addConfidence = (candidate) => ({
+        ...candidate,
+        matchConfidence: matchTypeToConfidence(candidate.matchType),
+    });
+
     // Exact match
     if (normalizedTitle === normalizedQuery) {
-        return {
+        return addConfidence({
             taskId: task.id,
             projectId: task.projectId ?? null,
             title: task.title,
             score: EXACT_SCORE,
             matchType: 'exact',
-        };
+        });
     }
 
     // Prefix match: query is a prefix of the title or vice versa
     if (normalizedTitle.startsWith(normalizedQuery) || normalizedQuery.startsWith(normalizedTitle)) {
-        return {
+        return addConfidence({
             taskId: task.id,
             projectId: task.projectId ?? null,
             title: task.title,
             score: PREFIX_SCORE,
             matchType: 'prefix',
-        };
+        });
     }
 
     // Contains match: query is contained in title or title in query
     if (normalizedTitle.includes(normalizedQuery) || normalizedQuery.includes(normalizedTitle)) {
-        return {
+        return addConfidence({
             taskId: task.id,
             projectId: task.projectId ?? null,
             title: task.title,
             score: CONTAINS_SCORE,
             matchType: 'contains',
-        };
+        });
     }
 
     // Token-overlap match: e.g. "ai coder task" -> "Watch AI Coding Videos on Udemy"
@@ -173,13 +207,13 @@ function scoreTask(task, normalizedQuery, originalQuery) {
         const minOverlap = queryTokens.length >= 3 ? 0.50 : 0.60;
         if (overlapRatio >= minOverlap) {
             const scaledScore = Math.round(FUZZY_SCORE_MIN + overlapRatio * (FUZZY_SCORE_MAX - FUZZY_SCORE_MIN));
-            return {
+            return addConfidence({
                 taskId: task.id,
                 projectId: task.projectId ?? null,
                 title: task.title,
                 score: Math.min(scaledScore, FUZZY_SCORE_MAX),
                 matchType: 'token_overlap',
-            };
+            });
         }
     }
 
@@ -189,13 +223,13 @@ function scoreTask(task, normalizedQuery, originalQuery) {
     if (fuzzy >= 0.70) {
         // Scale score between FUZZY_SCORE_MIN and FUZZY_SCORE_MAX
         const scaledScore = Math.round(FUZZY_SCORE_MIN + (fuzzy - 0.70) / 0.30 * (FUZZY_SCORE_MAX - FUZZY_SCORE_MIN));
-        return {
+        return addConfidence({
             taskId: task.id,
             projectId: task.projectId ?? null,
             title: task.title,
             score: Math.min(scaledScore, FUZZY_SCORE_MAX),
             matchType: 'fuzzy',
-        };
+        });
     }
 
     return null;
@@ -244,6 +278,7 @@ export function resolveTarget({ targetQuery, activeTasks, recentTask = null }) {
                     title: recentTask.title,
                     score: 100,
                     matchType: 'coreference',
+                    matchConfidence: 'high',
                 },
                 candidates: [],
                 reason: null,
@@ -259,6 +294,7 @@ export function resolveTarget({ targetQuery, activeTasks, recentTask = null }) {
                 title: task.title,
                 score: 0,
                 matchType: 'underspecified',
+                matchConfidence: 'low',
             }));
 
         return {

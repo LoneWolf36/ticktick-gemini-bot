@@ -108,6 +108,10 @@ Read/summarization surfaces stay outside write path:
 - `/status`, `/pending`, `/menu`, `/memory`, `/mode` are operational/read-only command surfaces
 - `/focus`, `/normal`, `/urgent`, `/forget` are work-style/behavioral command surfaces (bot-local state only, no TickTick mutation)
 
+### Destructive/Non-Exact Mutation Confirmation Gate
+
+Mutations resolved via non-exact match (prefix, contains, token_overlap, fuzzy, coreference) require explicit user confirmation before execution. The pipeline returns `type: 'pending-confirmation'` with a `pendingConfirmation` block. The bot handler persists this state (10min TTL) and presents a confirm/cancel keyboard. The confirm callback (`mut:confirm`) resumes through the pipeline with `skipMutationConfirmation: true`. Callback data: `mut:confirm` / `mut:confirm:cancel`. The gate is bypassed for: pre-resolved taskId, clarification resume (`skipClarification`), and confirmed callback resume (`skipMutationConfirmation`). Exact matches execute without confirmation.
+
 ## Build, Test, and Development Commands
 - `npm install` installs dependencies from `package-lock.json`.
 - `npm start` runs the production entrypoint with `node server.js`.
@@ -322,6 +326,20 @@ See `context/kits/cavekit-overview.md` for the full cross-reference map and depe
 ### Notes
 
 - Cavekit kits in `context/kits/` are the canonical requirements source.
+
+### Agent Protocol: Agent Onboarding
+
+**NEW AGENTS: Start here.**
+
+Before any coding:
+
+1. Read `context/refs/agent-onboarding.md` — curated navigation, key flows, reference tables (5-10 min).
+2. Read this `AGENTS.md` in full — especially guardrails and architecture principles.
+3. Consult `context/refs/codebase-function-map.md` to find the right exports.
+4. Read the relevant Cavekit kit in `context/kits/` for the domain.
+5. Read the file(s) you plan to edit with the `Read` tool — never guess.
+
+**Source-of-truth priority**: AGENTS.md → agent-onboarding.md → Cavekit kits → codebase-function-map.md (generated) → docs/ (fallback only).
 
 ### Agent Protocol: Codebase Function Map
 CRITICAL: Every agent MUST consult `context/refs/codebase-function-map.md` to discover codebase capabilities before searching blindly. Whenever you add, remove, or change the signature of any exported function, class, or constant, you MUST run `npm run docs:map` and `npm run docs:typedoc` to regenerate the map and API documentation.

@@ -1446,7 +1446,7 @@ export class GeminiAnalyzer {
 
     /**
      * Returns a health snapshot for monitoring /health endpoints.
-     * @returns {{ circuitBreakers: Object<string,{open:boolean,openUntil:number|null,halfOpen:boolean,failureCount:number}>, failureCounts: Object<string,{_503:number,_429_quota:number,_429_rate:number,invalid_key:number,network:number,total:number}>, keysAvailable: number, keyCount: number }}
+     * @returns {Object} Health snapshot containing circuit-breaker state, failure counts, and key availability.
      */
     getHealthSnapshot() {
         const circuitBreakers = {};

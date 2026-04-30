@@ -852,6 +852,191 @@ test('mut:pick fails safely when no pending state exists', async () => {
   assert.ok(edits[0].includes('No pending'));
 });
 
+test('registerCallbacks wires mut:confirm and mut:confirm:cancel callback families', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  registerCallbacks(
+    bot,
+    {},
+    { processMessage: async () => ({ type: 'non-task', confirmationText: 'Got it' }) },
+  );
+
+  const patterns = handlers.callbacks.map(h => h.pattern.toString());
+  assert.ok(patterns.some(p => p.includes('mut:confirm')));
+  assert.ok(patterns.some(p => p.includes('mut:confirm:cancel')));
+});
+
+test('mut:confirm resumes through pipeline with skipMutationConfirmation', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const store = await import('../services/store.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+
+  const userId = 12345;
+  const chatId = AUTHORIZED_CHAT_ID || 67890;
+  await store.clearPendingMutationConfirmation();
+  await store.setPendingMutationConfirmation({
+    originalMessage: 'delete groceries',
+    matchedTask: { taskId: 'task-confirm-1', projectId: 'inbox', title: 'Buy groceries' },
+    actionType: 'delete',
+    targetQuery: 'groceries',
+    matchConfidence: 'high',
+    matchType: 'contains',
+    chatId,
+    userId,
+    entryPoint: 'telegram:freeform',
+    mode: 'interactive',
+    workStyleMode: 'standard',
+  });
+
+  const pipelineCalls = [];
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  const adapter = {
+    listActiveTasks: async () => [
+      { id: 'task-confirm-1', title: 'Buy groceries', projectId: 'inbox', projectName: 'Inbox', status: 0 },
+    ],
+    listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+  };
+  const pipeline = {
+    processMessage: async (msg, opts) => {
+      pipelineCalls.push({ message: msg, options: opts });
+      return { type: 'task', confirmationText: 'Deleted 1 task', actions: [], results: [{ status: 'succeeded' }] };
+    },
+  };
+
+  registerCallbacks(bot, adapter, pipeline);
+
+  const confirmHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:confirm$'))?.handler;
+  assert.equal(typeof confirmHandler, 'function');
+
+  const answers = [];
+  const edits = [];
+  const ctx = {
+    match: ['mut:confirm'],
+    chat: { id: chatId },
+    from: { id: userId },
+    answerCallbackQuery: async (obj) => { answers.push(obj); },
+    editMessageText: async (text) => { edits.push(text); },
+  };
+
+  await confirmHandler(ctx);
+
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].message, 'delete groceries');
+  assert.equal(pipelineCalls[0].options.existingTask.id, 'task-confirm-1');
+  assert.equal(pipelineCalls[0].options.skipClarification, true);
+  assert.equal(pipelineCalls[0].options.skipMutationConfirmation, true);
+  assert.equal(store.getPendingMutationConfirmation(), null);
+  assert.equal(answers.length, 1);
+  assert.ok(edits[0].includes('Deleted 1 task'));
+});
+
+test('mut:confirm blocks expired pending confirmations fail-closed', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const store = await import('../services/store.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+
+  const chatId = AUTHORIZED_CHAT_ID || 777;
+  await store.clearPendingMutationConfirmation();
+  await store.setPendingMutationConfirmation({
+    originalMessage: 'delete groceries',
+    matchedTask: { taskId: 'task-confirm-expired', projectId: 'inbox', title: 'Buy groceries' },
+    actionType: 'delete',
+    chatId,
+    userId: chatId,
+    createdAt: new Date(Date.now() - store.MUTATION_CONFIRMATION_TTL_MS - 1000).toISOString(),
+  });
+
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  registerCallbacks(
+    bot,
+    { listActiveTasks: async () => { throw new Error('should not list tasks'); } },
+    { processMessage: async () => { throw new Error('should not be called'); } },
+  );
+
+  const confirmHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:confirm$'))?.handler;
+  const answers = [];
+  const edits = [];
+  const ctx = {
+    match: ['mut:confirm'],
+    chat: { id: chatId },
+    from: { id: chatId },
+    answerCallbackQuery: async (obj) => { answers.push(obj); },
+    editMessageText: async (text) => { edits.push(text); },
+  };
+
+  await confirmHandler(ctx);
+
+  assert.equal(answers.length, 1);
+  assert.ok(edits[0].includes('Nothing to confirm'));
+  assert.equal(store.getPendingMutationConfirmation(), null);
+});
+
+test('mut:confirm:cancel clears pending mutation confirmation safely', async () => {
+  const { registerCallbacks } = await import('../bot/callbacks.js');
+  const store = await import('../services/store.js');
+  const { AUTHORIZED_CHAT_ID } = await import('../bot/utils.js');
+
+  const chatId = AUTHORIZED_CHAT_ID || 888;
+  await store.clearPendingMutationConfirmation();
+  await store.setPendingMutationConfirmation({
+    originalMessage: 'delete groceries',
+    matchedTask: { taskId: 'task-confirm-cancel', projectId: 'inbox', title: 'Buy groceries' },
+    actionType: 'delete',
+    chatId,
+    userId: chatId,
+  });
+
+  const handlers = { callbacks: [] };
+  const bot = {
+    callbackQuery(pattern, handler) {
+      handlers.callbacks.push({ pattern, handler });
+      return bot;
+    },
+  };
+
+  registerCallbacks(bot, {}, {});
+
+  const cancelHandler = handlers.callbacks.find(h => h.pattern.toString().includes('mut:confirm:cancel'))?.handler;
+  assert.equal(typeof cancelHandler, 'function');
+
+  const answers = [];
+  const edits = [];
+  const ctx = {
+    match: ['mut:confirm:cancel'],
+    chat: { id: chatId },
+    from: { id: chatId },
+    answerCallbackQuery: async (obj) => { answers.push(obj); },
+    editMessageText: async (text) => { edits.push(text); },
+  };
+
+  await cancelHandler(ctx);
+
+  assert.equal(store.getPendingMutationConfirmation(), null);
+  assert.equal(answers.length, 1);
+  assert.ok(edits[0].includes('Cancelled'));
+});
+
 test('pipeline skipClarification uses existingTask for mutation resume', async () => {
   const harness = createPipelineHarness({
     intents: [
@@ -1289,7 +1474,9 @@ test('WP07 T071: update mutation happy path — rename target via exact match', 
     ],
   });
 
-  const result = await harness.processMessage('rename the weekly report to Weekly report — Q4');
+  const result = await harness.processMessage('rename the weekly report to Weekly report — Q4', {
+    skipMutationConfirmation: true,
+  });
 
   assert.equal(result.type, 'task');
   assert.equal(harness.adapterCalls.update.length, 1);
@@ -1307,7 +1494,9 @@ test('WP07 T071: update mutation happy path — change due date', async () => {
     ],
   });
 
-  const result = await harness.processMessage('move the weekly report to today');
+  const result = await harness.processMessage('move the weekly report to today', {
+    skipMutationConfirmation: true,
+  });
 
   assert.equal(result.type, 'task');
   assert.equal(harness.adapterCalls.update.length, 1);
@@ -1324,7 +1513,9 @@ test('WP07 T071: complete mutation happy path — exact match', async () => {
     ],
   });
 
-  const result = await harness.processMessage('mark review PR as done');
+  const result = await harness.processMessage('mark review PR as done', {
+    skipMutationConfirmation: true,
+  });
 
   assert.equal(result.type, 'task');
   assert.equal(harness.adapterCalls.complete.length, 1);
@@ -1342,7 +1533,9 @@ test('WP07 T071: delete mutation happy path — exact match', async () => {
     ],
   });
 
-  const result = await harness.processMessage('delete the groceries task');
+  const result = await harness.processMessage('delete the groceries task', {
+    skipMutationConfirmation: true,
+  });
 
   assert.equal(result.type, 'task');
   assert.equal(harness.adapterCalls.delete.length, 1);
@@ -1554,6 +1747,7 @@ test('pipeline resolves pronoun query when existingTask is injected from recent 
 
   const result = await harness.processMessage('update it', {
     existingTask: { id: 'task-pro-01', projectId: 'inbox', title: 'Review PR' },
+    skipMutationConfirmation: true,
   });
 
   assert.equal(result.type, 'task');
@@ -1576,6 +1770,7 @@ test('processMessageWithContext injects recentTask as existingTask', async () =>
     entryPoint: 'telegram:freeform',
     mode: 'interactive',
     currentDate: '2026-03-10',
+    skipMutationConfirmation: true,
   });
 
   assert.equal(result.type, 'task');
