@@ -1418,3 +1418,32 @@ test('GeminiAnalyzer reorg normalization fills recovery routing from shared poli
     },
   });
 });
+
+
+test('TickTickAdapter updateTask verifyAfterWrite treats timezone-equivalent dueDate values as verified', async () => {
+  const client = Object.create(TickTickClient.prototype);
+  client.getTask = async () => ({
+    id: 'task-tz-001',
+    projectId: 'proj-tz-001',
+    title: 'Test task',
+    content: '',
+    priority: 1,
+    // TickTick returned the dueDate with a different but equivalent timezone offset:
+    dueDate: '2026-04-30T23:59:00.000+0100',
+    repeatFlag: null,
+    status: 0,
+  });
+  client.updateTask = async (_taskId, payload) => {
+    return { id: 'task-tz-001', projectId: 'proj-tz-001', ...payload };
+  };
+
+  const adapter = new TickTickAdapter(client);
+  const result = await adapter.updateTask('task-tz-001', {
+    originalProjectId: 'proj-tz-001',
+    dueDate: '2026-04-30T22:59:00.000+0000',  // Same moment as above, different TZ
+  }, { verifyAfterWrite: true });
+
+  assert.equal(result.verified, true,
+    'dueDate TZ-equivalent values should verify successfully');
+  assert.equal(result.verificationNote, 'Verified against TickTick API');
+});

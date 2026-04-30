@@ -10,7 +10,7 @@
  * - Mixed create+mutation or multi-mutation batches are rejected cleanly.
  */
 
-import { VERB_PATTERNS, resolveProjectCategory, inferProjectByAliases } from './project-policy.js';
+import { resolveProjectCategory, inferProjectByAliases } from './project-policy.js';
 
 // Title normalization constants
 const DATE_PATTERNS = /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next\s+\w+|this\s+\w+)\b/gi;
@@ -170,13 +170,12 @@ function _formatISO(date, timezone = 'Europe/Dublin', endOfDay = true) {
  * 3. Strip priority markers (e.g., "URGENT: ", "Critical - ")
  * 4. Strip date references (e.g., "tomorrow", "next week")
  * 5. Strip leading articles ("A", "An", "The")
- * 6. Ensure verb-led (add "Do" prefix if no verb detected)
- * 7. Capitalize first letter (sentence case)
- * 8. Truncate to maxLength at word boundary with ellipsis
+ * 6. Capitalize first letter (sentence case)
+ * 7. Truncate to maxLength at word boundary with ellipsis
  * 
  * @param {string} rawTitle - The raw title from extracted intent
  * @param {number} maxLength - Maximum character limit (default 100)
- * @returns {string} Cleaned, verb-led title
+ * @returns {string} Cleaned title
  */
 function _normalizeTitle(rawTitle, maxLength = 100, isMutation = false) {
     if (!rawTitle) return '';
@@ -201,11 +200,6 @@ function _normalizeTitle(rawTitle, maxLength = 100, isMutation = false) {
 
     // Strip leading articles
     title = title.replace(LEADING_ARTICLES, '');
-
-    // Ensure verb-led: add "Do" prefix if no verb detected (skip for mutations)
-    if (!isMutation && !VERB_PATTERNS.test(title)) {
-        title = 'Do ' + title;
-    }
 
     // Capitalize first letter (sentence case) - preserve proper nouns
     title = title.charAt(0).toUpperCase() + title.slice(1);

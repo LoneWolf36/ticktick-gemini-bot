@@ -850,20 +850,6 @@ export const MUTATION_TYPE_LABELS = {
     'update': 'Update',
 };
 
-/**
- * Maps resolver match types to user-facing descriptions.
- * Centralized to prevent duplication across pipeline and shared-utils.
- * @type {Object<string, string>}
- */
-export const MATCH_TYPE_LABELS = {
-    'prefix': 'partial name match',
-    'contains': 'contains match',
-    'token_overlap': 'partial word match',
-    'fuzzy': 'fuzzy match',
-    'coreference': 'recent task reference',
-    'underspecified': 'vague reference',
-};
-
 // ─── Mutation Confirmation Gate ────────────────────────────
 
 /**
@@ -878,14 +864,16 @@ export function buildMutationConfirmationMessage(pendingConfirmation, { workStyl
     const urgentMode = workStyleMode === 'urgent';
     const actionLabel = MUTATION_TYPE_LABELS[pendingConfirmation.actionType] || 'Modify';
     const title = pendingConfirmation.matchedTask?.title || 'this task';
-    const matchDesc = MATCH_TYPE_LABELS[pendingConfirmation.matchType] || pendingConfirmation.matchType;
-    const score = pendingConfirmation.score !== undefined ? ` (score: ${pendingConfirmation.score})` : '';
+    const destructive = pendingConfirmation.actionType === 'delete';
 
     if (urgentMode) {
-        return `**${actionLabel} "${title}"?** (${matchDesc}${score})`;
+        return `**${actionLabel} "${title}"?**`;
     }
 
-    return `**${actionLabel} "${title}"?**\n\nThis was found via a ${matchDesc}${score}. Confirm to proceed, or cancel.`;
+    const warning = destructive
+        ? `This didn't match exactly and can't be undone.`
+        : `This didn't match exactly. Please confirm.`;
+    return `**${actionLabel} "${title}"?**\n\n${warning}`;
 }
 
 /**
@@ -951,15 +939,8 @@ export function buildMutationCandidateKeyboard(candidates, { intentSummary = nul
 export function buildMutationClarificationMessage(reason, candidates, intentSummary, { workStyleMode = 'standard' } = {}) {
     const lines = [];
     const urgentMode = workStyleMode === 'urgent';
-    if (intentSummary) {
-        lines.push(urgentMode ? `**Which task?**` : `**I found a few tasks that match — which one?**`);
-    } else {
-        lines.push(urgentMode ? `**Which task?**` : `**I found a few tasks that match — which one?**`);
-    }
-    if (reason) {
-        lines.push(reason);
-    }
-    lines.push(urgentMode ? `\nPick below or rephrase.` : `\nTap the right one, or tell me more specifically.`);
+    lines.push(urgentMode ? `**Which task?**` : `**Which task did you mean?**`);
+    lines.push(urgentMode ? `\nPick below or rephrase.` : `\nTap the right one, or reply with a more specific name.`);
     return lines.join('\n');
 }
 
@@ -1050,18 +1031,6 @@ export function validateChecklistItems(items, options = {}) {
 export function isFollowUpMessage(text = '', recentTaskTitle = null) {
     const t = text.trim().toLowerCase();
     const length = t.length;
-
-    if (recentTaskTitle) {
-        const titleWords = recentTaskTitle
-            .toLowerCase()
-            .replace(/[^\w\s]/g, ' ')
-            .split(/\s+/)
-            .filter(w => w.length >= 3);
-        const hasFuzzyMatch = titleWords.some(word => t.includes(word));
-        if (hasFuzzyMatch) {
-            return length <= 120;
-        }
-    }
 
     if (length >= 60) return false;
     return FOLLOWUP_PRONOUNS.test(t) || FOLLOWUP_TIME_SHIFTS.test(t);

@@ -1367,7 +1367,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
 
         // New pipeline path. Note: we leave gemini check in for the coach fallback optionally.
-        await ctx.reply('🧠 Thinking through this...');
+        await ctx.reply('Working on that...');
         try {
             // Check for pending checklist clarification resume.
             const pendingChecklist = store.getPendingChecklistClarification();
@@ -1487,7 +1487,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 recentTask = store.getRecentTaskContext(userId);
                 if (isFollowUpMessage(userMessage, recentTask?.title || null)) {
                     if (recentTask) {
-                        await ctx.reply(`Applying to "${recentTask.title}"...`);
                         pipelineOptions.existingTask = {
                             id: recentTask.taskId,
                             title: recentTask.title,
@@ -1523,9 +1522,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 }
                 if (diffLines.length > 0) {
                     text += '\n\n' + diffLines.join('\n');
-                }
-                if (result.results?.[0]?.result?.verified === false) {
-                    text += '\n\n_(Warning: TickTick may not reflect this change yet.)_';
                 }
                 await replyWithMarkdown(ctx, truncateMessage(text, 4000));
 
@@ -1636,8 +1632,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 const keyboard = buildMutationConfirmationKeyboard();
                 await replyWithMarkdown(ctx, msg, { reply_markup: keyboard });
             } else if (result.type === 'not-found') {
-                const reason = result.notFound?.reason || '';
-                await ctx.reply(`Couldn't find a matching task. ${reason ? reason : 'Try a different name or create a new task.'}`);
+                await ctx.reply(result.confirmationText || `I couldn't find that task. Try a more specific name, or create it first.`);
             } else if (result.type === 'error') {
                 await ctx.reply(formatPipelineFailure(result));
             }
@@ -1647,7 +1642,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 return;
             }
             console.error('Pipeline error:', err.message);
-            await ctx.reply(`❌ Error: ${err.message}`);
+            await ctx.reply('Something went wrong. Try again, or run /status.');
         }
     });
 }

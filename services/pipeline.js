@@ -15,7 +15,7 @@ import { createPipelineObservability } from './pipeline-observability.js';
 import { QuotaExhaustedError } from './intent-extraction.js';
 import { AIHardQuotaError, AIServiceUnavailableError, AIInvalidKeyError } from './gemini.js';
 import { resolveTarget, buildClarificationPrompt } from './task-resolver.js';
-import { MUTATION_TYPE_LABELS, MATCH_TYPE_LABELS } from './shared-utils.js';
+import { buildMutationConfirmationMessage } from './shared-utils.js';
 
 /**
  * Failure classes for pipeline errors.
@@ -1406,9 +1406,20 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     // contains, token_overlap, fuzzy, coreference), require explicit
                     // user confirmation before executing the mutation.
                     if (!options.skipMutationConfirmation && resolverResult.selected.matchConfidence !== 'exact') {
-                        const actionLabel = MUTATION_TYPE_LABELS[mutationIntent.type] || 'Modify';
                         const targetTitle = resolverResult.selected.title || resolvedTask.title;
-                        const matchDesc = MATCH_TYPE_LABELS[resolverResult.selected.matchType] || resolverResult.selected.matchType;
+                        const pendingConfirmation = {
+                            actionType: mutationIntent.type,
+                            targetQuery: targetQuery,
+                            matchedTask: {
+                                taskId: resolverResult.selected.taskId,
+                                projectId: resolverResult.selected.projectId,
+                                title: targetTitle,
+                            },
+                            matchConfidence: resolverResult.selected.matchConfidence,
+                            matchType: resolverResult.selected.matchType,
+                            score: resolverResult.selected.score,
+                            reason: resolverResult.reason,
+                        };
 
                         context = finalizePipelineContext(context, requestStartedAt, {
                             resultType: 'pending-confirmation',
@@ -1433,20 +1444,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                             type: 'pending-confirmation',
                             results: [],
                             errors: [],
-                            confirmationText: `${actionLabel} "${targetTitle}"? This was a ${matchDesc} (${resolverResult.selected.matchConfidence} confidence). Confirm to proceed.`,
-                            pendingConfirmation: {
-                                actionType: mutationIntent.type,
-                                targetQuery: targetQuery,
-                                matchedTask: {
-                                    taskId: resolverResult.selected.taskId,
-                                    projectId: resolverResult.selected.projectId,
-                                    title: resolverResult.selected.title,
-                                },
-                                matchConfidence: resolverResult.selected.matchConfidence,
-                                matchType: resolverResult.selected.matchType,
-                                score: resolverResult.selected.score,
-                                reason: resolverResult.reason,
-                            },
+                            confirmationText: buildMutationConfirmationMessage(pendingConfirmation, { workStyleMode: context.workStyleMode }),
+                            pendingConfirmation,
                             requestId: context.requestId || null,
                             entryPoint: context.entryPoint || null,
                             mode: context.mode || null,

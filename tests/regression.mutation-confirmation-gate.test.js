@@ -151,11 +151,14 @@ test('buildMutationConfirmationMessage produces correct output', () => {
     const msg = buildMutationConfirmationMessage(pendingData);
     assert.ok(msg.includes('Delete'), 'should mention action type');
     assert.ok(msg.includes('Buy groceries'), 'should mention task title');
-    assert.ok(msg.includes('contains'), 'should mention match type');
-    assert.ok(msg.includes('60'), 'should include score');
+    assert.ok(msg.includes("didn't match exactly"), 'should explain non-exact match without resolver jargon');
+    assert.ok(msg.includes("can't be undone"), 'delete copy should mention destructive action');
+    assert.ok(!msg.includes('contains'), 'should not leak match type');
+    assert.ok(!msg.includes('60'), 'should not leak score');
 
     const urgentMsg = buildMutationConfirmationMessage(pendingData, { workStyleMode: 'urgent' });
     assert.ok(urgentMsg.includes('Delete'), 'urgent should mention action type');
+    assert.ok(!urgentMsg.includes('contains'), 'urgent should not leak match type');
 });
 
 test('buildMutationConfirmationKeyboard produces confirm and cancel buttons', () => {
@@ -322,4 +325,33 @@ test('pendingMutationConfirmation store set/get/clear lifecycle', async () => {
     // Clear and verify
     await store.clearPendingMutationConfirmation();
     assert.equal(store.getPendingMutationConfirmation(), null);
+});
+
+test('pending-confirmation: name-overlap contains match returns pending-confirmation', async () => {
+    await resetStore();
+    const harness = createPipelineHarness({
+        intents: [
+            { type: 'complete', title: 'vendor', confidence: 0.9, targetQuery: 'vendor' },
+        ],
+        activeTasks: [
+            { id: 'task-vendor-01', title: 'Visa check with vendor', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
+            { id: 'task-other-01', title: 'Buy groceries', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
+        ],
+    });
+
+    const result = await harness.processMessage('complete the vendor task');
+
+    // "vendor" is a contains match for "Visa check with vendor" — non-exact
+    assert.equal(result.type, 'pending-confirmation',
+        'name-overlap contains match should require confirmation');
+    assert.equal(harness.adapterCalls.complete.length, 0,
+        'adapter complete should NOT be called for non-exact match without confirmation');
+    assert.ok(result.pendingConfirmation, 'result should include pendingConfirmation block');
+    assert.equal(result.pendingConfirmation.matchType, 'contains',
+        'should be a contains match');
+    assert.equal(result.pendingConfirmation.matchConfidence, 'high',
+        'contains match should be high confidence');
+    assert.equal(result.pendingConfirmation.actionType, 'complete');
+    assert.ok(result.confirmationText.includes('Visa check with vendor'),
+        'confirmation text should mention the matched task title');
 });

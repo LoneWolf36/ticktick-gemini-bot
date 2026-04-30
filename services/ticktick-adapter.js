@@ -63,6 +63,22 @@ const NETWORK_ERROR_CODES = new Set([
 const TYPED_ERROR_CODES = new Set(Object.values(ERROR_CODES));
 
 /**
+ * Compares TickTick due-date values by instant, not string offset.
+ * TickTick may return UTC for a date sent with a local timezone offset.
+ * @param {string|null|undefined} expected
+ * @param {string|null|undefined} actual
+ * @returns {boolean}
+ */
+function areEquivalentDueDates(expected, actual) {
+    if (expected === actual) return true;
+    if (!expected || !actual) return false;
+    const expectedTime = Date.parse(expected);
+    const actualTime = Date.parse(actual);
+    if (Number.isNaN(expectedTime) || Number.isNaN(actualTime)) return false;
+    return expectedTime === actualTime;
+}
+
+/**
  * Extracts and concatenates error message chunks from an error object or API response.
  * @param {Error|object} error - The error object to parse
  * @returns {string} Concatenated error text in lowercase
@@ -611,7 +627,7 @@ export class TickTickAdapter {
             if (expectedPayload.content !== undefined && task.content !== expectedPayload.content) {
                 mismatches.push('content mismatch');
             }
-            if (expectedPayload.dueDate !== undefined && task.dueDate !== expectedPayload.dueDate) {
+            if (expectedPayload.dueDate !== undefined && !areEquivalentDueDates(expectedPayload.dueDate, task.dueDate)) {
                 mismatches.push(`dueDate: expected "${expectedPayload.dueDate}", got "${task.dueDate}"`);
             }
             if (expectedPayload.priority !== undefined && task.priority !== expectedPayload.priority) {
