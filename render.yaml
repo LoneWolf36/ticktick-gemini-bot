@@ -43,7 +43,8 @@ services:
       # Optional — Redis for persistent storage (required on Render due to ephemeral filesystem)
       - key: REDIS_URL
         sync: false
-      # Optional — Personal behavioral context (can also be set via user_context.js locally)
+      # Optional — Plain-text Gemini-only context fallback.
+      # Preferred for full config: Render Secret File named user_context.js mounted at /etc/secrets/user_context.js
       - key: USER_CONTEXT
         sync: false
       # Bot mode: 'webhook' for Render deployment

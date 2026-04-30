@@ -85,7 +85,7 @@ Edit `.env` with your credentials (see `.env.example` for all fields).
 cp services/user_context.example.js services/user_context.js
 ```
 
-Edit `services/user_context.js` to describe your situation, goals, and behavioral patterns. **This file is gitignored — your personal data stays local.** For cloud deployments, set it as the `USER_CONTEXT` env var instead.
+Edit `services/user_context.js` to describe your situation, goals, and behavioral patterns. **This file is gitignored — your personal data stays local.** For cloud deployments, upload it as a Render secret file named `user_context.js` (mounted at `/etc/secrets/user_context.js`) or set the plain-text `USER_CONTEXT` env var for Gemini-only context.
 
 #### Project Policy (IMPORTANT)
 
@@ -195,7 +195,7 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 | `GEMINI_API_KEY` | No | Single key (fallback used only if `GEMINI_API_KEYS` is not set) |
 | `TELEGRAM_WEBHOOK_SECRET` | No | Random secret token for webhook signature verification (recommended for webhook mode) |
 | `REDIS_URL` | Yes on Render | Redis connection URL (required due to ephemeral filesystem) |
-| `USER_CONTEXT` | Optional | Your personal context (the content of `user_context.js`) |
+| `USER_CONTEXT` | Optional | Plain-text Gemini-only context fallback. Prefer Render secret file `user_context.js` for full config (`PROJECT_POLICY`, timezone, scoring). |
 | `WEBHOOK_URL` | Yes (webhook) | Your Render URL (e.g., `https://your-app.onrender.com`) |
 | `BOT_MODE` | No | `webhook` for Render (default in render.yaml) |
 | `PORT` | No | `10000` for Render (default in render.yaml) |

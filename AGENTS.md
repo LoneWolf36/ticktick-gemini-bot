@@ -45,7 +45,9 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 
 **TickTick Checklist API**: Expected to be supported. Task creation endpoint (`POST /task`) accepts `items` array with `{title, status}` objects based on API structure analysis. No documented item limit. `desc` field provides checklist-level context. No separate checklist endpoint exists — checklists are inline in the task object. **Note**: Not yet used in production code; verify with a live API call before building checklist features (spec 005).
 
-**Project Policy Config**: All hardcoded keyword lists, project names, and scoring magic numbers have been extracted from the codebase into a configurable `PROJECT_POLICY` exported from `services/user_context.js`. The `services/project-policy.js` loader normalizes this config and provides lookup maps. This replaces the brittle keyword-classification system with explicit user-owned policy. If `PROJECT_POLICY` is absent, the system falls back to safe `uncategorized` defaults (priority cap 3, default 1) — no task is ever auto-promoted to Core Goal without explicit configuration.
+**Project Policy Config**: All hardcoded keyword lists, project names, and scoring magic numbers have been extracted from the codebase into a configurable `PROJECT_POLICY` exported from `user_context.js`. The shared `services/user-context-loader.js` searches `services/user_context.js`, root `user_context.js`, then Render secret file `/etc/secrets/user_context.js`; `services/project-policy.js` normalizes this config and provides lookup maps. If `PROJECT_POLICY` is absent, the system falls back to safe `uncategorized` defaults (priority cap 3, default 1) — no task is ever auto-promoted to Core Goal without explicit configuration.
+
+**TickTick Task API**: Task updates must follow official OpenAPI contracts. `POST /task/{taskId}` bodies include both `id` and `projectId`; project moves use official `POST /task/move` instead of create/delete copy workarounds; active task retrieval prefers `POST /task/filter { status: [0] }` with project-loop fallback so Inbox tasks are visible to the resolver. Completed-task retrieval is exposed via `POST /task/completed` for analysis plumbing only; completed tasks are not mixed into mutation resolution by default.
 
 ## Project Structure & Module Organization
 
@@ -53,8 +55,8 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - `services/pipeline.js` — Orchestrates the structured write path: message → intent extraction → deterministic normalization → TickTick adapter execution. Exposes `processMessageWithContext()` for callers that need automatic context construction. This is the **only** path for new task-writing flows.
 - `services/intent-extraction.js` — Extracts structured `Intent Action` objects from natural language using Gemini via direct `responseSchema` API calls.
 - `services/normalizer.js` — Deterministic cleaner that maps intent actions to TickTick-compatible fields (title truncation, filler stripping, repeatHint → RRULE, projectHint → project ID).
-- `services/ticktick-adapter.js` — Executes normalized actions against the TickTick REST API (create/update/complete/delete). Handles retries, OAuth refresh, and project-move rollback.
-- `services/ticktick.js` — Low-level TickTick API client with OAuth2 token management and CRUD operations.
+- `services/ticktick-adapter.js` — Executes normalized actions against the TickTick REST API (create/update/complete/delete). Handles retries, OAuth refresh, active-task listing, and completed-task plumbing.
+- `services/ticktick.js` — Low-level TickTick API client with OAuth2 token management, CRUD operations, official task move, task filter, and completed-task endpoints.
 - `services/gemini.js` — Gemini AI client for briefing, weekly digest, reorg proposals, free-form chat, and intent extraction. Manages API key rotation.
 - `services/scheduler.js` — Cron-driven jobs: proactive TickTick polling, daily/weekly briefings, deferred intent retry, queue health checks
 - `services/store.js` — State persistence layer. Redis-backed when `REDIS_URL` is set; falls back to local JSON file for development.
@@ -64,8 +66,9 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - `services/shared-utils.js` — Shared utility functions used across service modules.
 - `services/task-resolver.js` — Resolves task references from natural language into TickTick task IDs.
 - `services/user-settings.js` — User-level configuration (timezone, preferences).
+- `services/user-context-loader.js` — Shared loader for gitignored/root/Render-secret `user_context.js` modules used by Gemini, project policy, and user settings.
 - `services/user_context.js` — **Gitignored.** Personal behavioral context — goals, patterns, challenges. Create from `user_context.example.js`.
-- `services/project-policy.js` — Loads structured `PROJECT_POLICY`, `KEYWORDS`, `VERB_LIST`, and `SCORING` from `user_context.js`. Provides normalized lookup maps, project category resolution, and alias-based inference. Replaces all hardcoded keyword lists, project names, and magic numbers from earlier versions.
+- `services/project-policy.js` — Loads structured `PROJECT_POLICY`, `KEYWORDS`, `VERB_LIST`, and `SCORING` through `user-context-loader.js`. Provides normalized lookup maps, project category resolution, and alias-based inference. Replaces all hardcoded keyword lists, project names, and magic numbers from earlier versions.
 - `services/summary-surfaces/` — Summary composition, formatting, and context normalization for briefing, weekly digest, and daily close surfaces. Includes behavioral pattern notices, intervention profiling, and reflection recompute logic.
 
 ### Bot module (Telegram-facing behavior only)

@@ -61,6 +61,7 @@ test('TickTickAdapter exposes the required task operation surface', () => {
     'deleteTask',
     'listProjects',
     'findProjectByName',
+    'listCompletedTasks',
   ];
 
   for (const methodName of requiredMethods) {

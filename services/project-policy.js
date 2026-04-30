@@ -1,37 +1,17 @@
-import { fileURLToPath } from 'url';
-import { existsSync } from 'fs';
-import path from 'path';
-
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const USER_CONTEXT_FILE_LOCAL = path.join(__dirname, 'user_context.js');
-const USER_CONTEXT_FILE_ROOT = path.join(process.cwd(), 'user_context.js');
+import { loadUserContextModule, getModuleExport } from './user-context-loader.js';
 
 let rawProjectPolicy = null;
 let rawKeywords = null;
 let rawVerbList = null;
 let rawScoring = null;
 
-async function loadUserContext() {
-    try {
-        let mod = null;
-        if (existsSync(USER_CONTEXT_FILE_LOCAL)) {
-            mod = await import('./user_context.js');
-        } else if (existsSync(USER_CONTEXT_FILE_ROOT)) {
-            mod = await import('../user_context.js');
-        }
-
-        if (mod) {
-            rawProjectPolicy = mod.PROJECT_POLICY;
-            rawKeywords = mod.KEYWORDS;
-            rawVerbList = mod.VERB_LIST;
-            rawScoring = mod.SCORING;
-        }
-    } catch (e) {
-        console.warn('⚠️  Failed to load user_context.js for policy configs:', e.message);
-    }
+const { mod: ctxModule } = await loadUserContextModule();
+if (ctxModule) {
+    rawProjectPolicy = getModuleExport(ctxModule, 'PROJECT_POLICY');
+    rawKeywords = getModuleExport(ctxModule, 'KEYWORDS');
+    rawVerbList = getModuleExport(ctxModule, 'VERB_LIST');
+    rawScoring = getModuleExport(ctxModule, 'SCORING');
 }
-
-await loadUserContext();
 
 function normalizePolicy(raw) {
     if (!raw || typeof raw !== 'object') {

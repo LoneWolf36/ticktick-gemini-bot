@@ -135,64 +135,95 @@ export class TickTickClient {
     }
 
     /**
-     * Updates an existing task. Handles project moves via recreation.
+     * Moves one or more tasks between projects via the official TickTick API.
+     * @param {Array<{fromProjectId: string, toProjectId: string, taskId: string}>} moves - Move operations array
+     * @returns {Promise<Array<{id: string, etag: string}>>} Array of move results
+     */
+    async moveTasks(moves) {
+        this._invalidateCache();
+        return this._post('/task/move', moves);
+    }
+
+    /**
+     * Filters tasks using the official TickTick filter endpoint.
+     * @param {Object} filter - Filter criteria
+     * @param {Array<string>} [filter.projectIds] - Optional project IDs to filter by
+     * @param {string} [filter.startDate] - Optional start date bound
+     * @param {string} [filter.endDate] - Optional end date bound
+     * @param {number[]} [filter.priority] - Optional priority values to filter by
+     * @param {string[]} [filter.tag] - Optional tags to filter by
+     * @param {number[]} [filter.status] - Optional status codes to filter by (0=active, 2=completed)
+     * @returns {Promise<Array<Object>>} Array of matching Task objects
+     */
+    async filterTasks(filter) {
+        return this._post('/task/filter', filter);
+    }
+
+    /**
+     * Lists completed tasks within optional project and time range.
+     * @param {Object} filter - Filter criteria
+     * @param {Array<string>} [filter.projectIds] - Optional project IDs to filter by
+     * @param {string} [filter.startDate] - Inclusive lower bound on completedTime
+     * @param {string} [filter.endDate] - Inclusive upper bound on completedTime
+     * @returns {Promise<Array<Object>>} Array of completed Task objects
+     */
+    async listCompletedTasks(filter = {}) {
+        return this._post('/task/completed', filter);
+    }
+
+    /**
+     * Updates an existing task. Uses /task/move for project moves.
      * @param {string} taskId - 24-char task ID
      * @param {Object} taskData - Task attributes to update
-     * @returns {Promise<Object>} Updated/new task data
+     * @returns {Promise<Object>} Updated task data
      */
     async updateTask(taskId, taskData) {
         this._invalidateCache();
 
-        // Handle project moves by recreating the task in the new project and deleting the old one
-        if (taskData.projectId && taskData.originalProjectId && taskData.projectId !== taskData.originalProjectId) {
-            let fullTask;
-            try {
-                fullTask = await this.getTask(taskData.originalProjectId, taskId);
-            } catch (err) {
-                // Architectural Fix: Never proceed with partial data if getTask fails. It causes silent data loss.
-                throw new Error(`Move aborted: Failed to fetch original task data (${err.message})`);
+        const payload = { ...taskData };
+        const originalProjectId = payload.originalProjectId;
+        const targetProjectId = payload.projectId;
+        delete payload.originalProjectId;
+
+        // Handle project move via official endpoint
+        if (originalProjectId && targetProjectId && originalProjectId !== targetProjectId) {
+            // Fail closed: validate source/target/task are non-empty strings
+            if (typeof originalProjectId !== 'string' || originalProjectId.trim().length === 0) {
+                throw new Error('Move aborted: fromProjectId is required');
+            }
+            if (typeof targetProjectId !== 'string' || targetProjectId.trim().length === 0) {
+                throw new Error('Move aborted: toProjectId is required');
+            }
+            if (typeof taskId !== 'string' || taskId.trim().length === 0) {
+                throw new Error('Move aborted: taskId is required');
             }
 
-            const createPayload = { ...fullTask, ...taskData };
-            delete createPayload.id;
-            delete createPayload.originalProjectId;
-
-            let newTask;
-            try {
-                newTask = await this.createTask(createPayload);
-            } catch (err) {
-                throw new Error(`Move aborted: Failed to recreate task in target project (${err.message})`);
+            // 1. Update field changes while task is still in source project.
+            // Pure moves should not make a redundant no-op update call.
+            const updateFieldKeys = Object.keys(payload).filter(key => key !== 'projectId');
+            let updateResult = null;
+            if (updateFieldKeys.length > 0) {
+                const fieldUpdate = { ...payload, id: taskId, projectId: originalProjectId };
+                updateResult = await this._post(`/task/${taskId}`, fieldUpdate);
             }
 
-            try {
-                await this.deleteTask(taskData.originalProjectId, taskId);
-            } catch (err) {
-                // Transactional Rollback: If we couldn't delete the old task, delete the newly created one so we don't have duplicates.
-                // Critical edge case: What if `deleteTask` timed out but ACTUALLY succeeded on TickTick's end?
-                // If we blindly delete the new task, we lose BOTH tasks (Data Loss).
-                try {
-                    // Check if original still exists
-                    await this.getTask(taskData.originalProjectId, taskId);
+            // 2. Move task to target project via official endpoint
+            await this.moveTasks([{
+                fromProjectId: originalProjectId,
+                toProjectId: targetProjectId,
+                taskId,
+            }]);
 
-                    // If it DOES still exist, it's safe to delete the new one to rollback
-                    await this.deleteTask(taskData.projectId, newTask.id);
-                    throw new Error(`Move aborted: Failed to delete original task. Changes rolled back. (${err.message})`);
-                } catch (verifyErr) {
-                    // If getTask throws, it might be 404 (deleted successfully)
-                    if (verifyErr.response?.status === 404 || verifyErr.response?.status === 400) {
-                        console.warn(`Original task ${taskId} already gone despite delete error. Accepting move as successful.`);
-                        return newTask;
-                    }
-                    console.error(`CRITICAL: Transaction state unknown! Duplicate task might exist. Old: ${taskId}, New: ${newTask.id}`);
-                    throw new Error(`Move aborted: Unknown state after delete failure. (${err.message})`);
-                }
-            }
-
-            return newTask; // Returns the new task with a new ID
+            // Return useful result preserving original task id.
+            // updateResult may contain stale projectId (source), so ensure target wins.
+            return { id: taskId, projectId: targetProjectId, ...payload, ...(updateResult || {}), projectId: targetProjectId };
         }
 
-        const payload = { ...taskData };
-        delete payload.originalProjectId;
+        // Normal in-place update: must include id and projectId in body
+        if (!targetProjectId) {
+            throw new Error('updateTask requires projectId for normal update');
+        }
+        payload.id = taskId;
         return this._post(`/task/${taskId}`, payload);
     }
 
@@ -245,9 +276,30 @@ export class TickTickClient {
 
     /**
      * Fetches all active tasks across all accessible projects.
+     * Tries /task/filter first (status: [0]), falls back to project loop on failure.
      * @returns {Promise<Array<Object>>} List of all active tasks
      */
     async getAllTasks() {
+        // Prefer /task/filter for efficient bulk retrieval (no projectIds = all projects)
+        try {
+            const filterResult = await this.filterTasks({ status: [0] });
+            // Normalize project names from cached/listed projects
+            const projects = await this.getProjects();
+            this._cachedProjects = projects;
+            const projectMap = new Map(projects.map(p => [p.id, p.name]));
+            for (const task of filterResult) {
+                task.projectId = task.projectId || null;
+                task.projectName = projectMap.get(task.projectId) || null;
+            }
+            return filterResult;
+        } catch (err) {
+            if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
+                throw err;
+            }
+            console.warn(`filterTasks failed, falling back to project-loop: ${err.message}`);
+        }
+
+        // Fallback: project-by-project loop (existing behavior)
         const projects = await this.getProjects();
         this._cachedProjects = projects;
         const allTasks = [];

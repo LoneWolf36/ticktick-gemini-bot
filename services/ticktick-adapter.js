@@ -1032,6 +1032,32 @@ export class TickTickAdapter {
     }
 
     /**
+     * Lists completed tasks within optional project and time range.
+     * Data plumbing for future behavioral analysis — NOT used by mutation resolver by default.
+     * @param {Object} [filter={}] - Filter criteria
+     * @param {Array<string>} [filter.projectIds] - Optional project IDs to filter by
+     * @param {string} [filter.startDate] - Inclusive lower bound on completedTime
+     * @param {string} [filter.endDate] - Inclusive upper bound on completedTime
+     * @returns {Promise<Array<Object>>} Array of completed Task objects
+     * @throws {Error} Classified error with code if API call fails
+     */
+    async listCompletedTasks(filter = {}) {
+        const start = Date.now();
+        this._log('listCompletedTasks', { filter });
+        try {
+            const completedTasks = await this._client.listCompletedTasks(filter);
+            const elapsed = Date.now() - start;
+            this._log('listCompletedTasks', `SUCCESS { count: ${completedTasks.length}, ${elapsed}ms }`);
+            return completedTasks;
+        } catch (error) {
+            const elapsed = Date.now() - start;
+            const classified = this._classifyError(error, 'listCompletedTasks');
+            this._log('listCompletedTasks', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            throw classified;
+        }
+    }
+
+    /**
      * Lists all active (incomplete) tasks across all projects.
      * Reuses the client's cached task-list behavior where practical.
      * Returns task objects with id, title, projectId, projectName, priority, dueDate, content, status.

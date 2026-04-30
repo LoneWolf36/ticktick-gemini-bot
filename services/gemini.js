@@ -1,8 +1,6 @@
 // Gemini AI — goal-aware task analyzer and accountability engine
 import { GoogleGenAI } from '@google/genai';
-import { fileURLToPath } from 'url';
-import { existsSync } from 'fs';
-import path from 'path';
+import { loadUserContextModule, getModuleExport } from './user-context-loader.js';
 import { userTodayFormatted, PRIORITY_EMOJI, formatProcessedTask } from './shared-utils.js';
 import { briefingSummarySchema, reorgSchema, weeklySummarySchema } from './schemas.js';
 import * as store from './store.js';
@@ -16,15 +14,14 @@ import {
 import { detectBehavioralPatterns } from './behavioral-patterns.js';
 
 // ─── User Context ────────────────────────────────────────────
-// Priority: 1) local user_context.js (gitignored), 2) USER_CONTEXT env var, 3) generic default
-const __dirname = path.dirname(fileURLToPath(import.meta.url));
-const USER_CONTEXT_FILE = path.join(__dirname, 'user_context.js');
-
+// Priority: 1) user_context.js (services/ or root or /etc/secrets/), 2) USER_CONTEXT env var, 3) generic default
 let USER_CONTEXT;
 let USER_CONTEXT_SOURCE;
-if (existsSync(USER_CONTEXT_FILE)) {
-    const mod = await import('./user_context.js');
-    USER_CONTEXT = mod.USER_CONTEXT;
+
+const { mod: ctxModule } = await loadUserContextModule();
+const userContext = getModuleExport(ctxModule, 'USER_CONTEXT');
+if (userContext) {
+    USER_CONTEXT = userContext;
     USER_CONTEXT_SOURCE = 'user_context';
 } else if (process.env.USER_CONTEXT) {
     USER_CONTEXT = process.env.USER_CONTEXT;
