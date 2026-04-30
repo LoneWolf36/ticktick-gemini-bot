@@ -4,13 +4,14 @@
 
 When understanding the codebase, consult sources in this priority order:
 
-1. **`AGENTS.md`** — Repository guidelines, architecture principles, guardrails, workflow rules. Always read first.
+1. **`AGENTS.md`** — Repository guidelines, architecture principles, guardrails, workflow rules. Highest authority if docs conflict.
 2. **`context/refs/agent-onboarding.md`** (this file) — Curated navigation, key flows, and quick-reference tables.
 3. **`context/kits/`** — Cavekit domain kits with R-numbered requirements (canonical spec source).
-4. **`context/refs/codebase-function-map.md`** — Generated export/signature registry. Deep reference for finding functions.
-5. **`docs/` and `npm run docs:typedoc` output** — Generated API docs. Fallback only; may lag behind code.
+4. **Source files + nearby tests** — Behavior truth. Always read before editing.
+5. **`context/refs/codebase-function-map.md`** — Generated export/signature index. Use for symbol discovery, not behavior inference.
+6. **Local `docs/api/` from `npm run docs:typedoc`** — Deep API fallback only. Generated locally, ignored by git.
 
-**Rule**: Never write code before reading the relevant requirements from `context/kits/` and the function map. Never modify code based on stale generated docs.
+**Rule**: Never write code from generated docs alone. Use generated artifacts to find symbols; use kits, source, and tests to understand behavior.
 
 ---
 
@@ -165,9 +166,9 @@ Summary composition lives in `services/summary-surfaces/`. Entry points:
 
 1. **Read `AGENTS.md`** cover-to-cover (at least guardrails 1-11)
 2. **Read the relevant Cavekit kit** in `context/kits/` for the domain you're changing
-3. **Consult `context/refs/codebase-function-map.md`** to find the right exports
+3. **Consult `context/refs/codebase-function-map.md`** when locating exports or public signatures
 4. **Read the file you plan to edit** with `Read` tool — never guess indentation
-5. **Search for existing tests** with `grep` before adding new test files
+5. **Read or search nearby tests** before adding new test files
 6. **Write a plan** per Guardrail #1 (Mandatory Plan Before Coding)
 7. **Run `npm test`** before declaring done
 

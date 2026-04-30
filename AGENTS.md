@@ -82,7 +82,9 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 
 ### Function Map
 
-See `context/refs/codebase-function-map.md` for a complete registry of all exported functions, classes, constants, and internal helpers with signatures and purposes. Includes a data flow diagram showing the write path (Telegram → pipeline → adapter → TickTick API) and read path (scheduler → Gemini → summary surfaces).
+See `context/refs/codebase-function-map.md` for the generated export/signature index. Use it to find public helpers, classes, constants, and likely edit targets; do not treat it as behavior truth. Source files, tests, Cavekit kits, and this AGENTS.md override generated docs.
+
+`docs/api/` is generated Typedoc output for local deep reference only. It is intentionally ignored and should not be committed because it creates noisy diffs and can accidentally expose local-only context if misconfigured.
 
 ### Other directories
 - `tests/` — Regression and unit tests.
@@ -201,7 +203,7 @@ Every behavior, config, or interface change must update durable docs in the same
 | Configurable behavior | `services/user_context.example.js` + README setup section |
 | Architecture change | AGENTS.md Architectural Decisions + `docs/ARCHITECTURE.md` |
 | New endpoint / health metric | `docs/ARCHITECTURE.md` + README monitoring section |
-| API change (exported function signature) | `context/refs/codebase-function-map.md` via `npm run docs:map` and API docs via `npm run docs:typedoc` |
+| API change (exported function signature) | Update `context/refs/codebase-function-map.md` via `npm run docs:map`; run `npm run docs:typedoc` only to validate local API output when useful |
 
 ### 6. Source-of-Truth Rule
 
@@ -333,13 +335,13 @@ See `context/kits/cavekit-overview.md` for the full cross-reference map and depe
 
 Before any coding:
 
-1. Read `context/refs/agent-onboarding.md` — curated navigation, key flows, reference tables (5-10 min).
-2. Read this `AGENTS.md` in full — especially guardrails and architecture principles.
-3. Consult `context/refs/codebase-function-map.md` to find the right exports.
-4. Read the relevant Cavekit kit in `context/kits/` for the domain.
-5. Read the file(s) you plan to edit with the `Read` tool — never guess.
+1. Read `context/refs/agent-onboarding.md` for navigation, key flows, and reference tables.
+2. Read this `AGENTS.md` in full — especially guardrails and architecture principles. If docs conflict, AGENTS.md wins.
+3. Read the relevant Cavekit kit in `context/kits/` for the domain.
+4. Consult `context/refs/codebase-function-map.md` when discovering exports, public signatures, or likely call sites.
+5. Read the source file(s) and nearby tests you plan to edit — never code from generated docs alone.
 
-**Source-of-truth priority**: AGENTS.md → agent-onboarding.md → Cavekit kits → codebase-function-map.md (generated) → docs/ (fallback only).
+**Source-of-truth priority**: AGENTS.md → agent-onboarding.md → Cavekit kits → source files/tests → codebase-function-map.md (generated index) → local `docs/api/` output (fallback only).
 
 ### Agent Protocol: Codebase Function Map
-CRITICAL: Every agent MUST consult `context/refs/codebase-function-map.md` to discover codebase capabilities before searching blindly. Whenever you add, remove, or change the signature of any exported function, class, or constant, you MUST run `npm run docs:map` and `npm run docs:typedoc` to regenerate the map and API documentation.
+Use `context/refs/codebase-function-map.md` as a fast export index before broad searching or changing public surfaces. Whenever you add, remove, or change the signature of any exported function, class, or constant, run `npm run docs:map` and commit the updated map. `npm run docs:typedoc` may be run to validate local API docs, but generated `docs/api/` output is ignored and not committed.
