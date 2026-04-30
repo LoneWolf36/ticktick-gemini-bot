@@ -1,11 +1,8 @@
 import { BehavioralPatternType } from '../behavioral-patterns.js';
+import { toArray } from '../shared-utils.js';
 
 const DAY_MS = 24 * 60 * 60 * 1000;
 const RETENTION_DAYS = Math.max(1, Number.parseInt(process.env.BEHAVIORAL_SIGNAL_RETENTION_DAYS || '30', 10) || 30);
-
-function toArray(value) {
-    return Array.isArray(value) ? value : [];
-}
 
 function parsePatternTime(value) {
     if (typeof value !== 'string' || value.trim().length === 0) return null;

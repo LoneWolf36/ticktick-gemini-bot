@@ -1,12 +1,5 @@
-import { selectBehavioralPatternsForSummary, toArray } from './behavioral-pattern-notices.js';
-
-function asActiveTasks(tasks = []) {
-    return toArray(tasks).filter((task) => task && (task.status === 0 || task.status === undefined));
-}
-
-function asProcessedHistory(processedHistory = []) {
-    return toArray(processedHistory).filter((entry) => entry && typeof entry === 'object');
-}
+import { selectBehavioralPatternsForSummary } from './behavioral-pattern-notices.js';
+import { toArray, asActiveTasks, asProcessedHistory } from '../shared-utils.js';
 
 /**
  * Build context for determining if summary should be recomputed from live tasks.

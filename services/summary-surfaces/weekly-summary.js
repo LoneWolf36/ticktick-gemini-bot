@@ -4,27 +4,12 @@ import {
     SUMMARY_NOTICE_SEVERITIES,
     WEEKLY_WATCHOUT_EVIDENCE_SOURCES,
 } from '../schemas.js';
-import { buildBehavioralPatternNotice, toArray } from './behavioral-pattern-notices.js';
+import { buildBehavioralPatternNotice } from './behavioral-pattern-notices.js';
 import { buildEngagementPatternNotice, deriveInterventionProfile } from './intervention-profile.js';
 import { buildReflectionRecomputeContext, buildReflectionRecomputeNotice } from './reflection-recompute.js';
+import { toArray, toString, asActiveTasks, asProcessedHistory, mergeNotices } from '../shared-utils.js';
 
 const DISALLOWED_WATCHOUT_LABELS = new Set(['avoidance', 'callout']);
-
-function toString(value, fallback = '') {
-    if (typeof value === 'string') {
-        const trimmed = value.trim();
-        if (trimmed.length > 0) return trimmed;
-    }
-    return fallback;
-}
-
-function asActiveTasks(tasks = []) {
-    return toArray(tasks).filter((task) => task && (task.status === 0 || task.status === undefined));
-}
-
-function asProcessedHistory(processedHistory = []) {
-    return toArray(processedHistory).filter(Boolean);
-}
 
 function toIsoDate(value) {
     if (!value || typeof value !== 'string') return null;
@@ -121,16 +106,7 @@ function normalizeWatchouts(watchouts = [], evidenceContext = {}) {
         .filter(Boolean);
 }
 
-function mergeNotices(modelNotices = [], systemNotices = []) {
-    const merged = new Map();
-    for (const notice of modelNotices) {
-        if (notice?.code) merged.set(notice.code, notice);
-    }
-    for (const notice of systemNotices) {
-        if (notice?.code) merged.set(notice.code, notice);
-    }
-    return [...merged.values()];
-}
+
 
 function mergeWatchouts(modelWatchouts = [], computedWatchouts = []) {
     const merged = [];

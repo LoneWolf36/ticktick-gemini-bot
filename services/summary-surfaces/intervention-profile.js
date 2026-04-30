@@ -1,6 +1,4 @@
-function toArray(value) {
-    return Array.isArray(value) ? value : [];
-}
+import { toArray } from '../shared-utils.js';
 
 function toTimestamp(entry = {}) {
     const raw = entry.reviewedAt || entry.processedAt || entry.sentAt || null;

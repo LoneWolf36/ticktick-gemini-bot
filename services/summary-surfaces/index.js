@@ -7,11 +7,8 @@ import {
   WEEKLY_SUMMARY_SECTION_KEYS,
   WEEKLY_WATCHOUT_EVIDENCE_SOURCES,
 } from "../schemas.js";
-import {
-  composeBriefingSummarySections,
-  toString,
-} from "./briefing-summary.js";
-import { toArray } from "./behavioral-pattern-notices.js";
+import { composeBriefingSummarySections } from "./briefing-summary.js";
+import { toArray, toString } from "../shared-utils.js";
 import { composeDailyCloseSummarySections } from "./daily-close-summary.js";
 import { composeWeeklySummarySections } from "./weekly-summary.js";
 import {

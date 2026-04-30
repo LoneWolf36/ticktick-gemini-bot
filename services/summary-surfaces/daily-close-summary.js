@@ -1,15 +1,7 @@
 import { buildEngagementPatternNotice, deriveInterventionProfile } from './intervention-profile.js';
-import { buildBehavioralPatternNotice, toArray } from './behavioral-pattern-notices.js';
+import { buildBehavioralPatternNotice } from './behavioral-pattern-notices.js';
 import { buildReflectionRecomputeContext, buildReflectionRecomputeNotice } from './reflection-recompute.js';
-import { toString } from './briefing-summary.js';
-
-function asActiveTasks(tasks = []) {
-    return toArray(tasks).filter((task) => task && (task.status === 0 || task.status === undefined));
-}
-
-function asProcessedHistory(processedHistory = []) {
-    return toArray(processedHistory).filter((entry) => entry && typeof entry === 'object');
-}
+import { toArray, toString, asActiveTasks, asProcessedHistory, mergeNotices } from '../shared-utils.js';
 
 const REFLECTION_TEMPLATES = {
     BACKOFF_STANDARD: 'Several suggested tasks stayed open repeatedly. Keep tomorrow smaller or pause instead of escalating.',
@@ -187,18 +179,7 @@ function normalizeModelSummary(summary = {}) {
     };
 }
 
-function mergeNotices(baseNotices = [], modelNotices = []) {
-    const merged = [];
-    const seen = new Set();
 
-    for (const notice of [...baseNotices, ...modelNotices]) {
-        if (!notice?.code || seen.has(notice.code)) continue;
-        seen.add(notice.code);
-        merged.push(notice);
-    }
-
-    return merged;
-}
 
 /**
  * Compose the individual sections of a daily close (reflection) summary.

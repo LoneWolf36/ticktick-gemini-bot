@@ -3,6 +3,77 @@
 import { InlineKeyboard } from 'grammy';
 import { FOLLOWUP_PRONOUNS, FOLLOWUP_TIME_SHIFTS } from './project-policy.js';
 
+// ─── Generic Data Helpers (shared across summary surfaces) ───
+
+/**
+ * Safely coerce a value to array. Returns empty array for non-arrays.
+ * @param {*} value
+ * @returns {Array}
+ */
+export function toArray(value) {
+    return Array.isArray(value) ? value : [];
+}
+
+/**
+ * Safely extract a non-empty trimmed string, returning fallback otherwise.
+ * @param {*} value
+ * @param {string} [fallback='']
+ * @returns {string}
+ */
+export function toString(value, fallback = '') {
+    if (typeof value === 'string') {
+        const trimmed = value.trim();
+        if (trimmed.length > 0) return trimmed;
+    }
+    return fallback;
+}
+
+/**
+ * Filter tasks to active ones (status 0 or undefined).
+ * @param {Array} [tasks=[]]
+ * @returns {Array}
+ */
+export function asActiveTasks(tasks = []) {
+    return toArray(tasks).filter((task) => task && (task.status === 0 || task.status === undefined));
+}
+
+/**
+ * Filter history entries to valid objects.
+ * @param {Array} [processedHistory=[]]
+ * @returns {Array}
+ */
+export function asProcessedHistory(processedHistory = []) {
+    return toArray(processedHistory).filter((entry) => entry && typeof entry === 'object');
+}
+
+/**
+ * Merge two notice arrays, deduplicating by `code`.
+ * Base notices take precedence over model notices for same code.
+ * @param {Array} [baseNotices=[]] - System-generated notices (higher priority)
+ * @param {Array} [modelNotices=[]] - Model-generated notices
+ * @returns {Array}
+ */
+export function mergeNotices(baseNotices = [], modelNotices = []) {
+    const merged = [];
+    const seen = new Set();
+
+    for (const notice of baseNotices) {
+        if (!notice?.code) continue;
+        if (seen.has(notice.code)) continue;
+        seen.add(notice.code);
+        merged.push(notice);
+    }
+
+    for (const notice of modelNotices) {
+        if (!notice?.code) continue;
+        if (seen.has(notice.code)) continue;
+        seen.add(notice.code);
+        merged.push(notice);
+    }
+
+    return merged;
+}
+
 // ─── Priority Map (Gemini label → TickTick priority number) ─
 
 /**

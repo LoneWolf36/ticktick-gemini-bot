@@ -1,17 +1,5 @@
-import { buildBehavioralPatternNotice, toArray } from './behavioral-pattern-notices.js';
-
-function asActiveTasks(tasks = []) {
-    return (Array.isArray(tasks) ? tasks : [])
-        .filter((task) => task && (task.status === 0 || task.status === undefined));
-}
-
-function toString(value, fallback = '') {
-    if (typeof value === 'string') {
-        const trimmed = value.trim();
-        if (trimmed.length > 0) return trimmed;
-    }
-    return fallback;
-}
+import { buildBehavioralPatternNotice } from './behavioral-pattern-notices.js';
+import { toArray, toString, asActiveTasks, mergeNotices } from '../shared-utils.js';
 
 function toPriorityLabel(priority) {
     if (priority === 5) return 'core_goal';
@@ -167,26 +155,7 @@ function normalizeModelSummary(summary = {}) {
     };
 }
 
-function mergeNotices(baseNotices = [], modelNotices = []) {
-    const merged = [];
-    const seen = new Set();
 
-    for (const notice of baseNotices) {
-        if (!notice?.code) continue;
-        if (seen.has(notice.code)) continue;
-        seen.add(notice.code);
-        merged.push(notice);
-    }
-
-    for (const notice of modelNotices) {
-        if (!notice?.code) continue;
-        if (seen.has(notice.code)) continue;
-        seen.add(notice.code);
-        merged.push(notice);
-    }
-
-    return merged;
-}
 
 function deduplicateStrings(items) {
     return [...new Set((Array.isArray(items) ? items : []).filter((s) => typeof s === 'string'))];
