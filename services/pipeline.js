@@ -114,6 +114,39 @@ function normalizeRetryDelayMs(retryAfterMs, retryAt) {
     return null;
 }
 
+const MUTATION_COMMAND_PATTERN = /^(make|set|mark|change|update|move|reschedule|schedule)\b/i;
+
+function isPriorityMutationMessage(message) {
+    return /\b(high|highest|low|lowest|medium|normal)\s+priority\b/i.test(message || '')
+        || /\bpriority\s+(to\s+)?(high|highest|low|lowest|medium|normal)\b/i.test(message || '');
+}
+
+function hasMutationPayload(intent) {
+    return intent?.priority != null
+        || intent?.dueDate != null
+        || intent?.projectHint != null
+        || intent?.repeatHint != null
+        || intent?.repeatFlag != null;
+}
+
+function repairMutationShapedCreateIntents(intents, userMessage) {
+    if (!Array.isArray(intents) || intents.length !== 1) return intents;
+    const [intent] = intents;
+    if (intent?.type !== 'create' || typeof intent.title !== 'string' || !intent.title.trim()) return intents;
+    if (!MUTATION_COMMAND_PATTERN.test(userMessage || '')) return intents;
+    if (!hasMutationPayload(intent) && !isPriorityMutationMessage(userMessage)) return intents;
+
+    return [{
+        ...intent,
+        type: 'update',
+        targetQuery: intent.targetQuery || intent.title,
+        title: null,
+        confidence: Math.min(1, Math.max(intent.confidence ?? 0.75, 0.75)),
+        repairedFromType: 'create',
+        repairReason: 'mutation_shaped_create',
+    }];
+}
+
 /**
  * Formats a retry delay as a human-readable ETA (e.g., "5s", "2m", "1h").
  * @param {number|undefined} retryAfterMs - Delay in milliseconds
@@ -1115,6 +1148,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 });
                 return attachPipelineContext(buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS), context);
             }
+
+            intents = repairMutationShapedCreateIntents(intents, context.userMessage);
 
             let deferredCreateFragmentClarification = null;
             const createClarificationIntents = intents.filter(intent => isCreateClarificationIntent(intent));

@@ -5,7 +5,7 @@ import * as store from '../services/store.js';
 import {
     buildTickTickUpdate, isAuthorized, buildUndoEntry, PRIORITY_LABEL,
     editWithMarkdown, truncateMessage, buildTaskCard, pendingToAnalysis,
-    replyWithMarkdown, sleep,
+    replyWithMarkdown, sleep, answerCallbackQueryBestEffort,
 } from '../services/shared-utils.js';
 import { executeUndoBatch } from '../services/undo-executor.js';
 
@@ -17,21 +17,7 @@ const MUTATION_CLARIFICATION_TTL_MS = 10 * 60 * 1000;
  * @param {Object} ctx - Grammy context
  * @param {Object} [options] - answerCallbackQuery options
  */
-async function safeAnswerCallbackQuery(ctx, options = {}) {
-    const elapsedMs = Date.now() - (ctx._callbackReceivedAt || Date.now());
-    try {
-        if (ctx.telegram && ctx.callbackQuery?.id) {
-            return await ctx.telegram.answerCallbackQuery(ctx.callbackQuery.id, options);
-        }
-        return await ctx.answerCallbackQuery(options);
-    } catch (err) {
-        const msg = String(err?.message || '').toLowerCase();
-        if (msg.includes('query is too old') || msg.includes('too old')) {
-            console.warn(`[TelegramCallback] ${JSON.stringify({ eventType: 'telegram.callback.timeout', callbackId: ctx.callbackQuery?.id, elapsedMs })}`);
-        }
-        throw err;
-    }
-}
+const safeAnswerCallbackQuery = answerCallbackQueryBestEffort;
 
 // ─── Build Keyboard for Task Review ─────────────────────────
 
@@ -84,9 +70,10 @@ async function advanceReviewCard(ctx, prefix = '') {
     const remaining = store.getPendingCount();
     const chatId = ctx.chat?.id;
     const session = chatId ? store.getCurrentReviewSession(chatId) : null;
-    const reviewed = session?.startingProcessedCount !== undefined
-        ? store.getProcessedCount() - session.startingProcessedCount
+    const startingProcessedCount = Number.isFinite(Number(session?.startingProcessedCount))
+        ? Number(session.startingProcessedCount)
         : store.getProcessedCount();
+    const reviewed = Math.max(0, store.getProcessedCount() - startingProcessedCount);
     const stillUnreviewed = store.getPendingCount();
 
     if (remaining === 0) {
@@ -133,7 +120,9 @@ async function advanceReviewCard(ctx, prefix = '') {
         content: data.originalContent,
         dueDate: data.originalDueDate,
     }, analysis);
-    const totalTasks = session?.totalTasks || 0;
+    const sessionTotal = Number.isFinite(Number(session?.totalTasks)) ? Number(session.totalTasks) : 0;
+    const liveTotal = reviewed + remaining;
+    const totalTasks = sessionTotal > 0 ? Math.max(sessionTotal, liveTotal) : liveTotal;
     const progressLine = totalTasks > 0
         ? `Task ${reviewed + 1} of ${totalTasks} · ${remaining} remaining\n\n`
         : '';

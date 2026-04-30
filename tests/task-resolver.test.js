@@ -140,6 +140,22 @@ describe('Task Resolver Module', () => {
             assert.strictEqual(result.reason, 'multiple_exact_matches');
             assert.ok(result.candidates.length >= 2);
         });
+
+        it('should dedupe repeated active task rows before clarification UI', () => {
+            const tasks = [
+                { id: 'duplicate-task', projectId: 'proj001', title: 'Record measurements' },
+                { id: 'duplicate-task', projectId: 'proj001', title: 'Record measurements' },
+                { id: 'other-task', projectId: 'proj001', title: 'Record blood pressure' },
+            ];
+
+            const result = resolveTarget({ targetQuery: 'Record', activeTasks: tasks });
+
+            assert.strictEqual(result.status, 'clarification');
+            assert.deepStrictEqual(
+                result.candidates.map(candidate => candidate.taskId).sort(),
+                ['duplicate-task', 'other-task'],
+            );
+        });
     });
 
     describe('Prefix matching (T012)', () => {

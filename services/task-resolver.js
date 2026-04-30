@@ -235,6 +235,22 @@ function scoreTask(task, normalizedQuery, originalQuery) {
     return null;
 }
 
+function dedupeCandidates(candidates) {
+    const seen = new Set();
+    const deduped = [];
+
+    for (const candidate of candidates) {
+        const key = candidate.taskId
+            ? `id:${candidate.taskId}`
+            : `display:${normalizeTitle(candidate.title)}:${candidate.projectId || ''}`;
+        if (seen.has(key)) continue;
+        seen.add(key);
+        deduped.push(candidate);
+    }
+
+    return deduped;
+}
+
 /**
  * Resolve a target query against a set of active tasks.
  *
@@ -306,13 +322,15 @@ export function resolveTarget({ targetQuery, activeTasks, recentTask = null }) {
     }
 
     // Score all tasks
-    const candidates = [];
+    let candidates = [];
     for (const task of activeTasks) {
         const candidate = scoreTask(task, normalizedQuery, targetQuery);
         if (candidate) {
             candidates.push(candidate);
         }
     }
+
+    candidates = dedupeCandidates(candidates);
 
     // Sort by score descending, then by title ascending for deterministic ordering
     candidates.sort((a, b) => {

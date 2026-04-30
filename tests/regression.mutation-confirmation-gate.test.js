@@ -43,6 +43,44 @@ test('pending-confirmation: non-exact delete returns pending-confirmation type a
     assert.ok(result.confirmationText.includes('Buy groceries'), 'confirmation text should mention task title');
 });
 
+test('mutation-shaped create is repaired to update and never creates duplicate task', async () => {
+    await resetStore();
+    const harness = createPipelineHarness({
+        intents: [
+            { type: 'create', title: 'Pick up prescription', priority: 5, confidence: 0.92 },
+        ],
+        activeTasks: [
+            { id: 'task-med-01', title: 'Pick up prescription', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
+        ],
+    });
+
+    const result = await harness.processMessage('Make pick up prescription high priority');
+
+    assert.equal(result.type, 'task');
+    assert.equal(harness.adapterCalls.create.length, 0, 'should not create a duplicate task');
+    assert.equal(harness.adapterCalls.update.length, 1, 'should update the existing task');
+    assert.equal(harness.adapterCalls.update[0].taskId, 'task-med-01');
+    assert.equal(harness.adapterCalls.update[0].action.priority, 5);
+});
+
+test('mutation-shaped create asks clarification when target cannot resolve', async () => {
+    await resetStore();
+    const harness = createPipelineHarness({
+        intents: [
+            { type: 'create', title: 'Book appointment', priority: 5, confidence: 0.92 },
+        ],
+        activeTasks: [
+            { id: 'task-other-01', title: 'Review notes', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
+        ],
+    });
+
+    const result = await harness.processMessage('Make book appointment high priority');
+
+    assert.equal(result.type, 'not-found');
+    assert.equal(harness.adapterCalls.create.length, 0, 'safe default must not create when update target is unresolved');
+    assert.equal(harness.adapterCalls.update.length, 0);
+});
+
 test('pending-confirmation: prefix match for delete returns pending-confirmation', async () => {
     await resetStore();
     const harness = createPipelineHarness({

@@ -778,6 +778,9 @@ export async function markTaskFailed(taskId, reason, retryAfterMs = 2 * 60 * 60 
 // ─── Phase 1: Pending (analyzed, sent to Telegram) ──────────
 
 export async function markTaskPending(taskId, data) {
+    if (state.processedTasks[taskId]) return state.processedTasks[taskId];
+    if (state.pendingTasks[taskId]) return state.pendingTasks[taskId];
+    if (state.failedTasks?.[taskId]) delete state.failedTasks[taskId];
     state.pendingTasks[taskId] = {
         ...data,
         sentAt: new Date().toISOString(),
@@ -844,6 +847,8 @@ export async function markTaskProcessed(taskId, data) {
         ...data,
         reviewedAt: new Date().toISOString(),
     };
+    delete state.pendingTasks[taskId];
+    if (state.failedTasks?.[taskId]) delete state.failedTasks[taskId];
     state.stats.tasksAnalyzed++;
     await save();
 }
@@ -921,7 +926,8 @@ export function getPendingBatch({ limit = 5, sortBy = 'sentAt' } = {}) {
         entries.sort((a, b) => {
             const aTime = a[1]?.sentAt ? new Date(a[1].sentAt).getTime() : 0;
             const bTime = b[1]?.sentAt ? new Date(b[1].sentAt).getTime() : 0;
-            return aTime - bTime;
+            if (aTime !== bTime) return aTime - bTime;
+            return String(a[0]).localeCompare(String(b[0]));
         });
     }
     return entries.slice(0, limit);

@@ -20,6 +20,7 @@ import {
     PRIORITY_LABEL,
     retryWithBackoff,
     isFollowUpMessage,
+    answerCallbackQueryBestEffort,
 } from '../services/shared-utils.js';
 import { executeReorgAction } from '../services/reorg-executor.js';
 import { formatPipelineFailure, executeUndoBatch } from '../services/undo-executor.js';
@@ -534,11 +535,11 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
     bot.callbackQuery(/^menu:(.+)$/, async (ctx) => {
         if (!isAuthorized(ctx)) {
-            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            await answerCallbackQueryBestEffort(ctx, { text: '🔒 Unauthorized' });
             return;
         }
         const cmd = ctx.match[1];
-        await ctx.answerCallbackQuery();
+        await answerCallbackQueryBestEffort(ctx);
         
         if (handlers[cmd]) {
             await handlers[cmd](ctx);
@@ -547,29 +548,29 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
     bot.callbackQuery(/^reorg:(apply|refine|cancel)$/, async (ctx) => {
         if (!isAuthorized(ctx)) {
-            await ctx.answerCallbackQuery({ text: '🔒 Unauthorized' });
+            await answerCallbackQueryBestEffort(ctx, { text: '🔒 Unauthorized' });
             return;
         }
         const action = ctx.match[1];
         const pending = store.getPendingReorg();
         if (!pending) {
-            await ctx.answerCallbackQuery({ text: 'No active reorg proposal.' });
+            await answerCallbackQueryBestEffort(ctx, { text: 'No active reorg proposal.' });
             return;
         }
         if (action === 'cancel') {
             await store.clearPendingReorg();
-            await ctx.answerCallbackQuery({ text: 'Reorg canceled.' });
+            await answerCallbackQueryBestEffort(ctx, { text: 'Reorg canceled.' });
             await editWithMarkdown(ctx, '❌ **Reorg canceled.**');
             return;
         }
         if (action === 'refine') {
             await store.setPendingReorg({ ...pending, awaitingRefine: true });
-            await ctx.answerCallbackQuery({ text: 'Send your refinement in chat.' });
+            await answerCallbackQueryBestEffort(ctx, { text: 'Send your refinement in chat.' });
             await ctx.reply('🛠️ Send refinement instructions (e.g., "keep admin tasks in evening, no merges for personal notes").');
             return;
         }
         if (action === 'apply') {
-            await ctx.answerCallbackQuery({ text: 'Applying proposal...' });
+            await answerCallbackQueryBestEffort(ctx, { text: 'Applying proposal...' });
             try {
                 const tasks = await adapter.listActiveTasks();
                 const projects = await adapter.listProjects();
@@ -724,7 +725,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     source: 'scan',
                     startedAt: new Date().toISOString(),
                     startingProcessedCount: store.getProcessedCount(),
-                    totalTasks: targetTasks.length,
+                    totalTasks: batch.length,
                 });
             } else {
                 await ctx.reply('No tasks to review.');
@@ -1149,7 +1150,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     source: 'review',
                     startedAt: new Date().toISOString(),
                     startingProcessedCount: store.getProcessedCount(),
-                    totalTasks: targetTasks.length,
+                    totalTasks: batch.length,
                 });
             } else {
                 await ctx.reply('No tasks to review.');

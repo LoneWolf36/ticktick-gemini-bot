@@ -14,7 +14,8 @@ import {
     retryWithBackoff,
 } from '../services/shared-utils.js';
 
-import { taskReviewKeyboard } from '../bot/callbacks.js';
+import * as store from '../services/store.js';
+import { registerCallbacks, taskReviewKeyboard } from '../bot/callbacks.js';
 
 // ─── buildTaskCard — Review/Pending Flow ─────────────────────
 
@@ -147,6 +148,27 @@ test('buildTaskCardFromAction update shows Was / Will be and field diffs', () =>
     assert.ok(card.includes('Content'), 'should show content change');
 });
 
+test('buildTaskCardFromAction labels Inbox project IDs as Inbox', () => {
+    const task = {
+        title: 'Claim welcome bonus MyProtein',
+        projectName: null,
+        projectId: 'inbox118958109',
+        priority: 1,
+        content: '',
+        dueDate: null,
+    };
+    const action = {
+        type: 'update',
+        projectId: 'health',
+    };
+    const projects = [{ id: 'health', name: '💪Health & Life' }];
+
+    const card = buildTaskCardFromAction(task, action, projects);
+
+    assert.ok(card.includes('Inbox → 💪Health & Life'), 'should render Inbox name instead of raw inbox project ID');
+    assert.ok(!card.includes('inbox118958109'), 'should not leak raw Inbox project ID');
+});
+
 test('buildTaskCardFromAction complete shows context', () => {
     const task = {
         title: 'Book flight',
@@ -257,6 +279,137 @@ test('taskReviewKeyboard delete has Delete, Keep, Stop', () => {
     assert.ok(texts.includes('Stop'), 'should have Stop button');
     assert.ok(!texts.includes('Confirm delete'), 'should not have old long label');
     assert.ok(!texts.includes('Keep task'), 'should not have old long label');
+});
+
+// ─── Review Queue Resilience ─────────────────────────────────
+
+function makeCallbackBot() {
+    const handlers = { callbacks: [], middleware: [] };
+    const bot = {
+        callbackQuery(pattern, handler) {
+            handlers.callbacks.push({ pattern, handler });
+            return bot;
+        },
+        on(eventName, handler) {
+            handlers.middleware.push({ eventName, handler });
+            return bot;
+        },
+    };
+    return { bot, handlers };
+}
+
+function findCallbackHandler(handlers, patternText) {
+    return handlers.callbacks.find((entry) => entry.pattern.toString().includes(patternText))?.handler;
+}
+
+test('review apply continues when Telegram callback query is expired', async () => {
+    await store.resetAll();
+    const taskId = 'expired-ack-task';
+    await store.markTaskPending(taskId, {
+        originalTitle: 'Expired callback task',
+        originalContent: '',
+        originalPriority: 1,
+        originalProjectId: 'inbox',
+        projectId: 'inbox',
+        projectName: 'Inbox',
+        improvedContent: 'Make this clearer.',
+        actionType: 'update',
+    });
+
+    const { bot, handlers } = makeCallbackBot();
+    const updates = [];
+    const edits = [];
+    registerCallbacks(bot, {
+        updateTask: async (id, update) => {
+            updates.push({ id, update });
+            return { id };
+        },
+    }, {});
+
+    const applyHandler = findCallbackHandler(handlers, '^a:');
+    assert.equal(typeof applyHandler, 'function');
+
+    await applyHandler({
+        match: [`a:${taskId}`, taskId],
+        chat: { id: 999 },
+        from: { id: 123 },
+        callbackQuery: { id: 'old-callback', message: { message_id: 10 } },
+        telegram: {
+            answerCallbackQuery: async () => {
+                throw new Error("Call to 'answerCallbackQuery' failed! (400: Bad Request: query is too old and response timeout expired or query ID is invalid)");
+            },
+        },
+        editMessageText: async (text, opts) => { edits.push({ text, opts }); return {}; },
+        reply: async (text, opts) => { edits.push({ text, opts, reply: true }); return {}; },
+    });
+
+    assert.equal(updates.length, 1);
+    assert.equal(store.isTaskProcessed(taskId), true);
+    assert.equal(store.isTaskPending(taskId), false);
+    assert.ok(edits.length > 0, 'should still advance or summarize review card');
+    await store.resetAll();
+});
+
+test('review progress never uses global processed count as session progress', async () => {
+    await store.resetAll();
+    for (let i = 0; i < 10; i++) {
+        await store.markTaskProcessed(`old-${i}`, { originalTitle: `Old ${i}` });
+    }
+    for (const taskId of ['current-1', 'current-2', 'current-3']) {
+        await store.markTaskPending(taskId, {
+            originalTitle: taskId,
+            originalContent: '',
+            originalPriority: 1,
+            originalProjectId: 'inbox',
+            projectId: 'inbox',
+            projectName: 'Inbox',
+            actionType: 'update',
+        });
+    }
+    await store.setCurrentReviewSession(999, {
+        chatId: 999,
+        totalTasks: 3,
+    });
+
+    const { bot, handlers } = makeCallbackBot();
+    const edits = [];
+    registerCallbacks(bot, {}, {});
+    const skipHandler = findCallbackHandler(handlers, '^s:');
+    assert.equal(typeof skipHandler, 'function');
+
+    await skipHandler({
+        match: ['s:current-1', 'current-1'],
+        chat: { id: 999 },
+        from: { id: 123 },
+        callbackQuery: { id: 'skip-callback', message: { message_id: 10 } },
+        answerCallbackQuery: async () => {},
+        editMessageText: async (text, opts) => { edits.push({ text, opts }); return {}; },
+        reply: async (text, opts) => { edits.push({ text, opts, reply: true }); return {}; },
+    });
+
+    const latestText = edits.at(-1)?.text || '';
+    assert.ok(!latestText.includes('Task 11 of 3'), 'should not display impossible progress from global processed count');
+    assert.match(latestText, /Task [12] of 3/);
+    await store.resetAll();
+});
+
+test('markTaskPending is idempotent and markTaskProcessed clears pending copy', async () => {
+    await store.resetAll();
+    await store.markTaskPending('dup-task', { originalTitle: 'First' });
+    const firstSentAt = store.getPendingTasks()['dup-task'].sentAt;
+    await new Promise((resolve) => setTimeout(resolve, 5));
+    await store.markTaskPending('dup-task', { originalTitle: 'Second' });
+
+    assert.equal(store.getPendingCount(), 1);
+    assert.equal(store.getPendingTasks()['dup-task'].originalTitle, 'First');
+    assert.equal(store.getPendingTasks()['dup-task'].sentAt, firstSentAt);
+
+    await store.markTaskProcessed('dup-task', { originalTitle: 'Processed' });
+
+    assert.equal(store.isTaskPending('dup-task'), false);
+    assert.equal(store.isTaskProcessed('dup-task'), true);
+    assert.equal(store.getPendingCount(), 0);
+    await store.resetAll();
 });
 
 // ─── No Internal Jargon ──────────────────────────────────────

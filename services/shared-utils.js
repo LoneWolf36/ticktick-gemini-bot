@@ -30,6 +30,30 @@ export function toString(value, fallback = '') {
 }
 
 /**
+ * Acknowledge a Telegram callback without failing the business action when the
+ * callback query has already expired.
+ * @param {Object} ctx - Grammy context
+ * @param {Object} [options={}] - answerCallbackQuery options
+ * @returns {Promise<*|null>} Telegram response or null when the ACK is expired
+ */
+export async function answerCallbackQueryBestEffort(ctx, options = {}) {
+    const elapsedMs = Date.now() - (ctx?._callbackReceivedAt || Date.now());
+    try {
+        if (ctx?.telegram && ctx.callbackQuery?.id) {
+            return await ctx.telegram.answerCallbackQuery(ctx.callbackQuery.id, options);
+        }
+        return await ctx.answerCallbackQuery(options);
+    } catch (err) {
+        const msg = String(err?.message || '').toLowerCase();
+        if (msg.includes('query is too old') || msg.includes('too old') || msg.includes('query id is invalid')) {
+            console.warn(`[TelegramCallback] ${JSON.stringify({ eventType: 'telegram.callback.timeout', callbackId: ctx?.callbackQuery?.id, elapsedMs })}`);
+            return null;
+        }
+        throw err;
+    }
+}
+
+/**
  * Filter tasks to active ones (status 0 or undefined).
  * @param {Array} [tasks=[]]
  * @returns {Array}
@@ -183,7 +207,11 @@ function truncateDiffValue(value, maxLength = FIELD_DIFF_MAX_VALUE_LENGTH) {
 
 function projectNameFor(projectId, projects = [], fallback = null) {
     if (!projectId) return fallback || 'None';
-    return projects.find((project) => project?.id === projectId)?.name || fallback || projectId;
+    const matchedName = projects.find((project) => project?.id === projectId)?.name;
+    if (matchedName) return matchedName;
+    if (fallback && fallback !== projectId) return fallback;
+    if (String(projectId).toLowerCase().startsWith('inbox')) return 'Inbox';
+    return projectId;
 }
 
 function priorityLabelFor(priority) {

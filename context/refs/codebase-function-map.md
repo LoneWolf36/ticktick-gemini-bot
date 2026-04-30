@@ -235,6 +235,9 @@ All magic numbers from the codebase are extracted here with documentation.</p>
 <li>mediumUrgencyHours 72: due within 72h = medium urgency</li>
 </ul>
 </dd>
+<dt><a href="#safeAnswerCallbackQuery">safeAnswerCallbackQuery</a></dt>
+<dd><p>Wraps ctx.answerCallbackQuery with timeout telemetry.</p>
+</dd>
 </dl>
 
 ## Functions
@@ -569,6 +572,10 @@ periodically during the poll cycle.</p>
 </dd>
 <dt><a href="#toString">toString(value, [fallback])</a> ⇒ <code>string</code></dt>
 <dd><p>Safely extract a non-empty trimmed string, returning fallback otherwise.</p>
+</dd>
+<dt><a href="#answerCallbackQueryBestEffort">answerCallbackQueryBestEffort(ctx, [options])</a> ⇒ <code>Promise.&lt;(*|null)&gt;</code></dt>
+<dd><p>Acknowledge a Telegram callback without failing the business action when the
+callback query has already expired.</p>
 </dd>
 <dt><a href="#asActiveTasks">asActiveTasks([tasks])</a> ⇒ <code>Array</code></dt>
 <dd><p>Filter tasks to active ones (status 0 or undefined).</p>
@@ -921,9 +928,6 @@ Never throws — returns { mod, source, path } with null mod on complete failure
 </dd>
 <dt><a href="#getUserTimezoneSource">getUserTimezoneSource()</a> ⇒ <code>&#x27;user_context&#x27;</code> | <code>&#x27;env&#x27;</code> | <code>&#x27;default&#x27;</code></dt>
 <dd><p>Identifies the source of the resolved user timezone.</p>
-</dd>
-<dt><a href="#safeAnswerCallbackQuery">safeAnswerCallbackQuery(ctx, [options])</a></dt>
-<dd><p>Wraps ctx.answerCallbackQuery with timeout telemetry.</p>
 </dd>
 <dt><a href="#taskReviewKeyboard">taskReviewKeyboard(taskId, [actionType])</a> ⇒ <code>InlineKeyboard</code></dt>
 <dd><p>Build an inline keyboard for task review.</p>
@@ -1341,14 +1345,14 @@ Handles action types:
 - `complete`: Completes a task via `adapter.completeTask`
 - `drop`: Deprioritizes a task via `adapter.updateTask` (does not delete)
 
-**Kind**: static method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)
+**Kind**: static method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)  
 **Returns**: <code>Promise.&lt;{outcomes: Array.&lt;string&gt;, undoEntry: (Object\|null), taskId: (string\|null), actionType: (string\|null), error: (string\|null)}&gt;</code> - Structured result:
   - `outcomes`: Outcome message(s) for the action (may include multiple messages
     e.g. sensitive-content warning + update description)
   - `undoEntry`: Undo entry object for update actions (null otherwise)
   - `taskId`: The task ID involved in the action
   - `actionType`: The action type ('create', 'update', 'complete', 'drop')
-  - `error`: Error message if the action failed; null on success
+  - `error`: Error message if the action failed; null on success  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -1365,8 +1369,8 @@ Handles action types:
 Resolve a due date string to TickTick ISO format.
 Uses priority-based label mapping for schedule slot resolution.
 
-**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)
-**Returns**: <code>string</code> \| <code>null</code> - Resolved ISO due date string, or null if input is empty
+**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)  
+**Returns**: <code>string</code> \| <code>null</code> - Resolved ISO due date string, or null if input is empty  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1378,8 +1382,8 @@ Uses priority-based label mapping for schedule slot resolution.
 ### services/reorg-executor~buildProjectMap([projects]) ⇒ <code>Map.&lt;string, string&gt;</code>
 Build a project ID-to-name map from a project array.
 
-**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)
-**Returns**: <code>Map.&lt;string, string&gt;</code> - Map of project ID to project name
+**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)  
+**Returns**: <code>Map.&lt;string, string&gt;</code> - Map of project ID to project name  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -1390,8 +1394,8 @@ Build a project ID-to-name map from a project array.
 ### services/reorg-executor~describeUpdateChanges(changes, task, projectMap) ⇒ <code>string</code>
 Describe priority/project/title/due changes for an update action.
 
-**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)
-**Returns**: <code>string</code> - Formatted change description (empty string if no changes)
+**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)  
+**Returns**: <code>string</code> - Formatted change description (empty string if no changes)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1404,8 +1408,8 @@ Describe priority/project/title/due changes for an update action.
 ### services/reorg-executor~describeCreateDetails(changes, projectMap, resolvedDueDate) ⇒ <code>string</code>
 Describe priority/project/title/due aspects for a create action.
 
-**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)
-**Returns**: <code>string</code> - Formatted detail string (empty string if no extras)
+**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)  
+**Returns**: <code>string</code> - Formatted detail string (empty string if no extras)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1433,8 +1437,8 @@ bot/callbacks.js (undo:last inline button). Both call executeUndoBatch directly.
 ### services/undo-executor.formatPipelineFailure(result, [options]) ⇒ <code>string</code>
 Format a pipeline error result for user-facing display.
 
-**Kind**: static method of [<code>services/undo-executor</code>](#module_services/undo-executor)
-**Returns**: <code>string</code> - User-safe error message (never leaks internal diagnostics unless isDevMode)
+**Kind**: static method of [<code>services/undo-executor</code>](#module_services/undo-executor)  
+**Returns**: <code>string</code> - User-safe error message (never leaks internal diagnostics unless isDevMode)  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -1449,8 +1453,8 @@ Execute a single undo entry against the TickTick adapter.
 Handles all rollback types: delete_created, restore_updated, recreate_deleted, uncomplete_task,
 plus legacy update-based restore for pre-rollback entries.
 
-**Kind**: static method of [<code>services/undo-executor</code>](#module_services/undo-executor)
-**Returns**: <code>Promise.&lt;{reverted: Array.&lt;string&gt;}&gt;</code> - Array of reverted task titles
+**Kind**: static method of [<code>services/undo-executor</code>](#module_services/undo-executor)  
+**Returns**: <code>Promise.&lt;{reverted: Array.&lt;string&gt;}&gt;</code> - Array of reverted task titles  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1462,7 +1466,7 @@ plus legacy update-based restore for pre-rollback entries.
 ### services/undo-executor.executeUndoBatch(entries, adapter) ⇒ <code>Promise.&lt;{reverted: Array.&lt;string&gt;, successful: Array.&lt;Object&gt;}&gt;</code>
 Execute a batch of undo entries, tolerating individual failures.
 
-**Kind**: static method of [<code>services/undo-executor</code>](#module_services/undo-executor)
+**Kind**: static method of [<code>services/undo-executor</code>](#module_services/undo-executor)  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -1572,8 +1576,7 @@ User-facing messages for different failure classes.
 <a name="reorgSchema"></a>
 
 ## reorgSchema
-Gemini response schema for reorganization proposals.
-Cavekit ownership: Task Pipeline R16 (Guided Reorg).
+Gemini response schema for reorganization proposals.Cavekit ownership: Task Pipeline R16 (Guided Reorg).
 
 **Kind**: global constant  
 <a name="BRIEFING_SUMMARY_SECTION_KEYS"></a>
@@ -1621,15 +1624,13 @@ Evidence sources for weekly watchouts.
 <a name="MAX_CHECKLIST_ITEMS"></a>
 
 ## MAX\_CHECKLIST\_ITEMS
-Maximum number of checklist items allowed in a single create action.
-Prevents brain-dump overload and keeps checklists execution-friendly.
+Maximum number of checklist items allowed in a single create action.Prevents brain-dump overload and keeps checklists execution-friendly.
 
 **Kind**: global constant  
 <a name="CHECKLIST_ITEM_SHAPE"></a>
 
 ## CHECKLIST\_ITEM\_SHAPE
-Shape descriptor for checklist items in extracted intent output.
-Used by validateIntentAction to check checklistItems arrays.
+Shape descriptor for checklist items in extracted intent output.Used by validateIntentAction to check checklistItems arrays.
 
 **Kind**: global constant  
 <a name="briefingSummarySchema"></a>
@@ -1840,6 +1841,18 @@ Rationale for defaults:
 - mediumUrgencyHours 72: due within 72h = medium urgency
 
 **Kind**: global constant  
+<a name="safeAnswerCallbackQuery"></a>
+
+## safeAnswerCallbackQuery
+Wraps ctx.answerCallbackQuery with timeout telemetry.
+
+**Kind**: global constant  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| ctx | <code>Object</code> | Grammy context |
+| [options] | <code>Object</code> | answerCallbackQuery options |
+
 <a name="createGoalThemeProfile"></a>
 
 ## createGoalThemeProfile(rawContext, [options]) ⇒ <code>object</code>
@@ -2750,12 +2763,10 @@ Builds a structured pipeline failure result object.
 <a name="createPipeline"></a>
 
 ## createPipeline(options) ⇒ <code>Object</code>
-Create a pipeline instance that orchestrates intent extraction, normalization,
-and TickTick adapter execution.
+Create a pipeline instance that orchestrates intent extraction, normalization,and TickTick adapter execution.
 
 **Kind**: global function  
-**Returns**: <code>Object</code> - - `processMessage(userMessage, options?)` → `{ type: 'task'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`
-  - `getTelemetry()` → the observability instance for this pipeline
+**Returns**: <code>Object</code> - - `processMessage(userMessage, options?)` → `{ type: 'task'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`  - `getTelemetry()` → the observability instance for this pipeline  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -2768,10 +2779,7 @@ and TickTick adapter execution.
 <a name="createPipeline..processMessageWithContext"></a>
 
 ### createPipeline~processMessageWithContext()
-Builds a request context then runs processMessage — canonical
-context-wired entry point.  All bot handlers, callbacks, and
-scheduler poll paths should call this instead of duplicating
-the createRequestContext → processMessage dance locally.
+Builds a request context then runs processMessage — canonicalcontext-wired entry point.  All bot handlers, callbacks, andscheduler poll paths should call this instead of duplicatingthe createRequestContext → processMessage dance locally.
 
 **Kind**: inner method of [<code>createPipeline</code>](#createPipeline)  
 <a name="resolveProjectCategory"></a>
@@ -2891,9 +2899,7 @@ Executes the weekly digest job, analyzing processed tasks from the past week.
 <a name="retryDeferredIntents"></a>
 
 ## retryDeferredIntents(deps, [options]) ⇒ <code>Object</code>
-Retry deferred pipeline intents that were saved when the TickTick API
-was unavailable (R12 graceful degradation).  Runs on startup and
-periodically during the poll cycle.
+Retry deferred pipeline intents that were saved when the TickTick APIwas unavailable (R12 graceful degradation).  Runs on startup andperiodically during the poll cycle.
 
 **Kind**: global function  
 
@@ -2958,6 +2964,20 @@ Safely extract a non-empty trimmed string, returning fallback otherwise.
 | --- | --- | --- |
 | value | <code>\*</code> |  | 
 | [fallback] | <code>string</code> | <code>&quot;&#x27;&#x27;&quot;</code> | 
+
+<a name="answerCallbackQueryBestEffort"></a>
+
+## answerCallbackQueryBestEffort(ctx, [options]) ⇒ <code>Promise.&lt;(\*\|null)&gt;</code>
+Acknowledge a Telegram callback without failing the business action when the
+callback query has already expired.
+
+**Kind**: global function  
+**Returns**: <code>Promise.&lt;(\*\|null)&gt;</code> - Telegram response or null when the ACK is expired  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| ctx | <code>Object</code> |  | Grammy context |
+| [options] | <code>Object</code> | <code>{}</code> | answerCallbackQuery options |
 
 <a name="asActiveTasks"></a>
 
@@ -3556,8 +3576,8 @@ The lock prevents overlapping poll/scan/review cycles from mutating the same
 TickTick intake stream at once. Expired locks self-heal on the next acquire
 attempt instead of blocking forever after a crash.
 
-**Kind**: global function
-**Returns**: <code>boolean</code> - True when acquired; false when another unexpired owner holds it.
+**Kind**: global function  
+**Returns**: <code>boolean</code> - True when acquired; false when another unexpired owner holds it.  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -3574,13 +3594,13 @@ Release the shared TickTick intake lock.
 Callers should release only locks they acquired. The lock also expires by TTL
 as a defensive fallback for process crashes or interrupted async flows.
 
-**Kind**: global function
+**Kind**: global function  
 <a name="getIntakeLockStatus"></a>
 
 ## getIntakeLockStatus([options]) ⇒ <code>Object</code> \| <code>Object</code>
 Get diagnostic metadata for the shared TickTick intake lock.
 
-**Kind**: global function
+**Kind**: global function  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -3592,14 +3612,14 @@ Get diagnostic metadata for the shared TickTick intake lock.
 ## getChatId() ⇒ <code>number</code> \| <code>null</code>
 Get the stored Telegram chat ID.
 
-**Kind**: global function
-**Returns**: <code>number</code> \| <code>null</code> - Chat ID or null if not set
+**Kind**: global function  
+**Returns**: <code>number</code> \| <code>null</code> - Chat ID or null if not set  
 <a name="setChatId"></a>
 
 ## setChatId(id) ⇒ <code>Promise.&lt;void&gt;</code>
 Persist a Telegram chat ID to the store.
 
-**Kind**: global function
+**Kind**: global function  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3608,15 +3628,13 @@ Persist a Telegram chat ID to the store.
 <a name="getWorkStyleMode"></a>
 
 ## getWorkStyleMode()
-Get the current work-style mode for a user.
-Returns the active mode, automatically reverting to standard if expired.
+Get the current work-style mode for a user.Returns the active mode, automatically reverting to standard if expired.
 
 **Kind**: global function  
 <a name="setWorkStyleMode"></a>
 
 ## setWorkStyleMode(userId, mode, options)
-Set the work-style mode for a user.
-Mode transitions are explicit — never changes without user action or auto-expiry.
+Set the work-style mode for a user.Mode transitions are explicit — never changes without user action or auto-expiry.
 
 **Kind**: global function  
 
@@ -3652,8 +3670,8 @@ Park a task that failed analysis — prevents re-polling until retryAfterMs expi
 Approve a pending task, marking it as processed.
 Delegates to resolveTask with status 'approve'.
 
-**Kind**: global function
-**Returns**: <code>Promise.&lt;(Object\|null)&gt;</code> - The processed task entry, or null if not pending
+**Kind**: global function  
+**Returns**: <code>Promise.&lt;(Object\|null)&gt;</code> - The processed task entry, or null if not pending  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3665,8 +3683,8 @@ Delegates to resolveTask with status 'approve'.
 Skip a pending task, marking it as processed without taking action.
 Delegates to resolveTask with status 'skip'.
 
-**Kind**: global function
-**Returns**: <code>Promise.&lt;(Object\|null)&gt;</code> - The processed task entry, or null if not pending
+**Kind**: global function  
+**Returns**: <code>Promise.&lt;(Object\|null)&gt;</code> - The processed task entry, or null if not pending  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3678,8 +3696,8 @@ Delegates to resolveTask with status 'skip'.
 Drop a pending task, marking it as processed and deprioritized.
 Delegates to resolveTask with status 'drop'.
 
-**Kind**: global function
-**Returns**: <code>Promise.&lt;(Object\|null)&gt;</code> - The processed task entry, or null if not pending
+**Kind**: global function  
+**Returns**: <code>Promise.&lt;(Object\|null)&gt;</code> - The processed task entry, or null if not pending  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3779,8 +3797,7 @@ Get all undo entries sharing a batchId.
 <a name="getLastAutoApplyBatch"></a>
 
 ## getLastAutoApplyBatch() ⇒ <code>Array.&lt;Object&gt;</code>
-Get all undo entries from the most recent auto-apply batch.
-Groups by batchId; if no batchId, falls back to the single most recent auto-apply entry.
+Get all undo entries from the most recent auto-apply batch.Groups by batchId; if no batchId, falls back to the single most recent auto-apply entry.
 
 **Kind**: global function  
 **Returns**: <code>Array.&lt;Object&gt;</code> - Array of undo entries from the same batch  
@@ -3800,13 +3817,13 @@ Remove specific undo entries by reference identity.
 ## getStats() ⇒ <code>Object</code>
 Get the cumulative stats snapshot.
 
-**Kind**: global function
+**Kind**: global function  
 <a name="updateStats"></a>
 
 ## updateStats(updates) ⇒ <code>Promise.&lt;void&gt;</code>
 Merge partial updates into the cumulative stats.
 
-**Kind**: global function
+**Kind**: global function  
 
 | Param | Type | Description |
 | --- | --- | --- |
@@ -3817,14 +3834,14 @@ Merge partial updates into the cumulative stats.
 ## getProcessedTasks() ⇒ <code>Object.&lt;string, Object&gt;</code>
 Get all processed task entries.
 
-**Kind**: global function
-**Returns**: <code>Object.&lt;string, Object&gt;</code> - Map of taskId → processed task entry
+**Kind**: global function  
+**Returns**: <code>Object.&lt;string, Object&gt;</code> - Map of taskId → processed task entry  
 <a name="getProcessedCount"></a>
 
 ## getProcessedCount() ⇒ <code>number</code>
 Count the total number of processed task entries.
 
-**Kind**: global function
+**Kind**: global function  
 <a name="resetAll"></a>
 
 ## resetAll()
@@ -4258,18 +4275,6 @@ Identifies the source of the resolved user timezone.
 
 **Kind**: global function  
 **Returns**: <code>&#x27;user\_context&#x27;</code> \| <code>&#x27;env&#x27;</code> \| <code>&#x27;default&#x27;</code> - Timezone source  
-<a name="safeAnswerCallbackQuery"></a>
-
-## safeAnswerCallbackQuery(ctx, [options])
-Wraps ctx.answerCallbackQuery with timeout telemetry.
-
-**Kind**: global function  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| ctx | <code>Object</code> | Grammy context |
-| [options] | <code>Object</code> | answerCallbackQuery options |
-
 <a name="taskReviewKeyboard"></a>
 
 ## taskReviewKeyboard(taskId, [actionType]) ⇒ <code>InlineKeyboard</code>
