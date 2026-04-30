@@ -1,12 +1,8 @@
-import { buildBehavioralPatternNotice } from './behavioral-pattern-notices.js';
+import { buildBehavioralPatternNotice, toArray } from './behavioral-pattern-notices.js';
 
 function asActiveTasks(tasks = []) {
     return (Array.isArray(tasks) ? tasks : [])
         .filter((task) => task && (task.status === 0 || task.status === undefined));
-}
-
-function toArray(value) {
-    return Array.isArray(value) ? value : [];
 }
 
 function toString(value, fallback = '') {

@@ -4,15 +4,11 @@ import {
     SUMMARY_NOTICE_SEVERITIES,
     WEEKLY_WATCHOUT_EVIDENCE_SOURCES,
 } from '../schemas.js';
-import { buildBehavioralPatternNotice } from './behavioral-pattern-notices.js';
+import { buildBehavioralPatternNotice, toArray } from './behavioral-pattern-notices.js';
 import { buildEngagementPatternNotice, deriveInterventionProfile } from './intervention-profile.js';
 import { buildReflectionRecomputeContext, buildReflectionRecomputeNotice } from './reflection-recompute.js';
 
 const DISALLOWED_WATCHOUT_LABELS = new Set(['avoidance', 'callout']);
-
-function toArray(value) {
-    return Array.isArray(value) ? value : [];
-}
 
 function toString(value, fallback = '') {
     if (typeof value === 'string') {

@@ -1,18 +1,7 @@
 import { buildEngagementPatternNotice, deriveInterventionProfile } from './intervention-profile.js';
-import { buildBehavioralPatternNotice } from './behavioral-pattern-notices.js';
+import { buildBehavioralPatternNotice, toArray } from './behavioral-pattern-notices.js';
 import { buildReflectionRecomputeContext, buildReflectionRecomputeNotice } from './reflection-recompute.js';
-
-function toArray(value) {
-    return Array.isArray(value) ? value : [];
-}
-
-function toString(value, fallback = '') {
-    if (typeof value === 'string') {
-        const trimmed = value.trim();
-        if (trimmed.length > 0) return trimmed;
-    }
-    return fallback;
-}
+import { toString } from './briefing-summary.js';
 
 function asActiveTasks(tasks = []) {
     return toArray(tasks).filter((task) => task && (task.status === 0 || task.status === undefined));

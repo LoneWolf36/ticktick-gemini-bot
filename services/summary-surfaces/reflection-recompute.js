@@ -1,8 +1,4 @@
-import { selectBehavioralPatternsForSummary } from './behavioral-pattern-notices.js';
-
-function toArray(value) {
-    return Array.isArray(value) ? value : [];
-}
+import { selectBehavioralPatternsForSummary, toArray } from './behavioral-pattern-notices.js';
 
 function asActiveTasks(tasks = []) {
     return toArray(tasks).filter((task) => task && (task.status === 0 || task.status === undefined));
