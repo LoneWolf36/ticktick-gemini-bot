@@ -1578,7 +1578,9 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         // Persist pending clarification so callbacks can resume
                         await store.setPendingMutationClarification({
                             originalMessage: userMessage,
-                            candidates: candidates.map(c => ({ id: c.id, title: c.title })),
+                            candidates: candidates
+                                .map(c => ({ id: c.id || c.taskId, title: c.title }))
+                                .filter(c => c.id),
                             intentSummary: result.confirmationText,
                             chatId: ctx.chat?.id ?? null,
                             userId: ctx.from?.id ?? null,

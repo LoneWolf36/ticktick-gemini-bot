@@ -1382,6 +1382,8 @@ test('registerCallbacks r: handler sets force_reply refinement mode', async () =
   const store = await import('../services/store.js');
   const { AUTHORIZED_CHAT_ID } = await import('../services/shared-utils.js');
 
+  await store.resetAll();
+
   const chatId = AUTHORIZED_CHAT_ID || 999;
   const userId = 123;
   const taskId = 'task-refine-01';

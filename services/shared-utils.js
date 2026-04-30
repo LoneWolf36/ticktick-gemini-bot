@@ -1109,6 +1109,28 @@ function truncateCandidateLabel(title) {
     return title.slice(0, MAX_CANDIDATE_LABEL - 1) + '…';
 }
 
+function candidateId(candidate) {
+    return candidate?.id || candidate?.taskId || candidate?.task?.id || null;
+}
+
+function candidateDisambiguator(candidate, duplicateTitleCount) {
+    if (duplicateTitleCount <= 1) return '';
+    if (candidate.projectName) return ` · ${candidate.projectName}`;
+    if (candidate.projectId) return ` · ${candidate.projectId}`;
+    const id = candidateId(candidate);
+    if (id) return ` · ${String(id).slice(-6)}`;
+    return '';
+}
+
+function buildCandidateLabel(candidate, duplicateTitleCount) {
+    const title = candidate?.title || '(untitled)';
+    const disambiguator = candidateDisambiguator(candidate, duplicateTitleCount);
+    if (!disambiguator) return truncateCandidateLabel(title);
+    const titleBudget = Math.max(8, MAX_CANDIDATE_LABEL - disambiguator.length - 1);
+    const trimmedTitle = title.length <= titleBudget ? title : `${title.slice(0, titleBudget)}…`;
+    return `${trimmedTitle}${disambiguator}`;
+}
+
 /**
  * Builds an inline keyboard for selecting mutation candidates.
  * @param {Array<Object>} candidates - List of task candidates
@@ -1119,9 +1141,17 @@ function truncateCandidateLabel(title) {
  */
 export function buildMutationCandidateKeyboard(candidates, { intentSummary = null, includeCancel = true } = {}) {
     const keyboard = new InlineKeyboard();
+    const titleCounts = new Map();
+    candidates.forEach((candidate) => {
+        const key = String(candidate?.title || '').trim().toLowerCase();
+        titleCounts.set(key, (titleCounts.get(key) || 0) + 1);
+    });
     candidates.slice(0, 6).forEach((candidate, idx) => {
-        const label = truncateCandidateLabel(candidate.title);
-        const callbackData = `mut:pick:${candidate.id}`;
+        const id = candidateId(candidate);
+        if (!id) return;
+        const key = String(candidate?.title || '').trim().toLowerCase();
+        const label = buildCandidateLabel(candidate, titleCounts.get(key) || 0);
+        const callbackData = `mut:pick:${id}`;
         if (idx % 1 === 0) keyboard.text(label, callbackData).row();
     });
     if (includeCancel) {
