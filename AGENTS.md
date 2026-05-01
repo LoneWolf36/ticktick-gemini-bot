@@ -59,6 +59,8 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 
 **Deferred Pipeline Intents**: When the TickTick API is unavailable, `services/pipeline.js` defers the parsed normalized intent into `services/store.js` `deferredPipelineIntents` (max 200 entries). `services/scheduler.js` exports `retryDeferredIntents()` which processes the queue with health-check gating and exponential backoff (max 15min). Intents that exhaust 3 retries are moved to `failedDeferredIntents` (dead-letter queue, max 50 entries). The user is notified on permanent failure. See `docs/ARCHITECTURE.md` Resilience Patterns for details.
 
+**Operation Receipt Contract**: `services/operation-receipt.js` defines the shared vocabulary and invariant checks for user-visible operation outcomes. It is descriptive only — execution, routing, and mutation decisions remain in pipeline/callback/adapter boundaries. Receipt states must fail conservative: dry-run cannot be applied, applied requires a real TickTick change with exact/configured destination confidence when a destination is present, blocked/deferred/failed/busy states use safe next actions, and diagnostic metadata must not carry raw task titles, descriptions, checklist text, free-form user message text, or raw rollback snapshots.
+
 ## Project Structure & Module Organization
 
 ### Service modules (source of truth for business logic)
@@ -74,6 +76,7 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - `services/store.js` — State persistence layer. Redis-backed when `REDIS_URL` is set; falls back to local JSON file for development.
 - `services/pipeline-context.js` — Carries structured context through the pipeline execution stages.
 - `services/pipeline-observability.js` — Pipeline execution metrics and logging.
+- `services/operation-receipt.js` — Shared operation outcome vocabulary and invariant validation for truthful user-visible state.
 - `services/schemas.js` — Structured data schemas for intent actions and normalized actions.
 - `services/shared-utils.js` — Shared utility functions used across service modules.
 - `services/execution-prioritization.js` — Leverage-based ranking, priority inference, and recommendation result building for task prioritization.

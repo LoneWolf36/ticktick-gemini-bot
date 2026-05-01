@@ -54,6 +54,11 @@ This prompt was preserved from the original framework instruction text.</p>
 <dd><p>Response schema for Gemini intent extraction.
 Uses Google GenAI schema format.</p>
 </dd>
+<dt><a href="#OPERATION_RECEIPT_VALUES">OPERATION_RECEIPT_VALUES</a></dt>
+<dd><p>OperationReceipt is the shared outcome contract for user-visible operation state.
+It describes what happened after execution logic has already decided the outcome;
+it must not own orchestration, routing, or mutation decisions.</p>
+</dd>
 <dt><a href="#REQUIRED_FIELDS">REQUIRED_FIELDS</a> : <code>Array.&lt;string&gt;</code></dt>
 <dd><p>List of required fields for a valid pipeline request context.</p>
 </dd>
@@ -428,6 +433,12 @@ multi-mutation requests that are out of scope for v1.</p>
 Returns { actions, batchError } where batchError is set when the
 batch shape is unsupported (mixed create+mutation, multi-mutation).</p>
 <p>Single entry point for pipeline to normalize and validate batch shape.</p>
+</dd>
+<dt><a href="#validateOperationReceipt">validateOperationReceipt(receipt)</a> ⇒ <code>Object</code></dt>
+<dd><p>Validate an OperationReceipt-like object against stage-1 invariants.</p>
+</dd>
+<dt><a href="#assertValidOperationReceipt">assertValidOperationReceipt(receipt)</a> ⇒ <code>object</code></dt>
+<dd><p>Assert that a candidate receipt satisfies the OperationReceipt contract.</p>
 </dd>
 <dt><a href="#cloneValue">cloneValue(value)</a> ⇒ <code>*</code></dt>
 <dd><p>Clones a value using structuredClone or JSON fallback.</p>
@@ -1513,6 +1524,14 @@ Response schema for Gemini intent extraction.
 Uses Google GenAI schema format.
 
 **Kind**: global constant  
+<a name="OPERATION_RECEIPT_VALUES"></a>
+
+## OPERATION\_RECEIPT\_VALUES
+OperationReceipt is the shared outcome contract for user-visible operation state.
+It describes what happened after execution logic has already decided the outcome;
+it must not own orchestration, routing, or mutation decisions.
+
+**Kind**: global constant  
 <a name="REQUIRED_FIELDS"></a>
 
 ## REQUIRED\_FIELDS : <code>Array.&lt;string&gt;</code>
@@ -2340,6 +2359,34 @@ batch shape is unsupported (mixed create+mutation, multi-mutation).
 Single entry point for pipeline to normalize and validate batch shape.
 
 **Kind**: global function  
+<a name="validateOperationReceipt"></a>
+
+## validateOperationReceipt(receipt) ⇒ <code>Object</code>
+Validate an OperationReceipt-like object against stage-1 invariants.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - Validation result.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| receipt | <code>object</code> | Candidate receipt. |
+
+<a name="assertValidOperationReceipt"></a>
+
+## assertValidOperationReceipt(receipt) ⇒ <code>object</code>
+Assert that a candidate receipt satisfies the OperationReceipt contract.
+
+**Kind**: global function  
+**Returns**: <code>object</code> - The original receipt when valid.  
+**Throws**:
+
+- <code>TypeError</code> When the receipt violates the contract.
+
+
+| Param | Type | Description |
+| --- | --- | --- |
+| receipt | <code>object</code> | Candidate receipt. |
+
 <a name="cloneValue"></a>
 
 ## cloneValue(value) ⇒ <code>\*</code>

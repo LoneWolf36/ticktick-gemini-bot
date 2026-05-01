@@ -23,6 +23,41 @@ Parallel non-write paths:
 
 See `AGENTS.md` for the full service module descriptions.
 
+## Operation Receipt Contract
+
+`services/operation-receipt.js` defines the shared vocabulary for user-visible operation outcomes. The receipt describes what happened after the pipeline, callback, adapter, or scheduler logic has already decided the result; it must not make routing, mutation, or orchestration decisions.
+
+Core fields:
+
+- `status` — one of `preview`, `applied`, `pending_confirmation`, `blocked`, `deferred`, `failed`, or `busy`.
+- `scope` — the state being described: TickTick live state, local review queue, preview state, deferred queue, or system state.
+- `command` — entry command/surface: scan, pending, status, review, free-form, reorg, scheduler, or callback.
+- `operationType` — create, update, complete, delete, review, scan, sync, reorg, or none.
+- `changed` — whether TickTick or durable local state actually changed.
+- `dryRun` — whether the operation was preview-only.
+- `applied` — whether a TickTick mutation succeeded.
+- `fallbackUsed` — whether model or execution fallback influenced the outcome.
+- `message` — short user-safe summary, not raw task/user text.
+- `traceId` — diagnostic correlation ID.
+- `nextAction` — the safe user/system next step.
+- `errorClass` — optional safe failure class.
+- `destination.confidence` — destination resolution class when a project is involved: exact, configured, ambiguous, or missing. Pending create/update confirmations require `projectId` or `projectName` for exact/configured destinations, or non-empty `choices` with safe project references for ambiguous destinations.
+- `confirmation` — required details for pending-confirmation receipts, including a safe target identifier (`taskId`, `previewId`, `candidateId`, `targetId`, or `referenceId`) and proposed outcome.
+- `rollback` — safe rollback metadata only. Raw undo snapshots stay in undo storage and must not be embedded in a receipt that may be logged or rendered.
+
+Safety invariants:
+
+- Dry-run receipts can only be `preview` or `blocked`; they cannot be applied.
+- Applied receipts require `changed=true`, `applied=true`, and `status=applied`.
+- Applied receipts must describe `ticktick_live` scope.
+- Applied receipts with a destination require exact or configured destination confidence.
+- `changed=false` forbids applied success state.
+- Blocked, deferred, failed, and busy states can only point to safe next actions: retry, wait, resync, or none.
+- Pending-confirmation receipts cannot already be changed/applied; they require confirmation details, a safe target identifier, and create/update confirmations require a proposed destination reference or choices.
+- Receipts must not carry raw task titles, descriptions, checklist text, or free-form user message text in diagnostic metadata.
+
+Safe defaults: uncertainty stays conservative. Missing/ambiguous routing, malformed model output, stale preview, lock contention, or unknown state should become blocked, failed, deferred, pending confirmation, or busy — never an applied success.
+
 ## Runtime Endpoints
 
 ### `/health`
