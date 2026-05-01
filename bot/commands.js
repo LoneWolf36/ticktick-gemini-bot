@@ -800,7 +800,20 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const pendingCount = store.getPendingCount();
 
         if (pendingCount === 0) {
-            await ctx.reply('No tasks pending review.');
+            let liveTaskCount = null;
+            try {
+                if (typeof adapter?.listActiveTasks === 'function') {
+                    const liveTasks = await adapter.listActiveTasks();
+                    liveTaskCount = Array.isArray(liveTasks) ? liveTasks.length : null;
+                }
+            } catch (err) {
+                console.warn(`[Pending] Could not read live TickTick task count: ${err.message}`);
+            }
+
+            const tickTickState = liveTaskCount === null
+                ? 'TickTick live task count unknown right now.'
+                : `TickTick still has ${liveTaskCount} live task(s).`;
+            await ctx.reply(`Local review queue empty. ${tickTickState}`);
             return;
         }
 

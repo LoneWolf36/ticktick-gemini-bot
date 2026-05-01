@@ -40,7 +40,7 @@ test('registerCommands /status includes deferred queue counts', async () => {
   assert.match(lastReply, /Failed permanently: 1 items/);
 });
 
-test('registerCommands /pending shows clear empty message', async () => {
+test('registerCommands /pending shows scoped empty local queue message', async () => {
   await store.resetAll();
   const handlers = { commands: new Map(), callbacks: [], events: [] };
   const bot = {
@@ -66,7 +66,8 @@ test('registerCommands /pending shows clear empty message', async () => {
   };
 
   await pendingHandler(ctx);
-  assert.equal(replies.at(-1), 'No tasks pending review.');
+  assert.match(replies.at(-1), /Local review queue empty/);
+  assert.match(replies.at(-1), /TickTick still has 0 live task\(s\)/);
 });
 
 test('registerCommands /pending shows clear non-empty message', async () => {

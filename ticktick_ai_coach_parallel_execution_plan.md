@@ -129,6 +129,37 @@ Stage 2 acceptance status:
 - No implementation merged before reproduction: complete.
 - Full suite intentionally not green until Stage 3+ production fixes land: expected.
 
+### Stage 3 — Production fixes for trust regressions — completed
+
+Scope completed:
+
+- Scoped `/pending` empty-state copy to the local review queue and reported live TickTick count separately.
+- Removed unsafe first-project fallback from pipeline default project resolution.
+- Blocked create actions when no configured/default/Inbox destination can be resolved.
+- Changed dry-run results from task-shaped success to preview-only semantics with `changed=false`, `applied=false`, and no adapter writes.
+
+Production fixes:
+
+- F1: `/pending` now says the local review queue is empty and separately reports TickTick live-task state, avoiding false implication that TickTick itself has no tasks.
+- F3: when Inbox/default project is missing, the pipeline returns `type: blocked` and performs no create call instead of writing to the first available project.
+- F6: dry-run now returns `type: preview` with copy stating nothing changed; create/update/complete/delete adapter calls remain zero.
+
+Validation completed:
+
+- `node --test tests/regression.scheduler-status-commands.test.js` → 4/4 pass.
+- `node --test tests/regression.mutation-confirmation-gate.test.js` → 19/19 pass.
+- `node --test tests/regression.pipeline-hardening-mutation.test.js` → 41/41 pass.
+- `npm run check:test-sizes` → pass.
+- `npm test` → 697 pass, 0 fail.
+
+Stage 3 acceptance status:
+
+- Red Stage 2 tests now green via production fixes: complete.
+- No silent write fallback remains in the free-form pipeline when destination is missing: complete.
+- Dry-run no longer reports applied/task-shaped success: complete.
+- `/pending` copy declares local-vs-live scope: complete.
+- No exported signature or config surface changed, so code map/config docs were not regenerated: complete.
+
 ## Core contract: OperationReceipt
 
 Define a shared contract used by pipeline, review callbacks, reorg execution, and command rendering.

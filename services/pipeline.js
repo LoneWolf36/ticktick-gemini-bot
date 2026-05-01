@@ -1527,20 +1527,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 }
             }
 
-            // Final fallback: first available project sorted by name then id
             if (defaultProjectId === null) {
-                const sorted = [...context.availableProjects].sort((a, b) => {
-                    const nameCompare = String(a?.name || '').localeCompare(String(b?.name || ''));
-                    if (nameCompare !== 0) return nameCompare;
-                    return String(a?.id || '').localeCompare(String(b?.id || ''));
-                });
-                const fallback = sorted[0] || null;
-                if (fallback) {
-                    console.warn(`[Pipeline:${context.requestId}] Default project "${defaultProjectName}" and Inbox not found. Falling back to first available project "${fallback.name}".`);
-                    defaultProjectId = fallback.id;
-                } else {
-                    console.warn(`[Pipeline:${context.requestId}] Neither "${defaultProjectName}" nor Inbox found in available projects. Available: ${context.availableProjects.map(p => p.name).join(', ')}`);
-                }
+                console.warn(`[Pipeline:${context.requestId}] Neither "${defaultProjectName}" nor Inbox found in available projects. Available: ${context.availableProjects.map(p => p.name).join(', ')}. Blocking create actions without a resolved destination.`);
             }
 
             const normOptions = {
@@ -1708,10 +1696,52 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 }), context);
             }
 
-            if (isDryRun) {
-                const dryRunConfirmationText = `Analysis complete — ${validActions.length} action(s) ready for review.`;
+            const createActionsMissingDestination = validActions.filter(action => action.type === 'create' && !action.projectId);
+            if (createActionsMissingDestination.length > 0) {
+                const confirmationText = 'Blocked — no safe TickTick destination found. Choose a project or restore an Inbox/default project, then retry.';
                 context = finalizePipelineContext(context, requestStartedAt, {
-                    resultType: 'task',
+                    resultType: 'blocked',
+                    status: 'failure',
+                    summary: 'missing_project_destination',
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    rolledBack: false,
+                    validationFailures: ['missing_project_destination'],
+                });
+                await telemetry.emit(context, {
+                    eventType: 'pipeline.request.failed',
+                    step: 'result',
+                    status: 'failure',
+                    durationMs: Date.now() - requestStartedAt,
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    rolledBack: false,
+                    metadata: {
+                        reason: 'missing_project_destination',
+                        type: 'blocked',
+                        actionCount: createActionsMissingDestination.length,
+                    },
+                });
+                return attachPipelineContext({
+                    type: 'blocked',
+                    status: 'blocked',
+                    results: [],
+                    errors: ['missing_project_destination'],
+                    confirmationText,
+                    requestId: context.requestId,
+                    entryPoint: context.entryPoint,
+                    mode: context.mode,
+                    workStyleMode: context.workStyleMode || null,
+                    checklistContext: context.checklistContext || null,
+                    warnings: invalidActions.map(a => a.validationErrors).flat(),
+                    dryRun: false,
+                    applied: false,
+                    changed: false,
+                }, context);
+            }
+
+            if (isDryRun) {
+                const dryRunConfirmationText = `Preview only — nothing changed. ${validActions.length} action(s) ready for review.`;
+                context = finalizePipelineContext(context, requestStartedAt, {
+                    resultType: 'preview',
                     status: 'success',
                     summary: 'dry_run',
                 });
@@ -1721,13 +1751,15 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     status: 'success',
                     durationMs: Date.now() - requestStartedAt,
                     metadata: {
-                        type: 'task',
+                        type: 'preview',
                         actionCount: validActions.length,
                         dryRun: true,
+                        changed: false,
                     },
                 });
                 return attachPipelineContext({
-                    type: 'task',
+                    type: 'preview',
+                    status: 'preview',
                     actions: validActions,
                     results: [],
                     errors: [],
@@ -1742,6 +1774,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         .filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0)
                         .map(a => ({ actionIndex: a._index ?? null, checklistItemCount: a.checklistItems.length })),
                     dryRun: true,
+                    applied: false,
+                    changed: false,
                 }, context);
             }
 
