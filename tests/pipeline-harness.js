@@ -22,6 +22,7 @@ export function createPipelineHarness({
     normalizedActions = null,
     adapterOverrides = {},
     observability = undefined,
+    deferIntent = undefined,
 } = {}) {
     const axCalls = [];
     const adapterCalls = {
@@ -95,6 +96,7 @@ export function createPipelineHarness({
         normalizer: normalizerImpl,
         adapter,
         ...(observability ? { observability } : {}),
+        ...(deferIntent ? { deferIntent } : {}),
     });
 
     const processMessage = (userMessage, options = {}) => (

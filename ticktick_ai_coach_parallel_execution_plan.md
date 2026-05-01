@@ -193,6 +193,62 @@ Stage 3 review acceptance status:
 - Full regression suite green after fixes: complete.
 - Remaining trust risks are deferred to later stages unless selected next: explicit bad `projectHint` still falls back to the configured default project, and `/pending` live count degrades to unknown on TickTick read failure.
 
+### Stage 4 — Pipeline-only OperationReceipt production mapping — completed
+
+Scope completed:
+
+- Mapped pipeline terminal outcomes to `OperationReceipt` without adding a global state machine.
+- Kept Stage 4 pipeline-only: `bot/callbacks.js` and `services/reorg-executor.js` receipt mapping remain deferred.
+- Attached receipts to representative pipeline outcomes: preview, blocked, pending confirmation when destination is safely known, applied success, failed adapter/system paths, and deferred queue paths.
+- Preserved legacy pipeline result envelopes for callers while adding `operationReceipt` as the structured truth surface.
+- Added test harness support for deferred-intent injection so quota/deferred paths can be reproduced without live Gemini or TickTick calls.
+
+Production mapping details:
+
+- Added internal receipt-building helpers in `services/pipeline.js`:
+  - `buildOperationReceipt(...)` validates every generated receipt through `assertValidOperationReceipt(...)`.
+  - `resolveReceiptCommand(context)` maps Telegram scan/review/status/pending, scheduler/deferred retry, callbacks, and free-form entry points into canonical command values.
+  - `inferOperationType(actions)` whitelists supported operation types so unsupported action types cannot crash receipt creation.
+  - `resolveReceiptDestinationForPendingMutation(action, context)` only emits create/update pending-confirmation destinations when the proposed destination exists in `context.availableProjects`.
+  - Applied receipt messages use privacy-safe count-only copy and stay separate from Telegram confirmation text.
+- Applied receipts now derive `changed`/`applied` from actual successful adapter results, not merely from normalized actions.
+- Zero-success safety paths such as scheduler `blockedActionTypes` now produce non-applied blocked receipts.
+- Deferred queue outcomes now use `status: deferred`, `scope: deferred_queue`, `changed=true`, `applied=false`, and `fallbackUsed=true` when a deferred intent is persisted.
+- AI hard-quota deferral now passes deferred intent details into failure/receipt mapping so the receipt matches the user-facing retry copy.
+- Adapter failures return valid failed receipts with safe messages rather than raw task text.
+- Pending-confirmation delete/complete receipts omit destinations; create/update receipts include only verified real project destinations.
+- Unknown or stale model-supplied `projectId` values no longer become fake `configured` destinations.
+
+Review findings fixed before commit:
+
+- P0: applied receipt no longer leaks raw task titles via `confirmationText`.
+- P0: fake `projectId: pending` destination removed.
+- P0: skipped-only/blocked-action runs no longer report applied changes.
+- P1: deferred adapter and AI quota paths now report deferred receipts instead of failed/system/unchanged.
+- P1: dry-run AI quota failures stay blocked and do not enqueue deferred retries.
+- P1: receipt command no longer hardcodes `freeform` for scan/scheduler/deferred surfaces.
+- P1: pending update destination now comes from proposed destination, not the current task project.
+- P1: proposed `projectId` is verified against `availableProjects` before receipt emission.
+- P1: unsupported operation types cannot produce invalid receipt vocabulary.
+- P2: tests now assert exact receipt fields, privacy invariants, changed/applied truth, deferred state, command mapping, and destination safety.
+
+Validation completed:
+
+- `node --test tests/regression.mutation-confirmation-gate.test.js` → 29/29 pass.
+- `node --test tests/regression.operation-receipt-contract.test.js` → 12/12 pass.
+- `node --test tests/regression.pipeline-hardening-mutation.test.js` → 41/41 pass.
+- `npm run check:test-sizes` → pass.
+- `npm test` → 708 pass, 0 fail.
+
+Stage 4 acceptance status:
+
+- Pipeline terminal outcomes expose canonical OperationReceipt data: complete for selected pipeline paths.
+- Receipts are validated at construction time and fail closed on invalid vocabulary/invariants: complete.
+- Receipt messages avoid raw task title/checklist/user-text leakage: complete for mapped pipeline receipts.
+- Destination confidence no longer trusts fake/stale project ids: complete for mapped pending-confirmation receipts.
+- Deferred and dry-run states preserve truthful changed/applied/dryRun semantics: complete.
+- Callback and reorg receipt mapping remain explicitly out of Stage 4 scope and should be handled in later stages.
+
 ## Core contract: OperationReceipt
 
 Define a shared contract used by pipeline, review callbacks, reorg execution, and command rendering.

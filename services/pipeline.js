@@ -16,6 +16,7 @@ import { QuotaExhaustedError } from './intent-extraction.js';
 import { AIHardQuotaError, AIServiceUnavailableError, AIInvalidKeyError } from './gemini.js';
 import { resolveTarget, buildClarificationPrompt } from './task-resolver.js';
 import { buildMutationConfirmationMessage } from './shared-utils.js';
+import { assertValidOperationReceipt } from './operation-receipt.js';
 
 /**
  * Failure classes for pipeline errors.
@@ -145,6 +146,101 @@ function repairMutationShapedCreateIntents(intents, userMessage) {
         repairedFromType: 'create',
         repairReason: 'mutation_shaped_create',
     }];
+}
+
+function buildOperationReceipt(context, {
+    status,
+    scope,
+    command,
+    operationType,
+    nextAction,
+    changed,
+    dryRun,
+    applied,
+    fallbackUsed,
+    message,
+    errorClass = null,
+    destination = undefined,
+    confirmation = undefined,
+}) {
+    const receipt = {
+        status,
+        scope,
+        command,
+        operationType,
+        nextAction,
+        changed,
+        dryRun,
+        applied,
+        fallbackUsed,
+        message,
+        traceId: context?.requestId || 'unknown-trace',
+        ...(errorClass ? { errorClass } : {}),
+        ...(destination !== undefined ? { destination } : {}),
+        ...(confirmation !== undefined ? { confirmation } : {}),
+    };
+
+    return assertValidOperationReceipt(receipt);
+}
+
+function resolveReceiptCommand(context) {
+    const entryPoint = String(context?.entryPoint || '').toLowerCase();
+    const mode = String(context?.mode || '').toLowerCase();
+    if (entryPoint.includes('scan') || mode === 'scan') return 'scan';
+    if (entryPoint.includes('review') || mode === 'review') return 'review';
+    if (entryPoint.includes('status')) return 'status';
+    if (entryPoint.includes('pending')) return 'pending';
+    if (entryPoint.includes('scheduler')) return 'scheduler';
+    if (entryPoint.includes('deferred')) return 'scheduler';
+    if (entryPoint.includes('callback')) return 'callback';
+    return 'freeform';
+}
+
+function resolveReceiptDestinationForPendingMutation(action, context) {
+    if (!['create', 'update'].includes(action?.type)) return undefined;
+
+    const availableProjects = Array.isArray(context?.availableProjects) ? context.availableProjects : [];
+    if (action.projectId) {
+        const project = availableProjects.find(candidate => candidate?.id === action.projectId);
+        return project?.id ? { confidence: 'configured', projectId: project.id } : undefined;
+    }
+
+    const projectHint = typeof action.projectHint === 'string' ? action.projectHint.trim().toLowerCase() : '';
+    if (!projectHint) return undefined;
+
+    const project = availableProjects.find(candidate => (
+        candidate?.name?.trim().toLowerCase() === projectHint
+    ));
+
+    return project?.id ? { confidence: 'configured', projectId: project.id } : undefined;
+}
+
+function inferOperationType(actions = []) {
+    const types = Array.isArray(actions) ? actions.map(action => action?.type).filter(Boolean) : [];
+    const allowed = new Set(['create', 'update', 'complete', 'delete', 'review', 'scan', 'sync', 'reorg', 'none']);
+    const filtered = types.filter(type => allowed.has(type));
+    if (filtered.length === 1) return filtered[0];
+    if (filtered.length === 0) return 'none';
+    const uniqueTypes = new Set(filtered);
+    return uniqueTypes.size === 1 ? filtered[0] : 'none';
+}
+
+function mapFailureClassToErrorClass(failureClass, details = {}) {
+    if (failureClass === FAILURE_CLASSES.VALIDATION) return 'validation';
+    if (failureClass === FAILURE_CLASSES.QUOTA) return 'model_unavailable';
+    if (details?.deferredIntent) return 'ticktick_unavailable';
+    if (failureClass === FAILURE_CLASSES.ADAPTER) return 'ticktick_unavailable';
+    return 'unknown';
+}
+
+function didFailureChangeExternalState({ failureClass, details = {}, rolledBack = false } = {}) {
+    if (details?.deferredIntent) return true;
+    if (failureClass === FAILURE_CLASSES.ROLLBACK) return true;
+    if (Array.isArray(details?.rollbackFailures) && details.rollbackFailures.length > 0) return true;
+    if (rolledBack) return false;
+
+    const successCount = Number.isInteger(details?.successCount) ? details.successCount : 0;
+    return details?.partialFailure === true && successCount > 0;
 }
 
 /**
@@ -336,6 +432,7 @@ function buildFailureResult(context, {
     developerMessage,
     retryable = true,
     rolledBack = false,
+    dryRun = false,
     results = [],
     intents = null,
     normalizedActions = null,
@@ -399,10 +496,27 @@ function buildFailureResult(context, {
         rolledBack,
     });
     const failureDeveloperMessage = developerMessage || summary || error?.message || null;
+    const changed = didFailureChangeExternalState({ failureClass, details, rolledBack });
+    const receiptStatus = details?.deferredIntent ? 'deferred' : (dryRun ? 'blocked' : 'failed');
 
     return {
         type: 'error',
         results,
+        operationReceipt: buildOperationReceipt(context, {
+            status: receiptStatus,
+            scope: details?.deferredIntent ? 'deferred_queue' : 'system',
+            command: resolveReceiptCommand(context),
+            operationType: inferOperationType(normalizedActions || []),
+            nextAction: details?.deferredIntent ? 'wait' : (retryable ? 'retry' : 'none'),
+            changed,
+            dryRun,
+            applied: false,
+            fallbackUsed: !!details?.deferredIntent,
+            message: details?.deferredIntent
+                ? 'Task intent saved for deferred retry.'
+                : (dryRun ? 'Task execution blocked.' : 'Task execution failed.'),
+            errorClass: mapFailureClassToErrorClass(failureClass, details),
+        }),
         failure: {
             class: failureClass,
             failureClass,
@@ -1026,6 +1140,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     details: {
                         receivedType: Array.isArray(intents) ? 'array' : typeof intents,
                     },
+                    dryRun: isDryRun,
                     retryable: true,
                 });
                 context = finalizePipelineContext(context, requestStartedAt, {
@@ -1313,6 +1428,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         intentTypes: intents.map(i => i.type),
                     },
                     userMessage: buildMutationBoundaryMessage('mixed_create_and_mutation', context),
+                    dryRun: isDryRun,
                     retryable: true,
                 });
                 context = finalizePipelineContext(context, requestStartedAt, {
@@ -1351,6 +1467,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         targetQueryPresent: Boolean(mutationIntents[0]?.targetQuery),
                     },
                     userMessage: buildMutationBoundaryMessage('batch_mutation_not_supported', context),
+                    dryRun: isDryRun,
                     retryable: true,
                 });
                 context = finalizePipelineContext(context, requestStartedAt, {
@@ -1475,12 +1592,34 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                             },
                         });
 
+                        const receiptDestination = resolveReceiptDestinationForPendingMutation(mutationIntent, context);
+                        const canAttachReceipt = !['create', 'update'].includes(mutationIntent.type) || !!receiptDestination;
+
                         return attachPipelineContext({
                             type: 'pending-confirmation',
                             results: [],
                             errors: [],
                             confirmationText: buildMutationConfirmationMessage(pendingConfirmation, { workStyleMode: context.workStyleMode }),
                             pendingConfirmation,
+                            ...(canAttachReceipt ? {
+                                operationReceipt: buildOperationReceipt(context, {
+                                    status: 'pending_confirmation',
+                                    scope: 'local_review_queue',
+                                    command: resolveReceiptCommand(context),
+                                    operationType: mutationIntent.type,
+                                    nextAction: 'apply',
+                                    changed: false,
+                                    dryRun: false,
+                                    applied: false,
+                                    fallbackUsed: false,
+                                    message: 'Confirmation required before mutation can be applied.',
+                                    destination: receiptDestination,
+                                    confirmation: {
+                                        target: { taskId: resolverResult.selected.taskId },
+                                        outcome: 'Confirm this task mutation before applying it.',
+                                    },
+                                }),
+                            } : {}),
                             requestId: context.requestId || null,
                             entryPoint: context.entryPoint || null,
                             mode: context.mode || null,
@@ -1573,6 +1712,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         reason,
                     },
                     userMessage: buildMutationBoundaryMessage(reason, context),
+                    dryRun: isDryRun,
                     retryable: true,
                 });
                 context = finalizePipelineContext(context, requestStartedAt, {
@@ -1652,6 +1792,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     details: {
                         validationErrors: invalidActions.map(a => a.validationErrors),
                     },
+                    dryRun: isDryRun,
                     retryable: true,
                 });
                 context = finalizePipelineContext(context, requestStartedAt, {
@@ -1727,6 +1868,20 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     results: [],
                     errors: ['missing_project_destination'],
                     confirmationText,
+                    operationReceipt: buildOperationReceipt(context, {
+                        status: 'blocked',
+                        scope: 'system',
+                        command: resolveReceiptCommand(context),
+                        operationType: 'create',
+                        nextAction: 'retry',
+                        changed: false,
+                        dryRun: isDryRun,
+                        applied: false,
+                        fallbackUsed: false,
+                        message: confirmationText,
+                        errorClass: 'validation',
+                        destination: { confidence: 'missing' },
+                    }),
                     requestId: context.requestId,
                     entryPoint: context.entryPoint,
                     mode: context.mode,
@@ -1765,6 +1920,18 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     results: [],
                     errors: [],
                     confirmationText: dryRunConfirmationText,
+                    operationReceipt: buildOperationReceipt(context, {
+                        status: 'preview',
+                        scope: 'preview',
+                        command: resolveReceiptCommand(context),
+                        operationType: inferOperationType(validActions),
+                        nextAction: 'apply',
+                        changed: false,
+                        dryRun: true,
+                        applied: false,
+                        fallbackUsed: false,
+                        message: dryRunConfirmationText,
+                    }),
                     requestId: context.requestId,
                     entryPoint: context.entryPoint,
                     mode: context.mode,
@@ -1853,9 +2020,13 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         ...(executionResult.terminalFailure.details || {}),
                         failures: executionResult.failures,
                         rollbackFailures: executionResult.rollbackFailures,
+                        successCount: executionResult.terminalFailure.successCount,
+                        failureCount: executionResult.terminalFailure.failureCount,
+                        partialFailure: executionResult.terminalFailure.failureCategory === FAILURE_CATEGORIES.PARTIAL,
                     },
                     retryable: executionResult.terminalFailure.retryable,
                     rolledBack: executionResult.terminalFailure.rolledBack,
+                    dryRun: isDryRun,
                     results: executionResult.results,
                     intents,
                     normalizedActions: validActions,
@@ -1866,6 +2037,10 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 ...invalidActions.map(a => a.validationErrors.join(', ')),
                 ...executionResult.errors,
             ];
+
+            const successCount = Number.isInteger(executionResult.successCount)
+                ? executionResult.successCount
+                : executionResult.results.filter(r => r.status === 'succeeded').length;
 
             const baseConfirmationText = _buildConfirmation(executionResult.results, executionResult.errors, context);
             const confirmationText = deferredCreateFragmentClarification
@@ -1897,6 +2072,35 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 errors: allErrors,
                 skippedActions,
                 confirmationText,
+                ...(successCount > 0 ? {
+                    operationReceipt: buildOperationReceipt(context, {
+                        status: 'applied',
+                        scope: 'ticktick_live',
+                        command: resolveReceiptCommand(context),
+                        operationType: inferOperationType(validActions),
+                        nextAction: 'none',
+                        changed: true,
+                        dryRun: false,
+                        applied: true,
+                        fallbackUsed: false,
+                        message: `Applied ${successCount} task action${successCount === 1 ? '' : 's'}.`,
+                    }),
+                } : {
+                    operationReceipt: buildOperationReceipt(context, {
+                        status: skippedActions.length > 0 ? 'blocked' : 'failed',
+                        scope: skippedActions.length > 0 ? 'system' : 'system',
+                        command: resolveReceiptCommand(context),
+                        operationType: inferOperationType(validActions),
+                        nextAction: skippedActions.length > 0 ? 'retry' : 'none',
+                        changed: false,
+                        dryRun: false,
+                        applied: false,
+                        fallbackUsed: false,
+                        message: skippedActions.length > 0
+                            ? 'No executable actions were available.'
+                            : 'No task actions were applied.',
+                    }),
+                }),
                 requestId: context.requestId,
                 entryPoint: context.entryPoint,
                 mode: context.mode,
@@ -1927,12 +2131,12 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 failureClass = FAILURE_CLASSES.QUOTA;
                 stage = 'intent';
                 summary = 'AI hard quota exhausted after configured key rotation.';
-                deferredAiQuotaIntent = await persistDeferredAiQuotaIntent({ userMessage, context });
+                deferredAiQuotaIntent = isDryRun ? null : await persistDeferredAiQuotaIntent({ userMessage, context });
             } else if (error instanceof AIServiceUnavailableError) {
                 failureClass = FAILURE_CLASSES.QUOTA;
                 stage = 'intent';
                 summary = 'AI service unavailable after model fallback chain exhausted.';
-                deferredAiQuotaIntent = await persistDeferredAiQuotaIntent({ userMessage, context });
+                deferredAiQuotaIntent = isDryRun ? null : await persistDeferredAiQuotaIntent({ userMessage, context });
             } else if (error instanceof AIInvalidKeyError) {
                 failureClass = FAILURE_CLASSES.QUOTA;
                 stage = 'intent';
@@ -1976,6 +2180,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 userMessage: deferredAiQuotaIntent
                     ? 'AI temporarily unavailable. I\'ll retry this in a few minutes.'
                     : undefined,
+                details: deferredAiQuotaIntent ? { deferredIntent: deferredAiQuotaIntent } : undefined,
+                dryRun: isDryRun,
                 retryable: failureClass !== FAILURE_CLASSES.MALFORMED_INTENT,
             }), context);
         }
