@@ -187,6 +187,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             ? pipeline.processMessageWithContext(userMessage, options)
             : pipeline.processMessage(userMessage, options);
 
+    const isReviewPreviewResult = (result) => result?.type === 'task' || result?.type === 'preview';
+
     const describePatternForMemory = (pattern) => {
         switch (pattern?.type) {
             case 'snooze_spiral':
@@ -674,7 +676,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         dryRun: true,
                     }));
 
-                    if (result.type === 'task') {
+                    if (isReviewPreviewResult(result)) {
                         const action = result.actions?.[0];
                         if (action) {
                             const pendingData = buildPendingDataFromAction(task, action, availableProjects);
@@ -747,7 +749,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                                     workStyleMode,
                                     dryRun: true,
                                 }));
-                                if (result.type === 'task') {
+                                if (isReviewPreviewResult(result)) {
                                     const action = result.actions?.[0];
                                     if (action) {
                                         const pendingData = buildPendingDataFromAction(task, action, availableProjects);
@@ -1114,7 +1116,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         dryRun: true,
                     }));
 
-                    if (result.type === 'task') {
+                    if (isReviewPreviewResult(result)) {
                         const action = result.actions?.[0];
                         if (action) {
                             const pendingData = buildPendingDataFromAction(task, action, availableProjects);
@@ -1185,7 +1187,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                                     workStyleMode,
                                     dryRun: true,
                                 }));
-                                if (result.type === 'task') {
+                                if (isReviewPreviewResult(result)) {
                                     const action = result.actions?.[0];
                                     if (action) {
                                         const pendingData = buildPendingDataFromAction(task, action, availableProjects);

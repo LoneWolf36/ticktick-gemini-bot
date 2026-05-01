@@ -189,9 +189,35 @@ test('missing project destination does not silently fall back to first project',
 
     const result = await harness.processMessage('renew passport');
 
-    assert.notEqual(result.type, 'task', 'missing destination should not be treated as a successful write');
+    assert.equal(result.type, 'blocked', 'missing destination should return blocked');
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.changed, false);
+    assert.equal(result.applied, false);
+    assert.equal(result.dryRun, false);
     assert.equal(harness.adapterCalls.create.length, 0, 'should not create into the first project by default');
-    assert.ok(['blocked', 'pending-confirmation', 'not-found'].includes(result.type), 'should stay in a safe non-write state');
+    assert.match(result.confirmationText ?? '', /blocked|no safe TickTick destination/i);
+});
+
+test('dry-run missing project destination stays blocked dry-run without writing', async () => {
+    await resetStore();
+    const harness = createPipelineHarness({
+        projects: [
+            { id: 'proj-career', name: 'Career' },
+            { id: 'proj-personal', name: 'Personal' },
+        ],
+        intents: [
+            { type: 'create', title: 'Renew passport', confidence: 0.94 },
+        ],
+    });
+
+    const result = await harness.processMessage('renew passport', { dryRun: true });
+
+    assert.equal(result.type, 'blocked');
+    assert.equal(result.status, 'blocked');
+    assert.equal(result.dryRun, true, 'blocked dry-run should preserve dryRun flag');
+    assert.equal(result.changed, false);
+    assert.equal(result.applied, false);
+    assert.equal(harness.adapterCalls.create.length, 0, 'blocked dry-run must not create');
 });
 
 test('dry-run create stays preview-only and never writes', async () => {
@@ -208,7 +234,11 @@ test('dry-run create stays preview-only and never writes', async () => {
         mode: 'interactive',
     });
 
-    assert.notEqual(result.type, 'task', 'dry-run should not report an applied task result');
+    assert.equal(result.type, 'preview', 'dry-run should return preview');
+    assert.equal(result.status, 'preview');
+    assert.equal(result.dryRun, true);
+    assert.equal(result.changed, false);
+    assert.equal(result.applied, false);
     assert.equal(harness.adapterCalls.create.length, 0, 'dry-run must not call create');
     assert.equal(harness.adapterCalls.update.length, 0, 'dry-run must not call update');
     assert.equal(harness.adapterCalls.complete.length, 0, 'dry-run must not call complete');

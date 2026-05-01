@@ -849,7 +849,7 @@ async function sleep(ms) {
  * @param {TickTickAdapter} options.adapter - TickTick adapter instance
  * @param {Object} [options.observability] - Optional observability emitter (see createPipelineObservability)
  * @returns {{ processMessage: Function, getTelemetry: Function }}
- *   - `processMessage(userMessage, options?)` → `{ type: 'task'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`
+ *   - `processMessage(userMessage, options?)` → `{ type: 'task'|'preview'|'blocked'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`
  *   - `getTelemetry()` → the observability instance for this pipeline
  */
 export function createPipeline({ intentExtractor, normalizer, adapter, observability, deferIntent, defaultProjectName = 'Inbox' } = {}) {
@@ -1718,6 +1718,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         reason: 'missing_project_destination',
                         type: 'blocked',
                         actionCount: createActionsMissingDestination.length,
+                        dryRun: isDryRun,
                     },
                 });
                 return attachPipelineContext({
@@ -1732,7 +1733,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     workStyleMode: context.workStyleMode || null,
                     checklistContext: context.checklistContext || null,
                     warnings: invalidActions.map(a => a.validationErrors).flat(),
-                    dryRun: false,
+                    dryRun: isDryRun,
                     applied: false,
                     changed: false,
                 }, context);

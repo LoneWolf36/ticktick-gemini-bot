@@ -2813,7 +2813,8 @@ Builds a structured pipeline failure result object.
 Create a pipeline instance that orchestrates intent extraction, normalization,and TickTick adapter execution.
 
 **Kind**: global function  
-**Returns**: <code>Object</code> - - `processMessage(userMessage, options?)` → `{ type: 'task'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`  - `getTelemetry()` → the observability instance for this pipeline  
+**Returns**: <code>Object</code> - - `processMessage(userMessage, options?)` → `{ type: 'task'|'preview'|'blocked'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`
+  - `getTelemetry()` → the observability instance for this pipeline  
 
 | Param | Type | Description |
 | --- | --- | --- |

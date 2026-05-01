@@ -158,7 +158,40 @@ Stage 3 acceptance status:
 - No silent write fallback remains in the free-form pipeline when destination is missing: complete.
 - Dry-run no longer reports applied/task-shaped success: complete.
 - `/pending` copy declares local-vs-live scope: complete.
-- No exported signature or config surface changed, so code map/config docs were not regenerated: complete.
+- Result-shape contract change documented after review; `context/refs/codebase-function-map.md` regenerated because `preview` and `blocked` are now public pipeline result types: complete.
+
+### Stage 3 review — Preview consumers and contract cleanup — completed
+
+Scope completed:
+
+- Reviewed the Stage 2 and Stage 3 diffs against the trust-state contract and command consumers.
+- Fixed scan/review dry-run consumers so `type: preview` results still queue review cards instead of falling through to `unknown_result_type: preview` and replying `No tasks to review.`
+- Preserved dry-run truth on blocked missing-destination results by returning `dryRun=true` when the caller requested dry-run.
+- Updated the public pipeline JSDoc/result contract to include `preview` and `blocked`, then regenerated `context/refs/codebase-function-map.md`.
+- Tightened Stage 2/3 regression tests so they assert exact blocked/preview contracts, `changed=false`, `applied=false`, and zero mutation calls.
+
+Review findings fixed:
+
+- `/scan` and `/review` preview result handling now accepts both legacy `task` results and new `preview` results when building the local review queue.
+- Dry-run missing-destination blocks remain non-mutating and now truthfully report `dryRun=true`.
+- Pipeline return-shape docs now match production behavior.
+- Regressions now pin the intended contract rather than allowing multiple safe-but-different result types.
+
+Validation completed after review fixes:
+
+- `node --test tests/regression.scheduler-status-commands.test.js` → 5/5 pass.
+- `node --test tests/regression.mutation-confirmation-gate.test.js` → 20/20 pass.
+- `node --test tests/regression.pipeline-hardening-mutation.test.js` → 41/41 pass.
+- `npm run check:test-sizes` → pass.
+- `npm run docs:map` → pass.
+- `npm test` → 699 pass, 0 fail.
+
+Stage 3 review acceptance status:
+
+- Concrete review findings fixed with regression coverage: complete.
+- Public pipeline result contract and generated function map aligned: complete.
+- Full regression suite green after fixes: complete.
+- Remaining trust risks are deferred to later stages unless selected next: explicit bad `projectHint` still falls back to the configured default project, and `/pending` live count degrades to unknown on TickTick read failure.
 
 ## Core contract: OperationReceipt
 

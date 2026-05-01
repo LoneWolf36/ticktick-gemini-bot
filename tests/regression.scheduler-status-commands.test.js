@@ -136,3 +136,56 @@ test('registerCommands /pending stays scoped when TickTick still has live tasks'
   assert.match(reply, /TickTick/i, 'should separately acknowledge live TickTick state');
   assert.doesNotMatch(reply, /No tasks pending review\./i, 'should not flatten live TickTick state into empty local queue copy');
 });
+
+test('registerCommands /scan queues preview results for review', async () => {
+  await store.resetAll();
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery() { return this; },
+    on() { return this; },
+  };
+  const pipelineCalls = [];
+
+  registerCommands(
+    bot,
+    { isAuthenticated: () => true },
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
+    {
+      listActiveTasks: async () => [
+        { id: 'live-1', title: 'Draft proposal', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
+      ],
+      listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+    },
+    {
+      processMessage: async (message, options) => {
+        pipelineCalls.push({ message, options });
+        return {
+          type: 'preview',
+          status: 'preview',
+          actions: [{ type: 'update', taskId: 'live-1', title: 'Finish draft proposal', projectId: 'inbox' }],
+          confirmationText: 'Preview only — nothing changed. 1 action(s) ready for review.',
+          dryRun: true,
+          changed: false,
+          applied: false,
+        };
+      },
+    },
+  );
+
+  const scanHandler = handlers.commands.get('scan');
+  const replies = [];
+  const ctx = {
+    chat: { id: 1 },
+    from: { id: 1 },
+    reply: async (msg) => { replies.push(msg); return { message_id: 123 }; },
+  };
+
+  await scanHandler(ctx);
+
+  assert.equal(pipelineCalls.length, 1);
+  assert.equal(pipelineCalls[0].options.dryRun, true);
+  assert.ok(store.getPendingTasks()['live-1'], 'preview action should be queued locally for review');
+  assert.match(replies.at(-1), /Preview — not yet applied/);
+  assert.doesNotMatch(replies.join('\n'), /No tasks to review\./);
+});
