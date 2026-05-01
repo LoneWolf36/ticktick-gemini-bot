@@ -102,6 +102,33 @@ Stage 1 acceptance status:
 
 Next stage should start from this contract and add reproduction-first tests for the highest-risk findings before production wiring.
 
+### Stage 2 — Reproduction-first trust tests — completed
+
+Scope completed:
+
+- Added red regression coverage for `/pending` scoped empty-state copy when TickTick still has live tasks.
+- Added red regression coverage proving missing project destinations currently fall back to the first project and write silently.
+- Added red regression coverage proving dry-run create results currently return task-shaped success copy instead of preview-only semantics.
+- Kept this stage test-only; no production behavior, routing, receipt mapping, or Telegram copy was changed.
+
+Reproduced trust failures:
+
+- F1: `/pending` replies `No tasks pending review.` even when live TickTick tasks exist, flattening local review queue state into broader task state.
+- F3: create with projects `[Career, Personal]` and no Inbox/default destination logs first-project fallback and creates in `Career`.
+- F6: dry-run create avoids adapter mutation but still returns `type: 'task'`, which looks applied rather than preview-only.
+
+Validation completed:
+
+- `node --test tests/regression.scheduler-status-commands.test.js` → expected red: 1 failing Stage 2 test, 3 passing existing tests.
+- `node --test tests/regression.mutation-confirmation-gate.test.js` → expected red: 2 failing Stage 2 tests, 17 passing existing tests.
+
+Stage 2 acceptance status:
+
+- Highest-risk reproduction tests added before fixes: complete.
+- Tests mock TickTick/Gemini through existing harnesses: complete.
+- No implementation merged before reproduction: complete.
+- Full suite intentionally not green until Stage 3+ production fixes land: expected.
+
 ## Core contract: OperationReceipt
 
 Define a shared contract used by pipeline, review callbacks, reorg execution, and command rendering.
@@ -306,7 +333,7 @@ Runs throughout all phases.
 Parallel discovery/test drafting may happen early, but merge order should be:
 
 1. Contract and glossary accepted. **Completed in Stage 1 (`c5b369a`).**
-2. Failing tests added for highest-risk findings. **Next stage.**
+2. Failing tests added for highest-risk findings. **Completed in Stage 2.**
 3. OperationReceipt helpers and pipeline mapping. **Partially complete: pure contract helpers exist; production mapping remains.**
 4. Project routing safety.
 5. Lock/deferred/stale-preview receipts.
@@ -639,7 +666,7 @@ Exit condition: implementation agents can start from this plan.
 
 Reviewer: orchestrator.
 
-Status: pending for next stage. Stage 1 was pure contract scaffolding and allowed to merge without production-flow reproduction tests. Stage 2 should add failing tests for the highest-risk findings before fixes.
+Status: completed. Stage 2 added red reproduction tests for the highest-risk findings before fixes: scoped `/pending` copy, project destination fallback, and dry-run preview semantics.
 
 Checks:
 

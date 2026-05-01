@@ -175,6 +175,47 @@ test('skipMutationConfirmation bypasses confirmation gate', async () => {
         'delete should execute when skipMutationConfirmation is set');
 });
 
+test('missing project destination does not silently fall back to first project', async () => {
+    await resetStore();
+    const harness = createPipelineHarness({
+        projects: [
+            { id: 'proj-career', name: 'Career' },
+            { id: 'proj-personal', name: 'Personal' },
+        ],
+        intents: [
+            { type: 'create', title: 'Renew passport', confidence: 0.94 },
+        ],
+    });
+
+    const result = await harness.processMessage('renew passport');
+
+    assert.notEqual(result.type, 'task', 'missing destination should not be treated as a successful write');
+    assert.equal(harness.adapterCalls.create.length, 0, 'should not create into the first project by default');
+    assert.ok(['blocked', 'pending-confirmation', 'not-found'].includes(result.type), 'should stay in a safe non-write state');
+});
+
+test('dry-run create stays preview-only and never writes', async () => {
+    await resetStore();
+    const harness = createPipelineHarness({
+        intents: [
+            { type: 'create', title: 'Draft note', confidence: 0.9 },
+        ],
+    });
+
+    const result = await harness.processMessage('draft note', {
+        dryRun: true,
+        entryPoint: 'telegram',
+        mode: 'interactive',
+    });
+
+    assert.notEqual(result.type, 'task', 'dry-run should not report an applied task result');
+    assert.equal(harness.adapterCalls.create.length, 0, 'dry-run must not call create');
+    assert.equal(harness.adapterCalls.update.length, 0, 'dry-run must not call update');
+    assert.equal(harness.adapterCalls.complete.length, 0, 'dry-run must not call complete');
+    assert.equal(harness.adapterCalls.delete.length, 0, 'dry-run must not call delete');
+    assert.match(result.confirmationText ?? '', /preview|nothing changed/i, 'dry-run copy should say preview only');
+});
+
 test('buildMutationConfirmationMessage produces correct output', () => {
     const pendingData = {
         actionType: 'delete',

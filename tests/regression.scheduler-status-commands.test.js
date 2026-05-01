@@ -99,3 +99,39 @@ test('registerCommands /pending shows clear non-empty message', async () => {
   await pendingHandler(ctx);
   assert.match(replies[0], /1 tasks awaiting your review\. Approve or skip each one\./);
 });
+
+test('registerCommands /pending stays scoped when TickTick still has live tasks', async () => {
+  await store.resetAll();
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery() { return this; },
+    on() { return this; },
+  };
+
+  registerCommands(
+    bot,
+    { isAuthenticated: () => true },
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
+    { listActiveTasks: async () => [
+      { id: 'live-1', title: 'Live TickTick task' },
+      { id: 'live-2', title: 'Second live task' },
+    ] },
+    {},
+  );
+
+  const pendingHandler = handlers.commands.get('pending');
+  const replies = [];
+  const ctx = {
+    chat: { id: 1 },
+    from: { id: 1 },
+    reply: async (msg) => { replies.push(msg); },
+  };
+
+  await pendingHandler(ctx);
+
+  const reply = replies.at(-1);
+  assert.match(reply, /local review queue/i, 'should scope pending to local review queue');
+  assert.match(reply, /TickTick/i, 'should separately acknowledge live TickTick state');
+  assert.doesNotMatch(reply, /No tasks pending review\./i, 'should not flatten live TickTick state into empty local queue copy');
+});
