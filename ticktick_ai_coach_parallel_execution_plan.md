@@ -47,6 +47,61 @@ Structural fix, not rule patch. The solution is to standardize operation receipt
 - Stale preview → resync/confirmation, never blind mutation.
 - Unknown state scope → scoped conservative copy: local queue only, live TickTick unknown.
 
+## Implementation progress
+
+### Stage 1 — Contract seed and glossary — completed
+
+Commit: `c5b369a feat: add operation receipt contract`
+
+Scope completed:
+
+- Added `services/operation-receipt.js` as a pure, descriptive contract module.
+- Added canonical receipt vocabulary via `OPERATION_RECEIPT_VALUES`.
+- Added `validateOperationReceipt(receipt)` and `assertValidOperationReceipt(receipt)`.
+- Added `tests/regression.operation-receipt-contract.test.js` with deterministic contract/invariant coverage.
+- Documented the receipt contract in `docs/ARCHITECTURE.md`.
+- Recorded the architecture decision and module entry in `AGENTS.md`.
+- Regenerated `context/refs/codebase-function-map.md`.
+- Committed the source audit and this parallel execution plan for durable handoff.
+
+Stage 1 intentionally did **not** wire receipts into production flows yet. No changes were made to `services/pipeline.js`, `bot/commands.js`, `bot/callbacks.js`, project routing, lock behavior, Telegram copy, or scheduler behavior.
+
+Contract invariants now enforced:
+
+- Receipt must declare `status`, `scope`, `command`, `operationType`, `nextAction`, `changed`, `dryRun`, `applied`, `fallbackUsed`, `message`, and `traceId`.
+- Dry-run receipts can only be `preview` or `blocked`, and cannot be applied.
+- Applied receipts require `status=applied`, `applied=true`, `changed=true`, and `scope=ticktick_live`.
+- Applied receipts with a destination require `exact` or `configured` destination confidence.
+- `changed=false` cannot use applied-success state.
+- `blocked`, `deferred`, `failed`, and `busy` can only use safe next actions: `retry`, `wait`, `resync`, or `none`.
+- `pending_confirmation` cannot already be changed/applied.
+- `pending_confirmation.confirmation.target` must include a safe identifier: `taskId`, `previewId`, `candidateId`, `targetId`, or `referenceId`.
+- Pending create/update confirmations require destination details:
+  - exact/configured destination → `projectId` or `projectName`;
+  - ambiguous destination → non-empty `destination.choices` with safe project references;
+  - missing destination → invalid.
+- Receipts reject raw private task/user text fields in diagnostic metadata, including raw rollback snapshots.
+
+Validation completed:
+
+- `node --test tests/regression.operation-receipt-contract.test.js` → 12/12 pass.
+- `npm run docs:map` → pass.
+- `npm test` → 694 pass, 0 fail.
+- `npm run check:test-sizes` → pass.
+- Oracle review after rework → safe to commit.
+- `git status --short` after commit → clean.
+
+Stage 1 acceptance status:
+
+- Canonical terms have one meaning: complete.
+- Contract invariants documented and tested: complete.
+- Safe defaults explicit and conservative: complete.
+- Tests deterministic and mocked: complete.
+- No production flow behavior changed: complete.
+- No UX/routing/lock/deferred implementation included: complete.
+
+Next stage should start from this contract and add reproduction-first tests for the highest-risk findings before production wiring.
+
 ## Core contract: OperationReceipt
 
 Define a shared contract used by pipeline, review callbacks, reorg execution, and command rendering.
@@ -250,9 +305,9 @@ Runs throughout all phases.
 
 Parallel discovery/test drafting may happen early, but merge order should be:
 
-1. Contract and glossary accepted.
-2. Failing tests added for highest-risk findings.
-3. OperationReceipt helpers and pipeline mapping.
+1. Contract and glossary accepted. **Completed in Stage 1 (`c5b369a`).**
+2. Failing tests added for highest-risk findings. **Next stage.**
+3. OperationReceipt helpers and pipeline mapping. **Partially complete: pure contract helpers exist; production mapping remains.**
 4. Project routing safety.
 5. Lock/deferred/stale-preview receipts.
 6. Command semantics and reconciliation copy.
@@ -533,7 +588,7 @@ Automated tests must be mocked and deterministic.
 
 Required regression groups:
 
-1. Receipt contract tests.
+1. Receipt contract tests. **Completed in Stage 1.**
 2. Project routing resolver tests.
 3. Dry-run vs apply tests.
 4. Command semantics tests for `/scan`, `/pending`, `/status`.
@@ -569,6 +624,8 @@ Manual/live verification must be opt-in only:
 
 Reviewer: orchestrator/user.
 
+Status: completed. User approved staged execution: complete one stage, review/rework, commit, summarize, then stop before moving on.
+
 Checks:
 
 - Scope accepted.
@@ -582,6 +639,8 @@ Exit condition: implementation agents can start from this plan.
 
 Reviewer: orchestrator.
 
+Status: pending for next stage. Stage 1 was pure contract scaffolding and allowed to merge without production-flow reproduction tests. Stage 2 should add failing tests for the highest-risk findings before fixes.
+
 Checks:
 
 - Each bug-fix finding has failing test or explicit manual reproduction.
@@ -593,6 +652,8 @@ Exit condition: red tests demonstrate trust failures.
 ### Gate 2 — Contract review
 
 Reviewer: oracle recommended.
+
+Status: partially completed. Contract seed, glossary, invariant tests, docs, and oracle review are complete. Remaining Gate 2 work is mapping the accepted contract to pipeline/callback/reorg paths without turning it into a global state manager.
 
 Checks:
 
