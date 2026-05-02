@@ -203,6 +203,7 @@ function buildTerminalTelemetryMetadata(context, receipt, extra = {}) {
         command: receipt?.command ?? null,
         operationType: receipt?.operationType ?? null,
         actionCount: Number.isInteger(extra.actionCount) ? extra.actionCount : null,
+        receiptStatus: receipt?.status ?? null,
         status: receipt?.status ?? null,
         scope: receipt?.scope ?? null,
         dryRun: receipt?.dryRun ?? null,
@@ -222,10 +223,14 @@ function buildTerminalTelemetryMetadata(context, receipt, extra = {}) {
 async function emitTerminalOperationTelemetry(telemetry, context, receipt, extra = {}) {
     if (!telemetry?.emit || !receipt) return;
 
+    const terminalStatus = ['blocked', 'deferred', 'failed', 'busy'].includes(receipt.status)
+        ? 'failure'
+        : 'success';
+
     await telemetry.emit(context, {
         eventType: 'pipeline.operation.terminal',
         step: 'result',
-        status: receipt.status === 'applied' ? 'success' : 'failure',
+        status: terminalStatus,
         metadata: buildTerminalTelemetryMetadata(context, receipt, extra),
     });
 }
@@ -1683,7 +1688,45 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         });
 
                         const receiptDestination = resolveReceiptDestinationForPendingMutation(mutationIntent, context);
-                        const canAttachReceipt = !['create', 'update'].includes(mutationIntent.type) || !!receiptDestination;
+                        const shouldAttachOperationReceipt = !['create', 'update'].includes(mutationIntent.type) || !!receiptDestination;
+                        const terminalReceipt = shouldAttachOperationReceipt
+                            ? buildOperationReceipt(context, {
+                                status: 'pending_confirmation',
+                                scope: 'local_review_queue',
+                                command: resolveReceiptCommand(context),
+                                operationType: mutationIntent.type,
+                                nextAction: 'apply',
+                                changed: false,
+                                dryRun: false,
+                                applied: false,
+                                fallbackUsed: false,
+                                message: 'Confirmation required before mutation can be applied.',
+                                ...(receiptDestination ? { destination: receiptDestination } : {}),
+                                confirmation: {
+                                    target: { taskId: resolverResult.selected.taskId },
+                                    outcome: 'Confirm this task mutation before applying it.',
+                                },
+                            })
+                            : {
+                                status: 'pending_confirmation',
+                                scope: 'local_review_queue',
+                                command: resolveReceiptCommand(context),
+                                operationType: mutationIntent.type,
+                                nextAction: 'apply',
+                                changed: false,
+                                dryRun: false,
+                                applied: false,
+                                fallbackUsed: false,
+                                message: 'Confirmation required before mutation can be applied.',
+                                traceId: context?.requestId || 'unknown-trace',
+                                confirmation: {
+                                    target: { taskId: resolverResult.selected.taskId },
+                                    outcome: 'Confirm this task mutation before applying it.',
+                                },
+                            };
+                        await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
+                            actionCount: 1,
+                        });
 
                         return attachPipelineContext({
                             type: 'pending-confirmation',
@@ -1691,25 +1734,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                             errors: [],
                             confirmationText: buildMutationConfirmationMessage(pendingConfirmation, { workStyleMode: context.workStyleMode }),
                             pendingConfirmation,
-                            ...(canAttachReceipt ? {
-                                operationReceipt: buildOperationReceipt(context, {
-                                    status: 'pending_confirmation',
-                                    scope: 'local_review_queue',
-                                    command: resolveReceiptCommand(context),
-                                    operationType: mutationIntent.type,
-                                    nextAction: 'apply',
-                                    changed: false,
-                                    dryRun: false,
-                                    applied: false,
-                                    fallbackUsed: false,
-                                    message: 'Confirmation required before mutation can be applied.',
-                                    destination: receiptDestination,
-                                    confirmation: {
-                                        target: { taskId: resolverResult.selected.taskId },
-                                        outcome: 'Confirm this task mutation before applying it.',
-                                    },
-                                }),
-                            } : {}),
+                            ...(shouldAttachOperationReceipt ? { operationReceipt: terminalReceipt } : {}),
                             requestId: context.requestId || null,
                             entryPoint: context.entryPoint || null,
                             mode: context.mode || null,
@@ -1945,26 +1970,31 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     rolledBack: false,
                     validationFailures: ['missing_project_destination'],
                 });
+                const terminalReceipt = buildOperationReceipt(context, {
+                    status: 'blocked',
+                    scope: 'system',
+                    command: resolveReceiptCommand(context),
+                    operationType: blockedMutationDestinationActions[0].type,
+                    nextAction: 'retry',
+                    changed: false,
+                    dryRun: isDryRun,
+                    applied: false,
+                    fallbackUsed: false,
+                    message: confirmationText,
+                    errorClass: 'validation',
+                    destination: { confidence: 'missing' },
+                });
+                await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
+                    actionCount: blockedMutationDestinationActions.length,
+                });
+
                 return attachPipelineContext({
                     type: 'blocked',
                     status: 'blocked',
                     results: [],
                     errors: ['missing_project_destination'],
                     confirmationText,
-                    operationReceipt: buildOperationReceipt(context, {
-                        status: 'blocked',
-                        scope: 'system',
-                        command: resolveReceiptCommand(context),
-                        operationType: blockedMutationDestinationActions[0].type,
-                        nextAction: 'retry',
-                        changed: false,
-                        dryRun: isDryRun,
-                        applied: false,
-                        fallbackUsed: false,
-                        message: confirmationText,
-                        errorClass: 'validation',
-                        destination: { confidence: 'missing' },
-                    }),
+                    operationReceipt: terminalReceipt,
                     requestId: context.requestId,
                     entryPoint: context.entryPoint,
                     mode: context.mode,
@@ -1988,26 +2018,31 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     summary: 'ambiguous_project_destination',
                 });
 
+                const terminalReceipt = buildOperationReceipt(context, {
+                    status: 'blocked',
+                    scope: 'system',
+                    command: resolveReceiptCommand(context),
+                    operationType: 'create',
+                    nextAction: 'retry',
+                    changed: false,
+                    dryRun: isDryRun,
+                    applied: false,
+                    fallbackUsed: false,
+                    message: confirmationText,
+                    errorClass: 'validation',
+                    destination: destination || { confidence: 'ambiguous', choices: pendingCreateDestination.projectResolution?.choices || [] },
+                });
+                await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
+                    actionCount: 1,
+                });
+
                 return attachPipelineContext({
                     type: 'blocked',
                     status: 'blocked',
                     results: [],
                     errors: ['ambiguous_project_destination'],
                     confirmationText,
-                    operationReceipt: buildOperationReceipt(context, {
-                        status: 'blocked',
-                        scope: 'system',
-                        command: resolveReceiptCommand(context),
-                        operationType: 'create',
-                        nextAction: 'retry',
-                        changed: false,
-                        dryRun: isDryRun,
-                        applied: false,
-                        fallbackUsed: false,
-                        message: confirmationText,
-                        errorClass: 'validation',
-                        destination: destination || { confidence: 'ambiguous', choices: pendingCreateDestination.projectResolution?.choices || [] },
-                    }),
+                    operationReceipt: terminalReceipt,
                     requestId: context.requestId,
                     entryPoint: context.entryPoint,
                     mode: context.mode,
@@ -2045,26 +2080,31 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         dryRun: isDryRun,
                     },
                 });
+                const terminalReceipt = buildOperationReceipt(context, {
+                    status: 'blocked',
+                    scope: 'system',
+                    command: resolveReceiptCommand(context),
+                    operationType: 'create',
+                    nextAction: 'retry',
+                    changed: false,
+                    dryRun: isDryRun,
+                    applied: false,
+                    fallbackUsed: false,
+                    message: confirmationText,
+                    errorClass: 'validation',
+                    destination: { confidence: 'missing' },
+                });
+                await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
+                    actionCount: createActionsMissingDestination.length,
+                });
+
                 return attachPipelineContext({
                     type: 'blocked',
                     status: 'blocked',
                     results: [],
                     errors: ['missing_project_destination'],
                     confirmationText,
-                    operationReceipt: buildOperationReceipt(context, {
-                        status: 'blocked',
-                        scope: 'system',
-                        command: resolveReceiptCommand(context),
-                        operationType: 'create',
-                        nextAction: 'retry',
-                        changed: false,
-                        dryRun: isDryRun,
-                        applied: false,
-                        fallbackUsed: false,
-                        message: confirmationText,
-                        errorClass: 'validation',
-                        destination: { confidence: 'missing' },
-                    }),
+                    operationReceipt: terminalReceipt,
                     requestId: context.requestId,
                     entryPoint: context.entryPoint,
                     mode: context.mode,
@@ -2096,6 +2136,22 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         changed: false,
                     },
                 });
+                const terminalReceipt = buildOperationReceipt(context, {
+                    status: 'preview',
+                    scope: 'preview',
+                    command: resolveReceiptCommand(context),
+                    operationType: inferOperationType(validActions),
+                    nextAction: 'apply',
+                    changed: false,
+                    dryRun: true,
+                    applied: false,
+                    fallbackUsed: false,
+                    message: dryRunConfirmationText,
+                });
+                await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
+                    actionCount: validActions.length,
+                });
+
                 return attachPipelineContext({
                     type: 'preview',
                     status: 'preview',
@@ -2103,18 +2159,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     results: [],
                     errors: [],
                     confirmationText: dryRunConfirmationText,
-                    operationReceipt: buildOperationReceipt(context, {
-                        status: 'preview',
-                        scope: 'preview',
-                        command: resolveReceiptCommand(context),
-                        operationType: inferOperationType(validActions),
-                        nextAction: 'apply',
-                        changed: false,
-                        dryRun: true,
-                        applied: false,
-                        fallbackUsed: false,
-                        message: dryRunConfirmationText,
-                    }),
+                    operationReceipt: terminalReceipt,
                     requestId: context.requestId,
                     entryPoint: context.entryPoint,
                     mode: context.mode,

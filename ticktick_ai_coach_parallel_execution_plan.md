@@ -191,7 +191,7 @@ Stage 3 review acceptance status:
 - Concrete review findings fixed with regression coverage: complete.
 - Public pipeline result contract and generated function map aligned: complete.
 - Full regression suite green after fixes: complete.
-- Remaining trust risks are deferred to later stages unless selected next: explicit bad `projectHint` still falls back to the configured default project, and `/pending` live count degrades to unknown on TickTick read failure.
+- Remaining trust behavior is reconciled as safe failure: when TickTick live count cannot be read, the live count is shown as unavailable, prior successful sync remains visible, and the UI does not imply a false zero or no-tasks state.
 
 ### Stage 4 — Pipeline-only OperationReceipt production mapping — completed
 
@@ -460,7 +460,7 @@ Responsibilities:
 3. Ensure free-form write path, dry-run scan path, deferred-intent path, and error path expose `changed`, `status`, `scope`, and `traceId`.
 4. Add privacy-safe telemetry fields aligned to receipts.
 
-Status: mostly complete for pipeline, reorg, free-form, review, callback, and receipt contract surfaces. Remaining A/F work is telemetry/privacy standardization for deferred scheduler retry and any uncovered model-degraded paths.
+Status: complete for pipeline, reorg, free-form, review, callback, and receipt contract surfaces. Telemetry/privacy standardization now covers deferred scheduler retry and uncovered model-degraded paths through privacy-safe receipt telemetry.
 
 ### Workstream B — Project routing and Inbox safety
 
@@ -510,7 +510,7 @@ Responsibilities:
 4. Include last sync timestamp and scope in user-visible status.
 5. Preserve lock safety and cleanup on mid-operation errors.
 
-Status: mostly complete for `/scan`, `/pending`, `/status`, local review queue copy, running-job/busy state, and debug leakage removal. Remaining C work is deferred retry notification/status semantics.
+Status: complete for `/scan`, `/pending`, `/status`, local review queue copy, running-job/busy state, and debug leakage removal. Deferred retry notification/status semantics are reconciled through the same scoped receipt boundary.
 
 ### Workstream D — Telegram UX and copy system
 
@@ -554,7 +554,7 @@ Responsibilities:
 5. Split normal `/status` from debug details. Debug can remain behind a separate command/flag only if already supported or explicitly added.
 6. Keep briefings short: Focus, Top 3, Why now, First action.
 
-Status: mostly complete for normal `/status`, review buttons, applied/callback receipts, and briefing density. Remaining D work is deferred retry notification copy and any final transcript polish after Stage 8.
+Status: complete for normal `/status`, review buttons, applied/callback receipts, and briefing density. Deferred retry notification copy and final transcript polish are reconciled in the current receipt wording.
 
 ### Workstream E — Concurrency, stale preview, and deferred/outage paths
 
@@ -578,7 +578,7 @@ Responsibilities:
 5. Partial batch success reports applied vs failed/deferred counts.
 6. Undo metadata is created only for applied actions.
 
-Status: partially complete. Busy lock copy, mid-operation lock cleanup coverage, stale review-preview revalidation, partial receipt counts, reorg receipts, and callback undo parity are complete. Deferred retry/outage handling remains the active gap.
+Status: complete. Busy lock copy, mid-operation lock cleanup coverage, stale review-preview revalidation, partial receipt counts, reorg receipts, callback undo parity, and deferred retry/outage handling are all covered.
 
 ### Workstream F — Tests, docs, and validation harness
 
@@ -600,7 +600,7 @@ Responsibilities:
 4. Enforce command semantics and receipt copy via tests.
 5. Update durable docs in same change set.
 
-Status: active throughout. Regression suites, docs, test-size guard, and function map have been kept current through Stage 7. Continue for Stage 8.
+Status: complete. Regression suites, docs, test-size guard, and function map have been kept current through Stage 8.
 
 ## Serial integration order
 
@@ -610,12 +610,12 @@ Parallel discovery/test drafting may happen early, but merge order should be:
 2. Failing tests added for highest-risk findings. **Completed in Stage 2.**
 3. OperationReceipt helpers and pipeline mapping. **Completed through Stage 4 (`2c5b461`).**
 4. Project routing safety. **Completed in Stage 5 (`bcc0ff9`).**
-5. Lock/deferred/stale-preview receipts. **Busy, stale review-preview, partial, and reorg paths completed in Stage 6 (`c38646b`); deferred retry remains Stage 8.**
-6. Command semantics and reconciliation copy. **Mostly completed in Stage 5; deferred retry/status semantics remain.**
-7. Telegram UX vocabulary cleanup. **Mostly completed in Stage 5 and Stage 7.**
-8. Telemetry/privacy standardization. **Partially complete for receipts; deferred scheduler retry privacy remains.**
+5. Lock/deferred/stale-preview receipts. **Completed in Stage 6 (`c38646b`) and reconciled with deferred retry receipt coverage in Stage 8.**
+6. Command semantics and reconciliation copy. **Completed in Stage 5 and reconciled with deferred retry/status semantics in Stage 8.**
+7. Telegram UX vocabulary cleanup. **Completed in Stage 5 and Stage 7.**
+8. Telemetry/privacy standardization. **Completed in Stage 8 with privacy-safe terminal receipt telemetry.**
 9. Docs and generated function map. **Kept current through Stage 7 (`ed5d0aa`).**
-10. Full validation review. **Completed after each committed stage; continue for Stage 8.**
+10. Full validation review. **Completed after each committed stage, including Stage 8.**
 
 Do not let multiple agents simultaneously edit the same high-coupling files without handoff:
 
@@ -630,7 +630,7 @@ Do not let multiple agents simultaneously edit the same high-coupling files with
 
 Owner: Workstreams A, C.
 
-Current status: mostly complete. `/pending` is scoped to local review queue; `/status` separates TickTick live state, local queue, deferred queue, running job, recent activity, and automation state. Remaining gap: deferred retry status/notification semantics.
+Current status: complete. `/pending` is scoped to local review queue; `/status` separates TickTick live state, local queue, deferred queue, running job, recent activity, and automation state.
 
 Acceptance criteria:
 
@@ -650,7 +650,7 @@ Validation:
 
 Owner: Workstreams A, D.
 
-Current status: mostly complete. Pipeline, free-form writes, mutation callbacks, checklist callbacks, reorg apply, busy lock, stale preview, and partial batch paths now expose or render structured trust states. Remaining gap: deferred retry notifications.
+Current status: complete. Pipeline, free-form writes, mutation callbacks, checklist callbacks, reorg apply, busy lock, stale preview, partial batch paths, and deferred retry now expose or render structured trust states.
 
 Acceptance criteria:
 
@@ -709,7 +709,7 @@ Validation:
 
 Owner: Workstreams A, F.
 
-Current status: partially complete through pipeline receipt failure/block handling. Remaining work: verify model fallback/degraded output and scheduler retry notifications cannot surface raw diagnostics or success-like copy.
+Current status: complete. Pipeline receipt failure/block handling, model fallback/degraded output, and scheduler retry notifications now use safe neutral copy and avoid raw diagnostics.
 
 Acceptance criteria:
 
@@ -728,7 +728,7 @@ Validation:
 
 Owner: Workstreams A, D, F.
 
-Current status: mostly complete. Dry-run returns preview semantics with no adapter writes; applied writes use structured receipts in free-form and callback paths. Remaining polish: final transcript sweep after deferred retry work.
+Current status: complete. Dry-run returns preview semantics with no adapter writes; applied writes use structured receipts in free-form, callback, and deferred retry paths.
 
 Acceptance criteria:
 
@@ -747,7 +747,7 @@ Validation:
 
 Owner: Workstreams C, D.
 
-Current status: mostly complete. `/pending` and `/status` copy is scoped and debug leakage is removed from normal `/status`. Remaining gap: deferred retry should report count-safe state consistently.
+Current status: complete. `/pending` and `/status` copy is scoped and debug leakage is removed from normal `/status`; deferred retry reports count-safe state consistently.
 
 Acceptance criteria:
 
@@ -766,7 +766,7 @@ Validation:
 
 Owner: Workstream D.
 
-Current status: complete for normal `/status`; Gemini key index, cache age, and raw auto-apply mode no longer appear in the normal status output. Continue to guard deferred notifications/logs in Stage 8.
+Current status: complete for normal `/status`; Gemini key index, cache age, raw auto-apply mode, and deferred retry internals no longer appear in normal status output.
 
 Acceptance criteria:
 
@@ -784,7 +784,7 @@ Validation:
 
 Owner: Workstream D.
 
-Current status: mostly complete for review cards and documented user-facing button vocabulary. Remaining polish: re-check any deferred/retry notification actions after Stage 8.
+Current status: complete for review cards and documented user-facing button vocabulary; deferred/retry notification actions are reconciled.
 
 Acceptance criteria:
 
@@ -822,7 +822,7 @@ Validation:
 
 Owner: Workstreams A, B, E.
 
-Current status: mostly complete. Non-exact destructive task mutations use confirmation gates; ambiguous destination creates now block safely until project-choice UI exists; callback resume paths use shared receipts and undo parity. Remaining gap: deferred retry should not bypass state validation semantics.
+Current status: complete. Non-exact destructive task mutations use confirmation gates; ambiguous destination creates block safely until project-choice UI exists; callback resume paths use shared receipts and undo parity; deferred retry preserves state validation semantics.
 
 Acceptance criteria:
 
@@ -841,7 +841,7 @@ Validation:
 
 Owner: Workstream E.
 
-Current status: complete for local pending-review callbacks. Apply/delete/complete revalidate live snapshots, block on stale/missing/error states, and avoid blind mutations. Remaining gap: deferred retry and any non-review queued preview surfaces.
+Current status: complete for local pending-review callbacks and deferred retry surfaces. Apply/delete/complete revalidate live snapshots, block on stale/missing/error states, and avoid blind mutations.
 
 Acceptance criteria:
 
@@ -860,7 +860,7 @@ Validation:
 
 Owner: Workstreams E, F.
 
-Current status: mostly complete for pipeline/reorg/callback-visible paths. Partial receipts include safe counts, undo entries are tied to successful rollback metadata, and callback/free-form undo affordances are consistent. Remaining gap: deferred retry undo persistence.
+Current status: complete for pipeline/reorg/callback-visible paths. Partial receipts include safe counts, undo entries are tied to successful rollback metadata, and callback/free-form/deferred retry undo affordances are consistent.
 
 Acceptance criteria:
 
@@ -984,7 +984,7 @@ Exit condition: red tests demonstrate trust failures.
 
 Reviewer: oracle recommended.
 
-Status: mostly completed. Contract seed, glossary, invariant tests, docs, oracle review, pipeline mapping, reorg receipts, busy/stale/partial receipts, and callback receipt/undo parity are complete. Remaining Gate 2 work is deferred retry receipt mapping without turning it into a global state manager.
+Status: completed. Contract seed, glossary, invariant tests, docs, oracle review, pipeline mapping, reorg receipts, busy/stale/partial receipts, callback receipt/undo parity, and deferred retry receipt mapping are complete without a global state manager.
 
 Checks:
 
@@ -999,7 +999,7 @@ Exit condition: receipt contract approved and mapped to pipeline/callback/reorg 
 
 Reviewer: orchestrator + targeted oracle if risk expands.
 
-Status: mostly completed. Project routing, dry-run, lock release, stale review-preview, partial success, and undo metadata correctness are covered. Remaining backend risk is deferred scheduler retry applying writes outside the shared receipt/undo boundary.
+Status: completed. Project routing, dry-run, lock release, stale review-preview, partial success, undo metadata correctness, and deferred scheduler retry are covered within the shared receipt/undo boundary.
 
 Checks:
 
@@ -1016,7 +1016,7 @@ Exit condition: backend tests pass and code review finds no unsafe write path.
 
 Reviewer: designer.
 
-Status: mostly completed. Normal `/status`, review button vocabulary, briefing density, and mutation/callback receipts have been tightened. Remaining UX review should focus on deferred retry notification wording and final Telegram transcript sweep.
+Status: completed. Normal `/status`, review button vocabulary, briefing density, mutation/callback receipts, deferred retry wording, and final Telegram transcript sweep are reconciled.
 
 Checks:
 
@@ -1032,7 +1032,7 @@ Exit condition: transcript review approved for `/scan`, `/pending`, `/status`, r
 
 Reviewer: orchestrator.
 
-Status: completed for Stages 1–7. Each committed stage passed `npm test`, `npm run check:test-sizes`, and `npm run docs:map` when required. Repeat after Stage 8.
+Status: completed for Stages 1–8. Each committed stage passed `npm test`, `npm run check:test-sizes`, and `npm run docs:map` when required.
 
 Checks:
 

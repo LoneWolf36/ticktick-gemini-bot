@@ -273,7 +273,7 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 
 - **Structured write path (Intent Extraction → Normalizer → Adapter):** All task creation and mutation flows through a single pipeline. Gemini extracts a structured `Intent Action` from natural language. The deterministic normalizer cleans and maps it to TickTick-compatible fields. The TickTick adapter executes the mutation against the REST API. This prevents model prose from writing directly to TickTick and keeps the path auditable and testable.
 - **Two-phase task tracking:** Tasks move `pending → processed`. Nothing is silently lost — `/pending` re-surfaces unanswered cards.
-- **Non-destructive by default:** Nothing written to TickTick without ✅ Apply. Drop actions flag tasks, never delete. Every change has an undo log.
+- **Non-destructive by default:** User-initiated review writes require ✅ Apply/Delete/Complete confirmation. Configured auto-apply and deferred retry can write through the receipt/undo trust boundary. Drop actions flag tasks, never delete. Every change has an undo log.
 - **Autonomous mode:** Life-admin and drop-candidate tasks can be auto-applied (configurable). Batched notifications, not per-task spam.
 - **Redis + file dual backend:** `REDIS_URL` set → Redis. Not set → local `data/store.json`. Zero config for local dev, persistent for cloud (Redis is required on Render because the filesystem is ephemeral).
 - **Access control:** `TELEGRAM_CHAT_ID` in `.env` ensures only you can use the bot.

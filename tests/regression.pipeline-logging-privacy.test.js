@@ -131,10 +131,12 @@ test('R12: pipeline terminal telemetry is privacy-safe and receipt-shaped', asyn
 
   const terminalEvent = telemetryEvents.find(event => event.eventType === 'pipeline.operation.terminal');
   assert.ok(terminalEvent, 'expected terminal telemetry event');
+  assert.equal(terminalEvent.status, 'success');
   assert.equal(terminalEvent.metadata.requestId, 'req-terminal-telemetry');
   assert.equal(terminalEvent.metadata.entryPoint, 'telegram');
   assert.equal(terminalEvent.metadata.command, 'freeform');
   assert.equal(terminalEvent.metadata.operationType, 'create');
+  assert.equal(terminalEvent.metadata.receiptStatus, 'applied');
   assert.equal(terminalEvent.metadata.status, 'applied');
   assert.equal(terminalEvent.metadata.scope, 'ticktick_live');
   assert.equal(terminalEvent.metadata.dryRun, false);
@@ -168,6 +170,7 @@ test('R12: terminal failure telemetry uses allowed errorClass values and no raw 
 
   const terminalEvent = telemetryEvents.find(event => event.eventType === 'pipeline.operation.terminal');
   assert.ok(terminalEvent, 'expected terminal telemetry event');
+  assert.equal(terminalEvent.status, 'failure');
   assert.ok(
     ['validation', 'auth', 'ticktick_unavailable', 'model_unavailable', 'routing', 'stale_preview', 'lock', 'unknown']
       .includes(terminalEvent.metadata.errorClass),
@@ -177,6 +180,115 @@ test('R12: terminal failure telemetry uses allowed errorClass values and no raw 
   const terminalJson = JSON.stringify(terminalEvent);
   assert.equal(terminalJson.includes(sensitiveErrorText), false, 'terminal telemetry should not contain raw error text');
   assert.equal(terminalJson.includes('Error'), false, 'terminal telemetry should not expose raw error objects');
+});
+
+test('R12: blocked early return emits privacy-safe terminal telemetry', async () => {
+  const telemetryEvents = [];
+  const observability = createPipelineObservability({
+    eventSink: async (event) => { telemetryEvents.push(event); },
+    logger: null,
+  });
+
+  const sensitiveMessage = 'blocked telemetry secret message';
+  const harness = createPipelineHarness({
+    intents: [{ type: 'create', title: 'Blocked telemetry task', confidence: 0.9, projectHint: 'Missing Project' }],
+    observability,
+  });
+
+  await harness.processMessage(sensitiveMessage, {
+    requestId: 'req-blocked-terminal-telemetry',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  const terminalEvent = telemetryEvents.find(event => event.eventType === 'pipeline.operation.terminal');
+  assert.ok(terminalEvent, 'expected terminal telemetry event');
+  assert.equal(terminalEvent.status, 'failure');
+  assert.equal(terminalEvent.metadata.status, 'blocked');
+  assert.equal(terminalEvent.metadata.receiptStatus, 'blocked');
+  assert.equal(terminalEvent.metadata.scope, 'system');
+  assert.equal(terminalEvent.metadata.dryRun, false);
+  assert.equal(terminalEvent.metadata.applied, false);
+  assert.equal(terminalEvent.metadata.changed, false);
+
+  const terminalJson = JSON.stringify(terminalEvent);
+  assert.equal(terminalJson.includes(sensitiveMessage), false, 'terminal telemetry should not contain raw user message');
+  assert.equal(terminalJson.includes('Blocked telemetry task'), false, 'terminal telemetry should not contain raw task title');
+});
+
+test('R12: preview early return emits privacy-safe terminal telemetry', async () => {
+  const telemetryEvents = [];
+  const observability = createPipelineObservability({
+    eventSink: async (event) => { telemetryEvents.push(event); },
+    logger: null,
+  });
+
+  const sensitiveMessage = 'preview telemetry secret message';
+  const harness = createPipelineHarness({
+    intents: [{ type: 'create', title: 'Preview telemetry task', confidence: 0.9, projectHint: 'Inbox' }],
+    observability,
+  });
+
+  await harness.processMessage(sensitiveMessage, {
+    requestId: 'req-preview-terminal-telemetry',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+    dryRun: true,
+  });
+
+  const terminalEvent = telemetryEvents.find(event => event.eventType === 'pipeline.operation.terminal');
+  assert.ok(terminalEvent, 'expected terminal telemetry event');
+  assert.equal(terminalEvent.status, 'success');
+  assert.equal(terminalEvent.metadata.status, 'preview');
+  assert.equal(terminalEvent.metadata.receiptStatus, 'preview');
+  assert.equal(terminalEvent.metadata.scope, 'preview');
+  assert.equal(terminalEvent.metadata.dryRun, true);
+  assert.equal(terminalEvent.metadata.applied, false);
+  assert.equal(terminalEvent.metadata.changed, false);
+
+  const terminalJson = JSON.stringify(terminalEvent);
+  assert.equal(terminalJson.includes(sensitiveMessage), false, 'terminal telemetry should not contain raw user message');
+  assert.equal(terminalJson.includes('Preview telemetry task'), false, 'terminal telemetry should not contain raw task title');
+});
+
+test('R12: pending-confirmation without destination still emits privacy-safe terminal telemetry', async () => {
+  const telemetryEvents = [];
+  const observability = createPipelineObservability({
+    eventSink: async (event) => { telemetryEvents.push(event); },
+    logger: null,
+  });
+
+  const sensitiveMessage = 'confirm update on the private weekly report';
+  const harness = createPipelineHarness({
+    intents: [{ type: 'update', title: null, confidence: 0.95, targetQuery: 'weekly report' }],
+    observability,
+    activeTasks: [{ id: 'task-private-update', title: 'Write weekly report', content: 'Private notes here', projectId: 'inbox', status: 0 }],
+  });
+
+  const result = await harness.processMessage(sensitiveMessage, {
+    requestId: 'req-pending-no-destination',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  assert.equal(result.type, 'pending-confirmation');
+  assert.equal(result.operationReceipt, undefined);
+
+  const terminalEvent = telemetryEvents.find(event => event.eventType === 'pipeline.operation.terminal');
+  assert.ok(terminalEvent, 'expected terminal telemetry event');
+  assert.equal(terminalEvent.status, 'success');
+  assert.equal(terminalEvent.metadata.operationType, 'update');
+  assert.equal(terminalEvent.metadata.receiptStatus, 'pending_confirmation');
+  assert.equal(terminalEvent.metadata.status, 'pending_confirmation');
+  assert.equal(terminalEvent.metadata.scope, 'local_review_queue');
+  assert.equal(terminalEvent.metadata.applied, false);
+  assert.equal(terminalEvent.metadata.changed, false);
+  assert.equal(terminalEvent.metadata.dryRun, false);
+
+  const terminalJson = JSON.stringify(terminalEvent);
+  assert.equal(terminalJson.includes(sensitiveMessage), false, 'terminal telemetry should not contain raw user message');
+  assert.equal(terminalJson.includes('Write weekly report'), false, 'terminal telemetry should not contain raw task title');
+  assert.equal(terminalJson.includes('Private notes here'), false, 'terminal telemetry should not contain raw task content');
 });
 
 test('R12: execution terminal failure telemetry stays privacy-safe and receipt-shaped', async () => {
