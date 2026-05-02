@@ -631,7 +631,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                     });
                 }
             } else if (result.type === 'error') {
-                const diag = result.isDevMode && result.diagnostics?.length > 0
+                const diag = result.isDevMode === true && result.diagnostics?.length > 0
                     ? `\n\n${result.diagnostics.slice(0, 3).join('\n')}`
                     : '';
                 await editWithMarkdown(ctx, `❌ ${result.confirmationText}${diag}`);
@@ -734,7 +734,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                     });
                 }
             } else if (result.type === 'error') {
-                const diag = result.isDevMode && result.diagnostics?.length > 0
+                const diag = result.isDevMode === true && result.diagnostics?.length > 0
                     ? `\n\n${result.diagnostics.slice(0, 3).join('\n')}`
                     : '';
                 await editWithMarkdown(ctx, `❌ ${result.confirmationText}${diag}`);
@@ -869,7 +869,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                     });
                 }
             } else if (result.type === 'error') {
-                const diag = result.isDevMode && result.diagnostics?.length > 0
+                const diag = result.isDevMode === true && result.diagnostics?.length > 0
                     ? `\n\n${result.diagnostics.slice(0, 3).join('\n')}`
                     : '';
                 await editWithMarkdown(ctx, `❌ ${result.confirmationText}${diag}`);

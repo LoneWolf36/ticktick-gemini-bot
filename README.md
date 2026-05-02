@@ -211,6 +211,7 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 | `AUTO_APPLY_LIFE_ADMIN` | No | Auto-apply life-admin tasks (default: `true`) |
 | `AUTO_APPLY_DROPS` | No | Auto-apply drop candidates (default: `false`) |
 | `AUTO_APPLY_MODE` | No | `metadata-only` or `full` (default: `metadata-only`) |
+| `DEBUG_RECEIPTS` | No | Local development only. Set `true` with `NODE_ENV=development` to include developer diagnostics in receipts; keep `false` for normal use and production. |
 | `BEHAVIORAL_SIGNAL_RETENTION_DAYS` | No | Active behavioral-signal window in days (default: `30`) |
 | `BEHAVIORAL_SIGNAL_ARCHIVE_DAYS` | No | Total retained behavioral-signal history in days (default: `90`) |
 | `PIPELINE_TRANSIENT_MAX_RETRIES` | No | Pipeline transient retry attempts (default: `1`) |

@@ -63,6 +63,9 @@ services:
         value: "false"
       - key: AUTO_APPLY_MODE
         value: metadata-only
+      # Optional — diagnostic receipt details stay disabled in production/user-facing flows
+      - key: DEBUG_RECEIPTS
+        value: "false"
       # Optional — Render uses port 10000 by default
       - key: PORT
         value: "10000"

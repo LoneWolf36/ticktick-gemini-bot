@@ -1351,8 +1351,13 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                             await ctx.reply(formatPipelineFailure(result));
                         } else if (result.type === 'task') {
                             await store.markTaskProcessed(pendingRefinementId, { originalTitle: data.originalTitle, autoApplied: true });
-                            const text = result.dryRun ? `${result.confirmationText} (preview)` : result.confirmationText;
-                            await replyWithMarkdown(ctx, truncateMessage(`Refined "${data.originalTitle}":\n\n${text}`, 4000));
+                            const { text: receipt, replyExtra } = await buildFreeformPipelineResultReceipt({
+                                result,
+                                store,
+                                userId,
+                                projects: availableProjects,
+                            });
+                            await replyWithMarkdown(ctx, truncateMessage(`Refined "${data.originalTitle}":\n\n${receipt}`, 4000), replyExtra);
 
                             // Store recent task context
                             if (userId) {
@@ -1437,8 +1442,13 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         workStyleMode,
                     });
                     if (result.type === 'task') {
-                        const text = result.dryRun ? `${result.confirmationText} (preview)` : result.confirmationText;
-                        await replyWithMarkdown(ctx, truncateMessage(text, 4000));
+                        const { text: receipt, replyExtra } = await buildFreeformPipelineResultReceipt({
+                            result,
+                            store,
+                            userId,
+                            projects: availableProjects,
+                        });
+                        await replyWithMarkdown(ctx, truncateMessage(receipt, 4000), replyExtra);
                         if (userId && result.actions?.[0]) {
                             const action = result.actions[0];
                             await store.setRecentTaskContext(userId, {
@@ -1467,8 +1477,13 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         workStyleMode,
                     });
                     if (result.type === 'task') {
-                        const text = result.dryRun ? `${result.confirmationText} (preview)` : result.confirmationText;
-                        await replyWithMarkdown(ctx, truncateMessage(text, 4000));
+                        const { text: receipt, replyExtra } = await buildFreeformPipelineResultReceipt({
+                            result,
+                            store,
+                            userId,
+                            projects: availableProjects,
+                        });
+                        await replyWithMarkdown(ctx, truncateMessage(receipt, 4000), replyExtra);
                         if (userId && result.actions?.[0]) {
                             const action = result.actions[0];
                             await store.setRecentTaskContext(userId, {
@@ -1497,8 +1512,13 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     workStyleMode,
                 });
                 if (result.type === 'task') {
-                    const text = result.dryRun ? `${result.confirmationText} (preview)` : result.confirmationText;
-                    await replyWithMarkdown(ctx, truncateMessage(text, 4000));
+                    const { text: receipt, replyExtra } = await buildFreeformPipelineResultReceipt({
+                        result,
+                        store,
+                        userId,
+                        projects: availableProjects,
+                    });
+                    await replyWithMarkdown(ctx, truncateMessage(receipt, 4000), replyExtra);
                     if (userId && result.actions?.[0]) {
                         const action = result.actions[0];
                         await store.setRecentTaskContext(userId, {

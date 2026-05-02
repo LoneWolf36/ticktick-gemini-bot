@@ -18,7 +18,8 @@
  */
 export function formatPipelineFailure(result, { compact = false } = {}) {
     if (!result) return '⚠️ Pipeline failed.';
-    const diagnostics = result.isDevMode && Array.isArray(result.diagnostics) && result.diagnostics.length > 0
+    const diagnosticsEnabled = result.isDevMode === true;
+    const diagnostics = diagnosticsEnabled && Array.isArray(result.diagnostics) && result.diagnostics.length > 0
         ? `\n\n${result.diagnostics.join('\n')}`
         : '';
     const message = `${result.confirmationText || '⚠️ Pipeline failed.'}${diagnostics}`;

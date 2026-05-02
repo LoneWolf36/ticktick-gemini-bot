@@ -415,7 +415,12 @@ test('WP05 P0#2: cl:checklist callback resumes pipeline with checklistPreference
   await registerCallbacksForTest(bot, mockTicktick, {
     processMessage: async (msg, opts) => {
       pipelineCalls.push({ message: msg, options: opts });
-      return { type: 'task', confirmationText: 'Created task with checklist.' };
+      return {
+        type: 'task',
+        confirmationText: 'Created task with checklist.',
+        actions: [{ type: 'create', title: 'Test task' }],
+        results: [{ status: 'succeeded', rollbackStep: { type: 'delete_created', targetTaskId: 'task-1', targetProjectId: 'inbox', payload: { taskId: 'task-1' } } }],
+      };
     },
   });
 
@@ -437,7 +442,7 @@ test('WP05 P0#2: cl:checklist callback resumes pipeline with checklistPreference
     match: [],
     answerCallbackQuery: async () => {},
     reply: async (msg) => { replies.push(msg); },
-    editMessageText: async (text, opts) => { replies.push(text); },
+    editMessageText: async (text, opts) => { replies.push({ text, opts }); },
   };
 
   await clChecklist.handler(ctx);
@@ -447,7 +452,8 @@ test('WP05 P0#2: cl:checklist callback resumes pipeline with checklistPreference
   assert.equal(pipelineCalls[0].options.skipChecklist, undefined, 'should not set skipChecklist');
   assert.equal(pipelineCalls[0].options.entryPoint, 'telegram:checklist-clarification-button');
   // The answerCallbackQuery sends '📋 Checklist mode', editMessageText sends pipeline result
-  assert.ok(replies.some(r => r && r.includes('Created task with checklist')), 'should show pipeline result');
+  assert.ok(replies.some(r => r?.text && r.text.includes('Created task with checklist')), 'should show pipeline result');
+  assert.ok(replies.some(r => r?.opts?.reply_markup), 'should include undo when persisted');
 
   // Pending state should be cleared
   assert.equal(store.getPendingChecklistClarification(), null, 'pending should be cleared');

@@ -440,7 +440,9 @@ function buildUserFailureMessage({ failureClass, failureCategory, details, rolle
 function resolveDevMode(context) {
     const mode = (context?.mode || '').toLowerCase();
     if (['dev', 'development', 'debug', 'diagnostic', 'test'].includes(mode)) return true;
-    return process.env.NODE_ENV !== 'production';
+    const explicitDebug = String(process.env.DEBUG_RECEIPTS || '').toLowerCase();
+    const debugReceiptsEnabled = ['1', 'true', 'yes', 'on'].includes(explicitDebug);
+    return process.env.NODE_ENV === 'development' && debugReceiptsEnabled;
 }
 
 /**

@@ -110,8 +110,8 @@ test('WP06 T020: fail-closed — malformed intent extraction returns user-safe m
   assert.match(result.confirmationText, /could not understand/i);
   assert.equal(result.confirmationText.includes('<html>'), false);
   assert.equal(result.confirmationText.includes('garbage'), false);
-  // Developer diagnostics ARE available in diagnostics array
-  assert.ok(result.diagnostics.length > 0);
+  // Developer diagnostics stay hidden by default
+  assert.equal(result.diagnostics.length, 0);
 });
 
 test('WP06 T020: fail-closed — validation failure returns user-safe message', async () => {
