@@ -246,6 +246,21 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         generatedAtIso: new Date().toISOString(),
     });
 
+    const formatLastSyncLine = (sync = {}) => {
+        if (!sync?.lastTickTickSyncAt) return 'Last sync: none yet';
+        const when = userLocaleString(sync.lastTickTickSyncAt);
+        const source = sync.lastSyncSource || 'unknown';
+        const activeCount = Number.isInteger(sync.lastTickTickActiveCount) ? sync.lastTickTickActiveCount : 'unknown';
+        const version = Number.isInteger(sync.stateVersion) ? sync.stateVersion : 0;
+        return `Last sync: ${when} · source: ${source} · active: ${activeCount} · version: ${version}`;
+    };
+
+    const formatLastSuccessfulSyncLine = (sync = {}) => {
+        if (!sync?.lastTickTickSyncAt) return 'No successful TickTick sync recorded yet';
+        const activeCount = Number.isInteger(sync.lastTickTickActiveCount) ? sync.lastTickTickActiveCount : 'unknown';
+        return `Last successful sync: ${activeCount} active task(s)`;
+    };
+
     const processPipelineMessage = (userMessage, options) =>
         typeof pipeline.processMessageWithContext === 'function'
             ? pipeline.processMessageWithContext(userMessage, options)
@@ -415,6 +430,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const snapshot = store.getOperationalSnapshot();
         const stats = snapshot.cumulative;
         const local = snapshot.localWorkflow;
+        const sync = snapshot.tickTickSync || {};
         const intakeLock = store.getIntakeLockStatus();
 
         const deferredIntents = store.getDeferredPipelineIntents();
@@ -442,6 +458,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             '**📊 Status**\n',
             '**TickTick live state**',
             `Active tasks in TickTick: ${backendCount === null ? 'unavailable' : backendCount}`,
+            formatLastSyncLine(sync),
             `Connection: ${ticktick.isAuthenticated() ? 'connected' : 'not connected'}`,
             '',
             '**Local review queue**',
@@ -464,13 +481,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             `Skipped: ${stats.tasksSkipped}  |  Dropped: ${stats.tasksDropped}`,
             `Auto-applied: ${stats.tasksAutoApplied || 0}`,
         ];
-
-        lines.push(
-            '',
-            '**Automation**',
-            `Life-admin auto-apply: ${autoApplyLifeAdmin ? 'on' : 'off'}`,
-            `Drop auto-apply: ${autoApplyDrops ? 'on' : 'off'}`,
-        );
 
         const quotaResume = gemini.quotaResumeTime();
         if (quotaResume) {
@@ -681,6 +691,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         try {
             await store.clearCurrentReviewSession(ctx.chat.id);
             const allTasks = await adapter.listActiveTasks(true);
+            await store.recordTickTickSync({ source: 'bot:scan', activeCount: allTasks.length });
 
             const { removedPending, removedFailed } = await store.reconcileTaskState(allTasks);
             if (removedPending > 0 || removedFailed > 0) {
@@ -694,7 +705,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
-                await ctx.reply('No tasks to review.');
+                await ctx.reply(`Scan complete. No new local review items queued. TickTick active: ${allTasks.length}. Already known locally: ${allTasks.length - targetTasks.length}.`);
                 return;
             }
 
@@ -772,7 +783,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     totalTasks: batch.length,
                 });
             } else {
-                await ctx.reply('No tasks to review.');
+                await ctx.reply(`Scan complete. No new local review items queued. TickTick active: ${allTasks.length}. Already known locally: ${allTasks.length - targetTasks.length}.`);
             }
 
             // Phase 2: background processing for remaining tasks
@@ -849,13 +860,18 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 if (typeof adapter?.listActiveTasks === 'function') {
                     const liveTasks = await adapter.listActiveTasks();
                     liveTaskCount = Array.isArray(liveTasks) ? liveTasks.length : null;
+                    if (liveTaskCount !== null) {
+                        await store.recordTickTickSync({ source: 'bot:pending', activeCount: liveTaskCount });
+                    }
                 }
             } catch (err) {
                 console.warn(`[Pending] Could not read live TickTick task count: ${err.message}`);
             }
 
+            const sync = store.getOperationalSnapshot().tickTickSync || {};
+
             const tickTickState = liveTaskCount === null
-                ? 'TickTick live task count unknown right now.'
+                ? `TickTick live task count unavailable right now. ${formatLastSuccessfulSyncLine(sync)}.`
                 : `TickTick still has ${liveTaskCount} live task(s).`;
             await ctx.reply(`Local review queue empty. ${tickTickState}`);
             return;
@@ -1120,6 +1136,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         try {
             await store.clearCurrentReviewSession(ctx.chat.id);
             const allTasks = await adapter.listActiveTasks(true);
+            await store.recordTickTickSync({ source: 'bot:review', activeCount: allTasks.length });
 
             const { removedPending, removedFailed } = await store.reconcileTaskState(allTasks);
             if (removedPending > 0 || removedFailed > 0) {
@@ -1132,7 +1149,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
-                await ctx.reply('No tasks to review.');
+                await ctx.reply(`Review complete. No new local review items queued. TickTick active: ${allTasks.length}. Already known locally: ${allTasks.length - targetTasks.length}.`);
                 return;
             }
 
@@ -1210,7 +1227,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     totalTasks: batch.length,
                 });
             } else {
-                await ctx.reply('No tasks to review.');
+                await ctx.reply(`Review complete. No new local review items queued. TickTick active: ${allTasks.length}. Already known locally: ${allTasks.length - targetTasks.length}.`);
             }
 
             // Phase 2: background processing for remaining tasks

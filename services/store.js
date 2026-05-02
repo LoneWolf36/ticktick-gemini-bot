@@ -89,6 +89,12 @@ const DEFAULT_STATE = {
         lastDailyBriefing: null,
         lastWeeklyDigest: null,
     },
+    tickTickSync: {
+        lastTickTickSyncAt: null,
+        lastTickTickActiveCount: null,
+        lastSyncSource: null,
+        stateVersion: 0,
+    },
 };
 
 // ─── Backend Selection ───────────────────────────────────────
@@ -133,6 +139,29 @@ function normalizeBehavioralSignalsMap(value) {
     );
 }
 
+function normalizeTickTickSync(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+        return structuredClone(DEFAULT_STATE.tickTickSync);
+    }
+
+    const stateVersion = Number.isInteger(value.stateVersion) && value.stateVersion >= 0
+        ? value.stateVersion
+        : 0;
+
+    return {
+        lastTickTickSyncAt: typeof value.lastTickTickSyncAt === 'string' && value.lastTickTickSyncAt.trim()
+            ? value.lastTickTickSyncAt
+            : null,
+        lastTickTickActiveCount: Number.isInteger(value.lastTickTickActiveCount) && value.lastTickTickActiveCount >= 0
+            ? value.lastTickTickActiveCount
+            : null,
+        lastSyncSource: typeof value.lastSyncSource === 'string' && value.lastSyncSource.trim()
+            ? value.lastSyncSource
+            : null,
+        stateVersion,
+    };
+}
+
 async function loadFromRedis() {
     try {
         const raw = await redis.get(REDIS_KEY);
@@ -155,6 +184,7 @@ async function loadFromRedis() {
                 processedTasks: rest.processedTasks || {},
                 undoLog: rest.undoLog || [],
                 recentTaskContext: rest.recentTaskContext || {},
+                tickTickSync: normalizeTickTickSync(rest.tickTickSync),
             };
         }
     } catch (err) {
@@ -230,6 +260,7 @@ function loadFromFile() {
             processedTasks: rest.processedTasks || {},
             undoLog: rest.undoLog || [],
             recentTaskContext: rest.recentTaskContext || {},
+            tickTickSync: normalizeTickTickSync(rest.tickTickSync),
         };
     }
 
@@ -1347,8 +1378,36 @@ export function getOperationalSnapshot() {
             failedDeferred: failedDeferredCount,
             clarifications: clarificationCount,
         },
+        tickTickSync: normalizeTickTickSync(state.tickTickSync),
         cumulative: { ...state.stats },
     };
+}
+
+/**
+ * Record a successful TickTick live-state sync.
+ * @param {Object} params
+ * @param {string} params.source - Sync source label.
+ * @param {number} params.activeCount - Active TickTick task count from the successful read.
+ * @returns {Promise<Object>} Updated sync snapshot.
+ */
+export async function recordTickTickSync({ source, activeCount }) {
+    if (!state.tickTickSync || typeof state.tickTickSync !== 'object' || Array.isArray(state.tickTickSync)) {
+        state.tickTickSync = structuredClone(DEFAULT_STATE.tickTickSync);
+    }
+
+    const nextVersion = Number.isInteger(state.tickTickSync.stateVersion) && state.tickTickSync.stateVersion >= 0
+        ? state.tickTickSync.stateVersion + 1
+        : 1;
+
+    state.tickTickSync = {
+        lastTickTickSyncAt: new Date().toISOString(),
+        lastTickTickActiveCount: Number.isInteger(activeCount) && activeCount >= 0 ? activeCount : null,
+        lastSyncSource: typeof source === 'string' && source.trim() ? source.trim() : 'unknown',
+        stateVersion: nextVersion,
+    };
+
+    await save();
+    return state.tickTickSync;
 }
 
 /**

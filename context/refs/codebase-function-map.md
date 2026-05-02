@@ -834,6 +834,9 @@ Groups by batchId; if no batchId, falls back to the single most recent auto-appl
 <dt><a href="#removeUndoEntries">removeUndoEntries(entries)</a></dt>
 <dd><p>Remove specific undo entries by reference identity.</p>
 </dd>
+<dt><a href="#recordTickTickSync">recordTickTickSync(params)</a> ⇒ <code>Promise.&lt;Object&gt;</code></dt>
+<dd><p>Record a successful TickTick live-state sync.</p>
+</dd>
 <dt><a href="#getStats">getStats()</a> ⇒ <code>Object</code></dt>
 <dd><p>Get the cumulative stats snapshot.</p>
 </dd>
@@ -3921,6 +3924,20 @@ Remove specific undo entries by reference identity.
 | Param | Type | Description |
 | --- | --- | --- |
 | entries | <code>Array.&lt;Object&gt;</code> | Entries to remove |
+
+<a name="recordTickTickSync"></a>
+
+## recordTickTickSync(params) ⇒ <code>Promise.&lt;Object&gt;</code>
+Record a successful TickTick live-state sync.
+
+**Kind**: global function  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Updated sync snapshot.  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| params | <code>Object</code> |  |
+| params.source | <code>string</code> | Sync source label. |
+| params.activeCount | <code>number</code> | Active TickTick task count from the successful read. |
 
 <a name="getStats"></a>
 

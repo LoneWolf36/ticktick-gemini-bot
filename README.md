@@ -135,12 +135,12 @@ Open your bot in Telegram and send `/start`.
 
 | Command | Description |
 |---------|-------------|
-| `/scan` | Analyze new tasks through the structured pipeline (Intent Extraction → Normalizer → Adapter, batched 5 at a time) |
+| `/scan` | Analyze new tasks through the structured pipeline. Scopes output to the local review queue; empty state says no new local review items queued and includes TickTick active/already-known counts when available. |
 | `/menu` | Show quick-action shortcut menu |
-| `/pending` | Re-surface tasks awaiting your review |
+| `/pending` | Re-surface the local review queue. Empty state stays local-queue scoped and can show the last successful TickTick sync count when live read is unavailable. |
 | `/briefing` | Daily morning briefing — focus, top priorities, why it matters, first action |
 | `/weekly` | Weekly accountability digest — progress, carry forward, next focus, watchouts |
-| `/review` | Walk through all unreviewed tasks |
+| `/review` | Walk through the local review queue. Empty state is scoped to local review items and never uses bare “No tasks to review.” |
 | `/reorg` | Build a full task reorganization proposal (apply/refine/cancel) |
 | `/urgent` | Activate urgent mode (also: /focus, /normal, /mode to query) |
 | `/focus` | Switch to focus mode |
@@ -151,7 +151,7 @@ Open your bot in Telegram and send `/start`.
 | `/forget` | Reset behavioral memory |
 | `/daily_close` | End-of-day reflection — stats, reflection, reset cue |
 | `/reset` | Wipe all bot data and start fresh (requires `/reset CONFIRM`) |
-| `/status` | User-facing health snapshot: TickTick live count, local review queue, deferred queue, running job, recent activity, and coarse automation state |
+| `/status` | User-facing health snapshot: TickTick live count, last successful sync/source/version, local review queue, deferred queue, running job, and recent activity |
 
 **Free-form messages:** Any text that isn't a command goes through the structured pipeline (Intent Extraction → Normalizer → Adapter). You can:
 - Give instructions: *"move all gym tasks to next week"*, *"drop everything in Inbox"*

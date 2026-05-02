@@ -17,7 +17,7 @@ Telegram Message
 
 Parallel non-write paths:
     Scheduler (services/scheduler.js)
-    → Daily briefing / Weekly digest / Polling notifications / Deferred retry
+    → Daily briefing / Weekly digest / Scheduler/manual intake reads / Deferred retry
     → Telegram only (no TickTick mutation)
 ```
 
@@ -93,7 +93,9 @@ When the TickTick API is unavailable, the pipeline defers the normalized intent 
 
 `/scan` and `/review` walk the user through a single task card at a time with inline keyboards (approve / skip / drop). This avoids notification spam and keeps the decision surface focused. The same card builder and callback handlers are reused in autonomous poll notifications.
 
-Normal `/status` is a user-facing health view, not a debug dump. It reports TickTick live count, local review queue, deferred queue, running-job state, recent activity, and coarse automation toggles. Internal Gemini key index, cache age, and raw auto-apply mode stay out of normal status copy.
+Normal `/status` is a user-facing health view, not a debug dump. It reports TickTick live count, last successful sync time/source/version from successful scheduler/manual intake reads, local review queue, deferred queue, running-job state, and recent activity. Internal Gemini key index, cache age, and raw auto-apply mode stay out of normal status copy.
+
+`/scan` and `/review` empty states are local-review scoped: they describe the local queue, not a generic TickTick absence. `/pending` is also local-queue scoped, but may surface the last successful TickTick live count if a fresh live read is unavailable.
 
 Resumed Telegram mutation and checklist callbacks render the same trust receipt as free-form pipeline writes. The inline undo affordance appears only when rollback metadata is persisted for that result.
 
@@ -113,7 +115,7 @@ When the standard intent extraction prompt exceeds token budget or returns malfo
 
 ## Scheduler Configuration
 
-Polling interval is configurable via the `POLL_INTERVAL_MINUTES` environment variable (default: 5 minutes). The scheduler also runs daily briefings, weekly digests, deferred intent retry, and queue health checks.
+Read interval is configurable via the `POLL_INTERVAL_MINUTES` environment variable (default: 5 minutes). The scheduler also runs daily briefings, weekly digests, deferred intent retry, and queue health checks.
 
 ## Historical Notes
 

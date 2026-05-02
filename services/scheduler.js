@@ -745,6 +745,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
             let allTasks = [];
             try {
                 allTasks = await adapter.listActiveTasks(true);
+                await store.recordTickTickSync({ source: 'scheduler:poll', activeCount: allTasks.length });
                 const { removedPending, removedFailed } = await store.reconcileTaskState(allTasks);
                 if (removedPending > 0 || removedFailed > 0) {
                     console.log(`🧹 Reconciled: removed ${removedPending} pending, ${removedFailed} failed (no longer active)`);
@@ -767,6 +768,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                 console.error('Reconciliation error:', err.message);
                 try {
                     allTasks = await adapter.listActiveTasks(true);
+                    await store.recordTickTickSync({ source: 'scheduler:poll', activeCount: allTasks.length });
                 } catch { /* leave empty */ }
             }
 

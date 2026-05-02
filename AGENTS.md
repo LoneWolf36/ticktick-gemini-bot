@@ -51,6 +51,8 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 
 **TickTick Task API**: Task updates must follow official OpenAPI contracts. `POST /task/{taskId}` bodies include both `id` and `projectId`; project moves use official `POST /task/move` instead of create/delete copy workarounds; active task retrieval prefers `POST /task/filter { status: [0] }` with project-loop fallback so Inbox tasks are visible to the resolver. Completed-task retrieval is exposed via `POST /task/completed` for analysis plumbing only; completed tasks are not mixed into mutation resolution by default.
 
+**Command Sync Snapshot**: Successful scheduler/manual intake reads must record durable sync metadata in `services/store.js` (`lastTickTickSyncAt`, `lastTickTickActiveCount`, `lastSyncSource`, `stateVersion`). `/status` should report that snapshot alongside the current live read, while `/scan`, `/review`, and `/pending` keep their empty states scoped to the local review queue instead of generic TickTick absence. Failed live reads must not overwrite the previous successful sync snapshot.
+
 **Timezone Canonical Source**: Canonical timezone resolved via `getUserTimezone()` in `services/user-settings.js`. Priority: `process.env.USER_TIMEZONE` → `user_context.js` `USER_TIMEZONE` export → `Europe/Dublin` default. All timezone-dependent code imports `USER_TZ` from `services/shared-utils.js`, which calls `getUserTimezone()` at module init time. A regression test in `tests/regression.work-style-commands-scheduler.test.js` verifies the shared constant stays in sync with the canonical source.
 
 **Checklist Validation Split**: Three-layer validation: `services/intent-extraction.js` `validateChecklistItems()` validates extracted output structure (capped at `MAX_CHECKLIST_ITEMS=30` from `services/schemas.js`); `services/normalizer.js` cleans TickTick-ready items (also caps at its own `MAX_CHECKLIST_ITEMS=30` from `services/schemas.js`); `services/shared-utils.js` exports only the singular `validateChecklistItem()` — no batch or cap logic at the utility layer. The adapter consumes the validated items directly.
@@ -74,7 +76,7 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - `services/undo-executor.js` — Executes undo/rollback entries against the adapter. Handles all rollback types (delete_created, restore_updated, recreate_deleted, uncomplete_task, plus legacy pre-rollback restore).
 - `services/ticktick.js` — Low-level TickTick API client with OAuth2 token management, CRUD operations, official task move, task filter, and completed-task endpoints.
 - `services/gemini.js` — Gemini AI client for briefing, weekly digest, reorg proposals, free-form chat, and intent extraction. Manages API key rotation.
-- `services/scheduler.js` — Cron-driven jobs: proactive TickTick polling, daily/weekly briefings, deferred intent retry, queue health checks
+- `services/scheduler.js` — Cron-driven jobs: proactive TickTick reads, daily/weekly briefings, deferred intent retry, queue health checks
 - `services/store.js` — State persistence layer. Redis-backed when `REDIS_URL` is set; falls back to local JSON file for development.
 - `services/pipeline-context.js` — Carries structured context through the pipeline execution stages.
 - `services/pipeline-observability.js` — Pipeline execution metrics and logging.
