@@ -921,14 +921,14 @@ Required regression groups:
 
 1. Receipt contract tests. **Completed in Stage 1.**
 2. Project routing resolver tests. **Completed through Stage 5.**
-3. Dry-run vs apply tests. **Completed through Stage 4/5; continue guarding callback/deferred paths.**
-4. Command semantics tests for `/scan`, `/pending`, `/status`. **Mostly complete; deferred retry/status semantics remain.**
+3. Dry-run vs apply tests. **Completed through Stage 4/5 and guarded in callback/deferred paths through Stage 8.**
+4. Command semantics tests for `/scan`, `/pending`, `/status`. **Completed; deferred retry/status semantics covered in Stage 8 (`regression.scheduler-deferred-stage8.test.js`, `regression.scheduler-status-commands.test.js`).**
 5. Lock/busy cleanup tests. **Completed for intake lock and scan/review busy paths.**
-6. Malformed model output recovery tests. **Partial; model/deferred degraded copy remains.**
+6. Malformed model output recovery tests. **Completed; malformed intent failure receipt, clarification flow, and degraded deferred copy covered (`regression.pipeline-hardening-mutation.test.js`, `regression.scheduler-deferred-stage8.test.js`).**
 7. Stale preview apply tests. **Completed for pending-review callbacks.**
-8. Partial batch/undo tests. **Completed for pipeline/reorg/callback paths; deferred retry undo remains.**
-9. Telemetry privacy tests. **Partial; scheduler deferred retry privacy remains.**
-10. Telegram keyboard/action vocabulary tests. **Mostly complete for review/callback surfaces.**
+8. Partial batch/undo tests. **Completed for pipeline/reorg/callback paths and deferred retry undo via Stage 8.**
+9. Telemetry privacy tests. **Completed; scheduler deferred retry privacy and terminal telemetry privacy covered in Stage 8 (`regression.scheduler-deferred-stage8.test.js`, `regression.pipeline-logging-privacy.test.js`).**
+10. Telegram keyboard/action vocabulary tests. **Completed for review/callback surfaces and reorg keyboard (Apply/Edit/Cancel) in Stage 5.**
 11. Briefing formatter structure tests. **Completed for current summary formatter behavior.**
 
 Canonical commands:
