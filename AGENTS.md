@@ -95,6 +95,7 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - `bot/index.js` — Bot factory. Creates and configures the Telegraf bot instance.
 - `bot/commands.js` — Slash command handlers. **Must not** call the TickTick client directly for write operations — always route through the pipeline.
 - `bot/callbacks.js` — Inline keyboard callback handlers (approve/skip/drop/reorg flows).
+- `bot/pipeline-result-receipts.js` — Shared receipt builder for pipeline and callback mutation responses; keeps trust receipt and undo affordance parity.
 
 ### Integration rule
 **Bot handlers must never bypass the pipeline for new task-writing flows.** Operational mutations (approve/skip/drop in callbacks) directly call the adapter as a retained boundary for interactive UX. All new free-form text flows must route through `pipeline.js` → `normalizer.js` → `ticktick-adapter.js`. Bot handlers may read from TickTick directly only for display purposes (e.g., `/pending`, `/status`).

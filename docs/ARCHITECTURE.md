@@ -95,6 +95,8 @@ When the TickTick API is unavailable, the pipeline defers the normalized intent 
 
 Normal `/status` is a user-facing health view, not a debug dump. It reports TickTick live count, local review queue, deferred queue, running-job state, recent activity, and coarse automation toggles. Internal Gemini key index, cache age, and raw auto-apply mode stay out of normal status copy.
 
+Resumed Telegram mutation and checklist callbacks render the same trust receipt as free-form pipeline writes. The inline undo affordance appears only when rollback metadata is persisted for that result.
+
 ### `force_reply` Refinement
 
 During `/reorg` refinement, the bot can switch to `force_reply` mode (`bot/callbacks.js`). The next user message is treated as a direct refinement prompt rather than a new free-form instruction, making the conversational loop feel synchronous.

@@ -8,8 +8,6 @@ import { taskReviewKeyboard } from './callbacks.js';
 import {
     buildTaskCard, buildTaskCardFromAction,
     sleep, userLocaleString, isAuthorized, guardAccess,
-    buildUndoEntryFromRollbackStep,
-    buildFreeformReceipt,
     filterProcessedThisWeek, buildQuotaExhaustedMessage,
     replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, pendingToAnalysis,
     buildMutationCandidateKeyboard,
@@ -22,6 +20,7 @@ import {
     isFollowUpMessage,
     answerCallbackQueryBestEffort,
 } from '../services/shared-utils.js';
+import { buildFreeformPipelineResultReceipt } from './pipeline-result-receipts.js';
 import { executeReorgAction } from '../services/reorg-executor.js';
 import { formatPipelineFailure, executeUndoBatch } from '../services/undo-executor.js';
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
@@ -1543,29 +1542,12 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             const result = await processPipelineMessage(userMessage, pipelineOptions);
 
             if (result.type === 'task') {
-                // ─── Persist undo entries for successful mutations ───
-                const batchId = `undo_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-                let undoCount = 0;
-
-                for (const record of (result.results || [])) {
-                    if (record.status === 'succeeded' && record.rollbackStep) {
-                        const entry = buildUndoEntryFromRollbackStep(record.rollbackStep, record.action);
-                        entry.batchId = batchId;
-                        await store.addUndoEntry(entry);
-                        undoCount++;
-                    }
-                }
-
-                // ─── Build transparent receipt ───
-                const receipt = result.dryRun
-                    ? `${result.confirmationText} (preview)`
-                    : (buildFreeformReceipt(result, { projects: availableProjects }) || result.confirmationText || 'Done.');
-
-                const replyExtra = {};
-                if (undoCount > 0 && !result.dryRun) {
-                    replyExtra.reply_markup = new InlineKeyboard().text('↩️ Undo', 'undo:last');
-                }
-
+                const { text: receipt, replyExtra } = await buildFreeformPipelineResultReceipt({
+                    result,
+                    store,
+                    userId,
+                    projects: availableProjects,
+                });
                 await replyWithMarkdown(ctx, truncateMessage(receipt, 4000), replyExtra);
 
                 // Store recent task context after successful create/update/complete/delete

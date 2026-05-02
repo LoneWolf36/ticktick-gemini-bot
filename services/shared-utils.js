@@ -1254,6 +1254,7 @@ export function buildFreeformReceipt(result, { projects = [] } = {}) {
     for (const record of records) {
         if (record.status !== 'succeeded') continue;
         const action = record.action;
+        if (!action) continue;
         const rollbackStep = record.rollbackStep;
         const snapshot = rollbackStep?.payload?.snapshot;
 

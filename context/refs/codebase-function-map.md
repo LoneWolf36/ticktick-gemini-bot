@@ -961,6 +961,10 @@ Never throws — returns { mod, source, path } with null mod on complete failure
 <dt><a href="#createBot">createBot(token, ticktick, gemini, adapter, pipeline, [config])</a> ⇒ <code>Bot</code></dt>
 <dd><p>Factory function to create and configure a Telegram bot instance.</p>
 </dd>
+<dt><a href="#buildFreeformPipelineResultReceipt">buildFreeformPipelineResultReceipt(params)</a> ⇒ <code>Promise.&lt;{text: string, replyExtra: Object, undoCount: number}&gt;</code></dt>
+<dd><p>Build a freeform Telegram receipt and persist undo entries when possible.
+Safe default: persistence failures log and still return the applied receipt.</p>
+</dd>
 </dl>
 
 <a name="module_behavioral-signals"></a>
@@ -4418,4 +4422,20 @@ Factory function to create and configure a Telegram bot instance.
 | adapter | [<code>TickTickAdapter</code>](#TickTickAdapter) |  | Structured adapter for TickTick writes. |
 | pipeline | <code>Object</code> |  | Processing pipeline for task mutations. |
 | [config] | <code>Object</code> | <code>{}</code> | Optional configuration for bot behavior. |
+
+<a name="buildFreeformPipelineResultReceipt"></a>
+
+## buildFreeformPipelineResultReceipt(params) ⇒ <code>Promise.&lt;{text: string, replyExtra: Object, undoCount: number}&gt;</code>
+Build a freeform Telegram receipt and persist undo entries when possible.
+Safe default: persistence failures log and still return the applied receipt.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| params | <code>Object</code> |  |  |
+| params.result | <code>Object</code> |  | Pipeline result for a successful freeform mutation. |
+| [params.store] | <code>Object</code> |  | Store module with addUndoEntry(). |
+| [params.userId] | <code>string</code> \| <code>number</code> |  | User id used only for undo entry grouping. |
+| [params.projects] | <code>Array.&lt;Object&gt;</code> | <code>[]</code> | Known TickTick projects for receipt diffs. |
 

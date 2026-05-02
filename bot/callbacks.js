@@ -3,10 +3,12 @@
 import { InlineKeyboard } from 'grammy';
 import * as store from '../services/store.js';
 import {
-    buildTickTickUpdate, isAuthorized, buildUndoEntry, PRIORITY_LABEL,
+    buildTickTickUpdate, isAuthorized, buildUndoEntry,
+    PRIORITY_LABEL,
     editWithMarkdown, truncateMessage, buildTaskCard, pendingToAnalysis,
     replyWithMarkdown, sleep, answerCallbackQueryBestEffort,
 } from '../services/shared-utils.js';
+import { buildFreeformPipelineResultReceipt } from './pipeline-result-receipts.js';
 import { executeUndoBatch } from '../services/undo-executor.js';
 
 // Pending mutation clarification expiry: 10 minutes
@@ -228,7 +230,7 @@ async function advanceReviewCard(ctx, prefix = '') {
     await sleep(300);
 }
 
-export function registerCallbacks(bot, adapter, pipeline) {
+export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } = {}) {
     // Timestamp all callback queries for timeout telemetry
     if (typeof bot.on === 'function') {
         bot.on('callback_query', async (ctx, next) => {
@@ -611,7 +613,13 @@ export function registerCallbacks(bot, adapter, pipeline) {
             });
 
             if (result.type === 'task') {
-                await editWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                const { text: receipt, replyExtra } = await buildFreeformPipelineResultReceipt({
+                    result,
+                    store: storeApi,
+                    userId,
+                    projects: availableProjects,
+                });
+                await editWithMarkdown(ctx, truncateMessage(receipt, 4000), replyExtra);
                 const recentUserId = ctx.from?.id;
                 if (recentUserId && resolvedTask) {
                     await store.setRecentTaskContext(recentUserId, {
@@ -708,7 +716,13 @@ export function registerCallbacks(bot, adapter, pipeline) {
             });
 
             if (result.type === 'task') {
-                await editWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                const { text: receipt, replyExtra } = await buildFreeformPipelineResultReceipt({
+                    result,
+                    store: storeApi,
+                    userId,
+                    projects: availableProjects,
+                });
+                await editWithMarkdown(ctx, truncateMessage(receipt, 4000), replyExtra);
                 const recentUserId = ctx.from?.id;
                 if (recentUserId && resolvedTask) {
                     await store.setRecentTaskContext(recentUserId, {
@@ -833,7 +847,13 @@ export function registerCallbacks(bot, adapter, pipeline) {
             const result = await processPipelineMessage(pending.originalMessage, pipelineOptions);
 
             if (result.type === 'task') {
-                await editWithMarkdown(ctx, truncateMessage(result.confirmationText, 4000));
+                const { text, replyExtra } = await buildFreeformPipelineResultReceipt({
+                    result,
+                    store: storeApi,
+                    userId: ctx.from?.id,
+                    projects: pipelineOptions.availableProjects,
+                });
+                await editWithMarkdown(ctx, truncateMessage(text, 4000), replyExtra);
                 const checklistUserId = ctx.from?.id;
                 const action = result.actions?.[0];
                 if (checklistUserId && action) {
