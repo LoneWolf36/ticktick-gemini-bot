@@ -52,6 +52,7 @@ test('operation receipt accepts valid blocked and applied outcomes', () => {
         operationType: 'update',
         nextAction: 'none',
         applied: true,
+        results: [{ status: 'succeeded' }],
     });
 
     assert.equal(validateOperationReceipt(applied).valid, true);
@@ -108,6 +109,16 @@ test('operation receipt rejects dry-run or unchanged applied outcomes', () => {
     assert.equal(unchangedApplied.valid, false);
     assert.match(unchangedApplied.errors.join('\n'), /applied receipts require changed=true/);
     assert.match(unchangedApplied.errors.join('\n'), /changed=false cannot use applied status/);
+
+    const missingSucceededResult = validateOperationReceipt(receipt({
+        status: 'applied',
+        changed: true,
+        applied: true,
+        scope: 'ticktick_live',
+        results: [{ status: 'failed' }],
+    }));
+    assert.equal(missingSucceededResult.valid, false);
+    assert.match(missingSucceededResult.errors.join('\n'), /at least one succeeded result/);
 });
 
 test('operation receipt rejects applied outcomes outside live exact or configured destinations', () => {
@@ -116,6 +127,7 @@ test('operation receipt rejects applied outcomes outside live exact or configure
         scope: 'local_review_queue',
         changed: true,
         applied: true,
+        results: [{ status: 'succeeded' }],
     }));
     assert.equal(wrongScope.valid, false);
     assert.match(wrongScope.errors.join('\n'), /applied receipts must describe ticktick_live scope/);
@@ -126,6 +138,7 @@ test('operation receipt rejects applied outcomes outside live exact or configure
             scope: 'ticktick_live',
             changed: true,
             applied: true,
+            results: [{ status: 'succeeded' }],
             destination: { confidence },
         }));
         assert.equal(result.valid, false, `${confidence} destination should not apply`);

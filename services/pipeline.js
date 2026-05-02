@@ -184,6 +184,7 @@ function buildOperationReceipt(context, {
         ...(Number.isInteger(succeeded) ? { succeeded } : {}),
         ...(Number.isInteger(failed) ? { failed } : {}),
         ...(Number.isInteger(rolledBack) ? { rolledBack } : {}),
+        ...(applied ? { results: [{ status: 'succeeded' }] } : {}),
     };
 
     return assertValidOperationReceipt(receipt);

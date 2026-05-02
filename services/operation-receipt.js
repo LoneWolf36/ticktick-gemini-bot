@@ -225,6 +225,12 @@ function validateStateInvariants(receipt, errors) {
         errors.push('applied receipts must describe ticktick_live scope');
     }
 
+    if (receipt.status === 'applied') {
+        if (!Array.isArray(receipt.results) || !receipt.results.some((item) => item && item.status === 'succeeded')) {
+            errors.push('applied receipts require at least one succeeded result');
+        }
+    }
+
     if (receipt.changed === false && receipt.status === 'applied') {
         errors.push('changed=false cannot use applied status');
     }

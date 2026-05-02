@@ -2,7 +2,9 @@
 import cron from 'node-cron';
 import * as store from './store.js';
 import { computeNextAttemptAt } from './store.js';
+import { validateOperationReceipt } from './operation-receipt.js';
 import { buildAutoApplyNotification, buildFieldDiff, buildUndoEntry, userTimeString, filterProcessedThisWeek, sendWithMarkdown } from './shared-utils.js';
+import { persistPipelineUndoEntries } from './pipeline-undo-persistence.js';
 import { logSummarySurfaceEvent } from './summary-surfaces/index.js';
 
 /**
@@ -322,9 +324,9 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
  * @param {number} [options.maxRetries=5] - Max intents to retry per invocation
  * @returns {{ retried: number, failed: number, remaining: number }}
  */
-export async function retryDeferredIntents({ adapter, pipeline, bot, gemini } = {}, options = {}) {
+export async function retryDeferredIntents({ adapter, pipeline, bot, gemini, store: storeApi = store } = {}, options = {}) {
     const { maxRetries = 5 } = options;
-    const deferred = store.getDeferredPipelineIntents();
+    const deferred = storeApi.getDeferredPipelineIntents();
     if (deferred.length === 0) return { retried: 0, failed: 0, givenUp: 0, remaining: 0 };
 
     // Quick health check — if the API is still down, skip retry entirely
@@ -342,10 +344,40 @@ export async function retryDeferredIntents({ adapter, pipeline, bot, gemini } = 
     let givenUp = 0;
     const notifications = [];
 
+    function redactDeferredEntry(entry) {
+        return {
+            id: entry?.id,
+            retryCount: entry?.retryCount || 0,
+            failureType: entry?.failureType || null,
+            reason: normalizeDeferredFailureReason(entry?.reason),
+            nextAttemptAt: entry?.nextAttemptAt || null,
+            attempts: entry?.retryCount || 0,
+        };
+    }
+
+    function normalizeDeferredFailureReason(reason) {
+        return ['exhausted_retries', 'invalid_receipt', 'exception', 'invalid_entry', 'not_due', 'quota_exhausted']
+            .includes(reason)
+            ? reason
+            : 'deferred_retry_failed';
+    }
+
+    function isValidAppliedReceipt(receipt) {
+        const validation = validateOperationReceipt(receipt);
+        return validation.valid
+            && receipt.status === 'applied'
+            && receipt.applied === true
+            && receipt.changed === true
+            && receipt.scope === 'ticktick_live'
+            && Array.isArray(receipt.results)
+            && receipt.results.some((item) => item?.status === 'succeeded');
+    }
+
     for (const entry of batch) {
         if (!entry.userMessage) {
             // Malformed entry — remove silently
-            await store.removeDeferredPipelineIntent(entry.id);
+            await storeApi.removeDeferredPipelineIntent(entry.id);
+            await storeApi.addFailedDeferredIntent(redactDeferredEntry({ ...entry, reason: 'invalid_entry' }));
             continue;
         }
 
@@ -369,27 +401,20 @@ export async function retryDeferredIntents({ adapter, pipeline, bot, gemini } = 
         // Give up after 3 attempts — move to DLQ
         const currentRetryCount = entry.retryCount || 0;
         if (currentRetryCount >= 3) {
-            await store.removeDeferredPipelineIntent(entry.id);
-            await store.addFailedDeferredIntent({
-                ...entry,
-                reason: entry.failure?.summary || 'exhausted_retries',
-                attempts: currentRetryCount,
-            });
+            await storeApi.removeDeferredPipelineIntent(entry.id);
+            await storeApi.addFailedDeferredIntent(redactDeferredEntry({ ...entry, reason: 'exhausted_retries', attempts: currentRetryCount }));
             givenUp++;
             console.log(`[DeferredQueue] ${JSON.stringify({
                 eventType: 'deferred.given_up',
                 taskId: entry.id,
-                reason: entry.failure?.summary || 'exhausted_retries',
+                reason: 'exhausted_retries',
                 attempts: currentRetryCount,
             })}`);
             if (bot) {
-                const chatId = store.getChatId();
+                const chatId = storeApi.getChatId();
                 if (chatId) {
                     try {
-                        const desc = entry.userMessage.slice(0, 80);
-                        await sendWithMarkdown(bot.api, chatId,
-                            `Failed to process after 3 attempts: ${desc}... Please retry manually.`
-                        );
+                        await sendWithMarkdown(bot.api, chatId, '❌ Deferred task failed after retries. Please retry manually.');
                     } catch {
                         // best effort
                     }
@@ -409,57 +434,61 @@ export async function retryDeferredIntents({ adapter, pipeline, bot, gemini } = 
                 workStyleMode: entry.workStyleMode || undefined,
             });
 
-            if (result.type === 'task') {
-                await store.removeDeferredPipelineIntent(entry.id);
+            const receipt = result?.operationReceipt;
+            if (result.type === 'task' && isValidAppliedReceipt(receipt)) {
+                const { undoCount } = await persistPipelineUndoEntries({ result, store: storeApi, userId: entry.userId, batchPrefix: 'undo' });
+                await storeApi.removeDeferredPipelineIntent(entry.id);
                 retried++;
-                notifications.push(`Retried: ${result.actions?.[0]?.title || entry.userMessage.slice(0, 40)}`);
+                notifications.push(undoCount > 0
+                    ? '✅ Deferred task applied. Undo available.'
+                    : '✅ Deferred task applied.');
             } else if (result.type === 'error' && result.failure?.failureCategory === 'transient') {
                 // Still transient — increment retry count, compute next attempt, and leave in queue
                 const nextRetryCount = currentRetryCount + 1;
-                const nextAttemptAt = Date.now() + Math.min(
-                    2 ** Math.max(0, nextRetryCount) * 60 * 1000,
-                    15 * 60 * 1000,
-                );
+                const nextAttemptAt = typeof storeApi.computeNextAttemptAt === 'function'
+                    ? storeApi.computeNextAttemptAt(nextRetryCount)
+                    : computeNextAttemptAt(nextRetryCount);
                 entry.retryCount = nextRetryCount;
                 entry.nextAttemptAt = nextAttemptAt;
-                await store.updateDeferredPipelineIntent(entry);
+                await storeApi.updateDeferredPipelineIntent(entry);
                 failed++;
             } else {
                 // Permanent failure or non-task result — remove to avoid infinite retry
-                await store.removeDeferredPipelineIntent(entry.id);
+                await storeApi.removeDeferredPipelineIntent(entry.id);
                 failed++;
-                notifications.push(`❌ Failed permanently: ${entry.userMessage.slice(0, 40)}`);
+                await storeApi.addFailedDeferredIntent(redactDeferredEntry({ ...entry, reason: 'invalid_receipt', attempts: currentRetryCount }));
+                notifications.push('❌ Deferred task could not be processed. Please retry manually.');
             }
         } catch (err) {
-            console.error(`[Scheduler] Deferred retry failed unexpectedly: ${err.message}`);
+            console.error(`[Scheduler] Deferred retry failed unexpectedly: ${err?.name || 'Error'}`);
             entry.retryCount = (entry.retryCount || 0) + 1;
             entry.nextAttemptAt = computeNextAttemptAt(entry.retryCount);
             if (entry.retryCount >= 3) {
-                await store.addFailedDeferredIntent({ ...entry, finalError: err.message });
-                await store.removeDeferredPipelineIntent(entry.id);
-                const chatId = store.getChatId();
+                await storeApi.addFailedDeferredIntent(redactDeferredEntry({ ...entry, reason: 'exception', attempts: entry.retryCount }));
+                await storeApi.removeDeferredPipelineIntent(entry.id);
+                const chatId = storeApi.getChatId();
                 if (chatId && bot?.api) {
                     try {
-                        await sendWithMarkdown(bot.api, chatId, `Failed to process after 3 attempts: ${entry.userMessage.slice(0, 100)}. Please retry manually.`);
+                        await sendWithMarkdown(bot.api, chatId, '❌ Deferred task failed after retries. Please retry manually.');
                     } catch (_) {
                         // best effort
                     }
                 }
                 givenUp++;
             } else {
-                await store.updateDeferredPipelineIntent(entry);
+                await storeApi.updateDeferredPipelineIntent(entry);
                 failed++;
             }
         }
     }
 
-    const remaining = store.getDeferredPipelineIntents().length;
+    const remaining = storeApi.getDeferredPipelineIntents().length;
 
     if (notifications.length > 0 && bot) {
-        const chatId = store.getChatId();
+        const chatId = storeApi.getChatId();
         if (chatId) {
             try {
-                const msg = `🔄 *Deferred Intent Retry*\n${notifications.join('\n')}` +
+                const msg = `🔄 *Deferred Retry*\n${notifications.join('\n')}` +
                     (remaining > 0 ? `\n\n${remaining} intent(s) still queued.` : '');
                 await sendWithMarkdown(bot.api, chatId, msg);
             } catch {
@@ -641,7 +670,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
             try {
                 await retryDeferredIntents({ adapter, pipeline, bot, gemini });
             } catch (err) {
-                console.error('[DeferredRetry] Poll-cycle retry error:', err.message);
+                console.error('[DeferredRetry] Poll-cycle retry error:', err?.name || 'Error');
             }
         }
 

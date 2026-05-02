@@ -348,7 +348,7 @@ test('retryDeferredIntents retries and removes successful intent', async () => {
         pipeline: {
             processMessageWithContext: async (msg, opts) => {
                 processCalls.push({ msg, opts });
-                return { type: 'task', actions: [{ title: 'Buy groceries' }] };
+                return { type: 'task', actions: [{ title: 'Buy groceries' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-1', results: [{ status: 'succeeded' }] } };
             },
         },
         bot: { api: { sendMessage: async () => {} } },
@@ -431,7 +431,7 @@ test('retryDeferredIntents removes malformed entries without userMessage', async
     const result = await retryDeferredIntents({
         adapter: { listActiveTasks: async () => [] },
         pipeline: {
-            processMessage: async () => ({ type: 'task', actions: [{ title: 'Valid task' }] }),
+            processMessage: async () => ({ type: 'task', actions: [{ title: 'Valid task' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-2', results: [{ status: 'succeeded' }] } }),
         },
     });
 
@@ -451,7 +451,7 @@ test('retryDeferredIntents respects maxRetries batch limit', async () => {
         pipeline: {
             processMessage: async () => {
                 callCount++;
-                return { type: 'task', actions: [{ title: 'ok' }] };
+                return { type: 'task', actions: [{ title: 'ok' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-5', results: [{ status: 'succeeded' }] } };
             },
         },
     }, { maxRetries: 3 });
@@ -470,7 +470,7 @@ test('retryDeferredIntents sends notification to user on success', async () => {
     const result = await retryDeferredIntents({
         adapter: { listActiveTasks: async () => [] },
         pipeline: {
-            processMessage: async () => ({ type: 'task', actions: [{ title: 'Notify me' }] }),
+            processMessage: async () => ({ type: 'task', actions: [{ title: 'Notify me' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-4', results: [{ status: 'succeeded' }] } }),
         },
         bot: {
             api: {
@@ -481,8 +481,8 @@ test('retryDeferredIntents sends notification to user on success', async () => {
 
     assert.equal(result.retried, 1);
     assert.equal(sentMessages.length, 1);
-    assert.match(sentMessages[0], /Deferred Intent Retry/);
-    assert.match(sentMessages[0], /Retried/);
+    assert.match(sentMessages[0], /Deferred Retry/);
+    assert.match(sentMessages[0], /applied/);
 });
 
 test('retryDeferredIntents prefers processMessageWithContext over processMessage', async () => {
@@ -495,7 +495,7 @@ test('retryDeferredIntents prefers processMessageWithContext over processMessage
         pipeline: {
             processMessageWithContext: async () => {
                 usedWithContext = true;
-                return { type: 'task', actions: [{ title: 'ok' }] };
+                return { type: 'task', actions: [{ title: 'ok' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-6', results: [{ status: 'succeeded' }] } };
             },
             processMessage: async () => {
                 throw new Error('should not be called');
@@ -517,7 +517,7 @@ test('retryDeferredIntents falls back to processMessage when processMessageWithC
         pipeline: {
             processMessage: async () => {
                 usedFallback = true;
-                return { type: 'task', actions: [{ title: 'ok' }] };
+                return { type: 'task', actions: [{ title: 'ok' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-7', results: [{ status: 'succeeded' }] } };
             },
         },
     });
@@ -585,7 +585,7 @@ test('retryDeferredIntents skips items that are not yet due', async () => {
         pipeline: {
             processMessage: async () => {
                 called = true;
-                return { type: 'task', actions: [{ title: 'ok' }] };
+                return { type: 'task', actions: [{ title: 'ok' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-8', results: [{ status: 'succeeded' }] } };
             },
         },
     });
@@ -605,7 +605,7 @@ test('retryDeferredIntents processes items that are due now', async () => {
     const result = await retryDeferredIntents({
         adapter: { listActiveTasks: async () => [] },
         pipeline: {
-            processMessage: async () => ({ type: 'task', actions: [{ title: 'ok' }] }),
+            processMessage: async () => ({ type: 'task', actions: [{ title: 'ok' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-9', results: [{ status: 'succeeded' }] } }),
         },
     });
 
@@ -625,7 +625,7 @@ test('retryDeferredIntents gives up after 3 attempts and moves to DLQ', async ()
     const result = await retryDeferredIntents({
         adapter: { listActiveTasks: async () => [] },
         pipeline: {
-            processMessage: async () => ({ type: 'task', actions: [{ title: 'ok' }] }),
+            processMessage: async () => ({ type: 'task', actions: [{ title: 'ok' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-10', results: [{ status: 'succeeded' }] } }),
         },
         bot: { api: { sendMessage: async () => {} } },
     });
@@ -730,9 +730,9 @@ test('retryDeferredIntents moves unexpected exception to DLQ after 3 attempts an
     const dlq = store.getFailedDeferredIntents();
     assert.equal(dlq.length, 1);
     assert.equal(dlq[0].id, entry.id);
-    assert.equal(dlq[0].finalError, 'Unexpected crash dlq');
+    assert.equal(dlq[0].reason, 'exception');
     assert.equal(sentMessages.length, 1);
-    assert.match(sentMessages[0], /Failed to process after 3 attempts/);
+    assert.match(sentMessages[0], /Deferred task failed after retries/i);
 });
 
 test('store: addFailedDeferredIntent caps at 50 items FIFO', async () => {

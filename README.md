@@ -164,6 +164,8 @@ Review buttons use consistent action words: `Apply` applies a proposed change, `
 
 Successful task-writing messages return a Telegram receipt that names the task, shows old → new field changes when a snapshot is available, and includes an inline `↩️ Undo` button when rollback metadata was safely stored. `/undo` uses the same rollback path. Completed or deleted tasks may be restored by recreating the saved snapshot because TickTick does not expose a reliable uncomplete operation.
 
+Deferred retries use the same trust boundary: only validated applied receipts are treated as success, undo entries are persisted on replay when available, and retry/DLQ notifications stay generic without raw task text.
+
 ---
 
 ## Deployment

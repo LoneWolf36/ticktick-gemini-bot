@@ -79,6 +79,7 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - `services/pipeline-context.js` — Carries structured context through the pipeline execution stages.
 - `services/pipeline-observability.js` — Pipeline execution metrics and logging.
 - `services/operation-receipt.js` — Shared operation outcome vocabulary and invariant validation for truthful user-visible state.
+- `services/pipeline-undo-persistence.js` — Shared undo persistence helper for pipeline/batch receipts and deferred retry recovery.
 - `services/schemas.js` — Structured data schemas for intent actions and normalized actions.
 - `services/shared-utils.js` — Shared utility functions used across service modules.
 - `services/execution-prioritization.js` — Leverage-based ranking, priority inference, and recommendation result building for task prioritization.

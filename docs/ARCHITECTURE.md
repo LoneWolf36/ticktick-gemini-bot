@@ -85,7 +85,7 @@ UptimeRobot or similar should ping this endpoint every 5 minutes to keep free-ti
 
 ### Deferred Queue with Backoff and DLQ
 
-When the TickTick API is unavailable, the pipeline defers the normalized intent to `services/store.js` (`deferredPipelineIntents`). The scheduler retries these on startup and every poll cycle with exponential backoff. Intents that fail more than 3 retries are removed permanently (DLQ behavior) and the user is notified. This ensures no parsed intent is lost during transient outages.
+When the TickTick API is unavailable, the pipeline defers the normalized intent to `services/store.js` (`deferredPipelineIntents`). The scheduler retries these on startup and every poll cycle with exponential backoff. Deferred retry now requires a valid applied `OperationReceipt` before treating a replay as success, persists undo entries through `services/pipeline-undo-persistence.js`, and sends only redacted trust-boundary notifications. Intents that fail more than 3 retries are removed permanently (DLQ behavior) and the user is notified with generic copy only. This ensures no parsed intent is lost during transient outages.
 
 ## UX Flows
 

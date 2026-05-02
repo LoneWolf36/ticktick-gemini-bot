@@ -502,6 +502,10 @@ batch shape is unsupported (mixed create+mutation, multi-mutation).</p>
 <dt><a href="#createPipelineObservability">createPipelineObservability([options])</a> ⇒ <code>Object</code></dt>
 <dd><p>Creates a pipeline observability instance for emitting telemetry.</p>
 </dd>
+<dt><a href="#persistPipelineUndoEntries">persistPipelineUndoEntries(params)</a> ⇒ <code>Promise.&lt;Object&gt;</code></dt>
+<dd><p>Persist undo entries for successful pipeline results.
+Persistence failure is best-effort only; per-entry errors are collected and never thrown.</p>
+</dd>
 <dt><a href="#parseNonNegativeIntEnv">parseNonNegativeIntEnv(value, fallback)</a> ⇒ <code>number</code></dt>
 <dd><p>Parses a non-negative integer from an environment variable with a fallback.</p>
 </dd>
@@ -2694,6 +2698,23 @@ Emits a latency histogram event for a pipeline stage.
 | payload | <code>Object</code> | Event payload |
 | payload.stage | <code>string</code> | Stage name |
 | payload.durationMs | <code>number</code> | Duration in milliseconds |
+
+<a name="persistPipelineUndoEntries"></a>
+
+## persistPipelineUndoEntries(params) ⇒ <code>Promise.&lt;Object&gt;</code>
+Persist undo entries for successful pipeline results.
+Persistence failure is best-effort only; per-entry errors are collected and never thrown.
+
+**Kind**: global function  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Persistence summary.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| params | <code>Object</code> |  |  |
+| params.result | <code>Object</code> |  | Pipeline result containing results[]. |
+| params.store | <code>Object</code> |  | Store module with addUndoEntry(). |
+| [params.userId] | <code>string</code> \| <code>number</code> |  | Optional user id attached to undo entries. |
+| [params.batchPrefix] | <code>string</code> | <code>&quot;&#x27;undo&#x27;&quot;</code> | Prefix for generated batch id. |
 
 <a name="parseNonNegativeIntEnv"></a>
 

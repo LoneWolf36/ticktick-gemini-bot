@@ -53,6 +53,7 @@ function buildReorgApplyReceipt(summary, { attemptedActions = 0 } = {}) {
             dryRun: false,
             applied: true,
             fallbackUsed: false,
+            results: [{ status: 'succeeded' }],
             destination: { confidence: 'configured' },
             metadata: { attempted, succeeded, failed, ticktickChanged, localOnly, undoable },
         });

@@ -1,5 +1,6 @@
 import { InlineKeyboard } from 'grammy';
-import { buildUndoEntryFromRollbackStep, buildFreeformReceipt } from '../services/shared-utils.js';
+import { buildFreeformReceipt } from '../services/shared-utils.js';
+import { persistPipelineUndoEntries } from '../services/pipeline-undo-persistence.js';
 
 /**
  * Build a freeform Telegram receipt and persist undo entries when possible.
@@ -18,22 +19,8 @@ export async function buildFreeformPipelineResultReceipt({ result, store, userId
         ? `${result?.confirmationText || 'Done.'} (preview)`
         : (buildFreeformReceipt(result, { projects }) || result?.confirmationText || 'Done.');
 
-    if (!result?.dryRun && store?.addUndoEntry) {
-        const batchId = `undo_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-        let undoCount = 0;
-
-        for (const record of result.results || []) {
-            if (record.status !== 'succeeded' || !record.rollbackStep) continue;
-            try {
-                const entry = buildUndoEntryFromRollbackStep(record.rollbackStep, record.action);
-                entry.batchId = batchId;
-                if (userId !== undefined) entry.userId = userId;
-                await store.addUndoEntry(entry);
-                undoCount++;
-            } catch (err) {
-                console.error(`[FreeformReceipt] undo persistence failed: ${err.message}`);
-            }
-        }
+    if (!result?.dryRun) {
+        const { undoCount } = await persistPipelineUndoEntries({ result, store, userId, batchPrefix: 'undo' });
 
         if (undoCount > 0) {
             replyExtra.reply_markup = new InlineKeyboard().text('↩️ Undo', 'undo:last');
