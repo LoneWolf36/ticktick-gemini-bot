@@ -16,7 +16,7 @@ An AI-powered Telegram bot that connects to your TickTick task manager and acts 
 - **Urgent mode** — `/urgent on` switches to sharper tone with deadline-first prioritization; `/urgent off` returns to standard baseline
 - **Daily morning briefing** — 3-4 prioritized focus items, leading with what you've been avoiding
 - **Weekly accountability digest** — honest review of wins, avoidance patterns, and next week's top 3
-- **Proactive polling** — detects new tasks every 5 minutes and notifies you
+- **Proactive polling** — detects new tasks every 5 minutes; summary jobs stay read-only, while poll auto-apply and deferred retry can mutate TickTick through the same trust boundary
 - **Undo** — revert the latest undoable free-form, review, reorg, or auto-applied change with `/undo` or the inline undo button on task receipts
 - **Redis-backed persistence** — state survives server restarts and cloud redeploys
 - **Render deployment ready** — webhook mode, `render.yaml` blueprint included
@@ -48,9 +48,9 @@ Telegram Message
    TickTick API
 
 ──────────────────────────────────────────
-  Parallel (non-write) summary paths:
+  Parallel summary paths:
     Scheduler (cron) ──→ Briefing  │  Weekly digest  │  Proactive polling
-    All read-only — no TickTick mutations
+    Briefing/digest jobs stay read-only; poll auto-apply/deferred retry can mutate TickTick through the same trust boundary
 ```
 
 ## Setup
@@ -281,9 +281,9 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 - **Failure boundaries:** When the TickTick API is unavailable, parsed intent is preserved and the user is notified — no silent data loss. When Gemini is unavailable, the pipeline fails closed rather than guessing.
 - **Future simplification (not yet implemented):** Text-based schema instructions can be replaced with Gemini's native `responseSchema` for stronger structural guarantees. The current intent extraction path works; replacement is future work.
 
-### Parallel (non-write) paths
+### Parallel summary paths
 
-- **Scheduler (cron):** Runs proactive polling (detects new TickTick tasks every 5 min), daily morning briefings, weekly accountability digests, and store pruning. These are read-only — they never mutate TickTick state.
+- **Scheduler (cron):** Runs briefing, weekly digest, and store-pruning jobs as read-only summaries. Proactive polling is separate: its read step is read-only, but poll auto-apply and deferred retry can write through the same trust boundary when configured.
 - **Briefing & weekly:** Use separate Gemini prompts optimized for summarization and accountability, not the write-path prompt.
 
 ---

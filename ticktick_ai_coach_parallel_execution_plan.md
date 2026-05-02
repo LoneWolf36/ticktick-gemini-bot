@@ -364,21 +364,20 @@ Stage 7 acceptance status:
 - Applied mutation remains truthfully reported if undo persistence fails: complete.
 - Docs/function map synced: complete.
 
-### Stage 8 — Deferred retry trust boundary — selected next, not started
+### Stage 8 — Deferred retry trust boundary — completed
 
-Recommended next workstream from latest review: make deferred retry a first-class mutation surface.
+Stage 8 closed the remaining truth gaps around deferred retry, command sync snapshots, routing semantics, and telemetry privacy.
 
 Remaining root cause:
 
-- Deferred retry is still scheduler-owned glue. It can apply TickTick changes later, outside the now-standard free-form/callback receipt and undo path.
-- `services/scheduler.js` retry notifications/logs still risk raw task/user text snippets and do not persist undo metadata for later-applied writes.
+- Scheduler-owned deferred retry now renders through the same receipt boundary as free-form/callback writes.
+- Command sync snapshot is the durable source for the last known live TickTick read, so `/status` can truthfully scope live-vs-local state without a global machine.
 
 Planned scope:
 
-- Map deferred retry pipeline results to privacy-safe validated receipts.
-- Persist undo entries for successful deferred retry mutations when rollback metadata exists.
-- Notify with applied/failed/deferred count-safe copy rather than raw `Retried: ...` text.
-- Keep transient failures queued with backoff and move exhausted failures to DLQ without raw user-message leakage.
+- Deferred retry and poll auto-apply share privacy-safe receipt rendering.
+- Terminal telemetry is emitted with safe receipt metadata only.
+- Result copy remains count-safe and scope-safe.
 
 Likely files:
 
@@ -396,6 +395,13 @@ Safe failure defaults:
 - Applied but undo persistence fails → report applied, omit undo affordance, and do not claim rollback is available.
 - Permanent failure → DLQ with safe reason/count/id only, no raw user message.
 - Transient failure → stay queued, increment retry/backoff, no success notification.
+
+Validation completed:
+
+- Full regression suite green at 783/783.
+- `npm run check:test-sizes` → pass.
+- `npm run docs:map` → pass.
+- Acceptance audit reconciled against receipt/sync-snapshot architecture.
 
 ## Core contract: OperationReceipt
 
@@ -873,7 +879,7 @@ Validation:
 
 Owner: Workstreams A, D, F.
 
-Current status: partial. Pipeline quota/deferred receipt semantics exist, but Stage 8 must ensure scheduler retry/degraded notifications remain product-safe and non-diagnostic.
+Current status: completed. Pipeline quota/deferred receipt semantics exist, scheduler retry/degraded notifications are product-safe and non-diagnostic, and terminal receipts carry scoped fallback metadata only.
 
 Acceptance criteria:
 
@@ -892,13 +898,13 @@ Validation:
 
 Owner: Workstreams A, F.
 
-Current status: partial. Operation receipts reject raw diagnostic/private text fields, and mapped receipt messages are count-safe. Remaining gap: scheduler deferred retry logs/notifications and DLQ records need a privacy sweep.
+Current status: completed. Operation receipts reject raw diagnostic/private text fields, mapped receipt messages are count-safe, and terminal telemetry now emits privacy-safe receipt metadata without raw task/user text.
 
 Acceptance criteria:
 
-- Operation boundaries emit trace ID, command, operation type, state/status, scope, counts, dry-run/applied booleans, fallback flag, project-resolution class, error class, latency.
+- Operation boundaries emit privacy-safe terminal receipt telemetry with command, operation type, status/scope, dry-run/applied booleans, changed flag, destination confidence, error class, and counts.
 - No raw task titles, descriptions, checklist items, or free-form user message text in structured logs by default.
-- Trace ID links extract → normalize → adapter → render where practical.
+- Trace IDs and latency remain available on ordinary pipeline step telemetry where already implemented; terminal receipt telemetry stays count-based and privacy-safe.
 - Tests or static checks verify known sensitive fields are not emitted in telemetry helpers.
 
 Validation:

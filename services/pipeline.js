@@ -196,6 +196,40 @@ function buildOperationReceipt(context, {
     return assertValidOperationReceipt(receipt);
 }
 
+function buildTerminalTelemetryMetadata(context, receipt, extra = {}) {
+    return {
+        requestId: context?.requestId ?? null,
+        entryPoint: context?.entryPoint ?? null,
+        command: receipt?.command ?? null,
+        operationType: receipt?.operationType ?? null,
+        actionCount: Number.isInteger(extra.actionCount) ? extra.actionCount : null,
+        status: receipt?.status ?? null,
+        scope: receipt?.scope ?? null,
+        dryRun: receipt?.dryRun ?? null,
+        applied: receipt?.applied ?? null,
+        changed: receipt?.changed ?? null,
+        destinationConfidence: receipt?.destination?.confidence ?? null,
+        errorClass: receipt?.errorClass ?? null,
+        succeeded: Number.isInteger(receipt?.succeeded) ? receipt.succeeded : null,
+        failed: Number.isInteger(receipt?.failed) ? receipt.failed : null,
+        rolledBack: Number.isInteger(receipt?.rolledBack) ? receipt.rolledBack : null,
+        localQueueCount: Number.isInteger(extra.localQueueCount) ? extra.localQueueCount : null,
+        deferredQueueCount: Number.isInteger(extra.deferredQueueCount) ? extra.deferredQueueCount : null,
+        fallbackUsed: receipt?.fallbackUsed ?? null,
+    };
+}
+
+async function emitTerminalOperationTelemetry(telemetry, context, receipt, extra = {}) {
+    if (!telemetry?.emit || !receipt) return;
+
+    await telemetry.emit(context, {
+        eventType: 'pipeline.operation.terminal',
+        step: 'result',
+        status: receipt.status === 'applied' ? 'success' : 'failure',
+        metadata: buildTerminalTelemetryMetadata(context, receipt, extra),
+    });
+}
+
 function resolveReceiptCommand(context) {
     const entryPoint = String(context?.entryPoint || '').toLowerCase();
     const mode = String(context?.mode || '').toLowerCase();
@@ -264,6 +298,18 @@ function mapFailureClassToErrorClass(failureClass, details = {}) {
     if (failureClass === FAILURE_CLASSES.QUOTA) return 'model_unavailable';
     if (details?.deferredIntent) return 'ticktick_unavailable';
     if (failureClass === FAILURE_CLASSES.ADAPTER) return 'ticktick_unavailable';
+    return 'unknown';
+}
+
+function mapTerminalFailureClassToErrorClass(failureClass, terminalFailure = {}) {
+    if (failureClass === FAILURE_CLASSES.VALIDATION) {
+        return 'validation';
+    }
+    if (failureClass === FAILURE_CLASSES.QUOTA) return 'model_unavailable';
+    if (failureClass === FAILURE_CLASSES.ADAPTER) return 'ticktick_unavailable';
+    if (failureClass === FAILURE_CLASSES.ROLLBACK) return 'routing';
+    if (failureClass === FAILURE_CLASSES.UNEXPECTED) return 'unknown';
+    if (terminalFailure?.retryable === false && terminalFailure?.stage === 'intent') return 'model_unavailable';
     return 'unknown';
 }
 
@@ -2126,6 +2172,32 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     executionResult.terminalFailure.userMessage = '⚠️ TickTick API is unavailable right now. Parsed intent was saved for retry.';
                 }
 
+                const terminalReceipt = {
+                    status: deferredIntent ? 'deferred' : 'failed',
+                    scope: deferredIntent ? 'deferred_queue' : 'system',
+                    command: resolveReceiptCommand(context),
+                    operationType: inferOperationType(validActions),
+                    nextAction: deferredIntent ? 'wait' : 'retry',
+                    changed: !!deferredIntent,
+                    dryRun: isDryRun,
+                    applied: false,
+                    fallbackUsed: !!deferredIntent,
+                    message: deferredIntent
+                        ? 'Parsed intent was saved for retry.'
+                        : 'Task updates failed.',
+                    errorClass: mapTerminalFailureClassToErrorClass(
+                        executionResult.terminalFailure.failureClass,
+                        executionResult.terminalFailure,
+                    ),
+                    failed: Number.isInteger(executionResult.terminalFailure.failureCount)
+                        ? executionResult.terminalFailure.failureCount
+                        : null,
+                    rolledBack: !!executionResult.terminalFailure.rolledBack,
+                };
+                await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
+                    actionCount: validActions.length,
+                });
+
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'error',
                     status: 'failure',
@@ -2183,6 +2255,35 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             const confirmationText = deferredCreateFragmentClarification
                 ? `${baseConfirmationText}\n\n${deferredCreateFragmentClarification.question}`
                 : baseConfirmationText;
+            const terminalReceipt = buildOperationReceipt(context, successCount > 0 ? {
+                status: 'applied',
+                scope: 'ticktick_live',
+                command: resolveReceiptCommand(context),
+                operationType: inferOperationType(validActions),
+                nextAction: 'none',
+                changed: true,
+                dryRun: false,
+                applied: true,
+                fallbackUsed: false,
+                message: `Applied ${successCount} task action${successCount === 1 ? '' : 's'}.`,
+                succeeded: successCount,
+            } : {
+                status: skippedActions.length > 0 ? 'blocked' : 'failed',
+                scope: 'system',
+                command: resolveReceiptCommand(context),
+                operationType: inferOperationType(validActions),
+                nextAction: skippedActions.length > 0 ? 'retry' : 'none',
+                changed: false,
+                dryRun: false,
+                applied: false,
+                fallbackUsed: false,
+                message: skippedActions.length > 0
+                    ? 'No executable actions were available.'
+                    : 'No task actions were applied.',
+            });
+            await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
+                actionCount: validActions.length,
+            });
             context = finalizePipelineContext(context, requestStartedAt, {
                 resultType: 'task',
                 status: 'success',
@@ -2209,35 +2310,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 errors: allErrors,
                 skippedActions,
                 confirmationText,
-                ...(successCount > 0 ? {
-                    operationReceipt: buildOperationReceipt(context, {
-                        status: 'applied',
-                        scope: 'ticktick_live',
-                        command: resolveReceiptCommand(context),
-                        operationType: inferOperationType(validActions),
-                        nextAction: 'none',
-                        changed: true,
-                        dryRun: false,
-                        applied: true,
-                        fallbackUsed: false,
-                        message: `Applied ${successCount} task action${successCount === 1 ? '' : 's'}.`,
-                    }),
-                } : {
-                    operationReceipt: buildOperationReceipt(context, {
-                        status: skippedActions.length > 0 ? 'blocked' : 'failed',
-                        scope: skippedActions.length > 0 ? 'system' : 'system',
-                        command: resolveReceiptCommand(context),
-                        operationType: inferOperationType(validActions),
-                        nextAction: skippedActions.length > 0 ? 'retry' : 'none',
-                        changed: false,
-                        dryRun: false,
-                        applied: false,
-                        fallbackUsed: false,
-                        message: skippedActions.length > 0
-                            ? 'No executable actions were available.'
-                            : 'No task actions were applied.',
-                    }),
-                }),
+                operationReceipt: terminalReceipt,
                 requestId: context.requestId,
                 entryPoint: context.entryPoint,
                 mode: context.mode,
@@ -2287,6 +2360,26 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             console.error(`[Pipeline] Unhandled pipeline error: ${getSafeErrorName(error)}`);
 
             if (context) {
+                const terminalReceipt = buildOperationReceipt(context, {
+                    status: deferredAiQuotaIntent ? 'deferred' : (isDryRun ? 'blocked' : 'failed'),
+                    scope: deferredAiQuotaIntent ? 'deferred_queue' : 'system',
+                    command: resolveReceiptCommand(context),
+                    operationType: 'none',
+                    nextAction: deferredAiQuotaIntent ? 'wait' : (isDryRun ? 'retry' : (failureClass === FAILURE_CLASSES.QUOTA ? 'wait' : 'retry')),
+                    changed: !!deferredAiQuotaIntent,
+                    dryRun: isDryRun,
+                    applied: false,
+                    fallbackUsed: !!deferredAiQuotaIntent,
+                    message: deferredAiQuotaIntent
+                        ? 'Parsed intent was saved for retry.'
+                        : 'Task processing failed.',
+                    errorClass: mapFailureClassToErrorClass(failureClass, { deferredIntent: deferredAiQuotaIntent }),
+                });
+                await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
+                    actionCount: Number.isInteger(context?.lifecycle?.normalizedActions?.length)
+                        ? context.lifecycle.normalizedActions.length
+                        : null,
+                });
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'error',
                     status: 'failure',

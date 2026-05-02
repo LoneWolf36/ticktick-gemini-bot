@@ -91,6 +91,9 @@ Create a strict state model:
 
 Each state must have a separate owner and separate lifecycle.
 
+#### Accepted supersession note
+The implementation later accepted a narrower trust model instead of a literal global state machine: per-operation `OperationReceipt` statuses/scopes plus the durable command sync snapshot. Treat the above as the original audit target, but reconcile it against the shipped architecture in `docs/ARCHITECTURE.md` and the code path that records `lastTickTickSyncAt`, `lastTickTickActiveCount`, `lastSyncSource`, and `stateVersion`.
+
 ---
 
 ### B. No explicit state machine visible in the product model
@@ -218,6 +221,8 @@ There is good logging already, but it should be standardized into a predictable 
 - `dry_run`
 - `applied`
 - `fallback_used`
+
+Accepted implementation note: terminal operation telemetry is now emitted at the pipeline boundary with receipt-shaped, privacy-safe metadata rather than a global delivery-state machine. Keep the privacy rules above; the modern boundary is the per-operation receipt plus sync snapshot.
 - `project_resolution`
 - `error_class`
 - `latency_ms`

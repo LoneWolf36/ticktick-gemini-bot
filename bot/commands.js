@@ -132,7 +132,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
     const reorgKeyboard = () => new InlineKeyboard()
         .text('Apply', 'reorg:apply')
-        .text('Refine', 'reorg:refine')
+        .text('Edit', 'reorg:refine')
         .text('Cancel', 'reorg:cancel');
 
     const summarizeReorg = (proposal, tasks = [], projects = []) => {

@@ -110,3 +110,112 @@ test('R12: unexpected pipeline errors do not leak raw error messages in logs or 
     console.error = originalError;
   }
 });
+
+test('R12: pipeline terminal telemetry is privacy-safe and receipt-shaped', async () => {
+  const telemetryEvents = [];
+  const observability = createPipelineObservability({
+    eventSink: async (event) => { telemetryEvents.push(event); },
+    logger: null,
+  });
+
+  const harness = createPipelineHarness({
+    intents: [{ type: 'create', title: 'Terminal telemetry task', confidence: 0.9, projectHint: 'Inbox' }],
+    observability,
+  });
+
+  await harness.processMessage('create terminal telemetry task', {
+    requestId: 'req-terminal-telemetry',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  const terminalEvent = telemetryEvents.find(event => event.eventType === 'pipeline.operation.terminal');
+  assert.ok(terminalEvent, 'expected terminal telemetry event');
+  assert.equal(terminalEvent.metadata.requestId, 'req-terminal-telemetry');
+  assert.equal(terminalEvent.metadata.entryPoint, 'telegram');
+  assert.equal(terminalEvent.metadata.command, 'freeform');
+  assert.equal(terminalEvent.metadata.operationType, 'create');
+  assert.equal(terminalEvent.metadata.status, 'applied');
+  assert.equal(terminalEvent.metadata.scope, 'ticktick_live');
+  assert.equal(terminalEvent.metadata.dryRun, false);
+  assert.equal(terminalEvent.metadata.applied, true);
+  assert.equal(terminalEvent.metadata.changed, true);
+  assert.equal(terminalEvent.metadata.fallbackUsed, false);
+
+  const terminalJson = JSON.stringify(terminalEvent);
+  assert.equal(terminalJson.includes('Terminal telemetry task'), false, 'terminal telemetry should not contain raw task title');
+  assert.equal(terminalJson.includes('create terminal telemetry task'), false, 'terminal telemetry should not contain raw user message');
+});
+
+test('R12: terminal failure telemetry uses allowed errorClass values and no raw error text', async () => {
+  const telemetryEvents = [];
+  const observability = createPipelineObservability({
+    eventSink: async (event) => { telemetryEvents.push(event); },
+    logger: null,
+  });
+
+  const sensitiveErrorText = 'adapter boom secret text';
+  const harness = createPipelineHarness({
+    intents: () => { throw new Error(sensitiveErrorText); },
+    observability,
+  });
+
+  await harness.processMessage('create failure telemetry task', {
+    requestId: 'req-terminal-failure-telemetry',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  const terminalEvent = telemetryEvents.find(event => event.eventType === 'pipeline.operation.terminal');
+  assert.ok(terminalEvent, 'expected terminal telemetry event');
+  assert.ok(
+    ['validation', 'auth', 'ticktick_unavailable', 'model_unavailable', 'routing', 'stale_preview', 'lock', 'unknown']
+      .includes(terminalEvent.metadata.errorClass),
+    `expected allowed errorClass, got ${terminalEvent.metadata.errorClass}`,
+  );
+
+  const terminalJson = JSON.stringify(terminalEvent);
+  assert.equal(terminalJson.includes(sensitiveErrorText), false, 'terminal telemetry should not contain raw error text');
+  assert.equal(terminalJson.includes('Error'), false, 'terminal telemetry should not expose raw error objects');
+});
+
+test('R12: execution terminal failure telemetry stays privacy-safe and receipt-shaped', async () => {
+  const telemetryEvents = [];
+  const observability = createPipelineObservability({
+    eventSink: async (event) => { telemetryEvents.push(event); },
+    logger: null,
+  });
+
+  const sensitiveErrorText = 'execution branch adapter failure text';
+  const harness = createPipelineHarness({
+    intents: [{ type: 'create', title: 'Execution failure telemetry task', confidence: 0.9, projectHint: 'Inbox' }],
+    observability,
+    adapterOverrides: {
+      createTask: async () => { throw new Error(sensitiveErrorText); },
+    },
+  });
+
+  await harness.processMessage('create execution failure telemetry task', {
+    requestId: 'req-exec-failure-telemetry',
+    entryPoint: 'telegram',
+    mode: 'interactive',
+  });
+
+  const terminalEvent = telemetryEvents.find(event => event.eventType === 'pipeline.operation.terminal');
+  assert.ok(terminalEvent, 'expected terminal telemetry event');
+  assert.equal(terminalEvent.metadata.status, 'failed');
+  assert.equal(terminalEvent.metadata.scope, 'system');
+  assert.equal(terminalEvent.metadata.dryRun, false);
+  assert.equal(terminalEvent.metadata.applied, false);
+  assert.equal(terminalEvent.metadata.changed, false);
+  assert.ok(
+    ['validation', 'auth', 'ticktick_unavailable', 'model_unavailable', 'routing', 'stale_preview', 'lock', 'unknown']
+      .includes(terminalEvent.metadata.errorClass),
+    `expected allowed errorClass, got ${terminalEvent.metadata.errorClass}`,
+  );
+
+  const terminalJson = JSON.stringify(terminalEvent);
+  assert.equal(terminalJson.includes(sensitiveErrorText), false, 'terminal telemetry should not contain raw error text');
+  assert.equal(terminalJson.includes('Execution failure telemetry task'), false, 'terminal telemetry should not contain raw task title');
+  assert.equal(terminalJson.includes('create execution failure telemetry task'), false, 'terminal telemetry should not contain raw user message');
+});

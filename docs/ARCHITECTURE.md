@@ -17,15 +17,19 @@ Telegram Message
 
 Parallel non-write paths:
     Scheduler (services/scheduler.js)
-    → Daily briefing / Weekly digest / Scheduler/manual intake reads / Deferred retry
+    → Daily briefing / Weekly digest / Scheduler/manual intake reads
     → Telegram only (no TickTick mutation)
+
+Write-capable scheduler paths:
+    Poll auto-apply / deferred retry
+    → TickTick mutation through the same trust boundary and receipt contract
 ```
 
 See `AGENTS.md` for the full service module descriptions.
 
 ## Operation Receipt Contract
 
-`services/operation-receipt.js` defines the shared vocabulary for user-visible operation outcomes. The receipt describes what happened after the pipeline, callback, adapter, or scheduler logic has already decided the result; it must not make routing, mutation, or orchestration decisions.
+`services/operation-receipt.js` defines the shared vocabulary for user-visible operation outcomes. The receipt describes what happened after the pipeline, callback, adapter, or scheduler logic has already decided the result; it must not make routing, mutation, or orchestration decisions. Scheduler-owned poll auto-apply and deferred retry still write to TickTick, but they must render through the same truthful receipt boundary as free-form and callback writes.
 
 Core fields:
 
@@ -57,6 +61,10 @@ Safety invariants:
 - Receipts must not carry raw task titles, descriptions, checklist text, or free-form user message text in diagnostic metadata.
 
 Safe defaults: uncertainty stays conservative. Missing/ambiguous routing, malformed model output, stale preview, lock contention, or unknown state should become blocked, failed, deferred, pending confirmation, or busy — never an applied success.
+
+## State Scope Substitution
+
+The earlier audit requirement for a literal global `delivery_state` / single state machine is superseded by the accepted architecture: per-operation `OperationReceipt` statuses/scopes plus the durable command sync snapshot (`lastTickTickSyncAt`, `lastTickTickActiveCount`, `lastSyncSource`, `stateVersion`). This keeps truth scoped to the operation that produced it instead of inventing a global product state machine.
 
 ## Project Destination Resolution
 
