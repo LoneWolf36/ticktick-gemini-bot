@@ -215,6 +215,27 @@ function resolveReceiptDestinationForPendingMutation(action, context) {
     return project?.id ? { confidence: 'configured', projectId: project.id } : undefined;
 }
 
+function resolveReceiptDestinationForCreate(action, context) {
+    if (action?.type !== 'create') return undefined;
+
+    if (action.projectResolution?.confidence === 'ambiguous') {
+        return {
+            confidence: 'ambiguous',
+            choices: action.projectResolution.choices,
+        };
+    }
+
+    if (action.projectId) {
+        const availableProjects = Array.isArray(context?.availableProjects) ? context.availableProjects : [];
+        const project = availableProjects.find(candidate => candidate?.id === action.projectId);
+        return project?.id ? { confidence: action.projectResolution?.confidence || 'configured', projectId: project.id } : undefined;
+    }
+
+    return action.projectResolution?.confidence === 'missing'
+        ? { confidence: 'missing' }
+        : undefined;
+}
+
 function inferOperationType(actions = []) {
     const types = Array.isArray(actions) ? actions.map(action => action?.type).filter(Boolean) : [];
     const allowed = new Set(['create', 'update', 'complete', 'delete', 'review', 'scan', 'sync', 'reorg', 'none']);
@@ -1653,26 +1674,28 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 }
             }
 
-            let defaultProjectId = context.availableProjects
-                .find(p => p?.name?.toLowerCase() === defaultProjectName?.toLowerCase())?.id || null;
-
-            // Fall back to Inbox if the configured default project doesn't exist
-            if (defaultProjectId === null && defaultProjectName?.toLowerCase() !== 'inbox') {
-                const inboxId = context.availableProjects
-                    .find(p => p?.name?.toLowerCase() === 'inbox')?.id || null;
-                if (inboxId !== null) {
-                    console.warn(`[Pipeline:${context.requestId}] Default project "${defaultProjectName}" not found. Falling back to Inbox.`);
-                    defaultProjectId = inboxId;
+            const defaultProjectMatches = context.availableProjects
+                .filter(p => p?.name?.toLowerCase() === defaultProjectName?.toLowerCase());
+            let defaultProjectId = defaultProjectMatches.length === 1 ? defaultProjectMatches[0].id : null;
+            const defaultProjectResolution = defaultProjectMatches.length > 1
+                ? {
+                    confidence: 'ambiguous',
+                    choices: defaultProjectMatches.map(project => ({ projectId: project.id, projectName: project.name })),
                 }
-            }
+                : defaultProjectId
+                    ? { confidence: 'configured', projectId: defaultProjectId }
+                    : { confidence: 'missing' };
 
-            if (defaultProjectId === null) {
-                console.warn(`[Pipeline:${context.requestId}] Neither "${defaultProjectName}" nor Inbox found in available projects. Available: ${context.availableProjects.map(p => p.name).join(', ')}. Blocking create actions without a resolved destination.`);
+            if (defaultProjectResolution.confidence === 'missing') {
+                console.warn(`[Pipeline:${context.requestId}] Default project "${defaultProjectName}" not found. Blocking create actions without a resolved destination.`);
+            } else if (defaultProjectResolution.confidence === 'ambiguous') {
+                console.warn(`[Pipeline:${context.requestId}] Default project "${defaultProjectName}" is ambiguous. Blocking create actions without a unique destination.`);
             }
 
             const normOptions = {
                 projects: context.availableProjects,
                 defaultProjectId,
+                defaultProjectResolution,
                 existingTask: resolvedTask || context.existingTask,
                 existingTaskContent: resolvedTaskContent || context.existingTask?.content || null,
                 timezone: context.timezone,
@@ -1835,6 +1858,49 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 return attachPipelineContext(buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS, {
                     note: 'No valid actions after normalization.',
                 }), context);
+            }
+
+            const pendingCreateDestination = validActions.find(action => action.type === 'create' && action.projectResolution?.confidence === 'ambiguous');
+            if (pendingCreateDestination) {
+                const destination = resolveReceiptDestinationForCreate(pendingCreateDestination, context);
+                const confirmationText = 'Blocked — ambiguous project destination. Choose an exact project name or restore a unique default project, then retry.';
+
+                context = finalizePipelineContext(context, requestStartedAt, {
+                    resultType: 'blocked',
+                    status: 'failure',
+                    summary: 'ambiguous_project_destination',
+                });
+
+                return attachPipelineContext({
+                    type: 'blocked',
+                    status: 'blocked',
+                    results: [],
+                    errors: ['ambiguous_project_destination'],
+                    confirmationText,
+                    operationReceipt: buildOperationReceipt(context, {
+                        status: 'blocked',
+                        scope: 'system',
+                        command: resolveReceiptCommand(context),
+                        operationType: 'create',
+                        nextAction: 'retry',
+                        changed: false,
+                        dryRun: isDryRun,
+                        applied: false,
+                        fallbackUsed: false,
+                        message: confirmationText,
+                        errorClass: 'validation',
+                        destination: destination || { confidence: 'ambiguous', choices: pendingCreateDestination.projectResolution?.choices || [] },
+                    }),
+                    requestId: context.requestId,
+                    entryPoint: context.entryPoint,
+                    mode: context.mode,
+                    workStyleMode: context.workStyleMode || null,
+                    checklistContext: context.checklistContext || null,
+                    warnings: ['ambiguous_project_destination'],
+                    dryRun: isDryRun,
+                    applied: false,
+                    changed: false,
+                }, context);
             }
 
             const createActionsMissingDestination = validActions.filter(action => action.type === 'create' && !action.projectId);

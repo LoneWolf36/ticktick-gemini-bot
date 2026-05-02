@@ -18,6 +18,20 @@ const MUTATION_CLARIFICATION_TTL_MS = 10 * 60 * 1000;
  * @param {Object} [options] - answerCallbackQuery options
  */
 const safeAnswerCallbackQuery = answerCallbackQueryBestEffort;
+const inFlightReviewClaims = new Map();
+
+function acquireReviewClaim(taskId, owner) {
+    if (!taskId || inFlightReviewClaims.has(taskId)) return false;
+    inFlightReviewClaims.set(taskId, owner);
+    return true;
+}
+
+function releaseReviewClaim(taskId, owner) {
+    if (!taskId) return;
+    if (inFlightReviewClaims.get(taskId) === owner) {
+        inFlightReviewClaims.delete(taskId);
+    }
+}
 
 // ─── Build Keyboard for Task Review ─────────────────────────
 
@@ -34,7 +48,7 @@ export function taskReviewKeyboard(taskId, actionType = 'update') {
     if (actionType === 'complete') {
         return new InlineKeyboard()
             .text('Complete', `a:${id}`)
-            .text('Keep', `s:${id}`)
+            .text('Skip', `s:${id}`)
             .row()
             .text('Delete', `d:${id}`)
             .row()
@@ -43,13 +57,13 @@ export function taskReviewKeyboard(taskId, actionType = 'update') {
     if (actionType === 'delete') {
         return new InlineKeyboard()
             .text('Delete', `a:${id}`)
-            .text('Keep', `s:${id}`)
+            .text('Skip', `s:${id}`)
             .row()
             .text('Stop', 'review:stop');
     }
     return new InlineKeyboard()
         .text('Apply', `a:${id}`)
-        .text('Refine', `r:${id}`)
+        .text('Edit', `r:${id}`)
         .row()
         .text('Skip', `s:${id}`)
         .text('Delete', `d:${id}`)
@@ -221,20 +235,22 @@ export function registerCallbacks(bot, adapter, pipeline) {
         }
         const taskId = ctx.match[1];
         const data = store.getPendingTasks()[taskId];
+        const claimOwner = `apply:${ctx.callbackQuery?.id || Date.now()}`;
 
-        if (!data) {
-            if (store.isTaskProcessed(taskId)) {
-                await safeAnswerCallbackQuery(ctx, { text: 'Already handled.' });
-                return;
-            }
-            await safeAnswerCallbackQuery(ctx, { text: '⚠️ Task not found' });
+        if (!data || store.isTaskProcessed(taskId) || !acquireReviewClaim(taskId, claimOwner)) {
+            await safeAnswerCallbackQuery(ctx, { text: 'Already handled.' });
             return;
         }
-
-        await safeAnswerCallbackQuery(ctx, { text: 'Applied.' });
         try {
+            await safeAnswerCallbackQuery(ctx, { text: 'Applied.' });
             const actionType = data.actionType || 'update';
             let diffText = '';
+
+            if (!store.isTaskPending(taskId)) {
+                await safeAnswerCallbackQuery(ctx, { text: 'Already handled.' });
+                await advanceReviewCard(ctx);
+                return;
+            }
 
             if (actionType === 'complete') {
                 const projectId = data.projectId || data.originalProjectId;
@@ -329,6 +345,8 @@ export function registerCallbacks(bot, adapter, pipeline) {
                     await ctx.reply('❌ Failed to update task. Please try again.');
                 }
             }
+        } finally {
+            releaseReviewClaim(taskId, claimOwner);
         }
     });
 
@@ -339,26 +357,34 @@ export function registerCallbacks(bot, adapter, pipeline) {
             return;
         }
         const taskId = ctx.match[1];
+        const claimOwner = `skip:${ctx.callbackQuery?.id || Date.now()}`;
 
-        if (!store.isTaskPending(taskId)) {
+        if (!store.isTaskPending(taskId) || !acquireReviewClaim(taskId, claimOwner)) {
             await safeAnswerCallbackQuery(ctx, { text: 'Already handled.' });
             return;
         }
 
-        await safeAnswerCallbackQuery(ctx, { text: 'Skipped.' });
-        await store.skipTask(taskId);
-        const skippedData = store.getProcessedTasks()[taskId];
-        const userId = ctx.from?.id;
-        if (userId && skippedData) {
-            await store.setRecentTaskContext(userId, {
-                taskId,
-                title: skippedData.originalTitle,
-                content: skippedData.originalContent || undefined,
-                projectId: skippedData.projectId || skippedData.originalProjectId,
-                source: 'review:skip',
-            });
+        try {
+            await safeAnswerCallbackQuery(ctx, { text: 'Skipped.' });
+            await store.skipTask(taskId);
+            const skippedData = store.getProcessedTasks()[taskId];
+            const userId = ctx.from?.id;
+            if (userId && skippedData) {
+                await store.setRecentTaskContext(userId, {
+                    taskId,
+                    title: skippedData.originalTitle,
+                    content: skippedData.originalContent || undefined,
+                    projectId: skippedData.projectId || skippedData.originalProjectId,
+                    source: 'review:skip',
+                });
+            }
+            await advanceReviewCard(ctx);
+        } catch (err) {
+            releaseReviewClaim(taskId, claimOwner);
+            throw err;
+        } finally {
+            releaseReviewClaim(taskId, claimOwner);
         }
-        await advanceReviewCard(ctx);
     });
 
     // ─── Drop: move pending → processed, flag for removal ─────
@@ -372,14 +398,15 @@ export function registerCallbacks(bot, adapter, pipeline) {
         }
         const taskId = ctx.match[1];
         const data = store.getPendingTasks()[taskId] || {};
+        const claimOwner = `drop:${ctx.callbackQuery?.id || Date.now()}`;
 
-        if (!store.isTaskPending(taskId)) {
+        if (!store.isTaskPending(taskId) || !acquireReviewClaim(taskId, claimOwner)) {
             await safeAnswerCallbackQuery(ctx, { text: 'Already handled.' });
             return;
         }
 
-        await safeAnswerCallbackQuery(ctx, { text: 'Dropped.' });
         try {
+            await safeAnswerCallbackQuery(ctx, { text: 'Dropped.' });
             const projectId = data.projectId || data.originalProjectId || null;
             await adapter.deleteTask(taskId, projectId);
             await store.dropTask(taskId);
@@ -398,6 +425,8 @@ export function registerCallbacks(bot, adapter, pipeline) {
                     await ctx.reply('❌ Delete failed. Please retry — task still pending review.');
                 }
             }
+        } finally {
+            releaseReviewClaim(taskId, claimOwner);
         }
     });
 

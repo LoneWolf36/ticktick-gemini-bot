@@ -351,6 +351,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         const snapshot = store.getOperationalSnapshot();
         const stats = snapshot.cumulative;
         const local = snapshot.localWorkflow;
+        const intakeLock = store.getIntakeLockStatus();
 
         const deferredIntents = store.getDeferredPipelineIntents();
         const failedDeferred = store.getFailedDeferredIntents();
@@ -374,46 +375,37 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
 
         const lines = [
-            '**📊 System Status**\n',
-            '**Backend Snapshot**',
+            '**📊 Status**\n',
+            '**TickTick live state**',
             `Active tasks in TickTick: ${backendCount === null ? 'unavailable' : backendCount}`,
+            `Connection: ${ticktick.isAuthenticated() ? 'connected' : 'not connected'}`,
             '',
-            '**Local Workflow**',
+            '**Local review queue**',
             `Pending review: ${local.pendingReview}`,
             `Failed / parked: ${local.failedParked}`,
-            `Deferred intents: ${local.deferredIntents}`,
             `Clarifications waiting: ${local.clarifications}`,
             '',
-            '**Deferred Queue**',
+            '**Deferred queue**',
             `Pending retry: ${pendingRetry} items`,
             `Next retry: ${nextRetryText}`,
             `Failed permanently: ${failedPermanently} items`,
             '',
-            '**Cumulative Stats**',
+            '**Running job**',
+            intakeLock.locked
+                ? `Busy: ${intakeLock.owner || 'operation'} since ${userLocaleString(new Date(intakeLock.acquiredAt).toISOString())}`
+                : 'Busy: no',
+            '',
+            '**Recent activity**',
             `Analyzed: ${stats.tasksAnalyzed}  |  Approved: ${stats.tasksApproved}`,
             `Skipped: ${stats.tasksSkipped}  |  Dropped: ${stats.tasksDropped}`,
             `Auto-applied: ${stats.tasksAutoApplied || 0}`,
-            '',
-            '**Connection**',
-            `TickTick: ${ticktick.isAuthenticated() ? 'Connected' : '❌ Not connected'}`,
         ];
-
-        const keyInfo = gemini.activeKeyInfo?.();
-        if (keyInfo) {
-            lines.push(`Gemini Key: ${keyInfo.index}/${keyInfo.total}`);
-        }
-
-        const cacheAge = ticktick.getCacheAgeSeconds();
-        if (cacheAge !== null) {
-            lines.push(`Cache: ${cacheAge}s old`);
-        }
 
         lines.push(
             '',
-            '**Settings**',
-            `Auto-apply life-admin: ${autoApplyLifeAdmin ? 'ON' : 'OFF'}`,
-            `Auto-apply drops: ${autoApplyDrops ? 'ON' : 'OFF'}`,
-            `Auto-apply mode: ${autoApplyMode}`,
+            '**Automation**',
+            `Life-admin auto-apply: ${autoApplyLifeAdmin ? 'on' : 'off'}`,
+            `Drop auto-apply: ${autoApplyDrops ? 'on' : 'off'}`,
         );
 
         const quotaResume = gemini.quotaResumeTime();

@@ -117,9 +117,6 @@ test('pipeline context routes undated groceries to admin/personal project via co
   assert.equal(result.results.length, 1);
   assert.equal(adapterCalls.create.length, 1);
   assert.equal(adapterCalls.create[0].title, 'Buy groceries');
-  // Without projectHint, normalizer uses inferProjectIdFromTask which now uses
-  // project-policy aliases. "grocery" maps to Shopping, which is not in test
-  // projects, so it falls back to the default project (Inbox).
   assert.equal(adapterCalls.create[0].projectId, DEFAULT_PROJECTS[0].id);
   assert.equal(adapterCalls.create[0].dueDate, null);
 });

@@ -7,6 +7,7 @@
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
 import { normalizeAction, normalizeActions, normalizeActionBatch, validateMutationBatch } from '../services/normalizer.js';
+import { DEFAULT_PROJECTS } from './pipeline-harness.js';
 
 describe('Normalizer Module', () => {
     describe('normalizeAction', () => {
@@ -46,6 +47,58 @@ describe('Normalizer Module', () => {
             
             assert.strictEqual(results.length, 2);
             assert.ok(Array.isArray(results));
+        });
+    });
+
+    describe('project routing safety', () => {
+        it('should match opaque project IDs exactly', () => {
+            const projects = [
+                { id: 'inbox118958109', name: 'Inbox' },
+                { id: 'career-xyz', name: 'Career' },
+            ];
+
+            const result = normalizeAction(
+                { type: 'create', title: 'Plan sprint', projectHint: 'inbox118958109' },
+                { projects },
+            );
+
+            assert.strictEqual(result.projectId, 'inbox118958109');
+            assert.strictEqual(result.projectResolution.confidence, 'exact');
+        });
+
+        it('should block unmatched hinted project and avoid default fallback', () => {
+            const result = normalizeAction(
+                { type: 'create', title: 'Plan sprint', projectHint: 'Unknown team' },
+                { projects: DEFAULT_PROJECTS, defaultProjectId: DEFAULT_PROJECTS[0].id },
+            );
+
+            assert.strictEqual(result.projectId, null);
+            assert.strictEqual(result.projectResolution.confidence, 'missing');
+        });
+
+        it('should surface ambiguous default project choices when no hint exists', () => {
+            const projects = [
+                { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', name: 'Inbox' },
+                { id: 'bbbbbbbbbbbbbbbbbbbbbbbb', name: 'Career' },
+                { id: 'cccccccccccccccccccccccc', name: 'Inbox' },
+            ];
+
+            const result = normalizeAction(
+                { type: 'create', title: 'Buy groceries' },
+                {
+                    projects,
+                    defaultProjectResolution: {
+                        confidence: 'ambiguous',
+                        choices: projects
+                            .filter((project) => project.name === 'Inbox')
+                            .map((project) => ({ projectId: project.id, projectName: project.name })),
+                    },
+                },
+            );
+
+            assert.strictEqual(result.projectId, null);
+            assert.strictEqual(result.projectResolution.confidence, 'ambiguous');
+            assert.strictEqual(result.projectResolution.choices.length, 2);
         });
     });
 });

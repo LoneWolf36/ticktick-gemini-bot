@@ -113,7 +113,7 @@ export const PROJECT_POLICY = {
 };
 ```
 
-**Use your exact TickTick project names** (including emojis) in the `match` field. The system normalizes names for matching, but exact names prevent ambiguity.
+**Use your exact TickTick project names** (including emojis) in the `match` field. The system normalizes names for policy lookup, but write destinations stay conservative: creates only route to an exact project ID/name or an existing configured default project. Missing destinations block, and duplicate exact names block for now instead of falling back to the first project.
 
 If you omit `PROJECT_POLICY`, the system falls back to safe defaults: every project is `uncategorized` (priority cap 3, default 1). No task will ever be auto-promoted to Core Goal without explicit configuration.
 
@@ -138,8 +138,8 @@ Open your bot in Telegram and send `/start`.
 | `/scan` | Analyze new tasks through the structured pipeline (Intent Extraction → Normalizer → Adapter, batched 5 at a time) |
 | `/menu` | Show quick-action shortcut menu |
 | `/pending` | Re-surface tasks awaiting your review |
-| `/briefing` | Daily morning briefing — 3-4 prioritized focus items |
-| `/weekly` | Weekly accountability digest — wins, avoidance patterns, top 3 for next week |
+| `/briefing` | Daily morning briefing — focus, top priorities, why it matters, first action |
+| `/weekly` | Weekly accountability digest — progress, carry forward, next focus, watchouts |
 | `/review` | Walk through all unreviewed tasks |
 | `/reorg` | Build a full task reorganization proposal (apply/refine/cancel) |
 | `/urgent` | Activate urgent mode (also: /focus, /normal, /mode to query) |
@@ -149,9 +149,9 @@ Open your bot in Telegram and send `/start`.
 | `/undo` | Revert the latest undoable change or latest undoable batch |
 | `/memory` | Behavioral memory summary |
 | `/forget` | Reset behavioral memory |
-| `/daily_close` | End-of-day reflection |
+| `/daily_close` | End-of-day reflection — stats, reflection, reset cue |
 | `/reset` | Wipe all bot data and start fresh (requires `/reset CONFIRM`) |
-| `/status` | Bot status, stats, and auto-apply mode |
+| `/status` | User-facing health snapshot: TickTick live count, local review queue, deferred queue, running job, recent activity, and coarse automation state |
 
 **Free-form messages:** Any text that isn't a command goes through the structured pipeline (Intent Extraction → Normalizer → Adapter). You can:
 - Give instructions: *"move all gym tasks to next week"*, *"drop everything in Inbox"*
@@ -159,6 +159,8 @@ Open your bot in Telegram and send `/start`.
 - Vent: *"I'm overwhelmed"* — the bot will coach you, not just list tasks
 
 For update/complete/delete requests, exact task-title matches execute directly. Non-exact matches (partial/fuzzy/recent-task references) pause for a confirm/cancel tap before TickTick is modified.
+
+Review buttons use consistent action words: `Apply` applies a proposed change, `Edit` revises before applying, `Skip` leaves the task unchanged, `Delete` deletes a task, `Complete` only completes a task, and `Stop` exits the review loop.
 
 Successful task-writing messages return a Telegram receipt that names the task, shows old → new field changes when a snapshot is available, and includes an inline `↩️ Undo` button when rollback metadata was safely stored. `/undo` uses the same rollback path. Completed or deleted tasks may be restored by recreating the saved snapshot because TickTick does not expose a reliable uncomplete operation.
 

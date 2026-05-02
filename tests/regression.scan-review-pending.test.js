@@ -13,6 +13,7 @@ import {
     formatFieldDiff,
     retryWithBackoff,
 } from '../services/shared-utils.js';
+import { executeUndoBatch } from '../services/undo-executor.js';
 
 import * as store from '../services/store.js';
 import { registerCallbacks, taskReviewKeyboard } from '../bot/callbacks.js';
@@ -241,13 +242,13 @@ test('buildTaskCardFromAction update omits unchanged fields', () => {
 
 // ─── taskReviewKeyboard — Button Labels ──────────────────────
 
-test('taskReviewKeyboard update has Apply, Refine, Skip, Delete, Stop', () => {
+test('taskReviewKeyboard update has Apply, Edit, Skip, Delete, Stop', () => {
     const keyboard = taskReviewKeyboard('task-123', 'update');
     const buttons = keyboard.inline_keyboard.flat();
     const texts = buttons.map(b => b.text);
 
     assert.ok(texts.includes('Apply'), 'should have Apply button');
-    assert.ok(texts.includes('Refine'), 'should have Refine button');
+    assert.ok(texts.includes('Edit'), 'should have Edit button');
     assert.ok(texts.includes('Skip'), 'should have Skip button');
     assert.ok(texts.includes('Delete'), 'should have Delete button');
     assert.ok(texts.includes('Stop'), 'should have Stop button');
@@ -256,26 +257,26 @@ test('taskReviewKeyboard update has Apply, Refine, Skip, Delete, Stop', () => {
     assert.ok(!texts.includes('Stop reviewing'), 'should not have old long label');
 });
 
-test('taskReviewKeyboard complete has Complete, Keep, Delete, Stop', () => {
+test('taskReviewKeyboard complete has Complete, Skip, Delete, Stop', () => {
     const keyboard = taskReviewKeyboard('task-123', 'complete');
     const buttons = keyboard.inline_keyboard.flat();
     const texts = buttons.map(b => b.text);
 
     assert.ok(texts.includes('Complete'), 'should have Complete button');
-    assert.ok(texts.includes('Keep'), 'should have Keep button');
+    assert.ok(texts.includes('Skip'), 'should have Skip button');
     assert.ok(texts.includes('Delete'), 'should have Delete button');
     assert.ok(texts.includes('Stop'), 'should have Stop button');
     assert.ok(!texts.includes('Confirm complete'), 'should not have old long label');
     assert.ok(!texts.includes('Keep active'), 'should not have old long label');
 });
 
-test('taskReviewKeyboard delete has Delete, Keep, Stop', () => {
+test('taskReviewKeyboard delete has Delete, Skip, Stop', () => {
     const keyboard = taskReviewKeyboard('task-123', 'delete');
     const buttons = keyboard.inline_keyboard.flat();
     const texts = buttons.map(b => b.text);
 
     assert.ok(texts.includes('Delete'), 'should have Delete button');
-    assert.ok(texts.includes('Keep'), 'should have Keep button');
+    assert.ok(texts.includes('Skip'), 'should have Skip button');
     assert.ok(texts.includes('Stop'), 'should have Stop button');
     assert.ok(!texts.includes('Confirm delete'), 'should not have old long label');
     assert.ok(!texts.includes('Keep task'), 'should not have old long label');
@@ -350,6 +351,181 @@ test('review apply continues when Telegram callback query is expired', async () 
     await store.resetAll();
 });
 
+test('review apply does not mutate when pending record was already resolved elsewhere', async () => {
+    await store.resetAll();
+    const taskId = 'stale-preview-task';
+    await store.markTaskPending(taskId, {
+        originalTitle: 'Stale preview task',
+        originalContent: '',
+        originalPriority: 1,
+        originalProjectId: 'inbox',
+        projectId: 'inbox',
+        projectName: 'Inbox',
+        improvedTitle: 'Fresh title',
+        actionType: 'update',
+    });
+    await store.approveTask(taskId);
+
+    const { bot, handlers } = makeCallbackBot();
+    const updates = [];
+    registerCallbacks(bot, {
+        updateTask: async (id, update) => {
+            updates.push({ id, update });
+            return { id };
+        },
+    }, {});
+
+    const applyHandler = findCallbackHandler(handlers, '^a:');
+    assert.equal(typeof applyHandler, 'function');
+
+    await applyHandler({
+        match: [`a:${taskId}`, taskId],
+        chat: { id: 999 },
+        from: { id: 123 },
+        callbackQuery: { id: 'stale-callback', message: { message_id: 10 } },
+        answerCallbackQuery: async () => {},
+        editMessageText: async () => ({}),
+        reply: async () => ({}),
+    });
+
+    assert.equal(updates.length, 0, 'stale preview apply should not mutate');
+    await store.resetAll();
+});
+
+test('review apply double tap mutates once and second tap is already handled', async () => {
+    await store.resetAll();
+    const taskId = 'double-tap-task';
+    await store.markTaskPending(taskId, {
+        originalTitle: 'Double tap task',
+        originalContent: '',
+        originalPriority: 1,
+        originalProjectId: 'inbox',
+        projectId: 'inbox',
+        projectName: 'Inbox',
+        improvedTitle: 'Double tap task updated',
+        actionType: 'update',
+    });
+
+    const { bot, handlers } = makeCallbackBot();
+    const answers = [];
+    const edits = [];
+    let releaseUpdate;
+    const updateGate = new Promise((resolve) => {
+        releaseUpdate = resolve;
+    });
+    registerCallbacks(bot, {
+        updateTask: async (id, update) => {
+            answers.push(`update:${id}`);
+            await updateGate;
+            return { id, update };
+        },
+    }, {});
+
+    const applyHandler = findCallbackHandler(handlers, '^a:');
+    assert.equal(typeof applyHandler, 'function');
+
+    const ctx1 = {
+        match: [`a:${taskId}`, taskId],
+        chat: { id: 999 },
+        from: { id: 123 },
+        callbackQuery: { id: 'cb-1', message: { message_id: 10 } },
+        answerCallbackQuery: async ({ text }) => { answers.push(text); },
+        editMessageText: async (text, opts) => { edits.push({ text, opts }); return {}; },
+        reply: async (text, opts) => { edits.push({ text, opts, reply: true }); return {}; },
+    };
+    const ctx2 = {
+        match: [`a:${taskId}`, taskId],
+        chat: { id: 999 },
+        from: { id: 123 },
+        callbackQuery: { id: 'cb-2', message: { message_id: 10 } },
+        answerCallbackQuery: async ({ text }) => { answers.push(text); },
+        editMessageText: async (text, opts) => { edits.push({ text, opts }); return {}; },
+        reply: async (text, opts) => { edits.push({ text, opts, reply: true }); return {}; },
+    };
+
+    const first = applyHandler(ctx1);
+    await Promise.resolve();
+    const second = applyHandler(ctx2);
+
+    releaseUpdate?.();
+    await Promise.all([first, second]);
+
+    assert.equal(edits.filter((entry) => String(entry.text || '').includes('Updated')).length, 1);
+    assert.equal(answers.filter((text) => text === 'Applied.').length, 1);
+    assert.ok(answers.includes('Already handled.'), 'second tap should be already handled');
+    await store.resetAll();
+});
+
+test('review apply and skip/drop race resolves once and blocks the other callback', async () => {
+    await store.resetAll();
+    const scenarios = [
+        { name: 'apply+drop', secondPattern: '^d:', secondAnswer: 'Dropped.', secondMutateKey: 'deleteTask' },
+        { name: 'apply+skip', secondPattern: '^s:', secondAnswer: 'Skipped.', secondMutateKey: 'skipTask' },
+    ];
+
+    for (const scenario of scenarios) {
+        const taskId = `${scenario.name}-task`;
+        await store.markTaskPending(taskId, {
+            originalTitle: `${scenario.name} task`,
+            originalContent: '',
+            originalPriority: 1,
+            originalProjectId: 'inbox',
+            projectId: 'inbox',
+            projectName: 'Inbox',
+            improvedTitle: `${scenario.name} task updated`,
+            actionType: 'update',
+        });
+
+        const { bot, handlers } = makeCallbackBot();
+        const answers = [];
+        const mutations = [];
+        let releaseApply;
+        const applyGate = new Promise((resolve) => { releaseApply = resolve; });
+        registerCallbacks(bot, {
+            updateTask: async (id, update) => {
+                mutations.push(`update:${id}`);
+                await applyGate;
+                return { id, update };
+            },
+            deleteTask: async (id) => {
+                mutations.push(`delete:${id}`);
+                return { id };
+            },
+        }, {});
+
+        const applyHandler = findCallbackHandler(handlers, '^a:');
+        const secondHandler = findCallbackHandler(handlers, scenario.secondPattern);
+        assert.equal(typeof applyHandler, 'function');
+        assert.equal(typeof secondHandler, 'function');
+
+        const makeCtx = (callbackId) => ({
+            match: [`a:${taskId}`, taskId],
+            chat: { id: 999 },
+            from: { id: 123 },
+            callbackQuery: { id: callbackId, message: { message_id: 10 } },
+            answerCallbackQuery: async ({ text }) => { answers.push(text); },
+            editMessageText: async (text, opts) => { answers.push(text); return { text, opts }; },
+            reply: async (text, opts) => { answers.push(text); return { text, opts }; },
+        });
+
+        const first = applyHandler(makeCtx(`${scenario.name}-apply`));
+        await Promise.resolve();
+        const second = secondHandler({
+            ...makeCtx(`${scenario.name}-second`),
+            match: [`${scenario.secondPattern.slice(1)}${taskId}`, taskId],
+        });
+
+        releaseApply?.();
+        await Promise.all([first, second]);
+
+        assert.equal(mutations.filter((entry) => entry.startsWith('update:')).length, 1, `${scenario.name} should update once`);
+        assert.equal(mutations.filter((entry) => entry.startsWith('delete:')).length, scenario.secondMutateKey === 'deleteTask' ? 0 : 0);
+        assert.ok(answers.includes('Already handled.'), `${scenario.name} should reject second callback`);
+        assert.ok(!answers.includes('Deleted.') && !answers.includes('Skipped.'), `${scenario.name} second callback should not proceed`);
+        await store.resetAll();
+    }
+});
+
 test('review progress never uses global processed count as session progress', async () => {
     await store.resetAll();
     for (let i = 0; i < 10; i++) {
@@ -410,6 +586,28 @@ test('markTaskPending is idempotent and markTaskProcessed clears pending copy', 
     assert.equal(store.isTaskProcessed('dup-task'), true);
     assert.equal(store.getPendingCount(), 0);
     await store.resetAll();
+});
+
+test('executeUndoBatch returns successful entries only for applied actions', async () => {
+    const calls = [];
+    const adapter = {
+        updateTask: async (taskId) => {
+            calls.push(taskId);
+            if (taskId === 'fail-me') throw new Error('boom');
+            return { id: taskId };
+        },
+        deleteTask: async () => ({}),
+        createTask: async () => ({}),
+    };
+
+    const result = await executeUndoBatch([
+        { taskId: 'ok-1', originalTitle: 'One', rollbackType: 'restore_updated', snapshot: { title: 'One', projectId: 'inbox' } },
+        { taskId: 'fail-me', originalTitle: 'Two', rollbackType: 'restore_updated', snapshot: { title: 'Two', projectId: 'inbox' } },
+    ], adapter);
+
+    assert.deepEqual(calls, ['ok-1', 'fail-me']);
+    assert.deepEqual(result.successful.map((entry) => entry.taskId), ['ok-1']);
+    assert.deepEqual(result.reverted, ['One']);
 });
 
 // ─── No Internal Jargon ──────────────────────────────────────

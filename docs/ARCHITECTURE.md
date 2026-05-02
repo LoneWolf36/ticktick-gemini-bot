@@ -41,7 +41,7 @@ Core fields:
 - `traceId` — diagnostic correlation ID.
 - `nextAction` — the safe user/system next step.
 - `errorClass` — optional safe failure class.
-- `destination.confidence` — destination resolution class when a project is involved: exact, configured, ambiguous, or missing. Pending create/update confirmations require `projectId` or `projectName` for exact/configured destinations, or non-empty `choices` with safe project references for ambiguous destinations.
+- `destination.confidence` — destination resolution class when a project is involved: exact, configured, ambiguous, or missing. Pending create/update confirmations require `projectId` or `projectName` for exact/configured destinations; ambiguous create destinations are blocked for now and may carry safe `choices` for diagnostics.
 - `confirmation` — required details for pending-confirmation receipts, including a safe target identifier (`taskId`, `previewId`, `candidateId`, `targetId`, or `referenceId`) and proposed outcome.
 - `rollback` — safe rollback metadata only. Raw undo snapshots stay in undo storage and must not be embedded in a receipt that may be logged or rendered.
 
@@ -57,6 +57,12 @@ Safety invariants:
 - Receipts must not carry raw task titles, descriptions, checklist text, or free-form user message text in diagnostic metadata.
 
 Safe defaults: uncertainty stays conservative. Missing/ambiguous routing, malformed model output, stale preview, lock contention, or unknown state should become blocked, failed, deferred, pending confirmation, or busy — never an applied success.
+
+## Project Destination Resolution
+
+Create actions only write to a deterministic TickTick destination. The normalizer accepts an exact project ID, one exact project-name match, or the configured default project when it exists in the available project list. It does not infer destinations from task text, substring matches, fuzzy matches, or the first project returned by TickTick.
+
+Missing destinations return a blocked result with `destination.confidence=missing`. Duplicate exact project names return blocked with `destination.confidence=ambiguous` and safe project choices. This keeps routing uncertainty visible and prevents silent writes to an unexpected project.
 
 ## Runtime Endpoints
 
@@ -86,6 +92,8 @@ When the TickTick API is unavailable, the pipeline defers the normalized intent 
 ### One-Card-at-a-Time Scan / Review
 
 `/scan` and `/review` walk the user through a single task card at a time with inline keyboards (approve / skip / drop). This avoids notification spam and keeps the decision surface focused. The same card builder and callback handlers are reused in autonomous poll notifications.
+
+Normal `/status` is a user-facing health view, not a debug dump. It reports TickTick live count, local review queue, deferred queue, running-job state, recent activity, and coarse automation toggles. Internal Gemini key index, cache age, and raw auto-apply mode stay out of normal status copy.
 
 ### `force_reply` Refinement
 

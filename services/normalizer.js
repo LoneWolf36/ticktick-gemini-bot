@@ -10,8 +10,6 @@
  * - Mixed create+mutation or multi-mutation batches are rejected cleanly.
  */
 
-import { resolveProjectCategory, inferProjectByAliases } from './project-policy.js';
-
 // Title normalization constants
 const DATE_PATTERNS = /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next\s+\w+|this\s+\w+)\b/gi;
 const PRIORITY_PATTERNS = /^(urgent|important|critical|asap|high priority)[:\s-]*/i;
@@ -533,98 +531,38 @@ function _resolveRepeatFlag(intentAction = {}) {
 }
 
 /**
- * Infers a project ID for a task from available projects using project-policy.
- *
- * @param {object} task - Normalized task or candidate
- * @param {object[]} projects - List of available projects
- * @returns {string|null} Project ID or null
- */
-function inferProjectIdFromTask(task, projects) {
-    if (!Array.isArray(projects) || projects.length === 0) {
-        return null;
-    }
-
-    const haystack = `${task?.title || ''} ${task?.content || ''}`.trim().toLowerCase();
-    if (!haystack) {
-        return null;
-    }
-
-    // 1. Try exact project name match via resolveProjectCategory
-    for (const p of projects) {
-        const category = resolveProjectCategory(p.name);
-        if (category && haystack.includes(p.name.toLowerCase())) {
-            return p.id;
-        }
-    }
-
-    // 2. Try alias-based inference
-    const aliasMatch = inferProjectByAliases(haystack, 1);
-    if (aliasMatch) {
-        const matched = projects.find(p => p.name.toLowerCase() === aliasMatch.toLowerCase());
-        if (matched) {
-            return matched.id;
-        }
-    }
-
-    return null;
-}
-
-/**
- * Resolves a project hint string to a concrete TickTick project ID.
+ * Resolves a project hint string to a concrete TickTick project destination.
  * Expects a list of projects from the TickTick API.
  *
  * Resolution order:
- * 1. projectHint exact match / startsWith / contains (if provided)
- * 2. Content-based inference via inferProjectIdFromTask (if no projectHint)
- * 3. defaultProjectId fallback
+ * 1. Exact project ID when hinted
+ * 2. Exactly one exact project-name match when hinted
+ * 3. defaultProjectResolution only when no projectHint exists
+ * 4. defaultProjectId fallback for legacy callers when resolution is not provided
  */
-function _resolveProject(projectHint, projects = [], defaultProjectId = null, taskTitle = '', taskContent = '') {
-    // If projectHint is provided, resolve it as before
-    if (projectHint) {
-        // If it's already a 24-char hex ID, assume it's resolved
-        if (/^[a-fA-F0-9]{24}$/.test(projectHint)) {
-            return projectHint;
+function _resolveProject(projectHint, projects = [], defaultProjectId = null, taskTitle = '', taskContent = '', defaultProjectResolution = null) {
+    const trimmedHint = typeof projectHint === 'string' ? projectHint.trim() : '';
+
+    if (trimmedHint) {
+        const matchedById = projects.find(p => p?.id === trimmedHint);
+        if (matchedById) {
+            return { projectId: matchedById.id, source: 'exact_id' };
         }
 
-        const hintLower = projectHint.toLowerCase().trim();
-
-        // Try exact match first
-        let match = projects.find(p => p.name.toLowerCase() === hintLower);
-
-        // Try starts-with
-        if (!match) {
-            match = projects.find(p => p.name.toLowerCase().startsWith(hintLower));
+        const hintLower = trimmedHint.toLowerCase();
+        const matches = projects.filter(p => p?.name?.toLowerCase() === hintLower);
+        if (matches.length === 1) {
+            return { projectId: matches[0].id, source: 'exact_name' };
         }
 
-        // Try contains
-        if (!match) {
-            const matches = projects.filter(p => p.name.toLowerCase().includes(hintLower));
-            if (matches.length > 0) {
-                // Pick the shortest name to avoid greedy matches on generic terms
-                match = matches.reduce((acc, curr) => (curr.name.length < acc.name.length ? curr : acc), matches[0]);
-            }
-        }
-
-        if (match) {
-            return match.id;
-        }
-
-        console.warn(`[Normalizer] Unresolved project hint: "${projectHint}". Falling back to default.`);
-        return defaultProjectId;
+        return { projectId: null, source: matches.length > 1 ? 'ambiguous' : 'missing' };
     }
 
-    // No projectHint provided — try content-based inference
-    if (taskTitle || taskContent) {
-        const inferredProjectId = inferProjectIdFromTask(
-            { title: taskTitle, content: taskContent },
-            projects
-        );
-        if (inferredProjectId) {
-            return inferredProjectId;
-        }
+    if (defaultProjectResolution?.confidence === 'ambiguous') {
+        return { projectId: null, source: 'ambiguous', choices: Array.isArray(defaultProjectResolution.choices) ? defaultProjectResolution.choices : [] };
     }
 
-    return defaultProjectId;
+    return defaultProjectId ? { projectId: defaultProjectId, source: 'configured_default' } : { projectId: null, source: 'missing' };
 }
 
 /**
@@ -950,6 +888,14 @@ export function normalizeAction(intentAction, options = {}) {
     // undefined = "don't touch" (adapter skips); explicit value = "change to this".
     const hasRepeatIntent = intentAction.repeatHint != null || intentAction.repeatFlag != null;
 
+    const resolvedProject = _resolveProject(
+        intentAction.projectHint,
+        projects,
+        defaultProjectId,
+        normalizedTitle || '',
+        normalizedContent,
+        options.defaultProjectResolution || null,
+    );
     const normalized = {
         _index: Number.isInteger(intentAction._index) ? intentAction._index : null,
         type: _resolveActionType(intentAction, options.existingTask),
@@ -964,13 +910,32 @@ export function normalizeAction(intentAction, options = {}) {
         originalPriority: originalPriority,  // Keep for validation
         projectId: isMutation && !intentAction.projectHint
             ? undefined
-            : _resolveProject(intentAction.projectHint, projects, defaultProjectId, normalizedTitle || '', normalizedContent),
+            : resolvedProject.projectId,
         dueDate: isMutation && intentAction.dueDate == null ? undefined : _expandDueDate(intentAction.dueDate, options),
         repeatFlag: isMutation && !hasRepeatIntent ? undefined : _resolveRepeatFlag(intentAction),
         splitStrategy: intentAction.splitStrategy || 'single',
         valid: true,
         validationErrors: []
     };
+
+    if (!isMutation) {
+        const hintedProjectName = typeof intentAction.projectHint === 'string' ? intentAction.projectHint.trim().toLowerCase() : '';
+        const exactMatches = hintedProjectName
+            ? projects.filter(project => project?.name?.trim().toLowerCase() === hintedProjectName)
+            : [];
+        normalized.projectResolution = resolvedProject.source === 'ambiguous'
+            ? {
+                confidence: 'ambiguous',
+                choices: Array.isArray(resolvedProject.choices) && resolvedProject.choices.length > 0
+                    ? resolvedProject.choices
+                    : exactMatches.map(project => ({ projectId: project.id, projectName: project.name })),
+            }
+            : resolvedProject.source === 'missing'
+                ? { confidence: 'missing' }
+                : resolvedProject.source === 'configured_default'
+                    ? { confidence: 'configured', projectId: normalized.projectId }
+                    : { confidence: 'exact', projectId: normalized.projectId };
+    }
 
     // Only attach checklistItems to create actions
     if (checklistItems !== undefined) {

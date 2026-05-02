@@ -40,6 +40,44 @@ test('registerCommands /status includes deferred queue counts', async () => {
   assert.match(lastReply, /Failed permanently: 1 items/);
 });
 
+test('registerCommands /status hides debug internals in normal status', async () => {
+  await store.resetAll();
+  const handlers = { commands: new Map(), callbacks: [], events: [] };
+  const bot = {
+    command(name, handler) { handlers.commands.set(name, handler); return this; },
+    callbackQuery() { return this; },
+    on() { return this; },
+  };
+
+  registerCommands(
+    bot,
+    { isAuthenticated: () => true, getCacheAgeSeconds: () => 42 },
+    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => ({ index: 2, total: 3 }) },
+    { listActiveTasks: async () => [] },
+    {},
+  );
+
+  const statusHandler = handlers.commands.get('status');
+  const replies = [];
+  const ctx = {
+    chat: { id: 1 },
+    from: { id: 1 },
+    reply: async (msg) => { replies.push(msg); },
+  };
+
+  await statusHandler(ctx);
+
+  const reply = replies.at(-1);
+  assert.match(reply, /TickTick live state/);
+  assert.match(reply, /Local review queue/);
+  assert.match(reply, /Deferred queue/);
+  assert.match(reply, /Running job/);
+  assert.doesNotMatch(reply, /Gemini Key/i);
+  assert.doesNotMatch(reply, /Cache:/i);
+  assert.doesNotMatch(reply, /Auto-apply mode/i);
+  assert.doesNotMatch(reply, /metadata-only|full/);
+});
+
 test('registerCommands /pending shows scoped empty local queue message', async () => {
   await store.resetAll();
   const handlers = { commands: new Map(), callbacks: [], events: [] };

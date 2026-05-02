@@ -702,7 +702,7 @@ test('formatSummary renders fixed section order across briefing and weekly varia
       summary: buildDailySummaryFixture(),
       context: { workStyleMode: store.MODE_STANDARD, urgentMode: false },
       header: 'MORNING BRIEFING',
-      sectionOrder: ['**Focus**', '**Priorities**', '**Why now**', '**Start now**', '**Notices**'],
+      sectionOrder: ['**Focus**', '**Top priorities**', '**Why it matters**', '**First action**', '**Notes**'],
       mustContain: [],
       assertExtra: (result) => {
         assert.equal(result.tonePreserved, true);
@@ -713,7 +713,7 @@ test('formatSummary renders fixed section order across briefing and weekly varia
       summary: buildWeeklySummaryFixture(),
       context: { urgentMode: false },
       header: 'WEEKLY ACCOUNTABILITY REVIEW',
-      sectionOrder: ['**Progress**', '**Carry forward**', '**Next focus**', '**Watchouts**', '**Notices**'],
+      sectionOrder: ['**Progress**', '**Carry forward**', '**Next focus**', '**Watchouts**', '**Notes**'],
       mustContain: ['Overdue tasks accumulating: 2 active tasks are overdue right now.'],
       assertExtra: () => {},
     },
@@ -745,7 +745,7 @@ test('formatSummary keeps empty sections compact and Telegram-safe', () => {
   const weeklyResult = formatSummary({ kind: 'weekly', summary: weekly, context: {} });
 
   assert.match(dailyResult.text, /\*\*Focus\*\*: None/);
-  assert.equal(dailyResult.text.includes('**Priorities**'), false);
+  assert.equal(dailyResult.text.includes('**Top priorities**'), false);
   assert.equal(dailyResult.text.includes('Keep momentum on your top task.'), false);
   assert.match(weeklyResult.text, /\*\*Progress\*\*:\n- None/);
   assert.match(weeklyResult.text, /\*\*Carry forward\*\*:\n- None/);
@@ -1005,7 +1005,7 @@ test('formatSummary renders daily-close sections in fixed order and keeps output
     context: { urgentMode: false },
   });
 
-  const sectionOrder = ['**Stats**', '**Reflection**', '**Reset cue**', '**Notices**'];
+  const sectionOrder = ['**Stats**', '**Reflection**', '**Reset cue**', '**Notes**'];
   const positions = sectionOrder.map((label) => text.indexOf(label));
 
   assert.ok(text.includes('END-OF-DAY REFLECTION'));
@@ -1076,7 +1076,7 @@ test('briefing summary keeps degraded recommendations intentionally minimal', ()
 
   assert.equal(result.summary.priorities.length, 0);
   assert.equal(result.summary.why_now.length, 0);
-  assert.ok(!result.formattedText.includes('**Priorities**'));
+  assert.ok(!result.formattedText.includes('**Top priorities**'));
 });
 
 test('daily briefing output is deterministic for fixed input', () => {

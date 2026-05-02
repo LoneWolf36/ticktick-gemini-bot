@@ -167,9 +167,9 @@ test('work-style integration switches to urgent mode and shortens briefing plus 
     context: { workStyleMode: store.MODE_URGENT, urgentMode: true },
   }).text;
 
-  assert.match(standardBriefing, /\*\*Why now\*\*/);
+  assert.match(standardBriefing, /\*\*Why it matters\*\*/);
   assert.match(standardBriefing, /Pay rent/);
-  assert.doesNotMatch(urgentBriefing, /\*\*Why now\*\*/);
+  assert.doesNotMatch(urgentBriefing, /\*\*Why it matters\*\*/);
   assert.doesNotMatch(urgentBriefing, /Pay rent/);
   assert.match(urgentBriefing, /Ship weekly architecture PR/);
   assert.match(urgentBriefing, /Prepare system design notes/);
@@ -1416,5 +1416,4 @@ test('runWeeklyDigestJob passes historyAvailable false when processed-task histo
   assert.equal(summaryCalls, 1);
 
 });
-
 

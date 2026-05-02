@@ -34,3 +34,20 @@ test('intake lock self-heals after ttl expiry', () => {
 
     releaseIntakeLock();
 });
+
+test('intake lock releases after mid-operation throw', () => {
+    releaseIntakeLock();
+
+    let caught = false;
+    try {
+        assert.equal(tryAcquireIntakeLock({ owner: 'test:throw', ttlMs: 1000, now: 1000 }), true);
+        throw new Error('mid-operation failure');
+    } catch {
+        caught = true;
+    } finally {
+        releaseIntakeLock();
+    }
+
+    assert.equal(caught, true);
+    assert.deepEqual(getIntakeLockStatus({ now: 1001 }), { locked: false });
+});

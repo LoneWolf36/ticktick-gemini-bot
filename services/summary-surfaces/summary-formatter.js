@@ -67,22 +67,23 @@ function formatBriefing(summary = {}, context = {}) {
 
     const focus = normalizeInline(summary.focus) || EMPTY_LABEL;
     const startNow = normalizeInline(summary.start_now) || EMPTY_LABEL;
+    const whyNow = Array.isArray(summary.why_now) ? summary.why_now.slice(0, 2) : [];
     const sections = [];
 
     sections.push(`**Focus**: ${focus}`);
 
     if (priorities.length > 0) {
-        sections.push(`**Priorities**:\n${urgentMode ? renderNumberedList(priorities.slice(0, 2)) : renderNumberedList(priorities)}`);
+        sections.push(`**Top priorities**:\n${urgentMode ? renderNumberedList(priorities.slice(0, 2)) : renderNumberedList(priorities)}`);
     }
 
-    if (!urgentMode && Array.isArray(summary.why_now) && summary.why_now.length > 0) {
-        sections.push(`**Why now**:\n${renderList(summary.why_now)}`);
+    if (!urgentMode && whyNow.length > 0) {
+        sections.push(`**Why it matters**:\n${renderList(whyNow)}`);
     }
 
-    sections.push(`**Start now**: ${startNow}`);
+    sections.push(`**First action**: ${startNow}`);
 
     if (!urgentMode) {
-        sections.push(`**Notices**:\n${formatNotices(summary.notices)}`);
+        sections.push(`**Notes**:\n${formatNotices(summary.notices)}`);
     }
 
     return sections.join('\n\n').trim();
@@ -123,7 +124,7 @@ function formatWeekly(summary = {}, context = {}) {
             sections.push(`**Next focus**:\n${renderNumberedList(summary.next_focus)}`);
         }
         sections.push(`**Watchouts**:\n${renderList(watchouts)}`);
-        sections.push(`**Notices**:\n${formatNotices(summary.notices)}`);
+        sections.push(`**Notes**:\n${formatNotices(summary.notices)}`);
     }
 
     return sections.join('\n\n').trim();
@@ -152,7 +153,7 @@ function formatDailyClose(summary = {}, context = {}) {
         `**Stats**:\n${renderList(summary.stats)}`,
         `**Reflection**: ${reflection}`,
         `**Reset cue**: ${resetCue}`,
-        `**Notices**:\n${formatNotices(summary.notices)}`,
+        `**Notes**:\n${formatNotices(summary.notices)}`,
     ].join('\n\n').trim();
 }
 

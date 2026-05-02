@@ -1110,11 +1110,11 @@ test('formatSummary keeps standard briefing full and reduces urgent briefing to 
     context: buildSummaryResolvedStateFixture({ kind: 'briefing', workStyleMode: store.MODE_URGENT }),
   }).text;
 
-  assert.match(standard, /\*\*Why now\*\*/);
+  assert.match(standard, /\*\*Why it matters\*\*/);
   assert.match(standard, /Directly moves the highest-priority goal\./);
   assert.match(standard, /Pay rent/);
 
-  assert.doesNotMatch(urgent, /\*\*Why now\*\*/);
+  assert.doesNotMatch(urgent, /\*\*Why it matters\*\*/);
   assert.doesNotMatch(urgent, /Directly moves the highest-priority goal\./);
   assert.doesNotMatch(urgent, /Pay rent/);
   assert.match(urgent, /Ship weekly architecture PR/);
@@ -1198,14 +1198,14 @@ test('formatSummary adapts daily close verbosity by work-style mode', () => {
   }).text;
 
   assert.match(standard, /\*\*Stats\*\*/);
-  assert.match(standard, /\*\*Notices\*\*/);
+  assert.match(standard, /\*\*Notes\*\*/);
 
   assert.match(focus, /\*\*Stats\*\*/);
-  assert.doesNotMatch(focus, /\*\*Notices\*\*/);
+  assert.doesNotMatch(focus, /\*\*Notes\*\*/);
   assert.doesNotMatch(focus, /Still open: 3/);
 
   assert.doesNotMatch(urgent, /\*\*Stats\*\*/);
-  assert.doesNotMatch(urgent, /\*\*Notices\*\*/);
+  assert.doesNotMatch(urgent, /\*\*Notes\*\*/);
   assert.match(urgent, /\*\*Reflection\*\*/);
   assert.match(urgent, /\*\*Reset cue\*\*/);
 });
@@ -1225,11 +1225,11 @@ test('formatSummary keeps weekly default compact in standard mode and shortens i
   }).text;
 
   assert.match(standard, /\*\*Carry forward\*\*/);
-  assert.match(standard, /\*\*Notices\*\*/);
+  assert.match(standard, /\*\*Notes\*\*/);
   assert.match(standard, /Finalize system design notes/);
 
   assert.doesNotMatch(urgent, /\*\*Carry forward\*\*/);
-  assert.doesNotMatch(urgent, /\*\*Notices\*\*/);
+  assert.doesNotMatch(urgent, /\*\*Notes\*\*/);
   assert.match(urgent, /\*\*Progress\*\*/);
   assert.match(urgent, /\*\*Next focus\*\*/);
   assert.match(urgent, /\*\*Watchouts\*\*/);
