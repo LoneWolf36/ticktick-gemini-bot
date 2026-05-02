@@ -249,6 +249,154 @@ Stage 4 acceptance status:
 - Deferred and dry-run states preserve truthful changed/applied/dryRun semantics: complete.
 - Callback and reorg receipt mapping remain explicitly out of Stage 4 scope and should be handled in later stages.
 
+### Stage 5 — Routing, command semantics, and UX trust hardening — completed
+
+Commit: `bcc0ff9 fix: harden trust routing and review races`
+
+Scope completed:
+
+- Hardened project destination resolution for create/write flows.
+- Removed silent fallback from explicit unresolved project hints to configured defaults.
+- Treated duplicate destination names/defaults as ambiguous and blocked, not as first-match writes.
+- Accepted exact opaque project IDs and exact single project-name matches as safe destinations.
+- Blocked ambiguous create destinations instead of exposing a confirmation flow that did not yet have project-choice UI.
+- Cleaned normal `/status` into a user-facing health surface and removed Gemini key/cache/raw auto-apply debug leakage.
+- Standardized review button vocabulary from `Refine`/`Keep` drift to `Edit`/`Skip` where appropriate.
+- Compacted briefing summary layout to clearer Focus / Top priorities / Why it matters / First action / Notes sections.
+- Added per-task review claims so concurrent Apply/Skip/Delete taps cannot double-mutate or resolve the same local review item twice.
+
+Production fixes:
+
+- Workstream B: deterministic project routing now fails closed on missing, ambiguous, or unmatched destinations.
+- Workstream C: `/status` now separates TickTick live state, local review queue, deferred queue, running job, recent activity, and coarse automation state.
+- Workstream D: review buttons and summary copy are more consistent and less noisy.
+- Workstream E: duplicate review callback races now fail closed with already-handled copy instead of duplicate writes.
+
+Validation completed:
+
+- `npm run check:test-sizes` → pass.
+- Targeted routing/review/status/summary suites → pass.
+- `npm test` → 722 pass, 0 fail.
+- Oracle review after rework → safe to commit.
+- `git status --short` after commit → clean.
+
+Stage 5 acceptance status:
+
+- Missing/ambiguous/unmatched project routing blocks safely: complete.
+- Exact/configured destination routing works without substring/fuzzy inference: complete.
+- Normal `/status` no longer leaks debug internals: complete.
+- Review button vocabulary drift reduced: complete.
+- Duplicate callback mutation race guarded for review actions: complete.
+
+### Stage 6 — Receipt trust surfaces for busy, stale, partial, and reorg flows — completed
+
+Commit: `c38646b feat: harden receipt trust surfaces`
+
+Scope completed:
+
+- Added shared busy-lock copy/receipt formatting for `/scan` and `/review` lock contention.
+- Added stale preview revalidation before pending review apply/delete/complete mutations.
+- Added stale/missing/revalidation-error safe blocking behavior and stale-card parking.
+- Added safe partial batch receipt counts for succeeded, failed, and actually rolled-back actions.
+- Added structured reorg execution summaries and validated reorg operation receipts.
+- Split oversized reorg receipt tests into a focused regression file.
+- Updated JSDoc and regenerated `context/refs/codebase-function-map.md` for new/changed exports.
+
+Production fixes:
+
+- Workstream A: receipt vocabulary now covers more terminal mutation-like paths beyond pipeline-only outcomes.
+- Workstream E: stale pending-review previews no longer blindly mutate changed/deleted/live tasks.
+- Workstream E/F: rollback-failure receipts count only records actually rolled back, not attempted rollback records.
+- Reorg apply copy distinguishes real TickTick changes from local-only drops.
+- Busy lock collisions now use stable product copy instead of ad-hoc command text.
+
+Validation completed:
+
+- `npm run check:test-sizes` → pass.
+- Targeted receipt/reorg/stale/lock suites → pass.
+- `npm test` → 731 pass, 0 fail.
+- Oracle review after rework → no blockers.
+- `git status --short` after commit → clean.
+
+Stage 6 acceptance status:
+
+- Busy lock user-facing receipt/copy: complete.
+- Mid-operation lock cleanup coverage: complete.
+- Stale pending-review apply/delete/complete guard: complete for review callbacks.
+- Partial batch receipt counts: complete for covered pipeline rollback/failure paths.
+- Reorg apply receipt mapping: complete.
+
+### Stage 7 — Callback receipt and undo parity — completed
+
+Commit: `ed5d0aa feat: unify callback receipts and undo`
+
+Scope completed:
+
+- Added `bot/pipeline-result-receipts.js` as a shared Telegram receipt/undo helper for pipeline task results.
+- Refactored free-form mutation replies in `bot/commands.js` to use the shared helper.
+- Routed resumed mutation callbacks (`mut:confirm`, `mut:pick`) through the same receipt/undo helper.
+- Routed checklist clarification success callbacks through the same receipt/undo helper.
+- Persisted undo entries only when rollback metadata exists and persistence succeeds.
+- Kept applied receipts visible even when undo persistence fails; no undo button is shown in that case.
+- Reused already-fetched callback project context after mutation so a post-mutation project-list failure cannot mask an applied write.
+- Updated callback receipt regressions, helper regressions, docs, AGENTS module list, and generated function map.
+
+Production fixes:
+
+- Free-form writes and callback-resumed writes now share the same visible receipt and undo affordance behavior.
+- Callback dry-runs do not persist undo entries.
+- Partial undo persistence still exposes undo when at least one rollback entry was saved.
+- Checklist callback success no longer falls back to raw `confirmationText` with no undo affordance.
+
+Validation completed:
+
+- `node --test tests/regression.telegram-callback-receipts.test.js tests/regression.checklist-clarification.test.js` → 27/27 pass.
+- `npm run check:test-sizes` → pass.
+- `npm test` → 741 pass, 0 fail.
+- Oracle review blocker fixed before commit.
+- `git status --short` after commit → clean.
+
+Stage 7 acceptance status:
+
+- Callback mutation receipt parity with free-form writes: complete.
+- Callback undo affordance parity: complete.
+- Undo button shown only after rollback persistence succeeds: complete.
+- Applied mutation remains truthfully reported if undo persistence fails: complete.
+- Docs/function map synced: complete.
+
+### Stage 8 — Deferred retry trust boundary — selected next, not started
+
+Recommended next workstream from latest review: make deferred retry a first-class mutation surface.
+
+Remaining root cause:
+
+- Deferred retry is still scheduler-owned glue. It can apply TickTick changes later, outside the now-standard free-form/callback receipt and undo path.
+- `services/scheduler.js` retry notifications/logs still risk raw task/user text snippets and do not persist undo metadata for later-applied writes.
+
+Planned scope:
+
+- Map deferred retry pipeline results to privacy-safe validated receipts.
+- Persist undo entries for successful deferred retry mutations when rollback metadata exists.
+- Notify with applied/failed/deferred count-safe copy rather than raw `Retried: ...` text.
+- Keep transient failures queued with backoff and move exhausted failures to DLQ without raw user-message leakage.
+
+Likely files:
+
+- `services/scheduler.js`
+- `bot/pipeline-result-receipts.js` or a scheduler-safe sibling formatter if Telegram-specific keyboard output is unsuitable
+- `services/store.js` only if redacted deferred/DLQ metadata needs shape changes
+- `tests/regression.scheduler-grace-window.test.js`
+- `tests/regression.pipeline-logging-privacy.test.js`
+- `docs/ARCHITECTURE.md`
+- `README.md` if user-visible deferred retry copy changes
+
+Safe failure defaults:
+
+- Retry result lacks valid receipt → do not send success copy; keep/dead-letter according to retry policy.
+- Applied but undo persistence fails → report applied, omit undo affordance, and do not claim rollback is available.
+- Permanent failure → DLQ with safe reason/count/id only, no raw user message.
+- Transient failure → stay queued, increment retry/backoff, no success notification.
+
 ## Core contract: OperationReceipt
 
 Define a shared contract used by pipeline, review callbacks, reorg execution, and command rendering.
@@ -306,7 +454,7 @@ Responsibilities:
 3. Ensure free-form write path, dry-run scan path, deferred-intent path, and error path expose `changed`, `status`, `scope`, and `traceId`.
 4. Add privacy-safe telemetry fields aligned to receipts.
 
-Can start immediately after this plan is accepted. Must finish before UI rendering work merges.
+Status: mostly complete for pipeline, reorg, free-form, review, callback, and receipt contract surfaces. Remaining A/F work is telemetry/privacy standardization for deferred scheduler retry and any uncovered model-degraded paths.
 
 ### Workstream B — Project routing and Inbox safety
 
@@ -330,7 +478,7 @@ Responsibilities:
 4. Optional fallback policy must be explicit, config-backed, documented, and off by default.
 5. Add tests for missing, renamed, duplicated, and configured destination cases.
 
-Can run in parallel with Workstream A if both agree on receipt fields.
+Status: complete for current MVP routing policy. Exact project IDs, one exact project-name match, and configured defaults are allowed; missing, unmatched, or ambiguous destinations block safely. No explicit fallback policy was added because default-off safe behavior met the current need.
 
 ### Workstream C — Command semantics and reconciliation
 
@@ -356,7 +504,7 @@ Responsibilities:
 4. Include last sync timestamp and scope in user-visible status.
 5. Preserve lock safety and cleanup on mid-operation errors.
 
-Must wait for Workstream A contract shape before final rendering, but can write failing tests and identify call sites in parallel.
+Status: mostly complete for `/scan`, `/pending`, `/status`, local review queue copy, running-job/busy state, and debug leakage removal. Remaining C work is deferred retry notification/status semantics.
 
 ### Workstream D — Telegram UX and copy system
 
@@ -400,7 +548,7 @@ Responsibilities:
 5. Split normal `/status` from debug details. Debug can remain behind a separate command/flag only if already supported or explicitly added.
 6. Keep briefings short: Focus, Top 3, Why now, First action.
 
-Must wait for Workstream A receipt fields for final implementation. Copy vocabulary and README updates can be drafted in parallel.
+Status: mostly complete for normal `/status`, review buttons, applied/callback receipts, and briefing density. Remaining D work is deferred retry notification copy and any final transcript polish after Stage 8.
 
 ### Workstream E — Concurrency, stale preview, and deferred/outage paths
 
@@ -424,7 +572,7 @@ Responsibilities:
 5. Partial batch success reports applied vs failed/deferred counts.
 6. Undo metadata is created only for applied actions.
 
-Can write tests in parallel. Final implementation touches shared callback/store paths, so coordinate with Workstreams A/C/D.
+Status: partially complete. Busy lock copy, mid-operation lock cleanup coverage, stale review-preview revalidation, partial receipt counts, reorg receipts, and callback undo parity are complete. Deferred retry/outage handling remains the active gap.
 
 ### Workstream F — Tests, docs, and validation harness
 
@@ -446,7 +594,7 @@ Responsibilities:
 4. Enforce command semantics and receipt copy via tests.
 5. Update durable docs in same change set.
 
-Runs throughout all phases.
+Status: active throughout. Regression suites, docs, test-size guard, and function map have been kept current through Stage 7. Continue for Stage 8.
 
 ## Serial integration order
 
@@ -454,14 +602,14 @@ Parallel discovery/test drafting may happen early, but merge order should be:
 
 1. Contract and glossary accepted. **Completed in Stage 1 (`c5b369a`).**
 2. Failing tests added for highest-risk findings. **Completed in Stage 2.**
-3. OperationReceipt helpers and pipeline mapping. **Partially complete: pure contract helpers exist; production mapping remains.**
-4. Project routing safety.
-5. Lock/deferred/stale-preview receipts.
-6. Command semantics and reconciliation copy.
-7. Telegram UX vocabulary cleanup.
-8. Telemetry/privacy standardization.
-9. Docs and generated function map.
-10. Full validation review.
+3. OperationReceipt helpers and pipeline mapping. **Completed through Stage 4 (`2c5b461`).**
+4. Project routing safety. **Completed in Stage 5 (`bcc0ff9`).**
+5. Lock/deferred/stale-preview receipts. **Busy, stale review-preview, partial, and reorg paths completed in Stage 6 (`c38646b`); deferred retry remains Stage 8.**
+6. Command semantics and reconciliation copy. **Mostly completed in Stage 5; deferred retry/status semantics remain.**
+7. Telegram UX vocabulary cleanup. **Mostly completed in Stage 5 and Stage 7.**
+8. Telemetry/privacy standardization. **Partially complete for receipts; deferred scheduler retry privacy remains.**
+9. Docs and generated function map. **Kept current through Stage 7 (`ed5d0aa`).**
+10. Full validation review. **Completed after each committed stage; continue for Stage 8.**
 
 Do not let multiple agents simultaneously edit the same high-coupling files without handoff:
 
@@ -475,6 +623,8 @@ Do not let multiple agents simultaneously edit the same high-coupling files with
 ### F1 — Source-of-truth vs local working state is unclear
 
 Owner: Workstreams A, C.
+
+Current status: mostly complete. `/pending` is scoped to local review queue; `/status` separates TickTick live state, local queue, deferred queue, running job, recent activity, and automation state. Remaining gap: deferred retry status/notification semantics.
 
 Acceptance criteria:
 
@@ -494,6 +644,8 @@ Validation:
 
 Owner: Workstreams A, D.
 
+Current status: mostly complete. Pipeline, free-form writes, mutation callbacks, checklist callbacks, reorg apply, busy lock, stale preview, and partial batch paths now expose or render structured trust states. Remaining gap: deferred retry notifications.
+
 Acceptance criteria:
 
 - All mutation-like responses map to exactly one status: `preview`, `applied`, `pending_confirmation`, `blocked`, `deferred`, `failed`, or `busy`.
@@ -510,6 +662,8 @@ Validation:
 ### F3 — Inbox/project fallback can be silent
 
 Owner: Workstream B.
+
+Current status: complete for current policy. Missing, unmatched, duplicate, or ambiguous destinations block safely; exact project IDs, one exact project-name match, and configured defaults are allowed; first-project fallback is removed from the write path.
 
 Acceptance criteria:
 
@@ -529,6 +683,8 @@ Validation:
 
 Owner: Workstreams C, E.
 
+Current status: complete for scan/review/poll lock surfaces currently covered. Lock collision uses stable busy copy, stale locks self-heal, and mid-operation throw cleanup is regression-tested.
+
 Acceptance criteria:
 
 - Concurrent scan/poll/write returns `busy` with owner or generic operation type and last activity timestamp.
@@ -547,6 +703,8 @@ Validation:
 
 Owner: Workstreams A, F.
 
+Current status: partially complete through pipeline receipt failure/block handling. Remaining work: verify model fallback/degraded output and scheduler retry notifications cannot surface raw diagnostics or success-like copy.
+
 Acceptance criteria:
 
 - Invalid Gemini structured output produces `blocked`, `failed`, or clarification receipt with `changed=false`.
@@ -563,6 +721,8 @@ Validation:
 ### F6 — Dry-run and apply modes are visually inconsistent
 
 Owner: Workstreams A, D, F.
+
+Current status: mostly complete. Dry-run returns preview semantics with no adapter writes; applied writes use structured receipts in free-form and callback paths. Remaining polish: final transcript sweep after deferred retry work.
 
 Acceptance criteria:
 
@@ -581,6 +741,8 @@ Validation:
 
 Owner: Workstreams C, D.
 
+Current status: mostly complete. `/pending` and `/status` copy is scoped and debug leakage is removed from normal `/status`. Remaining gap: deferred retry should report count-safe state consistently.
+
 Acceptance criteria:
 
 - README command table defines each command exactly.
@@ -598,6 +760,8 @@ Validation:
 
 Owner: Workstream D.
 
+Current status: complete for normal `/status`; Gemini key index, cache age, and raw auto-apply mode no longer appear in the normal status output. Continue to guard deferred notifications/logs in Stage 8.
+
 Acceptance criteria:
 
 - Normal `/status` hides Gemini key index, cache age, raw fallback internals, and log-console style fields.
@@ -613,6 +777,8 @@ Validation:
 ### F9 — Action vocabulary is inconsistent
 
 Owner: Workstream D.
+
+Current status: mostly complete for review cards and documented user-facing button vocabulary. Remaining polish: re-check any deferred/retry notification actions after Stage 8.
 
 Acceptance criteria:
 
@@ -631,6 +797,8 @@ Validation:
 
 Owner: Workstream D.
 
+Current status: mostly complete. Briefing formatter now uses shorter Focus / Top priorities / Why it matters / First action / Notes structure with mode-sensitive density. Remaining polish: manual transcript review.
+
 Acceptance criteria:
 
 - Morning briefing renders: Focus, Top 3 priorities, Why now, First action.
@@ -647,6 +815,8 @@ Validation:
 ### F11 — Confirmation boundaries insufficient for non-obvious writes
 
 Owner: Workstreams A, B, E.
+
+Current status: mostly complete. Non-exact destructive task mutations use confirmation gates; ambiguous destination creates now block safely until project-choice UI exists; callback resume paths use shared receipts and undo parity. Remaining gap: deferred retry should not bypass state validation semantics.
 
 Acceptance criteria:
 
@@ -665,6 +835,8 @@ Validation:
 
 Owner: Workstream E.
 
+Current status: complete for local pending-review callbacks. Apply/delete/complete revalidate live snapshots, block on stale/missing/error states, and avoid blind mutations. Remaining gap: deferred retry and any non-review queued preview surfaces.
+
 Acceptance criteria:
 
 - Applying a queued preview re-fetches or validates current TickTick task/project state.
@@ -681,6 +853,8 @@ Validation:
 ### F13 — Partial batch and undo behavior under-specified
 
 Owner: Workstreams E, F.
+
+Current status: mostly complete for pipeline/reorg/callback-visible paths. Partial receipts include safe counts, undo entries are tied to successful rollback metadata, and callback/free-form undo affordances are consistent. Remaining gap: deferred retry undo persistence.
 
 Acceptance criteria:
 
@@ -699,6 +873,8 @@ Validation:
 
 Owner: Workstreams A, D, F.
 
+Current status: partial. Pipeline quota/deferred receipt semantics exist, but Stage 8 must ensure scheduler retry/degraded notifications remain product-safe and non-diagnostic.
+
 Acceptance criteria:
 
 - Model fallback stays invisible only if final status/confidence/outcome class remains stable.
@@ -715,6 +891,8 @@ Validation:
 ### F15 — Telemetry lacks consistent privacy-safe schema
 
 Owner: Workstreams A, F.
+
+Current status: partial. Operation receipts reject raw diagnostic/private text fields, and mapped receipt messages are count-safe. Remaining gap: scheduler deferred retry logs/notifications and DLQ records need a privacy sweep.
 
 Acceptance criteria:
 
@@ -736,16 +914,16 @@ Automated tests must be mocked and deterministic.
 Required regression groups:
 
 1. Receipt contract tests. **Completed in Stage 1.**
-2. Project routing resolver tests.
-3. Dry-run vs apply tests.
-4. Command semantics tests for `/scan`, `/pending`, `/status`.
-5. Lock/busy cleanup tests.
-6. Malformed model output recovery tests.
-7. Stale preview apply tests.
-8. Partial batch/undo tests.
-9. Telemetry privacy tests.
-10. Telegram keyboard/action vocabulary tests.
-11. Briefing formatter structure tests.
+2. Project routing resolver tests. **Completed through Stage 5.**
+3. Dry-run vs apply tests. **Completed through Stage 4/5; continue guarding callback/deferred paths.**
+4. Command semantics tests for `/scan`, `/pending`, `/status`. **Mostly complete; deferred retry/status semantics remain.**
+5. Lock/busy cleanup tests. **Completed for intake lock and scan/review busy paths.**
+6. Malformed model output recovery tests. **Partial; model/deferred degraded copy remains.**
+7. Stale preview apply tests. **Completed for pending-review callbacks.**
+8. Partial batch/undo tests. **Completed for pipeline/reorg/callback paths; deferred retry undo remains.**
+9. Telemetry privacy tests. **Partial; scheduler deferred retry privacy remains.**
+10. Telegram keyboard/action vocabulary tests. **Mostly complete for review/callback surfaces.**
+11. Briefing formatter structure tests. **Completed for current summary formatter behavior.**
 
 Canonical commands:
 
@@ -800,7 +978,7 @@ Exit condition: red tests demonstrate trust failures.
 
 Reviewer: oracle recommended.
 
-Status: partially completed. Contract seed, glossary, invariant tests, docs, and oracle review are complete. Remaining Gate 2 work is mapping the accepted contract to pipeline/callback/reorg paths without turning it into a global state manager.
+Status: mostly completed. Contract seed, glossary, invariant tests, docs, oracle review, pipeline mapping, reorg receipts, busy/stale/partial receipts, and callback receipt/undo parity are complete. Remaining Gate 2 work is deferred retry receipt mapping without turning it into a global state manager.
 
 Checks:
 
@@ -814,6 +992,8 @@ Exit condition: receipt contract approved and mapped to pipeline/callback/reorg 
 ### Gate 3 — Backend correctness review
 
 Reviewer: orchestrator + targeted oracle if risk expands.
+
+Status: mostly completed. Project routing, dry-run, lock release, stale review-preview, partial success, and undo metadata correctness are covered. Remaining backend risk is deferred scheduler retry applying writes outside the shared receipt/undo boundary.
 
 Checks:
 
@@ -830,6 +1010,8 @@ Exit condition: backend tests pass and code review finds no unsafe write path.
 
 Reviewer: designer.
 
+Status: mostly completed. Normal `/status`, review button vocabulary, briefing density, and mutation/callback receipts have been tightened. Remaining UX review should focus on deferred retry notification wording and final Telegram transcript sweep.
+
 Checks:
 
 - Each card answers: what is this, what changed, what next.
@@ -843,6 +1025,8 @@ Exit condition: transcript review approved for `/scan`, `/pending`, `/status`, r
 ### Gate 5 — Full regression and docs review
 
 Reviewer: orchestrator.
+
+Status: completed for Stages 1–7. Each committed stage passed `npm test`, `npm run check:test-sizes`, and `npm run docs:map` when required. Repeat after Stage 8.
 
 Checks:
 
