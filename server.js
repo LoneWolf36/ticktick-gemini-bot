@@ -37,7 +37,7 @@ const {
     GEMINI_MODEL_ADVANCED = 'gemini-2.5-pro',
     GEMINI_MODEL_FAST_FALLBACKS = '',
     GEMINI_MODEL_ADVANCED_FALLBACKS = '',
-    DEFAULT_PROJECT_NAME = 'Inbox',
+    DEFAULT_PROJECT_NAME = null,
     // TICKTICK_ACCESS_TOKEN is loaded by dotenv and used by TickTickClient internally
     // (validated at first API call, not at startup — the OAuth flow sets it)
 } = process.env;

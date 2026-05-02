@@ -14,6 +14,7 @@ test('R7: pipeline truncates over-limit checklist items to 30', async () => {
                 type: 'create',
                 title: 'Plan launch checklist',
                 confidence: 0.95,
+                projectHint: 'Career',
                 checklistItems,
             },
         ],

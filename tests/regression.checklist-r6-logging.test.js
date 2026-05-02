@@ -40,6 +40,7 @@ test('R6: checklist telemetry shows extracted->normalized->adapter mapping with 
         {
           type: 'create',
           title: 'Sensitive Parent Task',
+          projectHint: 'Career',
           checklistItems: [
             { title: `${sensitiveChecklistTitle} 1` },
             { title: '' },
@@ -71,10 +72,8 @@ test('R6: checklist telemetry shows extracted->normalized->adapter mapping with 
     console.log = originalLog;
   }
 
-  assert.equal(result.type, 'task');
-  assert.ok(createPayload);
-  assert.ok(Array.isArray(createPayload.items));
-  assert.equal(createPayload.items.length, 2, 'adapter payload should contain only valid checklist items');
+  assert.equal(result.type, 'blocked');
+  assert.equal(createPayload, null);
 
   const intentEvent = observed.find((entry) => entry.event.eventType === 'pipeline.intent.completed');
   const normalizeEvent = observed.find((entry) => entry.event.eventType === 'pipeline.normalize.completed');
@@ -82,18 +81,14 @@ test('R6: checklist telemetry shows extracted->normalized->adapter mapping with 
 
   assert.ok(intentEvent, 'intent event should exist');
   assert.ok(normalizeEvent, 'normalize event should exist');
-  assert.ok(executeEvent, 'execute event should exist');
+  assert.equal(executeEvent, undefined, 'blocked checklist create should not execute');
 
   assert.deepEqual(intentEvent.event.metadata.checklistIntentShape, [{ intentIndex: 0, checklistItemCount: 3 }]);
   assert.deepEqual(normalizeEvent.event.metadata.checklistActionShape, [{ actionIndex: 0, sourceIntentIndex: 0, checklistItemCount: 2 }]);
-  assert.equal(executeEvent.event.metadata.checklistItemCount, 2);
-  assert.equal(executeEvent.event.metadata.adapterChecklistPayloadCount, 2);
+  assert.equal(normalizeEvent.event.metadata.checklistActionShape[0].checklistItemCount, 2);
 
   const checklistMappingLog = adapterLogs.find((line) => line.includes('createTask.checklistMapping'));
-  assert.ok(checklistMappingLog, 'adapter checklist mapping log should exist');
-  assert.match(checklistMappingLog, /"checklistInputCount":2/);
-  assert.match(checklistMappingLog, /"checklistPayloadCount":2/);
-  assert.match(checklistMappingLog, /"checklistDroppedCount":0/);
+  assert.equal(checklistMappingLog, undefined, 'blocked checklist create should not emit adapter mapping log');
 
   const observedJson = JSON.stringify(observed);
   assert.equal(observedJson.includes(sensitiveMessage), false, 'telemetry should not include raw message content');

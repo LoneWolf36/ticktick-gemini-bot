@@ -134,7 +134,7 @@ See `context/refs/evidence-log.csv` for evidence tracking.
 ## Validation Action Items — 2026-04-20
 
 - [x] Audit R2 (Core Leverage Ranking Engine): `services/execution-prioritization.js` scores candidates with explicit goal-alignment, urgency, blocker-removal, and capacity-protection rules; `rankPriorityCandidates(...)` sorts deterministically and returns a bounded ranked list that briefing surfaces cap to 3 items.
-- [x] Audit R6 (Project Resolution): `inferProjectIdFromTask(...)` consults ranking-derived priority context when available, then falls back to built-in project fragment defaults when ranking context is degraded or insufficient.
+- [x] Audit R6 (Project Resolution): `inferProjectIdFromTask(...)` consults ranking-derived priority context when available and otherwise keeps routing conservative when ranking context is degraded or insufficient.
 - [x] Audit R11 (MVP Scope Boundary): ranking remains local heuristic code in `services/execution-prioritization.js` with no ML model calls, no cross-user comparison, and no external ranking API dependency.
 - [x] Audit R12 (User Goal Awareness): `createGoalThemeProfile(...)` parses declared goals from product context and `assessCandidate(...)` boosts matching tasks without penalizing degraded/no-goal cases.
 - [x] Audit R1 (Ranking Contract and Inputs): `context/refs/prioritization-ranking-contract.md` now defines the canonical ranking inputs/outputs and version history; `context/refs/source-register.csv` now catalogs current repo-relative evidence sources; `services/execution-prioritization.js` exposes recurrence (`repeatFlag`) and task-age (`taskAgeDays`) fields in the normalized candidate contract.

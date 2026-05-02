@@ -1010,7 +1010,7 @@ async function sleep(ms) {
  *   - `processMessage(userMessage, options?)` → `{ type: 'task'|'preview'|'blocked'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`
  *   - `getTelemetry()` → the observability instance for this pipeline
  */
-export function createPipeline({ intentExtractor, normalizer, adapter, observability, deferIntent, defaultProjectName = 'Inbox' } = {}) {
+export function createPipeline({ intentExtractor, normalizer, adapter, observability, deferIntent, defaultProjectName = null } = {}) {
     const contextBuilder = createPipelineContextBuilder({ adapter });
     const telemetry = observability || createPipelineObservability();
 
@@ -1697,8 +1697,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 }
             }
 
-            const defaultProjectMatches = context.availableProjects
-                .filter(p => p?.name?.toLowerCase() === defaultProjectName?.toLowerCase());
+            const defaultProjectMatches = defaultProjectName
+                ? context.availableProjects.filter(p => p?.name?.toLowerCase() === defaultProjectName?.toLowerCase())
+                : [];
             let defaultProjectId = defaultProjectMatches.length === 1 ? defaultProjectMatches[0].id : null;
             const defaultProjectResolution = defaultProjectMatches.length > 1
                 ? {
@@ -1709,9 +1710,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     ? { confidence: 'configured', projectId: defaultProjectId }
                     : { confidence: 'missing' };
 
-            if (defaultProjectResolution.confidence === 'missing') {
+            if (defaultProjectName && defaultProjectResolution.confidence === 'missing') {
                 console.warn(`[Pipeline:${context.requestId}] Default project "${defaultProjectName}" not found. Blocking create actions without a resolved destination.`);
-            } else if (defaultProjectResolution.confidence === 'ambiguous') {
+            } else if (defaultProjectName && defaultProjectResolution.confidence === 'ambiguous') {
                 console.warn(`[Pipeline:${context.requestId}] Default project "${defaultProjectName}" is ambiguous. Blocking create actions without a unique destination.`);
             }
 
@@ -1785,6 +1786,11 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
 
             const validActions = normalizedActions.filter(a => a.valid);
             const invalidActions = normalizedActions.filter(a => !a.valid);
+            const blockedMutationDestinationActions = validActions.filter(action =>
+                ['update', 'complete', 'delete'].includes(action.type) &&
+                action.projectHint &&
+                (!action.projectResolution || ['missing', 'ambiguous'].includes(action.projectResolution.confidence)),
+            );
             context = updatePipelineContext(context, (draft) => {
                 draft.lifecycle.normalize.status = 'success';
                 draft.lifecycle.normalize.normalizedActions = snapshotPrivacySafePipelineValue(normalizedActions);
@@ -1881,6 +1887,48 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 return attachPipelineContext(buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS, {
                     note: 'No valid actions after normalization.',
                 }), context);
+            }
+
+            if (blockedMutationDestinationActions.length > 0) {
+                const confirmationText = 'Blocked — no safe TickTick destination found for mutation. Choose an exact project or remove the project hint, then retry.';
+                context = finalizePipelineContext(context, requestStartedAt, {
+                    resultType: 'blocked',
+                    status: 'failure',
+                    summary: 'missing_project_destination',
+                    failureClass: FAILURE_CLASSES.VALIDATION,
+                    rolledBack: false,
+                    validationFailures: ['missing_project_destination'],
+                });
+                return attachPipelineContext({
+                    type: 'blocked',
+                    status: 'blocked',
+                    results: [],
+                    errors: ['missing_project_destination'],
+                    confirmationText,
+                    operationReceipt: buildOperationReceipt(context, {
+                        status: 'blocked',
+                        scope: 'system',
+                        command: resolveReceiptCommand(context),
+                        operationType: blockedMutationDestinationActions[0].type,
+                        nextAction: 'retry',
+                        changed: false,
+                        dryRun: isDryRun,
+                        applied: false,
+                        fallbackUsed: false,
+                        message: confirmationText,
+                        errorClass: 'validation',
+                        destination: { confidence: 'missing' },
+                    }),
+                    requestId: context.requestId,
+                    entryPoint: context.entryPoint,
+                    mode: context.mode,
+                    workStyleMode: context.workStyleMode || null,
+                    checklistContext: context.checklistContext || null,
+                    warnings: ['missing_project_destination'],
+                    dryRun: isDryRun,
+                    applied: false,
+                    changed: false,
+                }, context);
             }
 
             const pendingCreateDestination = validActions.find(action => action.type === 'create' && action.projectResolution?.confidence === 'ambiguous');

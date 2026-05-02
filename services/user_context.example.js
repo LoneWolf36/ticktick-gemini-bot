@@ -71,7 +71,9 @@ ACCOUNTABILITY STYLE:
  * - routine: cap at Life Admin (1), never Core Goal
  * - uncategorized (default): cap at Important (3), default Life Admin (1)
  *
- * Aliases help the system match tasks when project is not explicitly set.
+ * Project routing is exact-match only.
+ * If no exact configured destination exists, writes stay blocked or omit the
+ * project move rather than guessing Inbox/default.
  *
  * DEFAULTS: If you omit PROJECT_POLICY entirely, the system falls back to
  * uncategorized for everything (safe default: priority cap 3, default 1).

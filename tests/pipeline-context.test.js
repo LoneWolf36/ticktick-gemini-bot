@@ -435,6 +435,7 @@ test('WP01: full pipeline flow with canonical context succeeds', async () => {
             type: 'create',
             title: 'Buy groceries',
             confidence: 0.9,
+            projectHint: 'Career',
         }],
         now: '2026-04-13T10:00:00Z',
     });
@@ -461,6 +462,7 @@ test('R1: observability consumers receive canonical immutable pipeline context s
             type: 'create',
             title: 'Write summary',
             confidence: 0.9,
+            projectHint: 'Career',
         }],
         observability,
     });

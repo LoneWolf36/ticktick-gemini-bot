@@ -538,7 +538,7 @@ function _resolveRepeatFlag(intentAction = {}) {
  * 1. Exact project ID when hinted
  * 2. Exactly one exact project-name match when hinted
  * 3. defaultProjectResolution only when no projectHint exists
- * 4. defaultProjectId fallback for legacy callers when resolution is not provided
+ * 4. defaultProjectId only when no projectHint exists and resolution is not provided
  */
 function _resolveProject(projectHint, projects = [], defaultProjectId = null, taskTitle = '', taskContent = '', defaultProjectResolution = null) {
     const trimmedHint = typeof projectHint === 'string' ? projectHint.trim() : '';
@@ -902,6 +902,7 @@ export function normalizeAction(intentAction, options = {}) {
         confidence: effectiveConfidence,
         taskId: resolvedTaskId,
         originalProjectId: resolvedOriginalProjectId,
+        projectHint: intentAction.projectHint,
         targetQuery: isMutation ? (intentAction.targetQuery || null) : null,
         title: normalizedTitle,
         content: normalizedContent,
@@ -918,11 +919,11 @@ export function normalizeAction(intentAction, options = {}) {
         validationErrors: []
     };
 
-    if (!isMutation) {
-        const hintedProjectName = typeof intentAction.projectHint === 'string' ? intentAction.projectHint.trim().toLowerCase() : '';
-        const exactMatches = hintedProjectName
-            ? projects.filter(project => project?.name?.trim().toLowerCase() === hintedProjectName)
-            : [];
+    const hintedProjectName = typeof intentAction.projectHint === 'string' ? intentAction.projectHint.trim().toLowerCase() : '';
+    const exactMatches = hintedProjectName
+        ? projects.filter(project => project?.name?.trim().toLowerCase() === hintedProjectName)
+        : [];
+    if (hintedProjectName || !isMutation) {
         normalized.projectResolution = resolvedProject.source === 'ambiguous'
             ? {
                 confidence: 'ambiguous',

@@ -1307,9 +1307,6 @@ export class GeminiAnalyzer {
         const taskById = new Map(tasks.map(t => [t.id, t]));
         const goalThemeProfile = createGoalThemeProfile(USER_CONTEXT, { source: USER_CONTEXT_SOURCE });
 
-        const nonInboxProjects = projects.filter(p => (p.name || '').toLowerCase() !== 'inbox');
-        const defaultProjectId = nonInboxProjects[0]?.id || projects[0]?.id || null;
-
         function cleanReorgTitle(title) {
             if (typeof title !== 'string') return title;
             const jsonArtifactMatch = title.match(/^(.*?)["']?\s*[,\]\}]*\s*["']?\s*(?:priority|projectId|scheduleBucket|dueDate)\s*:/i);
@@ -1329,7 +1326,6 @@ export class GeminiAnalyzer {
                 }
                 if (!changes.title || typeof changes.title !== 'string') continue;
                 if (![0, 1, 3, 5].includes(changes.priority)) changes.priority = 1;
-                if (!changes.projectId && defaultProjectId) changes.projectId = defaultProjectId;
                 const key = `${changes.title.trim().toLowerCase()}|${changes.projectId || ''}|${changes.scheduleBucket || changes.dueDate || ''}`;
                 if (createSeen.has(key)) continue;
                 createSeen.add(key);
@@ -1362,12 +1358,8 @@ export class GeminiAnalyzer {
             if (merged.priority !== undefined && ![0, 1, 3, 5].includes(merged.priority)) {
                 delete merged.priority;
             }
-            if (!merged.projectId && (task.projectName || '').toLowerCase() === 'inbox') {
-                merged.projectId = inferProjectIdFromTask(task, projects, { goalThemeProfile }) || defaultProjectId;
-            }
             if (type === 'drop') {
                 // Non-destructive demotion path: keep as drop but include metadata changes.
-                if (!merged.projectId) merged.projectId = inferProjectIdFromTask(task, projects, { goalThemeProfile }) || defaultProjectId;
                 merged.priority = 0;
             }
             if (Object.keys(merged).length === 0) continue;
@@ -1387,7 +1379,7 @@ export class GeminiAnalyzer {
         const inboxActive = tasks.filter(t => (t.status === 0 || t.status === undefined) && (t.projectName || '').toLowerCase() === 'inbox');
         for (const task of inboxActive) {
             if (touched.has(task.id)) continue;
-            const inferredProjectId = inferProjectIdFromTask(task, projects, { goalThemeProfile }) || defaultProjectId;
+            const inferredProjectId = inferProjectIdFromTask(task, projects, { goalThemeProfile });
             if (!inferredProjectId || inferredProjectId === task.projectId) continue;
             normalizedActions.push({
                 type: 'update',
@@ -1408,7 +1400,7 @@ export class GeminiAnalyzer {
                     taskId: task.id,
                     changes: {
                         projectId: (task.projectName || '').toLowerCase() === 'inbox'
-                            ? (inferProjectIdFromTask(task, projects, { goalThemeProfile }) || defaultProjectId)
+                            ? inferProjectIdFromTask(task, projects, { goalThemeProfile })
                             : undefined,
                     },
                 });

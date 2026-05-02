@@ -3,7 +3,6 @@ import {
     projectPolicy,
     resolveProjectCategory,
     getCategoryConfig,
-    inferProjectByAliases,
     VERB_PATTERNS,
     URGENT_KEYWORDS,
     STOP_WORDS,
@@ -118,15 +117,39 @@ function extractLabelTokens(label) {
         .filter((token) => token.length > 2 && !STOP_WORDS.has(token));
 }
 
-function findProjectIdByFragments(projects, fragments) {
-    for (const fragment of fragments) {
-        const match = projects.find((project) => (project.name || '').toLowerCase().includes(fragment));
-        if (match?.id) {
-            return match.id;
+function findExactProjectIdByName(projects, projectName) {
+    const normalizedName = normalizeWhitespace(projectName).toLowerCase();
+    if (!normalizedName) return null;
+
+    const match = projects.find((project) => normalizeWhitespace(project.name).toLowerCase() === normalizedName);
+    return match?.id || null;
+}
+
+function buildConfiguredProjectLookup(policy = projectPolicy) {
+    const lookup = new Map();
+
+    if (!policy || !Array.isArray(policy.projects)) {
+        return lookup;
+    }
+
+    for (const project of policy.projects) {
+        const projectId = asString(project?.projectId || project?.id);
+        if (!projectId) continue;
+
+        const exactName = normalizeWhitespace(project?.match || project?.name).toLowerCase();
+        if (exactName) {
+            lookup.set(exactName, projectId);
+        }
+
+        for (const alias of Array.isArray(project?.aliases) ? project.aliases : []) {
+            const exactAlias = normalizeWhitespace(alias).toLowerCase();
+            if (exactAlias) {
+                lookup.set(exactAlias, projectId);
+            }
         }
     }
 
-    return null;
+    return lookup;
 }
 
 function inferThemeMatches(candidate, goalThemeProfile) {
@@ -672,7 +695,7 @@ export function inferPriorityValueFromTask(task, options = {}) {
 
 /**
  * Infer a project ID for a task from available projects.
- * Conservative fallback only: exact alias match first, then safe fragment fallback.
+ * Conservative fallback only: exact alias/name match only.
  *
  * @param {object} task - Normalized task or candidate.
  * @param {object[]} projects - Available projects.
@@ -680,26 +703,22 @@ export function inferPriorityValueFromTask(task, options = {}) {
  * @returns {string|null} Project ID or null.
  */
 export function inferProjectIdFromTask(task, projects = [], options = {}) {
-    if (!Array.isArray(projects) || projects.length === 0) {
-        return null;
-    }
-
     const normalizedCandidate = task?.taskId ? task : normalizePriorityCandidate(task);
-    const haystack = `${normalizedCandidate.title || ''} ${normalizedCandidate.projectName || ''} ${normalizedCandidate.content || ''}`.toLowerCase();
-
-    const aliasMatch = inferProjectByAliases(haystack);
-    if (aliasMatch) {
-        const matchedProject = projects.find((project) => {
-            const pn = (project.name || '').toLowerCase();
-            const am = aliasMatch.toLowerCase();
-            return pn === am || pn.includes(am) || am.includes(pn);
-        });
-        if (matchedProject?.id) {
-            return matchedProject.id;
-        }
+    const projectId = asString(normalizedCandidate.projectId).trim();
+    if (projectId) {
+        return projectId;
     }
 
-    return findProjectIdByFragments(projects, ['admin', 'personal']);
+    if (Array.isArray(projects) && projects.length > 0) {
+        const exactNameMatch = findExactProjectIdByName(projects, normalizedCandidate.projectName);
+        if (exactNameMatch) return exactNameMatch;
+    }
+
+    const configuredLookup = buildConfiguredProjectLookup(options.projectPolicy || projectPolicy);
+    const exactConfiguredMatch = configuredLookup.get(normalizeWhitespace(normalizedCandidate.projectName).toLowerCase());
+    if (exactConfiguredMatch) return exactConfiguredMatch;
+
+    return null;
 }
 
 /**

@@ -111,36 +111,45 @@ export const FOLLOWUP_TIME_SHIFTS = new RegExp(`\\b(${(_keywords?.followupTimeSh
  * @returns {{ category: string, config: object } | null}
  */
 export function resolveProjectCategory(projectName) {
-    if (!_policy) return null;
+    return resolveProjectCategoryFromPolicy(projectName, _policy);
+}
+
+/**
+ * Resolve a project name or alias against an explicit policy object.
+ * @param {string} projectName
+ * @param {object|null} policy
+ * @returns {{ category: string, config: object } | null}
+ */
+export function resolveProjectCategoryFromPolicy(projectName, policy) {
+    const normalizedPolicy = normalizePolicy(policy);
+    if (!normalizedPolicy) return null;
+
+    const projectByName = new Map();
+    const projectByAlias = new Map();
+    for (const p of normalizedPolicy.projects) {
+        const normName = normalizeText(p.match || '');
+        if (normName) projectByName.set(normName, p);
+        for (const alias of (p.aliases || [])) {
+            const normAlias = normalizeText(alias);
+            if (normAlias) projectByAlias.set(normAlias, p);
+        }
+    }
 
     const norm = normalizeText(projectName);
-
-    // Exact project name match
-    const byName = _projectByNormalizedName.get(norm);
+    const byName = projectByName.get(norm);
     if (byName) {
         return {
             category: byName.category,
-            config: _policy.categories[byName.category] || _policy.categories.uncategorized || { priorityCap: 3, defaultPriority: 1 },
+            config: normalizedPolicy.categories[byName.category] || normalizedPolicy.categories.uncategorized || { priorityCap: 3, defaultPriority: 1 },
         };
     }
 
-    // Alias match
-    const byAlias = _projectByAlias.get(norm);
+    const byAlias = projectByAlias.get(norm);
     if (byAlias) {
         return {
             category: byAlias.category,
-            config: _policy.categories[byAlias.category] || _policy.categories.uncategorized || { priorityCap: 3, defaultPriority: 1 },
+            config: normalizedPolicy.categories[byAlias.category] || normalizedPolicy.categories.uncategorized || { priorityCap: 3, defaultPriority: 1 },
         };
-    }
-
-    // Substring match on project names (fuzzy fallback)
-    for (const [name, p] of _projectByNormalizedName) {
-        if (norm.includes(name) || name.includes(norm)) {
-            return {
-                category: p.category,
-                config: _policy.categories[p.category] || _policy.categories.uncategorized || { priorityCap: 3, defaultPriority: 1 },
-            };
-        }
     }
 
     return null;
@@ -171,32 +180,4 @@ export function getConfiguredProjectNames() {
 export function isConfiguredProject(projectName) {
     if (!_policy || !projectName) return false;
     return _projectByNormalizedName.has(normalizeText(projectName));
-}
-
-/**
- * Build a fallback project inference using alias overlap.
- * Scores configured projects by how many aliases appear in the haystack.
- * Returns best match project name or null if no confident winner.
- */
-export function inferProjectByAliases(haystack, minScore = 1) {
-    if (!_policy || !haystack) return null;
-
-    const normHaystack = normalizeText(haystack);
-    let best = null;
-    let bestScore = 0;
-
-    for (const p of _policy.projects) {
-        let score = 0;
-        for (const alias of (p.aliases || [])) {
-            if (normHaystack.includes(normalizeText(alias))) {
-                score += 1;
-            }
-        }
-        if (score > bestScore) {
-            bestScore = score;
-            best = p.match;
-        }
-    }
-
-    return bestScore >= minScore ? best : null;
 }

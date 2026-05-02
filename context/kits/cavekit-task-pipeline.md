@@ -20,7 +20,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 **Acceptance Criteria:**
 - [x] Intent extraction produces action objects with: `type`, `title`, `content`, `priority`, `projectHint`, `dueDate`, `repeatHint`, `splitStrategy`, `confidence`
 - [x] Given "Book dentist appointment Thursday", intent extraction outputs a create action with title "Book dentist appointment" and dueDate for next Thursday
-- [x] Given "Buy groceries", intent extraction outputs a create action with no due date and default project
+- [x] Given "Buy groceries", intent extraction outputs a create action with no due date and only routes to a project when exact ID, exact unique project name, or configured default project is available
 - [x] Given "hello" (non-task content), the system does not create a task and responds conversationally
 **Dependencies:** none
 
@@ -65,11 +65,11 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 **Dependencies:** R3
 
 ### R7: Project Resolution
-**Description:** Project/category is resolved deterministically against known TickTick projects with safe fallback.
+**Description:** Project/category is resolved deterministically against known TickTick projects with conservative blocking.
 **Acceptance Criteria:**
-- [x] Given projects "Work", "Personal", "Health" exist and user sends "submit quarterly report", task is assigned to "Work"
-- [x] Given ambiguous category, system falls back to safe default project and logs ambiguity
-- [x] Given user names a project that does not exist, system uses default project and informs user
+- [x] Given projects "Work", "Personal", "Health" exist and user sends "submit quarterly report", task is assigned only when the destination resolves to an exact project hint/name or an explicitly configured default; otherwise the write blocks
+- [x] Given ambiguous category, system blocks the write and asks for clarification or a configured exact destination
+- [x] Given user names a project that does not exist, system blocks the write; configured default applies only when no destination hint is provided and the configured default resolves exactly
 **Dependencies:** R4
 
 ### R8: Terse Responses

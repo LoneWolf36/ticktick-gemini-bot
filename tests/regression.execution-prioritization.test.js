@@ -214,6 +214,73 @@ test('execution prioritization applies explicit task overrides ahead of heuristi
   assert.match(result.ranked[0].rationaleText, /top priority for now/i);
 });
 
+test('execution prioritization infers project id only from exact project names', () => {
+  const exact = executionPrioritization.inferProjectIdFromTask(
+    { title: 'Pay rent', projectName: 'Admin' },
+    [{ id: 'admin-id', name: 'Admin' }],
+  );
+  const exactProjectId = executionPrioritization.inferProjectIdFromTask(
+    { title: 'Pay rent', projectId: 'exact-project-id' },
+    [{ id: 'admin-id', name: 'Admin' }],
+  );
+
+  assert.equal(exact, 'admin-id');
+  assert.equal(exactProjectId, 'exact-project-id');
+});
+
+test('execution prioritization does not infer project id from broad substring overlap', () => {
+  const inferred = executionPrioritization.inferProjectIdFromTask(
+    { title: 'Pay rent', projectName: 'administration' },
+    [{ id: 'admin-id', name: 'Admin' }],
+  );
+
+  assert.equal(inferred, null);
+});
+
+test('execution prioritization does not infer project id from configured fragments', () => {
+  const inferredAdmin = executionPrioritization.inferProjectIdFromTask(
+    { title: 'Pay rent', projectName: 'Admin desk' },
+    [],
+  );
+  const inferredPersonal = executionPrioritization.inferProjectIdFromTask(
+    { title: 'Plan week', projectName: 'Personal stuff' },
+    [],
+  );
+
+  assert.equal(inferredAdmin, null);
+  assert.equal(inferredPersonal, null);
+});
+
+test('execution prioritization infers project id from exact configured alias only', () => {
+  const exactAlias = executionPrioritization.inferProjectIdFromTask(
+    { title: 'Pay rent', projectName: 'Admin Desk' },
+    [],
+    { projectPolicy: { projects: [{ id: 'alias-project-id', match: 'Ops', aliases: ['Admin Desk'] }] } },
+  );
+  const nearAlias = executionPrioritization.inferProjectIdFromTask(
+    { title: 'Pay rent', projectName: 'Admin Desk Today' },
+    [],
+    { projectPolicy: { projects: [{ id: 'alias-project-id', match: 'Ops', aliases: ['Admin Desk'] }] } },
+  );
+
+  assert.equal(exactAlias, 'alias-project-id');
+  assert.equal(nearAlias, null);
+});
+
+test('execution prioritization returns null for missing or unknown project info', () => {
+  const missing = executionPrioritization.inferProjectIdFromTask(
+    { title: 'Pay rent' },
+    [],
+  );
+  const unknown = executionPrioritization.inferProjectIdFromTask(
+    { title: 'Pay rent', projectName: 'Unlisted' },
+    [{ id: 'admin-id', name: 'Admin' }],
+  );
+
+  assert.equal(missing, null);
+  assert.equal(unknown, null);
+});
+
 test('execution prioritization ignores expired overrides', () => {
   const candidates = [
     normalizePriorityCandidate({

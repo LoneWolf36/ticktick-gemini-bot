@@ -99,7 +99,7 @@ test('TickTickAdapter includes the existing projectId when updating only a due d
   assert.equal(Object.hasOwn(updatePayload, 'originalProjectId'), false);
 });
 
-test('TickTickAdapter findProjectByName resolves exact project deterministically', async () => {
+test('TickTickAdapter findProjectByName resolves exact project name deterministically', async () => {
   const client = Object.create(TickTickClient.prototype);
   client.getProjects = async () => ([
     { id: 'p-work', name: 'Work' },
@@ -115,10 +115,25 @@ test('TickTickAdapter findProjectByName resolves exact project deterministically
   assert.equal(project.name, 'Work');
 });
 
-test('TickTickAdapter findProjectByName falls back to safe default for ambiguous hints', async () => {
+test('TickTickAdapter findProjectByName resolves exact opaque project ID', async () => {
   const client = Object.create(TickTickClient.prototype);
   client.getProjects = async () => ([
-    { id: 'p-inbox', name: 'Inbox' },
+    { id: 'inbox118958109', name: 'Inbox' },
+    { id: 'p-work', name: 'Work' },
+    { id: 'p-work-admin', name: 'Work Admin' },
+  ]);
+
+  const adapter = new TickTickAdapter(client);
+  const project = await adapter.findProjectByName('inbox118958109');
+
+  assert.ok(project);
+  assert.equal(project.id, 'inbox118958109');
+  assert.equal(project.name, 'Inbox');
+});
+
+test('TickTickAdapter findProjectByName returns null for ambiguous partial hint', async () => {
+  const client = Object.create(TickTickClient.prototype);
+  client.getProjects = async () => ([
     { id: 'p-work', name: 'Work' },
     { id: 'p-work-admin', name: 'Work Admin' },
   ]);
@@ -126,15 +141,12 @@ test('TickTickAdapter findProjectByName falls back to safe default for ambiguous
   const adapter = new TickTickAdapter(client);
   const project = await adapter.findProjectByName('wor');
 
-  assert.ok(project);
-  assert.equal(project.id, 'p-inbox');
-  assert.equal(project.name, 'Inbox');
+  assert.equal(project, null);
 });
 
-test('TickTickAdapter findProjectByName falls back to default for unknown hint', async () => {
+test('TickTickAdapter findProjectByName returns null for unknown hint', async () => {
   const client = Object.create(TickTickClient.prototype);
   client.getProjects = async () => ([
-    { id: 'p-inbox', name: 'Inbox' },
     { id: 'p-work', name: 'Work' },
     { id: 'p-personal', name: 'Personal' },
   ]);
@@ -142,9 +154,21 @@ test('TickTickAdapter findProjectByName falls back to default for unknown hint',
   const adapter = new TickTickAdapter(client);
   const project = await adapter.findProjectByName('does-not-exist');
 
-  assert.ok(project);
-  assert.equal(project.id, 'p-inbox');
-  assert.equal(project.name, 'Inbox');
+  assert.equal(project, null);
+});
+
+test('TickTickAdapter _getSafeDefaultProject returns configured exact default only', () => {
+  const client = Object.create(TickTickClient.prototype);
+  const adapter = new TickTickAdapter(client);
+
+  const projects = [
+    { id: 'p-work', name: 'Work' },
+    { id: 'p-personal', name: 'Personal' },
+  ];
+
+  assert.equal(adapter._getSafeDefaultProject(projects, 'p-work')?.id, 'p-work');
+  assert.equal(adapter._getSafeDefaultProject(projects, 'p-missing'), null);
+  assert.equal(adapter._getSafeDefaultProject(projects), null);
 });
 
 test('TickTickAdapter updateTask preserves existing notes on due-date-only mutation payloads', async () => {
@@ -752,7 +776,7 @@ test('executeActions policy sweep inherits urgent maintenance priority from shar
   assert.equal(calls.length, 1);
   assert.equal(calls[0].taskId, 'rent-1');
   assert.equal(calls[0].changes.priority, 3);
-  assert.equal(calls[0].changes.projectId, 'p-admin');
+  assert.equal(calls[0].changes.projectId, 'p-inbox');
 });
 
 test('GeminiAnalyzer classifies invalid API key errors and repairs sloppy JSON', () => {
@@ -1237,7 +1261,7 @@ test('formatSummary keeps weekly default compact in standard mode and shortens i
 
 test('pipeline shortens urgent confirmations and clarification prompts while keeping errors clear', async () => {
   const creationHarness = createPipelineHarness({
-    intents: [{ type: 'create', title: 'Buy groceries', confidence: 0.9 }],
+    intents: [{ type: 'create', title: 'Buy groceries', confidence: 0.9, projectHint: 'Career' }],
   });
 
   const standardTask = await creationHarness.processMessage('buy groceries', {
@@ -1252,8 +1276,8 @@ test('pipeline shortens urgent confirmations and clarification prompts while kee
 
   const multiCreateHarness = createPipelineHarness({
     intents: [
-      { type: 'create', title: 'Book flight', confidence: 0.9 },
-      { type: 'create', title: 'Pack bag', confidence: 0.9 },
+      { type: 'create', title: 'Book flight', confidence: 0.9, projectHint: 'Career' },
+      { type: 'create', title: 'Pack bag', confidence: 0.9, projectHint: 'Career' },
     ],
   });
   const standardMultiCreate = await multiCreateHarness.processMessage('book flight and pack bag', {
@@ -1308,7 +1332,7 @@ test('pipeline shortens urgent confirmations and clarification prompts while kee
   assert.equal(urgentFailure.confirmationText, standardFailure.confirmationText);
 });
 
-test('GeminiAnalyzer fallback reorg routes recovery inbox work into Health', () => {
+test('GeminiAnalyzer fallback reorg keeps recovery inbox work in place without exact match', () => {
   const analyzer = new GeminiAnalyzer(['dummy-key']);
   const tasks = [
     {
@@ -1334,7 +1358,46 @@ test('GeminiAnalyzer fallback reorg routes recovery inbox work into Health', () 
     taskId: 'task-recovery',
     changes: {
       priority: 1,
-      projectId: 'p-health',
+    },
+  });
+});
+
+test('GeminiAnalyzer reorg normalization omits recovery routing without exact match', () => {
+  const analyzer = new GeminiAnalyzer(['dummy-key']);
+  const tasks = [
+    {
+      id: 'task-recovery',
+      title: 'Book therapy session for burnout recovery',
+      projectId: 'p-inbox',
+      projectName: 'Inbox',
+      priority: 0,
+      status: 0,
+    },
+  ];
+  const projects = [
+    { id: 'p-inbox', name: 'Inbox' },
+    { id: 'p-health', name: 'Health' },
+    { id: 'p-admin', name: 'Admin' },
+  ];
+
+  const normalized = analyzer._normalizeReorgProposal({
+    summary: 'Reorganize',
+    questions: [],
+    actions: [
+      {
+        type: 'update',
+        taskId: 'task-recovery',
+        changes: {},
+      },
+    ],
+  }, tasks, projects);
+
+  assert.equal(normalized.actions.length, 1);
+  assert.deepEqual(normalized.actions[0], {
+    type: 'update',
+    taskId: 'task-recovery',
+    changes: {
+      projectId: 'p-inbox',
     },
   });
 });
@@ -1374,47 +1437,7 @@ test('GeminiAnalyzer reorg normalization fills recovery routing from shared poli
     type: 'update',
     taskId: 'task-recovery',
     changes: {
-      projectId: 'p-health',
-    },
-  });
-});
-
-test('GeminiAnalyzer reorg normalization fills recovery routing from shared policy', () => {
-  const analyzer = new GeminiAnalyzer(['dummy-key']);
-  const tasks = [
-    {
-      id: 'task-recovery',
-      title: 'Book therapy session for burnout recovery',
       projectId: 'p-inbox',
-      projectName: 'Inbox',
-      priority: 0,
-      status: 0,
-    },
-  ];
-  const projects = [
-    { id: 'p-inbox', name: 'Inbox' },
-    { id: 'p-health', name: 'Health' },
-    { id: 'p-admin', name: 'Admin' },
-  ];
-
-  const normalized = analyzer._normalizeReorgProposal({
-    summary: 'Reorganize',
-    questions: [],
-    actions: [
-      {
-        type: 'update',
-        taskId: 'task-recovery',
-        changes: {},
-      },
-    ],
-  }, tasks, projects);
-
-  assert.equal(normalized.actions.length, 1);
-  assert.deepEqual(normalized.actions[0], {
-    type: 'update',
-    taskId: 'task-recovery',
-    changes: {
-      projectId: 'p-health',
     },
   });
 });

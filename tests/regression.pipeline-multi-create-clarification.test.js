@@ -6,9 +6,9 @@ import { createPipelineHarness } from './pipeline-harness.js';
 test('R2: canonical multi-create executes independent create actions', async () => {
     const { processMessage, adapterCalls } = createPipelineHarness({
         intents: [
-            { type: 'create', title: 'Book flight', confidence: 0.95 },
-            { type: 'create', title: 'Pack bag', confidence: 0.95 },
-            { type: 'create', title: 'Call uber friday', dueDate: '2026-03-13', confidence: 0.95 },
+            { type: 'create', title: 'Book flight', confidence: 0.95, projectHint: 'Career' },
+            { type: 'create', title: 'Pack bag', confidence: 0.95, projectHint: 'Career' },
+            { type: 'create', title: 'Call uber friday', dueDate: '2026-03-13', confidence: 0.95, projectHint: 'Career' },
         ],
         now: '2026-03-10T10:00:00Z',
     });
@@ -28,13 +28,14 @@ test('R2: clear create executes while ambiguous create fragment requests clarifi
     const clarificationQuestion = 'For "call uber friday", what exact task should I create?';
     const { processMessage, adapterCalls } = createPipelineHarness({
         intents: [
-            { type: 'create', title: 'Book flight', confidence: 0.95 },
+            { type: 'create', title: 'Book flight', confidence: 0.95, projectHint: 'Career' },
             {
                 type: 'create',
                 title: 'Call uber friday',
                 clarification: true,
                 clarificationQuestion,
                 confidence: 0.4,
+                projectHint: 'Career',
             },
         ],
     });
@@ -56,12 +57,13 @@ test('R2: checklist ambiguity flow still returns clarification without writes', 
                 type: 'create',
                 title: 'Plan event',
                 confidence: 0.8,
+                projectHint: 'Career',
                 checklistItems: [
                     { title: 'Book venue' },
                     { title: 'Send invites' },
                 ],
             },
-            { type: 'create', title: 'Buy decorations', confidence: 0.8 },
+            { type: 'create', title: 'Buy decorations', confidence: 0.8, projectHint: 'Career' },
         ],
     });
 

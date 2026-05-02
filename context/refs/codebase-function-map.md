@@ -211,7 +211,9 @@ The system uses this to set priority caps and make safe defaults.</p>
 <li>routine: cap at Life Admin (1), never Core Goal</li>
 <li>uncategorized (default): cap at Important (3), default Life Admin (1)</li>
 </ul>
-<p>Aliases help the system match tasks when project is not explicitly set.</p>
+<p>Project routing is exact-match only.
+If no exact configured destination exists, writes stay blocked or omit the
+project move rather than guessing Inbox/default.</p>
 <p>DEFAULTS: If you omit PROJECT_POLICY entirely, the system falls back to
 uncategorized for everything (safe default: priority cap 3, default 1).
 If you omit KEYWORDS, VERB_LIST, or SCORING, sensible defaults are used.
@@ -268,7 +270,7 @@ All magic numbers from the codebase are extracted here with documentation.</p>
 </dd>
 <dt><a href="#inferProjectIdFromTask">inferProjectIdFromTask(task, projects, [options])</a> ⇒ <code>string</code> | <code>null</code></dt>
 <dd><p>Infer a project ID for a task from available projects.
-Conservative fallback only: exact alias match first, then safe fragment fallback.</p>
+Conservative fallback only: exact alias/name match only.</p>
 </dd>
 <dt><a href="#createRankingDecision">createRankingDecision([decision])</a> ⇒ <code>object</code></dt>
 <dd><p>Creates a ranking decision object.</p>
@@ -378,7 +380,7 @@ Expects a list of projects from the TickTick API.</p>
 <li>Exact project ID when hinted</li>
 <li>Exactly one exact project-name match when hinted</li>
 <li>defaultProjectResolution only when no projectHint exists</li>
-<li>defaultProjectId fallback for legacy callers when resolution is not provided</li>
+<li>defaultProjectId only when no projectHint exists and resolution is not provided</li>
 </ol>
 </dd>
 <dt><a href="#_expandDueDate">_expandDueDate()</a></dt>
@@ -543,6 +545,9 @@ and TickTick adapter execution.</p>
 <dt><a href="#resolveProjectCategory">resolveProjectCategory(projectName)</a> ⇒ <code>Object</code> | <code>null</code></dt>
 <dd><p>Resolve a project name or alias to its category configuration.</p>
 </dd>
+<dt><a href="#resolveProjectCategoryFromPolicy">resolveProjectCategoryFromPolicy(projectName, policy)</a> ⇒ <code>Object</code> | <code>null</code></dt>
+<dd><p>Resolve a project name or alias against an explicit policy object.</p>
+</dd>
 <dt><a href="#getCategoryConfig">getCategoryConfig()</a></dt>
 <dd><p>Get the category configuration for a given category key.
 Falls back to uncategorized if unknown.</p>
@@ -552,11 +557,6 @@ Falls back to uncategorized if unknown.</p>
 </dd>
 <dt><a href="#isConfiguredProject">isConfiguredProject()</a></dt>
 <dd><p>Check if a project is explicitly configured.</p>
-</dd>
-<dt><a href="#inferProjectByAliases">inferProjectByAliases()</a></dt>
-<dd><p>Build a fallback project inference using alias overlap.
-Scores configured projects by how many aliases appear in the haystack.
-Returns best match project name or null if no confident winner.</p>
 </dd>
 <dt><a href="#shouldSuppressScheduledNotification">shouldSuppressScheduledNotification(workStyleMode, notificationType)</a> ⇒ <code>boolean</code></dt>
 <dd><p>Determines if a notification should be suppressed based on current work-style mode.</p>
@@ -612,6 +612,9 @@ Base notices take precedence over model notices for same code.</p>
 </dd>
 <dt><a href="#buildUndoEntry">buildUndoEntry(params)</a> ⇒ <code>Object</code></dt>
 <dd><p>Builds an undo entry for the state store to allow reverting mutations.</p>
+</dd>
+<dt><a href="#projectNameFor">projectNameFor()</a></dt>
+<dd><p>Display-only project label helper. Never use for write routing.</p>
 </dd>
 <dt><a href="#buildFieldDiff">buildFieldDiff(snapshot, action, [options])</a> ⇒ <code>Array.&lt;{field:string, label:string, oldValue:string, newValue:string, emoji:string}&gt;</code></dt>
 <dd><p>Builds user-facing old-to-new field diffs for task mutations.</p>
@@ -1835,7 +1838,9 @@ Rules:
 - routine: cap at Life Admin (1), never Core Goal
 - uncategorized (default): cap at Important (3), default Life Admin (1)
 
-Aliases help the system match tasks when project is not explicitly set.
+Project routing is exact-match only.
+If no exact configured destination exists, writes stay blocked or omit the
+project move rather than guessing Inbox/default.
 
 DEFAULTS: If you omit PROJECT_POLICY entirely, the system falls back to
 uncategorized for everything (safe default: priority cap 3, default 1).
@@ -1967,7 +1972,7 @@ Infers a TickTick priority value (1, 3, 5) from a task.
 
 ## inferProjectIdFromTask(task, projects, [options]) ⇒ <code>string</code> \| <code>null</code>
 Infer a project ID for a task from available projects.
-Conservative fallback only: exact alias match first, then safe fragment fallback.
+Conservative fallback only: exact alias/name match only.
 
 **Kind**: global function  
 **Returns**: <code>string</code> \| <code>null</code> - Project ID or null.  
@@ -2266,7 +2271,7 @@ Resolution order:
 1. Exact project ID when hinted
 2. Exactly one exact project-name match when hinted
 3. defaultProjectResolution only when no projectHint exists
-4. defaultProjectId fallback for legacy callers when resolution is not provided
+4. defaultProjectId only when no projectHint exists and resolution is not provided
 
 **Kind**: global function  
 <a name="_expandDueDate"></a>
@@ -2875,6 +2880,18 @@ Resolve a project name or alias to its category configuration.
 | --- | --- |
 | projectName | <code>string</code> | 
 
+<a name="resolveProjectCategoryFromPolicy"></a>
+
+## resolveProjectCategoryFromPolicy(projectName, policy) ⇒ <code>Object</code> \| <code>null</code>
+Resolve a project name or alias against an explicit policy object.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| projectName | <code>string</code> | 
+| policy | <code>object</code> \| <code>null</code> | 
+
 <a name="getCategoryConfig"></a>
 
 ## getCategoryConfig()
@@ -2892,14 +2909,6 @@ Get all configured project names (for inference helpers).
 
 ## isConfiguredProject()
 Check if a project is explicitly configured.
-
-**Kind**: global function  
-<a name="inferProjectByAliases"></a>
-
-## inferProjectByAliases()
-Build a fallback project inference using alias overlap.
-Scores configured projects by how many aliases appear in the haystack.
-Returns best match project name or null if no confident winner.
 
 **Kind**: global function  
 <a name="shouldSuppressScheduledNotification"></a>
@@ -3136,6 +3145,12 @@ Builds an undo entry for the state store to allow reverting mutations.
 | [params.applied] | <code>Object</code> | <code>{}</code> | The specific fields applied during mutation |
 | [params.appliedTaskId] | <code>string</code> \| <code>null</code> | <code>null</code> | The ID of the task after mutation (if different) |
 
+<a name="projectNameFor"></a>
+
+## projectNameFor()
+Display-only project label helper. Never use for write routing.
+
+**Kind**: global function  
 <a name="buildFieldDiff"></a>
 
 ## buildFieldDiff(snapshot, action, [options]) ⇒ <code>Array.&lt;{field:string, label:string, oldValue:string, newValue:string, emoji:string}&gt;</code>

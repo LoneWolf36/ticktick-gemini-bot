@@ -46,6 +46,14 @@ function buildProjectMap(projects = []) {
     return new Map(projects.map(p => [p.id, p.name || 'Unknown']));
 }
 
+function buildKnownProjectIdSet(projects = []) {
+    return new Set(projects.map((project) => project?.id).filter((id) => typeof id === 'string' && id.length > 0));
+}
+
+function isKnownProjectId(projectId, knownProjectIds) {
+    return typeof projectId === 'string' && projectId.length > 0 && knownProjectIds.has(projectId);
+}
+
 /**
  * Describe priority/project/title/due changes for an update action.
  *
@@ -138,6 +146,7 @@ function buildExecutionSummary(overrides = {}) {
  */
 export async function executeReorgAction(action, task, adapter, options = {}) {
     const projectMap = options.projectMap || buildProjectMap(options.projects || []);
+    const knownProjectIds = options.knownProjectIds || buildKnownProjectIdSet(options.projects || []);
 
     if (!action || typeof action !== 'object' || !action.type) {
         return {
@@ -165,6 +174,17 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                         taskId: null,
                         actionType,
                         error: '⚠️ Cannot create task: Missing title',
+                        executionSummary: buildExecutionSummary({ attempted: 1, failed: 1, localOnly: 1 }),
+                    };
+                }
+
+                if (!isKnownProjectId(changes.projectId, knownProjectIds)) {
+                    return {
+                        outcomes: [],
+                        undoEntry: null,
+                        taskId: null,
+                        actionType,
+                        error: '⚠️ Skipped create action: missing or unknown exact/configured project destination.',
                         executionSummary: buildExecutionSummary({ attempted: 1, failed: 1, localOnly: 1 }),
                     };
                 }
@@ -262,6 +282,17 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                     changes.priority,
                 );
 
+                if (changes.projectId !== undefined && !isKnownProjectId(changes.projectId, knownProjectIds)) {
+                    return {
+                        outcomes: [],
+                        undoEntry: null,
+                        taskId,
+                        actionType,
+                        error: '⚠️ Skipped update action: missing or unknown exact/configured project destination.',
+                        executionSummary: buildExecutionSummary({ attempted: 1, failed: 1, localOnly: 1 }),
+                    };
+                }
+
                 const updatePayload = {
                     ...changes,
                     projectId: changes.projectId || task.projectId,
@@ -349,6 +380,17 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                     dropChanges.dueDate !== undefined;
 
                 if (hasTickTickMutation) {
+                    if (dropChanges.projectId !== undefined && !isKnownProjectId(dropChanges.projectId, knownProjectIds)) {
+                        return {
+                            outcomes: [],
+                            undoEntry: null,
+                            taskId,
+                            actionType,
+                            error: '⚠️ Skipped drop action: missing or unknown exact/configured project destination.',
+                            executionSummary: buildExecutionSummary({ attempted: 1, failed: 1, localOnly: 1 }),
+                        };
+                    }
+
                     const safeDueDate = resolveDueDate(dropChanges.dueDate, 0);
                     const updatePayload = {
                         projectId: dropChanges.projectId || task.projectId,

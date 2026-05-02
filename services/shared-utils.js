@@ -205,12 +205,15 @@ function truncateDiffValue(value, maxLength = FIELD_DIFF_MAX_VALUE_LENGTH) {
     return text.length > maxLength ? `${text.slice(0, maxLength - 1)}…` : text;
 }
 
-function projectNameFor(projectId, projects = [], fallback = null) {
+/**
+ * Display-only project label helper. Never use for write routing.
+ */
+export function projectNameFor(projectId, projects = [], fallback = null) {
     if (!projectId) return fallback || 'None';
     const matchedName = projects.find((project) => project?.id === projectId)?.name;
     if (matchedName) return matchedName;
+    if (/^inbox/i.test(String(projectId))) return 'Inbox';
     if (fallback && fallback !== projectId) return fallback;
-    if (String(projectId).toLowerCase().startsWith('inbox')) return 'Inbox';
     return projectId;
 }
 

@@ -67,6 +67,7 @@ test('pipeline context resolves dentist Thursday through the normalizer path', a
         repeatHint: null,
         splitStrategy: 'single',
         confidence: 0.9,
+        projectHint: 'Career',
       },
     ],
   });
@@ -102,6 +103,7 @@ test('pipeline context routes undated groceries to admin/personal project via co
         repeatHint: null,
         splitStrategy: 'single',
         confidence: 0.9,
+        projectHint: 'Personal',
       },
     ],
   });
@@ -117,7 +119,7 @@ test('pipeline context routes undated groceries to admin/personal project via co
   assert.equal(result.results.length, 1);
   assert.equal(adapterCalls.create.length, 1);
   assert.equal(adapterCalls.create[0].title, 'Buy groceries');
-  assert.equal(adapterCalls.create[0].projectId, DEFAULT_PROJECTS[0].id);
+  assert.equal(adapterCalls.create[0].projectId, DEFAULT_PROJECTS[2].id);
   assert.equal(adapterCalls.create[0].dueDate, null);
 });
 
@@ -130,6 +132,7 @@ test('pipeline context keeps date-only currentDate stable in negative-offset tim
         title: 'Book dentist',
         dueDate: 'today',
         confidence: 0.9,
+        projectHint: 'Career',
       },
     ],
   });
@@ -503,7 +506,7 @@ test('pipeline happy path covers create, update, complete, delete, and non-task 
 
   const createHarness = createPipelineHarness({
     intents: [
-      { type: 'create', title: 'Write summary', confidence: 0.9 },
+      { type: 'create', title: 'Write summary', confidence: 0.9, projectHint: 'Career' },
     ],
   });
   const createResult = await createHarness.processMessage('write summary');

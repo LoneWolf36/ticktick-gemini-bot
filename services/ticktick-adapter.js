@@ -397,11 +397,12 @@ export class TickTickAdapter {
     }
 
     /**
-     * Finds a project by name using fuzzy matching (exact > startsWith > contains).
-     * @param {string|null|undefined} nameHint - Project name or partial name to search for
+     * Finds a project by exact ID or exact normalized name.
+     * No fuzzy or fallback inference.
+     * @param {string|null|undefined} nameHint - Project name or opaque project ID
      * @returns {Promise<{id: string, name: string}|null>} Matching project or null if not found
      * @throws {Error} Classified error with code if API call fails
-     * 
+     *
      * @example
      * const project = await adapter.findProjectByName('Work');
      * if (project) console.log(`Found: ${project.name} (${project.id})`);
@@ -411,71 +412,52 @@ export class TickTickAdapter {
         this._log('findProjectByName', { nameHint });
         try {
             const projects = await this.listProjects();
-
-            const defaultProject = this._getSafeDefaultProject(projects, this._defaultProjectId);
             if (!nameHint || typeof nameHint !== 'string' || nameHint.trim().length === 0) {
+                const defaultProject = this._getSafeDefaultProject(projects, this._defaultProjectId);
                 const elapsed = Date.now() - start;
-                this._log('findProjectByName', `SUCCESS { match: null, fallback: ${JSON.stringify(defaultProject ? { id: defaultProject.id, name: defaultProject.name } : null)}, reason: "empty_hint", ${elapsed}ms }`);
+                this._log('findProjectByName', `SUCCESS { match: ${JSON.stringify(defaultProject ? { id: defaultProject.id, name: defaultProject.name } : null)}, reason: "empty_hint", ${elapsed}ms }`);
                 return defaultProject;
             }
 
-            const lowerHint = this._normalizeProjectName(nameHint);
-            const exactMatches = [];
-            const startsWithMatches = [];
-            const containsMatches = [];
+            const trimmedHint = nameHint.trim();
+            const lowerHint = this._normalizeProjectName(trimmedHint);
+            const exactIdMatches = projects.filter((project) => project?.id === trimmedHint);
+            if (exactIdMatches.length === 1) {
+                const match = exactIdMatches[0];
+                const elapsed = Date.now() - start;
+                this._log('findProjectByName', `SUCCESS { match: ${JSON.stringify({ id: match.id, name: match.name })}, reason: "exact_id", ${elapsed}ms }`);
+                return { id: match.id, name: match.name };
+            }
+
+            const exactNameMatches = [];
 
             for (const p of projects) {
                 const normalizedName = this._normalizeProjectName(p.name);
                 if (!normalizedName) continue;
                 if (normalizedName === lowerHint) {
-                    exactMatches.push(p);
-                } else if (normalizedName.startsWith(lowerHint)) {
-                    startsWithMatches.push(p);
-                } else if (normalizedName.includes(lowerHint)) {
-                    containsMatches.push(p);
+                    exactNameMatches.push(p);
                 }
             }
 
-            const pickSingle = (matches) => {
-                if (matches.length === 0) return { match: null, ambiguous: false };
-                if (matches.length === 1) return { match: matches[0], ambiguous: false };
-                return { match: null, ambiguous: true };
-            };
-
-            const exactResult = pickSingle(exactMatches);
-            const startsWithResult = !exactResult.match && !exactResult.ambiguous ? pickSingle(startsWithMatches) : { match: null, ambiguous: false };
-            const containsResult = !exactResult.match && !exactResult.ambiguous && !startsWithResult.match && !startsWithResult.ambiguous
-                ? pickSingle(containsMatches)
-                : { match: null, ambiguous: false };
-
-            const match = exactResult.match || startsWithResult.match || containsResult.match || null;
-            const ambiguous = exactResult.ambiguous || startsWithResult.ambiguous || containsResult.ambiguous;
-
-            const result = match
-                ? { id: match.id, name: match.name, reason: 'matched' }
-                : defaultProject
-                    ? {
-                        id: defaultProject.id,
-                        name: defaultProject.name,
-                        reason: ambiguous ? 'ambiguous_fallback' : 'unresolved_fallback',
-                    }
-                    : null;
-
-            if (!match) {
-                this._log('findProjectByName', {
-                    warning: 'project_resolution_fallback',
-                    reason: ambiguous ? 'ambiguous' : 'unresolved',
-                    nameHint,
-                    candidates: ambiguous
-                        ? [...exactMatches, ...startsWithMatches, ...containsMatches].map((p) => ({ id: p.id, name: p.name }))
-                        : [],
-                    fallback: defaultProject ? { id: defaultProject.id, name: defaultProject.name } : null,
-                }, true);
+            if (exactNameMatches.length === 1) {
+                const match = exactNameMatches[0];
+                const elapsed = Date.now() - start;
+                this._log('findProjectByName', `SUCCESS { match: ${JSON.stringify({ id: match.id, name: match.name })}, reason: "exact_name", ${elapsed}ms }`);
+                return { id: match.id, name: match.name };
             }
 
+            const reason = exactNameMatches.length > 1 ? 'ambiguous_exact_name' : 'unresolved';
+            this._log('findProjectByName', {
+                warning: 'project_resolution_unresolved',
+                reason,
+                nameHint,
+                exactIdMatches: exactIdMatches.map((p) => ({ id: p.id, name: p.name })),
+                exactNameMatches: exactNameMatches.map((p) => ({ id: p.id, name: p.name })),
+            }, true);
+
             const elapsed = Date.now() - start;
-            this._log('findProjectByName', `SUCCESS { match: ${JSON.stringify(result)}, ${elapsed}ms }`);
-            return match || defaultProject;
+            this._log('findProjectByName', `SUCCESS { match: null, reason: ${JSON.stringify(reason)}, ${elapsed}ms }`);
+            return null;
         } catch (error) {
             const elapsed = Date.now() - start;
             const classified = this._classifyError(error, 'findProjectByName');
@@ -496,7 +478,8 @@ export class TickTickAdapter {
     }
 
     /**
-     * Identifies a safe default project from a list (Inbox preferred).
+     * Identifies a safe default project from a list.
+     * Exact preferred ID match only.
      * @param {Array<Object>} [projects=[]] - List of projects
      * @returns {Object|null} Default project or null
      * @private
@@ -504,28 +487,12 @@ export class TickTickAdapter {
     _getSafeDefaultProject(projects = [], preferredDefaultProjectId = null) {
         if (!Array.isArray(projects) || projects.length === 0) return null;
 
-        const inbox = projects.find((project) => this._normalizeProjectName(project?.name) === 'inbox');
-        if (inbox) return inbox;
-
         const preferredId = preferredDefaultProjectId || this._defaultProjectId;
         if (preferredId) {
             const preferred = projects.find((project) => project?.id === preferredId);
-            if (preferred) {
-                console.warn(`[Adapter] No Inbox project found; falling back to configured default project "${preferred.name}" (${preferred.id})`);
-                return preferred;
-            }
+            return preferred || null;
         }
-
-        const sorted = [...projects].sort((a, b) => {
-            const nameCompare = String(a?.name || '').localeCompare(String(b?.name || ''));
-            if (nameCompare !== 0) return nameCompare;
-            return String(a?.id || '').localeCompare(String(b?.id || ''));
-        });
-        const fallback = sorted[0] || null;
-        if (fallback) {
-            console.warn(`[Adapter] No Inbox project found; falling back to first available project "${fallback.name}" (${fallback.id})`);
-        }
-        return fallback;
+        return null;
     }
 
     /**
@@ -692,7 +659,7 @@ export class TickTickAdapter {
      * @param {string} [normalizedAction.content] - Task description/notes
      * @param {string} [normalizedAction.dueDate] - ISO 8601 date string (e.g., '2025-04-01T09:00:00.000Z')
      * @param {number} [normalizedAction.priority] - Priority level: 0=none, 1=low, 3=medium, 5=high
-     * @param {string} [normalizedAction.projectId] - 24-char hex project ID (falls back to default if null)
+     * @param {string} [normalizedAction.projectId] - Opaque project ID; omitted/null means no project assignment unless caller already resolved an explicit configured default
      * @param {string} [normalizedAction.repeatFlag] - Recurrence rule (e.g., 'FREQ=DAILY', 'FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR')
      * @param {Array<Object>} [normalizedAction.checklistItems] - Checklist subtask items with {title, status?, sortOrder?}
      * @returns {Promise<Object>} Created task object from TickTick API

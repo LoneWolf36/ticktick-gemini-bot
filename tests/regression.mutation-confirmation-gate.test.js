@@ -51,7 +51,7 @@ test('mutation-shaped create is repaired to update and never creates duplicate t
     await resetStore();
     const harness = createPipelineHarness({
         intents: [
-            { type: 'create', title: 'Pick up prescription', priority: 5, confidence: 0.92 },
+            { type: 'create', title: 'Pick up prescription', priority: 5, confidence: 0.92, projectHint: 'Career' },
         ],
         activeTasks: [
             { id: 'task-med-01', title: 'Pick up prescription', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
@@ -71,7 +71,7 @@ test('mutation-shaped create asks clarification when target cannot resolve', asy
     await resetStore();
     const harness = createPipelineHarness({
         intents: [
-            { type: 'create', title: 'Book appointment', priority: 5, confidence: 0.92 },
+            { type: 'create', title: 'Book appointment', priority: 5, confidence: 0.92, projectHint: 'Career' },
         ],
         activeTasks: [
             { id: 'task-other-01', title: 'Review notes', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
@@ -273,7 +273,7 @@ test('dry-run create stays preview-only and never writes', async () => {
     await resetStore();
     const harness = createPipelineHarness({
         intents: [
-            { type: 'create', title: 'Draft note', confidence: 0.9 },
+            { type: 'create', title: 'Draft note', confidence: 0.9, projectHint: 'Career' },
         ],
     });
 
@@ -303,7 +303,7 @@ test('scan dry-run receipt reports scan command instead of freeform', async () =
     await resetStore();
     const harness = createPipelineHarness({
         intents: [
-            { type: 'create', title: 'Draft note', confidence: 0.9 },
+            { type: 'create', title: 'Draft note', confidence: 0.9, projectHint: 'Career' },
         ],
     });
 
@@ -322,7 +322,7 @@ test('adapter failure surfaces a valid failed operation receipt', async () => {
     await resetStore();
     const harness = createPipelineHarness({
         intents: [
-            { type: 'create', title: 'Draft note', confidence: 0.9 },
+            { type: 'create', title: 'Draft note', confidence: 0.9, projectHint: 'Career' },
         ],
         adapterOverrides: {
             createTask: async () => {
