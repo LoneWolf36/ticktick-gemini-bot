@@ -223,7 +223,7 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter, conf
         try {
             const errorMsg = err.message === 'QUOTA_EXHAUSTED'
                 ? '⚠️ Daily briefing skipped — AI quota exhausted for today.'
-                : `❌ Daily briefing failed: ${err.message}. Try /briefing manually.`;
+                : '❌ Daily briefing failed. Try /briefing manually.';
             await sendWithMarkdown(bot.api, chatId, errorMsg);
         } catch (_) { /* don't let notification failure mask the original error */ }
         return false;
@@ -318,7 +318,7 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
         try {
             const errorMsg = err.message === 'QUOTA_EXHAUSTED'
                 ? '⚠️ Weekly digest skipped — AI quota exhausted for today.'
-                : `❌ Weekly digest failed: ${err.message}. Will retry next cycle.`;
+                : '❌ Weekly digest failed. Will retry next cycle.';
             await sendWithMarkdown(bot.api, chatId, errorMsg);
         } catch (_) { /* don't let notification failure mask the original error */ }
         return false;
