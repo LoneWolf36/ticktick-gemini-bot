@@ -73,6 +73,12 @@ const USER_FAILURE_MESSAGES = {
     [FAILURE_CLASSES.UNEXPECTED]: '⚠️ An unexpected error occurred while processing your request.',
 };
 
+function getSafeErrorName(error) {
+    return typeof error?.name === 'string' && error.name.trim()
+        ? error.name.trim()
+        : 'Error';
+}
+
 /**
  * Parses a non-negative integer from an environment variable with a fallback.
  * @param {string|undefined} value - Raw string value
@@ -1062,7 +1068,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
         try {
             return await deferIntent(payload);
         } catch (error) {
-            console.error('[Pipeline] Failed to persist deferred intent:', error?.message || error);
+            console.error('[Pipeline] Failed to persist deferred intent:', getSafeErrorName(error));
             return null;
         }
     }
@@ -1084,7 +1090,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
         try {
             return await deferIntent(payload);
         } catch (error) {
-            console.error('[Pipeline] Failed to persist deferred AI quota intent:', error?.message || error);
+            console.error(`[Pipeline] Failed to persist deferred AI quota intent: ${getSafeErrorName(error)}`);
             return null;
         }
     }
@@ -1135,7 +1141,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     draft.lifecycle.intent.status = 'failure';
                     draft.lifecycle.intent.failure = {
                         failureClass,
-                        message: error.message,
+                        errorName: getSafeErrorName(error),
                     };
                     draft.lifecycle.timing.stages.intent = {
                         startedAt: new Date(intentStartedAt).toISOString(),
@@ -1150,7 +1156,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     durationMs: Date.now() - intentStartedAt,
                     failureClass,
                     metadata: {
-                        message: error.message,
+                        errorName: getSafeErrorName(error),
                     },
                 });
                 throw error;
@@ -2230,7 +2236,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 summary = 'AI quota exhausted after configured key rotation.';
             }
 
-            console.error('[Pipeline] Unhandled pipeline error:', error);
+            console.error(`[Pipeline] Unhandled pipeline error: ${getSafeErrorName(error)}`);
 
             if (context) {
                 context = finalizePipelineContext(context, requestStartedAt, {
@@ -2249,7 +2255,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     failureClass,
                     rolledBack: false,
                     metadata: {
-                        message: error.message,
+                        errorName: getSafeErrorName(error),
                         deferredAiQuota: !!deferredAiQuotaIntent,
                     },
                 });

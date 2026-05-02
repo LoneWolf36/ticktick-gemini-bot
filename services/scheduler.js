@@ -32,6 +32,20 @@ const FOCUS_SUPPRESSED_NOTIFICATION_TYPES = new Set([
     SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY,
 ]);
 
+function getSafeErrorName(error) {
+    return typeof error?.name === 'string' && error.name.trim()
+        ? error.name.trim()
+        : 'Error';
+}
+
+function getSafePipelineFailureReason(result) {
+    const failureClass = result?.failure?.class || result?.operationReceipt?.errorClass;
+    const status = result?.operationReceipt?.status || result?.type;
+    if (failureClass) return `pipeline_${failureClass}`;
+    if (status) return `pipeline_${status}`;
+    return 'pipeline_failed';
+}
+
 /**
  * Determines if a notification should be suppressed based on current work-style mode.
  * @param {string} workStyleMode - Current mode (standard/focus/urgent)
@@ -809,9 +823,9 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                         if (result.failure?.class === 'quota') {
                             throw new Error('QUOTA_EXHAUSTED');
                         }
-                        const reason = result.failure?.summary || result.confirmationText || result.errors.join(', ') || 'Pipeline failed';
+                        const reason = getSafePipelineFailureReason(result);
                         await store.markTaskFailed(task.id, reason);
-                        console.error(`  ❌ Failed: "${task.title}": ${reason}`);
+                        console.error(`  ❌ Scheduler poll task failed: taskId=${task.id} reason=${reason}`);
                     } else if (result.type === 'task') {
                         if (result.skippedActions?.length > 0) {
                             totalSkipped += result.skippedActions.length;
@@ -867,8 +881,9 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                         break;
                     }
 
-                    await store.markTaskFailed(task.id, err.message);
-                    console.error(`  ❌ Failed: "${task.title}": ${err.message}`);
+                    const errorName = getSafeErrorName(err);
+                    await store.markTaskFailed(task.id, `error_${errorName}`);
+                    console.error(`  ❌ Scheduler poll task failed: taskId=${task.id} error=${errorName}`);
                 }
                 await new Promise((r) => setTimeout(r, 3000));
             }

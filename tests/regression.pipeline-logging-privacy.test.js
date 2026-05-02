@@ -77,3 +77,36 @@ test('R12: pipeline console logs do not leak raw user messages', async () => {
     console.log = originalLog;
   }
 });
+
+test('R12: unexpected pipeline errors do not leak raw error messages in logs or telemetry', async () => {
+  const originalError = console.error;
+  const logs = [];
+  const telemetryEvents = [];
+  console.error = (...args) => logs.push(args.join(' '));
+
+  try {
+    const observability = createPipelineObservability({
+      eventSink: async (event, context) => { telemetryEvents.push({ event, context }); },
+      logger: null,
+    });
+    const sensitiveErrorText = 'Sensitive thrown error with private task details';
+    const harness = createPipelineHarness({
+      intents: () => { throw new Error(sensitiveErrorText); },
+      observability,
+    });
+
+    await harness.processMessage('please process a private request', {
+      requestId: 'req-error-log-privacy',
+      entryPoint: 'telegram',
+      mode: 'interactive',
+    });
+
+    const logOutput = logs.join(' ');
+    const telemetryJson = JSON.stringify(telemetryEvents);
+    assert.equal(logOutput.includes(sensitiveErrorText), false, 'Console errors should not contain raw error messages');
+    assert.equal(telemetryJson.includes(sensitiveErrorText), false, 'Telemetry should not contain raw error messages');
+    assert.ok(telemetryJson.includes('errorName'), 'Telemetry should retain safe error classification');
+  } finally {
+    console.error = originalError;
+  }
+});
