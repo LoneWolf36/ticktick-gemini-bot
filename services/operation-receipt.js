@@ -102,6 +102,24 @@ export const OPERATION_RECEIPT_VALUES = Object.freeze({
 });
 
 /**
+ * Format conservative user-facing copy for a busy intake lock.
+ * @param {object} lockStatus Intake lock status.
+ * @param {string} [lockStatus.owner] Lock owner label.
+ * @param {number} [lockStatus.acquiredAt] Lock acquisition timestamp.
+ * @param {string} [label='operation'] Human-readable surface label.
+ * @returns {string}
+ */
+export function formatBusyLockMessage(lockStatus = {}, label = 'operation') {
+    const owner = typeof lockStatus.owner === 'string' && lockStatus.owner.trim().length > 0
+        ? lockStatus.owner.trim()
+        : 'another operation';
+    const acquiredAt = Number.isFinite(lockStatus.acquiredAt)
+        ? ` since ${new Date(lockStatus.acquiredAt).toISOString()}`
+        : '';
+    return `⏳ ${label} busy: ${owner}${acquiredAt}. Try again in a moment.`;
+}
+
+/**
  * Validate an OperationReceipt-like object against stage-1 invariants.
  * @param {object} receipt Candidate receipt.
  * @returns {{ valid: boolean, errors: string[] }} Validation result.

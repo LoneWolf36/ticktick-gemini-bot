@@ -20,6 +20,78 @@ const MUTATION_CLARIFICATION_TTL_MS = 10 * 60 * 1000;
 const safeAnswerCallbackQuery = answerCallbackQueryBestEffort;
 const inFlightReviewClaims = new Map();
 
+function getReviewSnapshot(data) {
+    return {
+        title: data?.originalTitle ?? '',
+        content: data?.originalContent ?? null,
+        priority: data?.originalPriority ?? null,
+        projectId: data?.originalProjectId ?? data?.projectId ?? null,
+        dueDate: data?.originalDueDate ?? data?.dueDate ?? null,
+    };
+}
+
+function canonicalizeBlankContent(value) {
+    if (value == null) return null;
+    const text = String(value).trim();
+    return text === '' ? null : text;
+}
+
+function canonicalizeDueDate(value) {
+    if (value == null) return null;
+    const text = String(value).trim();
+    if (text === '') return null;
+    if (/^\d{4}-\d{2}-\d{2}$/.test(text)) return `${text}T00:00:00.000Z`;
+    const parsed = Date.parse(text);
+    if (!Number.isNaN(parsed)) return new Date(parsed).toISOString();
+    return text;
+}
+
+function normalizeReviewTask(task, fallbackProjectId = null) {
+    return {
+        title: task?.title ?? '',
+        content: canonicalizeBlankContent(task?.content),
+        priority: task?.priority ?? null,
+        projectId: task?.projectId ?? fallbackProjectId ?? null,
+        dueDate: canonicalizeDueDate(task?.dueDate),
+    };
+}
+
+function reviewSnapshotDiffers(expected, actual) {
+    return expected.title !== actual.title
+        || canonicalizeBlankContent(expected.content) !== actual.content
+        || expected.priority !== actual.priority
+        || expected.projectId !== actual.projectId
+        || canonicalizeDueDate(expected.dueDate) !== actual.dueDate;
+}
+
+async function parkStalePending(taskId, data, reason) {
+    await store.markTaskStale(taskId, { ...data, staleReason: reason });
+}
+
+async function revalidatePendingReview(adapter, taskId, data) {
+    const projectId = data?.projectId || data?.originalProjectId || null;
+    if (!adapter || typeof adapter.getTaskSnapshot !== 'function') {
+        return { stale: true, reason: 'revalidation unavailable' };
+    }
+
+    try {
+        const liveTask = await adapter.getTaskSnapshot(taskId, projectId);
+        if (!liveTask) {
+            return { stale: true, reason: 'task missing' };
+        }
+
+        const expected = getReviewSnapshot(data);
+        const actual = normalizeReviewTask(liveTask, projectId);
+        if (reviewSnapshotDiffers(expected, actual)) {
+            return { stale: true, reason: 'snapshot changed' };
+        }
+
+        return { stale: false, liveTask: actual };
+    } catch (err) {
+        return { stale: true, reason: 'revalidation failed' };
+    }
+}
+
 function acquireReviewClaim(taskId, owner) {
     if (!taskId || inFlightReviewClaims.has(taskId)) return false;
     inFlightReviewClaims.set(taskId, owner);
@@ -242,9 +314,16 @@ export function registerCallbacks(bot, adapter, pipeline) {
             return;
         }
         try {
-            await safeAnswerCallbackQuery(ctx, { text: 'Applied.' });
+            await safeAnswerCallbackQuery(ctx, { text: 'Checking preview…' });
             const actionType = data.actionType || 'update';
             let diffText = '';
+
+            const revalidation = await revalidatePendingReview(adapter, taskId, data);
+            if (revalidation.stale) {
+                await parkStalePending(taskId, data, revalidation.reason);
+                await editWithMarkdown(ctx, '⚠️ **Stale review preview.** Re-scan and review again.');
+                return;
+            }
 
             if (!store.isTaskPending(taskId)) {
                 await safeAnswerCallbackQuery(ctx, { text: 'Already handled.' });
@@ -320,6 +399,7 @@ export function registerCallbacks(bot, adapter, pipeline) {
                     source: 'review:approve',
                 });
             }
+            await safeAnswerCallbackQuery(ctx, { text: 'Applied.' });
             await advanceReviewCard(ctx, diffText);
         } catch (err) {
             const message = err.message?.toLowerCase() || '';
@@ -406,10 +486,17 @@ export function registerCallbacks(bot, adapter, pipeline) {
         }
 
         try {
-            await safeAnswerCallbackQuery(ctx, { text: 'Dropped.' });
+            await safeAnswerCallbackQuery(ctx, { text: 'Checking preview…' });
+            const revalidation = await revalidatePendingReview(adapter, taskId, data);
+            if (revalidation.stale) {
+                await parkStalePending(taskId, data, revalidation.reason);
+                await editWithMarkdown(ctx, '⚠️ **Stale review preview.** Re-scan and review again.');
+                return;
+            }
             const projectId = data.projectId || data.originalProjectId || null;
             await adapter.deleteTask(taskId, projectId);
             await store.dropTask(taskId);
+            await safeAnswerCallbackQuery(ctx, { text: 'Dropped.' });
             await advanceReviewCard(ctx);
         } catch (err) {
             const message = err.message?.toLowerCase() || '';

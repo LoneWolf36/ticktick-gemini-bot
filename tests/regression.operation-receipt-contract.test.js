@@ -4,6 +4,7 @@ import assert from 'node:assert/strict';
 import {
     assertValidOperationReceipt,
     OPERATION_RECEIPT_VALUES,
+    formatBusyLockMessage,
     validateOperationReceipt,
 } from '../services/operation-receipt.js';
 
@@ -130,6 +131,11 @@ test('operation receipt rejects applied outcomes outside live exact or configure
         assert.equal(result.valid, false, `${confidence} destination should not apply`);
         assert.match(result.errors.join('\n'), /applied receipts require exact or configured destination confidence/);
     }
+});
+
+test('busy lock copy is consistent across surfaces', () => {
+    const copy = formatBusyLockMessage({ owner: 'bot:scan', acquiredAt: 1700000000000 }, 'Scan');
+    assert.equal(copy, '⏳ Scan busy: bot:scan since 2023-11-14T22:13:20.000Z. Try again in a moment.');
 });
 
 test('operation receipt enforces pending-confirmation details without marking changes applied', () => {

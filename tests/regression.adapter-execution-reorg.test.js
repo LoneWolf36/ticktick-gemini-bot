@@ -1447,3 +1447,29 @@ test('TickTickAdapter updateTask verifyAfterWrite treats timezone-equivalent due
     'dueDate TZ-equivalent values should verify successfully');
   assert.equal(result.verificationNote, 'Verified against TickTick API');
 });
+
+test('reorg apply reports TickTick changes separately from local-only work', async () => {
+  const adapter = {
+    updateTask: async () => ({ id: 'task-1' }),
+  };
+
+  const fakeStore = { addUndoEntry: async () => {}, markTaskProcessed: async () => {} };
+  const { operationReceipt, executionSummary } = await executeActions(
+    [
+      { type: 'update', taskId: 'task-1', changes: { priority: 5 } },
+      { type: 'drop', taskId: 'task-1', changes: {} },
+    ],
+    adapter,
+    [{ id: 'task-1', title: 'Mixed Work', projectId: 'p-1', priority: 3 }],
+    { projects: [{ id: 'p-1', name: 'Work' }], store: fakeStore },
+  );
+
+  assert.equal(executionSummary.attempted, 2);
+  assert.equal(executionSummary.succeeded, 2);
+  assert.equal(executionSummary.ticktickChanged, 1);
+  assert.equal(executionSummary.localOnly, 1);
+  assert.equal(operationReceipt.status, 'applied');
+  assert.equal(operationReceipt.applied, true);
+  assert.match(operationReceipt.message, /1\/2 changed in TickTick/);
+  assert.match(operationReceipt.message, /1 local-only/);
+});

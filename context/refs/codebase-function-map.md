@@ -267,7 +267,8 @@ All magic numbers from the codebase are extracted here with documentation.</p>
 <dd><p>Infers a TickTick priority value (1, 3, 5) from a task.</p>
 </dd>
 <dt><a href="#inferProjectIdFromTask">inferProjectIdFromTask(task, projects, [options])</a> ⇒ <code>string</code> | <code>null</code></dt>
-<dd><p>Infers a project ID for a task from available projects.</p>
+<dd><p>Infer a project ID for a task from available projects.
+Conservative fallback only: exact alias match first, then safe fragment fallback.</p>
 </dd>
 <dt><a href="#createRankingDecision">createRankingDecision([decision])</a> ⇒ <code>object</code></dt>
 <dd><p>Creates a ranking decision object.</p>
@@ -369,17 +370,15 @@ Validate — require non-empty title, default status to 0 (incomplete),
 <li>&quot;every other day&quot;: RRULE:FREQ=DAILY;INTERVAL=2</li>
 </ul>
 </dd>
-<dt><a href="#inferProjectIdFromTask">inferProjectIdFromTask(task, projects)</a> ⇒ <code>string</code> | <code>null</code></dt>
-<dd><p>Infers a project ID for a task from available projects using project-policy.</p>
-</dd>
 <dt><a href="#_resolveProject">_resolveProject()</a></dt>
-<dd><p>Resolves a project hint string to a concrete TickTick project ID.
+<dd><p>Resolves a project hint string to a concrete TickTick project destination.
 Expects a list of projects from the TickTick API.</p>
 <p>Resolution order:</p>
 <ol>
-<li>projectHint exact match / startsWith / contains (if provided)</li>
-<li>Content-based inference via inferProjectIdFromTask (if no projectHint)</li>
-<li>defaultProjectId fallback</li>
+<li>Exact project ID when hinted</li>
+<li>Exactly one exact project-name match when hinted</li>
+<li>defaultProjectResolution only when no projectHint exists</li>
+<li>defaultProjectId fallback for legacy callers when resolution is not provided</li>
 </ol>
 </dd>
 <dt><a href="#_expandDueDate">_expandDueDate()</a></dt>
@@ -433,6 +432,9 @@ multi-mutation requests that are out of scope for v1.</p>
 Returns { actions, batchError } where batchError is set when the
 batch shape is unsupported (mixed create+mutation, multi-mutation).</p>
 <p>Single entry point for pipeline to normalize and validate batch shape.</p>
+</dd>
+<dt><a href="#formatBusyLockMessage">formatBusyLockMessage(lockStatus, [label])</a> ⇒ <code>string</code></dt>
+<dd><p>Format conservative user-facing copy for a busy intake lock.</p>
 </dd>
 <dt><a href="#validateOperationReceipt">validateOperationReceipt(receipt)</a> ⇒ <code>Object</code></dt>
 <dd><p>Validate an OperationReceipt-like object against stage-1 invariants.</p>
@@ -786,6 +788,10 @@ Delegates to resolveTask with status &#39;skip&#39;.</p>
 <dt><a href="#dropTask">dropTask(taskId)</a> ⇒ <code>Promise.&lt;(Object|null)&gt;</code></dt>
 <dd><p>Drop a pending task, marking it as processed and deprioritized.
 Delegates to resolveTask with status &#39;drop&#39;.</p>
+</dd>
+<dt><a href="#markTaskStale">markTaskStale(taskId, [data])</a> ⇒ <code>Promise.&lt;void&gt;</code></dt>
+<dd><p>Mark a pending task stale after it aged out of active review.
+Preserves the pending snapshot, flags the processed entry stale, and removes it from the pending queue.</p>
 </dd>
 <dt><a href="#getQueueHealthSnapshot">getQueueHealthSnapshot()</a> ⇒ <code>Object</code></dt>
 <dd><p>Returns a snapshot of queue health for telemetry.</p>
@@ -1952,16 +1958,17 @@ Infers a TickTick priority value (1, 3, 5) from a task.
 <a name="inferProjectIdFromTask"></a>
 
 ## inferProjectIdFromTask(task, projects, [options]) ⇒ <code>string</code> \| <code>null</code>
-Infers a project ID for a task from available projects.
+Infer a project ID for a task from available projects.
+Conservative fallback only: exact alias match first, then safe fragment fallback.
 
 **Kind**: global function  
-**Returns**: <code>string</code> \| <code>null</code> - Project ID or null  
+**Returns**: <code>string</code> \| <code>null</code> - Project ID or null.  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |
-| task | <code>object</code> |  | Normalized task or candidate |
-| projects | <code>Array.&lt;object&gt;</code> |  | List of available projects |
-| [options] | <code>object</code> | <code>{}</code> | Ranking options |
+| task | <code>object</code> |  | Normalized task or candidate. |
+| projects | <code>Array.&lt;object&gt;</code> |  | Available projects. |
+| [options] | <code>object</code> | <code>{}</code> | Ranking options. |
 
 <a name="createRankingDecision"></a>
 
@@ -2241,29 +2248,17 @@ Supported patterns:
 | --- | --- | --- |
 | repeatHint | <code>string</code> \| <code>null</code> | Natural language recurrence hint |
 
-<a name="inferProjectIdFromTask"></a>
-
-## inferProjectIdFromTask(task, projects) ⇒ <code>string</code> \| <code>null</code>
-Infers a project ID for a task from available projects using project-policy.
-
-**Kind**: global function  
-**Returns**: <code>string</code> \| <code>null</code> - Project ID or null  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| task | <code>object</code> | Normalized task or candidate |
-| projects | <code>Array.&lt;object&gt;</code> | List of available projects |
-
 <a name="_resolveProject"></a>
 
 ## \_resolveProject()
-Resolves a project hint string to a concrete TickTick project ID.
+Resolves a project hint string to a concrete TickTick project destination.
 Expects a list of projects from the TickTick API.
 
 Resolution order:
-1. projectHint exact match / startsWith / contains (if provided)
-2. Content-based inference via inferProjectIdFromTask (if no projectHint)
-3. defaultProjectId fallback
+1. Exact project ID when hinted
+2. Exactly one exact project-name match when hinted
+3. defaultProjectResolution only when no projectHint exists
+4. defaultProjectId fallback for legacy callers when resolution is not provided
 
 **Kind**: global function  
 <a name="_expandDueDate"></a>
@@ -2359,6 +2354,20 @@ batch shape is unsupported (mixed create+mutation, multi-mutation).
 Single entry point for pipeline to normalize and validate batch shape.
 
 **Kind**: global function  
+<a name="formatBusyLockMessage"></a>
+
+## formatBusyLockMessage(lockStatus, [label]) ⇒ <code>string</code>
+Format conservative user-facing copy for a busy intake lock.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| lockStatus | <code>object</code> |  | Intake lock status. |
+| [lockStatus.owner] | <code>string</code> |  | Lock owner label. |
+| [lockStatus.acquiredAt] | <code>number</code> |  | Lock acquisition timestamp. |
+| [label] | <code>string</code> | <code>&quot;&#x27;operation&#x27;&quot;</code> | Human-readable surface label. |
+
 <a name="validateOperationReceipt"></a>
 
 ## validateOperationReceipt(receipt) ⇒ <code>Object</code>
@@ -3751,6 +3760,19 @@ Delegates to resolveTask with status 'drop'.
 | --- | --- | --- |
 | taskId | <code>string</code> | Task ID to drop |
 
+<a name="markTaskStale"></a>
+
+## markTaskStale(taskId, [data]) ⇒ <code>Promise.&lt;void&gt;</code>
+Mark a pending task stale after it aged out of active review.
+Preserves the pending snapshot, flags the processed entry stale, and removes it from the pending queue.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| taskId | <code>string</code> |  | Task ID to mark stale. |
+| [data] | <code>Object</code> | <code>{}</code> | Extra metadata to merge into the processed entry. |
+
 <a name="getQueueHealthSnapshot"></a>
 
 ## getQueueHealthSnapshot() ⇒ <code>Object</code>
@@ -4371,7 +4393,7 @@ Registers operational commands (/start, /menu, /status, /reset) and product surf
 Execute a list of structured actions against TickTick.
 
 **Kind**: global function  
-**Returns**: <code>Promise.&lt;Object&gt;</code> - Object containing `outcomes` (string array) and `hasUndoableActions` (boolean).  
+**Returns**: <code>Promise.&lt;Object&gt;</code> - Object containing `outcomes` (string array), `hasUndoableActions` (boolean), `executionSummary` (counts), and `operationReceipt` (receipt object).  
 
 | Param | Type | Default | Description |
 | --- | --- | --- | --- |

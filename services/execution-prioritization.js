@@ -671,12 +671,13 @@ export function inferPriorityValueFromTask(task, options = {}) {
 }
 
 /**
- * Infers a project ID for a task from available projects.
+ * Infer a project ID for a task from available projects.
+ * Conservative fallback only: exact alias match first, then safe fragment fallback.
  *
- * @param {object} task - Normalized task or candidate
- * @param {object[]} projects - List of available projects
- * @param {object} [options={}] - Ranking options
- * @returns {string|null} Project ID or null
+ * @param {object} task - Normalized task or candidate.
+ * @param {object[]} projects - Available projects.
+ * @param {object} [options={}] - Ranking options.
+ * @returns {string|null} Project ID or null.
  */
 export function inferProjectIdFromTask(task, projects = [], options = {}) {
     if (!Array.isArray(projects) || projects.length === 0) {

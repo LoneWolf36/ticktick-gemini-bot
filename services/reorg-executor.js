@@ -95,6 +95,18 @@ function describeCreateDetails(changes, projectMap, resolvedDueDate) {
     return parts.length > 0 ? ` → ${parts.join(', ')}` : '';
 }
 
+function buildExecutionSummary(overrides = {}) {
+    return {
+        attempted: 0,
+        succeeded: 0,
+        failed: 0,
+        ticktickChanged: 0,
+        localOnly: 0,
+        undoable: false,
+        ...overrides,
+    };
+}
+
 /**
  * Execute a single reorg action against TickTick via the adapter.
  *
@@ -134,6 +146,7 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
             taskId: null,
             actionType: null,
             error: '⚠️ Skipped invalid action: missing type',
+            executionSummary: buildExecutionSummary(),
         };
     }
 
@@ -152,6 +165,7 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                         taskId: null,
                         actionType,
                         error: '⚠️ Cannot create task: Missing title',
+                        executionSummary: buildExecutionSummary({ attempted: 1, failed: 1, localOnly: 1 }),
                     };
                 }
 
@@ -168,6 +182,7 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                     taskId: null,
                     actionType,
                     error: null,
+                    executionSummary: buildExecutionSummary({ attempted: 1, succeeded: 1, ticktickChanged: 1 }),
                 };
             }
 
@@ -180,6 +195,7 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                         taskId: null,
                         actionType,
                         error: '⚠️ Skipped complete action: AI did not provide a valid Task ID.',
+                        executionSummary: buildExecutionSummary({ attempted: 1, failed: 1, localOnly: 1 }),
                     };
                 }
                 if (!task) {
@@ -189,6 +205,7 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                         taskId,
                         actionType,
                         error: `⚠️ Task not found: ${taskId}`,
+                        executionSummary: buildExecutionSummary({ attempted: 1, failed: 1, localOnly: 1 }),
                     };
                 }
 
@@ -199,6 +216,7 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                     taskId,
                     actionType,
                     error: null,
+                    executionSummary: buildExecutionSummary({ attempted: 1, succeeded: 1, ticktickChanged: 1 }),
                 };
             }
 
@@ -211,6 +229,7 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                         taskId: null,
                         actionType,
                         error: '⚠️ Skipped update action: AI did not provide a valid Task ID.',
+                        executionSummary: buildExecutionSummary({ attempted: 1, failed: 1, localOnly: 1 }),
                     };
                 }
                 if (!task) {
@@ -220,6 +239,7 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                         taskId,
                         actionType,
                         error: `⚠️ Task not found: ${taskId}`,
+                        executionSummary: buildExecutionSummary({ attempted: 1, failed: 1, localOnly: 1 }),
                     };
                 }
 
@@ -233,6 +253,7 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                         taskId,
                         actionType,
                         error: null,
+                        executionSummary: buildExecutionSummary({ attempted: 1, failed: 1, localOnly: 1 }),
                     };
                 }
 
@@ -287,6 +308,12 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                     taskId,
                     actionType,
                     error: null,
+                    executionSummary: buildExecutionSummary({
+                        attempted: 1,
+                        succeeded: 1,
+                        ticktickChanged: 1,
+                        undoable: true,
+                    }),
                 };
             }
 
@@ -299,6 +326,7 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                         taskId: null,
                         actionType,
                         error: '⚠️ Skipped drop action: AI did not provide a valid Task ID.',
+                        executionSummary: buildExecutionSummary({ attempted: 1, failed: 1, localOnly: 1 }),
                     };
                 }
                 if (!task) {
@@ -308,6 +336,7 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                         taskId,
                         actionType,
                         error: `⚠️ Task not found: ${taskId}`,
+                        executionSummary: buildExecutionSummary({ attempted: 1, failed: 1, localOnly: 1 }),
                     };
                 }
 
@@ -352,6 +381,12 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                     taskId,
                     actionType,
                     error: null,
+                    executionSummary: buildExecutionSummary({
+                        attempted: 1,
+                        succeeded: 1,
+                        ticktickChanged: hasTickTickMutation ? 1 : 0,
+                        localOnly: hasTickTickMutation ? 0 : 1,
+                    }),
                 };
             }
 
@@ -363,6 +398,7 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
                     taskId,
                     actionType,
                     error: `⚠️ Skipped invalid/unsupported action: ${actionType}`,
+                    executionSummary: buildExecutionSummary({ attempted: 1, failed: 1, localOnly: 1 }),
                 };
         }
     } catch (err) {
@@ -373,6 +409,7 @@ export async function executeReorgAction(action, task, adapter, options = {}) {
             taskId: taskId || 'unknown',
             actionType,
             error: `❌ Failed on "${taskId || 'unknown'}": could not apply safely`,
+            executionSummary: buildExecutionSummary({ attempted: 1, failed: 1 }),
         };
     }
 }

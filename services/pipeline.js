@@ -162,6 +162,9 @@ function buildOperationReceipt(context, {
     errorClass = null,
     destination = undefined,
     confirmation = undefined,
+    succeeded = undefined,
+    failed = undefined,
+    rolledBack = undefined,
 }) {
     const receipt = {
         status,
@@ -178,6 +181,9 @@ function buildOperationReceipt(context, {
         ...(errorClass ? { errorClass } : {}),
         ...(destination !== undefined ? { destination } : {}),
         ...(confirmation !== undefined ? { confirmation } : {}),
+        ...(Number.isInteger(succeeded) ? { succeeded } : {}),
+        ...(Number.isInteger(failed) ? { failed } : {}),
+        ...(Number.isInteger(rolledBack) ? { rolledBack } : {}),
     };
 
     return assertValidOperationReceipt(receipt);
@@ -519,6 +525,11 @@ function buildFailureResult(context, {
     const failureDeveloperMessage = developerMessage || summary || error?.message || null;
     const changed = didFailureChangeExternalState({ failureClass, details, rolledBack });
     const receiptStatus = details?.deferredIntent ? 'deferred' : (dryRun ? 'blocked' : 'failed');
+    const succeeded = Number.isInteger(details?.successCount) ? details.successCount : undefined;
+    const failed = Number.isInteger(details?.failureCount) ? details.failureCount : undefined;
+    const rolledBackCount = Number.isInteger(details?.rolledBackCount)
+        ? details.rolledBackCount
+        : undefined;
 
     return {
         type: 'error',
@@ -537,6 +548,9 @@ function buildFailureResult(context, {
                 ? 'Task intent saved for deferred retry.'
                 : (dryRun ? 'Task execution blocked.' : 'Task execution failed.'),
             errorClass: mapFailureClassToErrorClass(failureClass, details),
+            ...(succeeded !== undefined ? { succeeded } : {}),
+            ...(failed !== undefined ? { failed } : {}),
+            ...(rolledBackCount !== undefined ? { rolledBack: rolledBackCount } : {}),
         }),
         failure: {
             class: failureClass,
@@ -2478,6 +2492,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                                 details: {
                                     succeededTitles: succeededActionLabels,
                                     failedTitles: failedActionLabels,
+                                    rolledBackCount: rollbackResult.recordsInOriginalOrder.filter(
+                                        (record) => record?.status === 'rolled_back',
+                                    ).length,
                                 },
                             },
                         };
@@ -2508,6 +2525,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                                     failureCount: failures.length,
                                     succeededTitles: succeededActionLabels,
                                     failedTitles: failedActionLabels,
+                                    rolledBackCount: rollbackResult.recordsInOriginalOrder.length,
                                 },
                                 rolledBack: false,
                             }),
@@ -2521,6 +2539,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                             details: {
                                 succeededTitles: succeededActionLabels,
                                 failedTitles: failedActionLabels,
+                                rolledBackCount: rollbackResult.recordsInOriginalOrder.filter(
+                                    (record) => record?.status === 'rolled_back',
+                                ).length,
                             },
                         },
                     };

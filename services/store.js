@@ -853,6 +853,24 @@ export async function markTaskProcessed(taskId, data) {
     await save();
 }
 
+/**
+ * Mark a pending task stale after it aged out of active review.
+ * Preserves the pending snapshot, flags the processed entry stale, and removes it from the pending queue.
+ * @param {string} taskId - Task ID to mark stale.
+ * @param {Object} [data={}] - Extra metadata to merge into the processed entry.
+ * @returns {Promise<void>}
+ */
+export async function markTaskStale(taskId, data = {}) {
+    state.processedTasks[taskId] = {
+        ...state.pendingTasks[taskId],
+        ...data,
+        stale: true,
+        reviewedAt: new Date().toISOString(),
+    };
+    delete state.pendingTasks[taskId];
+    await save();
+}
+
 // ─── Pending Tasks Retrieval ─────────────────────────────────
 
 export function getPendingTasks() {

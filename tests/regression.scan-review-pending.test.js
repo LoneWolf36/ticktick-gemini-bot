@@ -321,6 +321,14 @@ test('review apply continues when Telegram callback query is expired', async () 
     const updates = [];
     const edits = [];
     registerCallbacks(bot, {
+        getTaskSnapshot: async (id) => ({
+            id,
+            title: 'Expired callback task',
+            content: '',
+            priority: 1,
+            projectId: 'inbox',
+            dueDate: null,
+        }),
         updateTask: async (id, update) => {
             updates.push({ id, update });
             return { id };
@@ -369,6 +377,14 @@ test('review apply does not mutate when pending record was already resolved else
     const { bot, handlers } = makeCallbackBot();
     const updates = [];
     registerCallbacks(bot, {
+        getTaskSnapshot: async (id) => ({
+            id,
+            title: 'Stale preview task',
+            content: '',
+            priority: 1,
+            projectId: 'inbox',
+            dueDate: null,
+        }),
         updateTask: async (id, update) => {
             updates.push({ id, update });
             return { id };
@@ -414,6 +430,14 @@ test('review apply double tap mutates once and second tap is already handled', a
         releaseUpdate = resolve;
     });
     registerCallbacks(bot, {
+        getTaskSnapshot: async (id) => ({
+            id,
+            title: 'Double tap task',
+            content: '',
+            priority: 1,
+            projectId: 'inbox',
+            dueDate: null,
+        }),
         updateTask: async (id, update) => {
             answers.push(`update:${id}`);
             await updateGate;
@@ -482,6 +506,14 @@ test('review apply and skip/drop race resolves once and blocks the other callbac
         let releaseApply;
         const applyGate = new Promise((resolve) => { releaseApply = resolve; });
         registerCallbacks(bot, {
+            getTaskSnapshot: async (id) => ({
+                id,
+                title: `${scenario.name} task`,
+                content: '',
+                priority: 1,
+                projectId: 'inbox',
+                dueDate: null,
+            }),
             updateTask: async (id, update) => {
                 mutations.push(`update:${id}`);
                 await applyGate;
@@ -549,7 +581,15 @@ test('review progress never uses global processed count as session progress', as
 
     const { bot, handlers } = makeCallbackBot();
     const edits = [];
-    registerCallbacks(bot, {}, {});
+    registerCallbacks(bot, {
+        getTaskSnapshot: async () => ({
+            title: 'current-1',
+            content: '',
+            priority: 1,
+            projectId: 'inbox',
+            dueDate: null,
+        }),
+    }, {});
     const skipHandler = findCallbackHandler(handlers, '^s:');
     assert.equal(typeof skipHandler, 'function');
 
@@ -566,6 +606,180 @@ test('review progress never uses global processed count as session progress', as
     const latestText = edits.at(-1)?.text || '';
     assert.ok(!latestText.includes('Task 11 of 3'), 'should not display impossible progress from global processed count');
     assert.match(latestText, /Task [12] of 3/);
+    await store.resetAll();
+});
+
+test('review apply blocks when live task changed externally', async () => {
+    await store.resetAll();
+    const taskId = 'external-change-task';
+    await store.markTaskPending(taskId, {
+        originalTitle: 'Original title',
+        originalContent: 'Original content',
+        originalPriority: 1,
+        originalProjectId: 'inbox',
+        projectId: 'inbox',
+        projectName: 'Inbox',
+        actionType: 'update',
+    });
+
+    const { bot, handlers } = makeCallbackBot();
+    const updates = [];
+    const answers = [];
+    const edits = [];
+    registerCallbacks(bot, {
+        getTaskSnapshot: async () => ({
+            id: taskId,
+            title: 'Externally edited title',
+            content: 'Original content',
+            priority: 1,
+            projectId: 'inbox',
+            dueDate: null,
+        }),
+        updateTask: async (id, update) => { updates.push({ id, update }); return { id }; },
+    }, {});
+
+    const applyHandler = findCallbackHandler(handlers, '^a:');
+    await applyHandler({
+        match: [`a:${taskId}`, taskId],
+        chat: { id: 999 },
+        from: { id: 123 },
+        callbackQuery: { id: 'cb-change', message: { message_id: 10 } },
+        answerCallbackQuery: async ({ text }) => { answers.push(text); },
+        editMessageText: async (text, opts) => { edits.push({ text, opts }); return {}; },
+        reply: async (text, opts) => { edits.push({ text, opts, reply: true }); return {}; },
+    });
+
+    assert.equal(updates.length, 0);
+    assert.equal(store.isTaskPending(taskId), false);
+    assert.equal(store.isTaskProcessed(taskId), true);
+    assert.equal(answers[0], 'Checking preview…');
+    assert.ok(!answers.includes('Applied.'), 'stale apply should not emit applied success');
+    assert.ok(edits.at(-1)?.text.includes('Stale review preview'));
+    await store.resetAll();
+});
+
+test('review apply treats blank content and equivalent due date as unchanged', async () => {
+    await store.resetAll();
+    const taskId = 'blank-content-task';
+    await store.markTaskPending(taskId, {
+        originalTitle: 'Blank content task',
+        originalContent: '',
+        originalPriority: 1,
+        originalDueDate: '2026-05-02',
+        originalProjectId: 'inbox',
+        projectId: 'inbox',
+        projectName: 'Inbox',
+        actionType: 'update',
+    });
+
+    const { bot, handlers } = makeCallbackBot();
+    const answers = [];
+    const updates = [];
+    registerCallbacks(bot, {
+        getTaskSnapshot: async (id) => ({
+            id,
+            title: 'Blank content task',
+            content: undefined,
+            priority: 1,
+            projectId: 'inbox',
+            dueDate: '2026-05-02T00:00:00.000Z',
+        }),
+        updateTask: async (id, update) => { updates.push({ id, update }); return { id, update }; },
+    }, {});
+
+    const applyHandler = findCallbackHandler(handlers, '^a:');
+    await applyHandler({
+        match: [`a:${taskId}`, taskId],
+        chat: { id: 999 },
+        from: { id: 123 },
+        callbackQuery: { id: 'cb-blank', message: { message_id: 10 } },
+        answerCallbackQuery: async ({ text }) => { answers.push(text); },
+        editMessageText: async () => ({}),
+        reply: async () => ({}),
+    });
+
+    assert.equal(updates.length, 1, 'blank content snapshot should not be stale');
+    assert.equal(answers[0], 'Checking preview…');
+    assert.ok(answers.includes('Applied.'));
+    await store.resetAll();
+});
+
+test('review delete blocks when live task missing or adapter revalidation fails', async () => {
+    await store.resetAll();
+    const missingTaskId = 'missing-delete-task';
+    await store.markTaskPending(missingTaskId, {
+        originalTitle: 'Delete me',
+        originalContent: '',
+        originalPriority: 1,
+        originalProjectId: 'inbox',
+        projectId: 'inbox',
+        projectName: 'Inbox',
+        actionType: 'delete',
+    });
+
+    const { bot, handlers } = makeCallbackBot();
+    const deletes = [];
+    const answers = [];
+    const edits = [];
+    registerCallbacks(bot, {
+        getTaskSnapshot: async () => null,
+        deleteTask: async (id) => { deletes.push(id); return { id }; },
+    }, {});
+
+    const dropHandler = findCallbackHandler(handlers, '^d:');
+    await dropHandler({
+        match: [`d:${missingTaskId}`, missingTaskId],
+        chat: { id: 999 },
+        from: { id: 123 },
+        callbackQuery: { id: 'cb-missing', message: { message_id: 10 } },
+        answerCallbackQuery: async ({ text }) => { answers.push(text); },
+        editMessageText: async (text, opts) => { edits.push({ text, opts }); return {}; },
+        reply: async (text, opts) => { edits.push({ text, opts, reply: true }); return {}; },
+    });
+
+    assert.equal(deletes.length, 0);
+    assert.equal(store.isTaskPending(missingTaskId), false);
+    assert.equal(answers[0], 'Checking preview…');
+    assert.ok(!answers.includes('Dropped.'), 'stale delete should not emit dropped success');
+    assert.ok(edits.at(-1)?.text.includes('Stale review preview'));
+    await store.resetAll();
+
+    const failTaskId = 'revalidation-error-task';
+    await store.markTaskPending(failTaskId, {
+        originalTitle: 'Complete me',
+        originalContent: '',
+        originalPriority: 1,
+        originalProjectId: 'inbox',
+        projectId: 'inbox',
+        projectName: 'Inbox',
+        actionType: 'complete',
+    });
+
+    const { bot: bot2, handlers: handlers2 } = makeCallbackBot();
+    const completes = [];
+    const answers2 = [];
+    const edits2 = [];
+    registerCallbacks(bot2, {
+        getTaskSnapshot: async () => { throw new Error('network down'); },
+        completeTask: async (id) => { completes.push(id); return { id }; },
+    }, {});
+
+    const applyHandler2 = findCallbackHandler(handlers2, '^a:');
+    await applyHandler2({
+        match: [`a:${failTaskId}`, failTaskId],
+        chat: { id: 999 },
+        from: { id: 123 },
+        callbackQuery: { id: 'cb-error', message: { message_id: 10 } },
+        answerCallbackQuery: async ({ text }) => { answers2.push(text); },
+        editMessageText: async (text, opts) => { edits2.push({ text, opts }); return {}; },
+        reply: async (text, opts) => { edits2.push({ text, opts, reply: true }); return {}; },
+    });
+
+    assert.equal(completes.length, 0);
+    assert.equal(store.isTaskPending(failTaskId), false);
+    assert.equal(answers2[0], 'Checking preview…');
+    assert.ok(!answers2.includes('Applied.'), 'revalidation failure should not emit applied success');
+    assert.ok(edits2.at(-1)?.text.includes('Stale review preview'));
     await store.resetAll();
 });
 

@@ -6,6 +6,7 @@ import { TickTickClient } from '../services/ticktick.js';
 import { createPipeline } from '../services/pipeline.js';
 import { createPipelineObservability } from '../services/pipeline-observability.js';
 import { AIHardQuotaError, AIServiceUnavailableError, AIInvalidKeyError } from '../services/gemini.js';
+import { validateOperationReceipt } from '../services/operation-receipt.js';
 import { retryDeferredIntents } from '../services/scheduler.js';
 import * as store from '../services/store.js';
 
@@ -183,6 +184,63 @@ test('R5 partial failures surface succeeded and failed actions without silent dr
     assert.equal(result.failure.details.failures.length, 2);
     assert.match(result.confirmationText, /Rolled back: Task A/);
     assert.doesNotMatch(result.confirmationText, /Success: Task A/);
+    assert.equal(result.operationReceipt.status, 'failed');
+    assert.equal(result.operationReceipt.changed, false);
+    assert.equal(result.operationReceipt.applied, false);
+    assert.equal(result.operationReceipt.succeeded, 1);
+    assert.equal(result.operationReceipt.failed, 2);
+    assert.equal(result.operationReceipt.rolledBack, 1);
+    assert.equal(validateOperationReceipt(result.operationReceipt).valid, true);
+
+    const receiptText = JSON.stringify(result.operationReceipt);
+    assert.doesNotMatch(receiptText, /Task A|Task B|Task C/);
+});
+
+test('R5 rollback failure receipt stays count-based and truthful', async () => {
+    const pipeline = createPipeline({
+        intentExtractor: {
+            extractIntents: async () => [{ type: 'create' }, { type: 'create' }],
+        },
+        normalizer: {
+            normalizeActions: () => ([
+                { type: 'create', title: 'Alpha task', projectId: 'inbox', valid: true, validationErrors: [] },
+                { type: 'create', title: 'Beta task', projectId: 'inbox', valid: true, validationErrors: [] },
+            ]),
+        },
+        adapter: {
+            listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+            listActiveTasks: async () => [],
+            createTask: async (action) => {
+                if (action.title === 'Alpha task') return { id: 'alpha-task', projectId: 'inbox' };
+                const err = new Error('target missing');
+                err.code = 'NOT_FOUND';
+                throw err;
+            },
+            deleteTask: async () => {
+                const err = new Error('rollback failed');
+                err.code = 'NETWORK_ERROR';
+                throw err;
+            },
+        },
+        observability: createPipelineObservability({ logger: null }),
+    });
+
+    const result = await pipeline.processMessage('create rollback tasks', {
+        requestId: 'req-r5-rollback',
+        entryPoint: 'telegram',
+        mode: 'interactive',
+    });
+
+    assert.equal(result.type, 'error');
+    assert.equal(result.failure.failureCategory, 'partial');
+    assert.equal(result.operationReceipt.status, 'failed');
+    assert.equal(result.operationReceipt.changed, true);
+    assert.equal(result.operationReceipt.applied, false);
+    assert.equal(result.operationReceipt.succeeded, 1);
+    assert.equal(result.operationReceipt.failed, 1);
+    assert.equal(result.operationReceipt.rolledBack, 0);
+    assert.equal(validateOperationReceipt(result.operationReceipt).valid, true);
+    assert.doesNotMatch(JSON.stringify(result.operationReceipt), /Alpha task|Beta task/);
 });
 
 test('R11 pipeline surfaces typed adapter failures without leaking API internals', async () => {

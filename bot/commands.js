@@ -25,10 +25,74 @@ import {
 import { executeReorgAction } from '../services/reorg-executor.js';
 import { formatPipelineFailure, executeUndoBatch } from '../services/undo-executor.js';
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
+import { assertValidOperationReceipt, formatBusyLockMessage } from '../services/operation-receipt.js';
 import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
 import { projectPolicy } from '../services/project-policy.js';
 import { detectWorkStyleModeIntent } from '../services/intent-extraction.js';
 import { detectBehavioralPatterns } from '../services/behavioral-patterns.js';
+
+function buildReorgApplyReceipt(summary, { attemptedActions = 0 } = {}) {
+    const attempted = summary?.attempted ?? attemptedActions;
+    const succeeded = summary?.succeeded ?? 0;
+    const failed = summary?.failed ?? 0;
+    const ticktickChanged = summary?.ticktickChanged ?? 0;
+    const localOnly = summary?.localOnly ?? 0;
+    const undoable = summary?.undoable === true;
+    const changedInTickTick = ticktickChanged;
+
+    if (changedInTickTick > 0 && failed === 0 && succeeded === attempted) {
+        const localOnlySuffix = localOnly > 0 ? ` (${localOnly} local-only)` : '';
+        return assertValidOperationReceipt({
+            status: 'applied',
+            scope: 'ticktick_live',
+            changed: true,
+            command: 'reorg',
+            operationType: 'reorg',
+            nextAction: 'none',
+            message: `Reorg applied: ${changedInTickTick}/${attempted} changed in TickTick${localOnlySuffix}.`,
+            traceId: `reorg-${Date.now()}`,
+            dryRun: false,
+            applied: true,
+            fallbackUsed: false,
+            destination: { confidence: 'configured' },
+            metadata: { attempted, succeeded, failed, ticktickChanged, localOnly, undoable },
+        });
+    }
+
+    if (failed > 0) {
+        const localOnlySuffix = localOnly > 0 ? `, ${localOnly} local-only` : '';
+        return assertValidOperationReceipt({
+            status: 'failed',
+            scope: ticktickChanged > 0 ? 'ticktick_live' : 'local_review_queue',
+            changed: ticktickChanged > 0,
+            command: 'reorg',
+            operationType: 'reorg',
+            nextAction: 'retry',
+            message: `Reorg partial: ${changedInTickTick}/${attempted} changed in TickTick${localOnlySuffix}, ${failed} failed.`,
+            traceId: `reorg-${Date.now()}`,
+            dryRun: false,
+            applied: false,
+            fallbackUsed: false,
+            metadata: { attempted, succeeded, failed, ticktickChanged, localOnly, undoable },
+        });
+    }
+
+    const localOnlySuffix = localOnly > 0 ? ` (${localOnly} local-only)` : '';
+    return assertValidOperationReceipt({
+        status: 'blocked',
+        scope: 'local_review_queue',
+        changed: false,
+        command: 'reorg',
+        operationType: 'reorg',
+        nextAction: 'none',
+        message: `Reorg skipped: ${localOnly}/${attempted} local-only or no-op actions${localOnlySuffix}.`,
+        traceId: `reorg-${Date.now()}`,
+        dryRun: false,
+        applied: false,
+        fallbackUsed: false,
+        metadata: { attempted, succeeded, failed, ticktickChanged, localOnly, undoable },
+    });
+}
 
 // Rate limiter removed 2026-04-19 (cavekit-validate Phase 3): YAGNI for 1-user MVP.
 // Heavy-command rate limiting listed as out-of-scope in cavekit-task-pipeline.md.
@@ -392,8 +456,8 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             '',
             '**Running job**',
             intakeLock.locked
-                ? `Busy: ${intakeLock.owner || 'operation'} since ${userLocaleString(new Date(intakeLock.acquiredAt).toISOString())}`
-                : 'Busy: no',
+                ? formatBusyLockMessage(intakeLock, 'Running job')
+                : '⏳ Running job busy: no',
             '',
             '**Recent activity**',
             `Analyzed: ${stats.tasksAnalyzed}  |  Approved: ${stats.tasksApproved}`,
@@ -568,7 +632,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             try {
                 const tasks = await adapter.listActiveTasks();
                 const projects = await adapter.listProjects();
-                const { outcomes, hasUndoableActions } = await executeActions(
+                const { outcomes, hasUndoableActions, operationReceipt } = await executeActions(
                     pending.actions || [],
                     adapter,
                     tasks,
@@ -580,29 +644,15 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     }
                 );
                 await store.clearPendingReorg();
-                const typeOrder = ['Created', 'Updated', 'Complete', 'Drop'];
-                const grouped = {};
-                for (const o of outcomes) {
-                    const m = o.match(/^(Created|Updated|Complete|Drop):\s*(.+)/i);
-                    if (m) {
-                        const type = m[1];
-                        const rest = m[2];
-                        if (!grouped[type]) grouped[type] = [];
-                        grouped[type].push(rest);
-                    } else {
-                        if (!grouped.Other) grouped.Other = [];
-                        grouped.Other.push(o);
-                    }
-                }
-                const sections = [];
-                for (const type of typeOrder) {
-                    const items = grouped[type] || [];
-                    sections.push(`${type}:\n${items.length > 0 ? items.map(i => `  • ${i}`).join('\n') : '  • (none)'}`);
-                }
-                let msg = `**Reorg Applied**\n\n${sections.join('\n\n')}`;
-                if (grouped.Other?.length) {
-                    msg += `\n\n${grouped.Other.join('\n')}`;
-                }
+                const summary = operationReceipt?.metadata || {};
+                const statusLabel = operationReceipt?.status === 'applied'
+                    ? 'Applied'
+                    : operationReceipt?.status === 'failed'
+                        ? 'Failed'
+                        : 'Blocked';
+                let msg = `**Reorg ${statusLabel}**\n\n${operationReceipt?.message || 'No reorg changes applied.'}`;
+                msg += `\n\nAttempted: ${summary.attempted ?? 0} | Succeeded: ${summary.succeeded ?? 0} | Failed: ${summary.failed ?? 0}`;
+                msg += `\nTickTick changed: ${summary.ticktickChanged ?? 0} | Local-only: ${summary.localOnly ?? 0}`;
                 if (hasUndoableActions) msg += '\n\nRun /undo to revert the last change.';
                 await replyWithMarkdown(ctx, truncateMessage(msg, 4000));
             } catch (err) {
@@ -625,7 +675,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             return;
         }
 
-        if (!store.tryAcquireIntakeLock({ owner: 'bot:scan' })) { await ctx.reply('⏳ A scan or poll is already running.'); return; }
+        if (!store.tryAcquireIntakeLock({ owner: 'bot:scan' })) { await ctx.reply(formatBusyLockMessage(store.getIntakeLockStatus(), 'Scan')); return; }
 
         let backgroundPromise = Promise.resolve();
         try {
@@ -1064,7 +1114,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             return;
         }
 
-        if (!store.tryAcquireIntakeLock({ owner: 'bot:review' })) { await ctx.reply('⏳ A scan or poll is already running.'); return; }
+        if (!store.tryAcquireIntakeLock({ owner: 'bot:review' })) { await ctx.reply(formatBusyLockMessage(store.getIntakeLockStatus(), 'Review')); return; }
 
         let backgroundPromise = Promise.resolve();
         try {
@@ -1665,11 +1715,20 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
  * @param {TickTickAdapter} adapter - The adapter to execute writes.
  * @param {Object[]} currentTasks - Snapshot of active tasks for lookup.
  * @param {Object} [options={}] - Execution options.
- * @returns {Promise<Object>} Object containing `outcomes` (string array) and `hasUndoableActions` (boolean).
+ * @returns {Promise<Object>} Object containing `outcomes` (string array), `hasUndoableActions` (boolean), `executionSummary` (counts), and `operationReceipt` (receipt object).
  */
 export async function executeActions(actions, adapter, currentTasks, options = {}) {
     const outcomes = [];
     let hasUndoableActions = false;
+    const storeApi = options.store || store;
+    const executionSummary = {
+        attempted: 0,
+        succeeded: 0,
+        failed: 0,
+        ticktickChanged: 0,
+        localOnly: 0,
+        undoable: false,
+    };
     const policyGoalThemeProfile = options.goalThemeProfile || createGoalThemeProfile(
         typeof options.userContext === 'string' ? options.userContext : '',
         { source: typeof options.userContext === 'string' ? 'user_context' : 'fallback' },
@@ -1762,6 +1821,7 @@ export async function executeActions(actions, adapter, currentTasks, options = {
 
     for (const action of plannedActions) {
         if (!action || typeof action !== 'object' || !action.type) continue;
+        executionSummary.attempted++;
 
         const task = action.taskId ? currentTasks.find(t => t.id === action.taskId) : null;
 
@@ -1771,6 +1831,8 @@ export async function executeActions(actions, adapter, currentTasks, options = {
 
         if (result.error) {
             outcomes.push(result.error);
+            executionSummary.failed++;
+            if (result.executionSummary?.localOnly) executionSummary.localOnly += result.executionSummary.localOnly;
             continue;
         }
 
@@ -1778,19 +1840,30 @@ export async function executeActions(actions, adapter, currentTasks, options = {
             outcomes.push(...result.outcomes);
         }
 
+        if (result.executionSummary) {
+            executionSummary.succeeded += result.executionSummary.succeeded || 0;
+            executionSummary.failed += result.executionSummary.failed || 0;
+            executionSummary.ticktickChanged += result.executionSummary.ticktickChanged || 0;
+            executionSummary.localOnly += result.executionSummary.localOnly || 0;
+            executionSummary.undoable = executionSummary.undoable || result.executionSummary.undoable === true;
+        }
+
         if (result.undoEntry) {
-            await store.addUndoEntry(result.undoEntry);
+            await storeApi.addUndoEntry(result.undoEntry);
             hasUndoableActions = true;
+            executionSummary.undoable = true;
         }
 
         // Drop actions mark tasks as processed (orchestration, not adapter dispatch)
         if (result.actionType === 'drop' && task) {
-            await store.markTaskProcessed(task.id, {
+            await storeApi.markTaskProcessed(task.id, {
                 originalTitle: task.title,
                 dropped: true,
                 droppedByReorg: true,
             });
         }
     }
-    return { outcomes, hasUndoableActions };
+
+    const receipt = buildReorgApplyReceipt(executionSummary, { attemptedActions: executionSummary.attempted, results: outcomes });
+    return { outcomes, hasUndoableActions, executionSummary, operationReceipt: receipt };
 }
