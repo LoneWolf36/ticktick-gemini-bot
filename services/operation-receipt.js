@@ -22,7 +22,6 @@ const COMMANDS = Object.freeze([
     'status',
     'review',
     'freeform',
-    'reorg',
     'scheduler',
     'callback',
 ]);
@@ -35,7 +34,6 @@ const OPERATION_TYPES = Object.freeze([
     'review',
     'scan',
     'sync',
-    'reorg',
     'none',
 ]);
 

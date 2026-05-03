@@ -290,7 +290,7 @@ function resolveReceiptDestinationForCreate(action, context) {
 
 function inferOperationType(actions = []) {
     const types = Array.isArray(actions) ? actions.map(action => action?.type).filter(Boolean) : [];
-    const allowed = new Set(['create', 'update', 'complete', 'delete', 'review', 'scan', 'sync', 'reorg', 'none']);
+    const allowed = new Set(['create', 'update', 'complete', 'delete', 'review', 'scan', 'sync', 'none']);
     const filtered = types.filter(type => allowed.has(type));
     if (filtered.length === 1) return filtered[0];
     if (filtered.length === 0) return 'none';

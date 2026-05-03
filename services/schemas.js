@@ -2,56 +2,16 @@
 //
 // RETAINED SCOPE: This module exports structured JSON schemas used
 // by Gemini's responseSchema config for the briefing, weekly, and
-// reorg summary models. These schemas enforce strict JSON output
+// summary models. These schemas enforce strict JSON output
 // from Gemini's structured generation API.
 //
-// Primary schemas: briefingSummarySchema, weeklySummarySchema, reorgSchema.
+// Primary schemas: briefingSummarySchema, weeklySummarySchema.
 // Supporting constants: notice codes, severities, evidence sources.
 //
-// These are NOT task-writing schemas. They govern summary/reorg output
-// from the briefing, weekly, and reorg commands only.
+// These are NOT task-writing schemas. They govern summary output
+// from the briefing, weekly, and daily close commands only.
 import { Type as SchemaType } from '@google/genai';
 
-
-/**
- * Gemini response schema for reorganization proposals.
- * Cavekit ownership: Task Pipeline R16 (Guided Reorg).
- */
-export const reorgSchema = {
-    type: SchemaType.OBJECT,
-    properties: {
-        summary: { type: SchemaType.STRING, description: "Brief explanation of what was reorganized and why." },
-        questions: {
-            type: SchemaType.ARRAY,
-            items: { type: SchemaType.STRING },
-            description: "Clarifying questions for ambiguous/high-risk tasks.",
-            nullable: true
-        },
-        actions: {
-            type: SchemaType.ARRAY,
-            items: {
-                type: SchemaType.OBJECT,
-                properties: {
-                    type: { type: SchemaType.STRING, enum: ["update", "drop", "create", "complete"] },
-                    taskId: { type: SchemaType.STRING, nullable: true },
-                    changes: {
-                        type: SchemaType.OBJECT,
-                        properties: {
-                            title: { type: SchemaType.STRING, nullable: true },
-                            content: { type: SchemaType.STRING, nullable: true },
-                            dueDate: { type: SchemaType.STRING, nullable: true },
-                            scheduleBucket: { type: SchemaType.STRING, enum: ["today", "tomorrow", "this-week", "next-week", "someday"], nullable: true },
-                            projectId: { type: SchemaType.STRING, nullable: true },
-                            priority: { type: SchemaType.INTEGER, nullable: true }
-                        }
-                    }
-                },
-                required: ["type", "changes"]
-            }
-        }
-    },
-    required: ["summary", "actions"]
-};
 
 /**
  * Section keys for daily briefing summaries.

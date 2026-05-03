@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../services/shared-utils.js';
-import { executeActions, registerCommands } from '../bot/commands.js';
+import { registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer, buildWorkStylePromptNote } from '../services/gemini.js';
 import { createIntentExtractor, detectWorkStyleModeIntent, QuotaExhaustedError } from '../services/intent-extraction.js';
 import { createPipeline } from '../services/pipeline.js';

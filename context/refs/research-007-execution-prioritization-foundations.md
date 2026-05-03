@@ -16,7 +16,7 @@ This document backfills the Phase 0 research scaffold for feature `007-execution
 
 ### 1. Prioritization is currently split across prompts and heuristics
 
-The repository already contains recommendation behavior, but it is not centralized. `services/gemini.js` defines separate prompt paths for daily briefing, weekly digest, and reorg behavior, each with its own implicit prioritization language and ranking assumptions. The reorg path also contains deterministic fallback logic and task compaction heuristics keyed off keywords such as `system design`, `study`, `bank`, and `grocery` rather than a reusable domain policy. See `services/gemini.js:29`, `services/gemini.js:62`, `services/gemini.js:105`, `services/gemini.js:518`, `services/gemini.js:556`, and `services/gemini.js:604`.
+The repository already contains recommendation behavior, but it is not centralized. `services/gemini.js` defines separate prompt paths for daily briefing and weekly digest, each with its own implicit prioritization language and ranking assumptions. See `services/gemini.js:29`, `services/gemini.js:62`, `services/gemini.js:105`, `services/gemini.js:518`, `services/gemini.js:556`, and `services/gemini.js:604`.
 
 ### 2. A second prioritization layer already exists in command execution
 

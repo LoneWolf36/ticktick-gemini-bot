@@ -205,7 +205,6 @@ const TELEGRAM_COMMANDS = [
     { command: 'briefing', description: 'Generate daily morning briefing' },
     { command: 'weekly', description: 'Generate weekly review digest' },
     { command: 'review', description: 'Walk through unreviewed tasks' },
-    { command: 'reorg', description: 'Propose full task reorganization' },
     { command: 'urgent', description: 'Activate urgent mode' },
     { command: 'focus', description: 'Switch to focus mode' },
     { command: 'normal', description: 'Switch to normal mode' },

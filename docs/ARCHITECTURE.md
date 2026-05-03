@@ -35,8 +35,8 @@ Core fields:
 
 - `status` — one of `preview`, `applied`, `pending_confirmation`, `blocked`, `deferred`, `failed`, or `busy`.
 - `scope` — the state being described: TickTick live state, local review queue, preview state, deferred queue, or system state.
-- `command` — entry command/surface: scan, pending, status, review, free-form, reorg, scheduler, or callback.
-- `operationType` — create, update, complete, delete, review, scan, sync, reorg, or none.
+- `command` — entry command/surface: scan, pending, status, review, free-form, scheduler, or callback.
+- `operationType` — create, update, complete, delete, review, scan, sync, or none.
 - `changed` — whether TickTick or durable local state actually changed.
 - `dryRun` — whether the operation was preview-only.
 - `applied` — whether a TickTick mutation succeeded.
@@ -109,7 +109,7 @@ Resumed Telegram mutation and checklist callbacks render the same trust receipt 
 
 ### `force_reply` Refinement
 
-During `/reorg` refinement, the bot can switch to `force_reply` mode (`bot/callbacks.js`). The next user message is treated as a direct refinement prompt rather than a new free-form instruction, making the conversational loop feel synchronous.
+Historical reorg refinement flow removed; no user-facing command now uses `force_reply` for proposal refinement.
 
 ### Compact Intent Prompt
 

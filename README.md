@@ -1,6 +1,6 @@
 # TickTick AI Accountability Partner
 
-An AI-powered Telegram bot that connects to your TickTick task manager and acts as a proactive accountability partner — analyzing tasks, reorganizing them with Gemini AI, and keeping you honest about your goals.
+An AI-powered Telegram bot that connects to your TickTick task manager and acts as a proactive accountability partner — analyzing tasks and keeping you honest about your goals.
 
 ## Features
 
@@ -12,12 +12,11 @@ An AI-powered Telegram bot that connects to your TickTick task manager and acts 
 - **Autonomous mode** — auto-applies low-risk changes (life-admin tasks) without needing your tap. One compact notification per batch
 - **Free-form instructions with receipts** — send natural language messages like *"move all gym tasks to next week"* or *"what should I focus on today?"* and get a structured receipt showing what changed
 - **Quick command menu** — use `/menu` to access inline shortcuts and avoid command discovery friction
-- **Guided full-system reorg** — use `/reorg` to generate a proposal, refine it, and apply it safely
 - **Urgent mode** — `/urgent on` switches to sharper tone with deadline-first prioritization; `/urgent off` returns to standard baseline
 - **Daily morning briefing** — 3-4 prioritized focus items, leading with what you've been avoiding
 - **Weekly accountability digest** — honest review of wins, avoidance patterns, and next week's top 3
 - **Proactive polling** — detects new tasks every 5 minutes; summary jobs stay read-only, while poll auto-apply and deferred retry can mutate TickTick through the same trust boundary
-- **Undo** — revert the latest undoable free-form, review, reorg, or auto-applied change with `/undo` or the inline undo button on task receipts
+- **Undo** — revert the latest undoable free-form, review, or auto-applied change with `/undo` or the inline undo button on task receipts
 - **Redis-backed persistence** — state survives server restarts and cloud redeploys
 - **Render deployment ready** — webhook mode, `render.yaml` blueprint included
 
@@ -141,7 +140,6 @@ Open your bot in Telegram and send `/start`.
 | `/briefing` | Daily morning briefing — focus, top priorities, why it matters, first action |
 | `/weekly` | Weekly accountability digest — progress, carry forward, next focus, watchouts |
 | `/review` | Walk through the local review queue. Empty state is scoped to local review items and never uses bare “No tasks to review.” |
-| `/reorg` | Build a full task reorganization proposal (apply/refine/cancel) |
 | `/urgent` | Activate urgent mode (also: /focus, /normal, /mode to query) |
 | `/focus` | Switch to focus mode |
 | `/normal` | Switch to normal mode |
@@ -235,14 +233,14 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 ├── bot/
 │   ├── index.js                 # Bot factory
 │   ├── commands.js              # All slash commands + pipeline integration
-│   └── callbacks.js             # Inline keyboard handlers (approve/skip/drop/reorg)
+│   └── callbacks.js             # Inline keyboard handlers (approve/skip/drop)
 ├── services/
 │   ├── pipeline.js              # Orchestrates: message → intent extraction → normalizer → adapter
 │   ├── intent-extraction.js     # Structured intent extraction (Gemini-backed)
 │   ├── normalizer.js            # Deterministic normalizer (intent → TickTick fields)
 │   ├── ticktick-adapter.js      # TickTick REST API adapter (create/update/complete/delete)
 │   ├── ticktick.js              # Low-level TickTick API client (OAuth2 + CRUD)
-│   ├── gemini.js                # Gemini AI (briefing, weekly, reorg, free-form chat)
+│   ├── gemini.js                # Gemini AI (briefing, weekly, free-form chat)
 │   ├── scheduler.js             # Cron jobs (polling, briefings, digest, deferred retry)
 │   ├── store.js                 # Redis-backed state store (file fallback for local dev)
 │   ├── schemas.js               # Structured data schemas (intent actions, normalized actions)
@@ -256,7 +254,6 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 │   ├── execution-prioritization.js # Leverage-based ranking and priority inference
 │   ├── behavioral-signals.js    # Task event → behavioral signal classification
 │   ├── behavioral-patterns.js   # Signal → behavioral pattern detection
-│   ├── reorg-executor.js        # Reorg action dispatch against TickTick adapter
 │   ├── undo-executor.js         # Undo execution helpers (revert pipeline mutations)
 │   ├── summary-surfaces/        # Briefing, weekly digest, daily close composition
 │   ├── user_context.js          # YOUR personal context (gitignored — create from example)

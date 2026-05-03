@@ -59,8 +59,6 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 
 **Intake Lock**: `services/store.js` exports `tryAcquireIntakeLock()`, `releaseIntakeLock()`, and `getIntakeLockStatus()` for mutual exclusion over the TickTick poll-analysis cycle. Lock has configurable `ttlMs` (default 5min) and `owner` metadata. `getIntakeLockStatus()` returns `{ locked, owner, acquiredAt, expiresAt }`. Used by `services/scheduler.js` to prevent concurrent scan/poll cycles.
 
-**Reorg Apply Boundary**: Reorg action execution uses `services/reorg-executor.js`, which dispatches single actions (create/update/complete/drop) against the adapter and returns structured results including undo entries. The caller (`bot/callbacks.js` approve-reorg path) persists undo logs and processed marks. Full consolidation into the pipeline (`services/pipeline.js`) remains deferred — the reorg executor is a narrow extraction from `bot/commands.js` `executeActions()`, not a pipeline-internal path.
-
 **Deferred Pipeline Intents**: When the TickTick API is unavailable, `services/pipeline.js` defers the parsed normalized intent into `services/store.js` `deferredPipelineIntents` (max 200 entries). `services/scheduler.js` exports `retryDeferredIntents()` which processes the queue with health-check gating and exponential backoff (max 15min). Intents that exhaust 3 retries are moved to `failedDeferredIntents` (dead-letter queue, max 50 entries). The user is notified on permanent failure. See `docs/ARCHITECTURE.md` Resilience Patterns for details.
 
 **Operation Receipt Contract**: `services/operation-receipt.js` defines the shared vocabulary and invariant checks for user-visible operation outcomes. It is descriptive only — execution, routing, and mutation decisions remain in pipeline/callback/adapter boundaries. Receipt states must fail conservative: dry-run cannot be applied, applied requires a real TickTick change with exact/configured destination confidence when a destination is present, blocked/deferred/failed/busy states use safe next actions, and diagnostic metadata must not carry raw task titles, descriptions, checklist text, free-form user message text, or raw rollback snapshots.
@@ -72,10 +70,9 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 - `services/intent-extraction.js` — Extracts structured `Intent Action` objects from natural language using Gemini via direct `responseSchema` API calls.
 - `services/normalizer.js` — Deterministic cleaner that maps intent actions to TickTick-compatible fields (title truncation, filler stripping, repeatHint → RRULE, projectHint → project ID).
 - `services/ticktick-adapter.js` — Executes normalized actions against the TickTick REST API (create/update/complete/delete). Handles retries, OAuth refresh, active-task listing, and completed-task plumbing.
-- `services/reorg-executor.js` — Single-action reorg dispatch against the adapter (create/update/complete/drop) for Gemini reorg proposals and policy sweeps. Returns structured results; caller persists state.
 - `services/undo-executor.js` — Executes undo/rollback entries against the adapter. Handles all rollback types (delete_created, restore_updated, recreate_deleted, uncomplete_task, plus legacy pre-rollback restore).
 - `services/ticktick.js` — Low-level TickTick API client with OAuth2 token management, CRUD operations, official task move, task filter, and completed-task endpoints.
-- `services/gemini.js` — Gemini AI client for briefing, weekly digest, reorg proposals, free-form chat, and intent extraction. Manages API key rotation.
+- `services/gemini.js` — Gemini AI client for briefing, weekly digest, free-form chat, and intent extraction. Manages API key rotation.
 - `services/scheduler.js` — Cron-driven jobs: proactive TickTick reads, daily/weekly briefings, deferred intent retry, queue health checks
 - `services/store.js` — State persistence layer. Redis-backed when `REDIS_URL` is set; falls back to local JSON file for development.
 - `services/pipeline-context.js` — Carries structured context through the pipeline execution stages.
@@ -97,7 +94,7 @@ See `Product Vision and Behavioural Scope.md` for the complete product document.
 ### Bot module (Telegram-facing behavior only)
 - `bot/index.js` — Bot factory. Creates and configures the Telegraf bot instance.
 - `bot/commands.js` — Slash command handlers. **Must not** call the TickTick client directly for write operations — always route through the pipeline.
-- `bot/callbacks.js` — Inline keyboard callback handlers (approve/skip/drop/reorg flows).
+- `bot/callbacks.js` — Inline keyboard callback handlers (approve/skip/drop flows).
 - `bot/pipeline-result-receipts.js` — Shared receipt builder for pipeline and callback mutation responses; keeps trust receipt and undo affordance parity.
 
 ### Integration rule
@@ -126,7 +123,6 @@ All command-triggered write behavior must use `services/pipeline.js` (intent ext
 
 - `/scan` — batch analysis + apply/review routing through pipeline
 - `/review` — pending review loop (no direct TickTick writes outside adapter)
-- `/reorg` — guided reorganization proposal with apply/refine/cancel flows
 - Free-form text — parsed by intent extraction, normalized, then executed via adapter
 
 Read/summarization surfaces stay outside write path:
@@ -330,7 +326,7 @@ This project uses **Cavekit** for spec-driven development. Domain kits live in `
 
 | Kit | Requirements | Description |
 |-----|-------------|-------------|
-| `cavekit-task-pipeline.md` | 17 | Core task capture, mutation, intent extraction, normalization, adapter, command surfaces, guided reorg, autonomous poll auto-apply |
+| `cavekit-task-pipeline.md` | 16 | Core task capture, mutation, intent extraction, normalization, adapter, command surfaces, autonomous poll auto-apply |
 | `cavekit-pipeline-hardening.md` | 12 | Testing harness, failure classification, retry/rollback, observability |
 | `cavekit-cleanup.md` | 5 | Dead code removal, docs alignment, env standardization |
 | `cavekit-checklists.md` | 7 | Checklist extraction, subtask creation, disambiguation |

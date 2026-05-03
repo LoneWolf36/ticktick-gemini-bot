@@ -69,13 +69,12 @@ Post-migration cleanup: dead code removal, documentation alignment, env-var stan
 
 ## Validation Action Items — 2026-04-19
 
-- [x] `/reorg` drift resolved: mapped to R16 Guided Reorg in `cavekit-task-pipeline.md`.
-- [x] `reorgSchema` in `services/schemas.js` + `generateReorgProposal` in `services/gemini.js` — both belong to R16 Guided Reorg; no longer drift.
+- [x] `/reorg` drift retired: removed from active scope in `cavekit-task-pipeline.md`.
 - [x] Tooling exclusion rule decided: `.archon/` workflows/commands are dev tooling, excluded from product drift checks. See `context/kits/cavekit-overview.md` for the rule.
 - [x] Checkpoint tooling (`commands/save-checkpoint.js`, `commands/README.md`) removed — `docs/ARCHITECTURE.md` no longer contains legacy checkpoint references.
 - [x] Orphaned `tasks/WP*.md` prompt copies removed — canonical versions live under `kitty-specs.archived/`.
 - [x] Rate limiter removed from `bot/commands.js` (YAGNI for 1-user MVP).
-- [x] Audit R1 (Dead Code Removal): legacy prompt-driven task-writing paths are gone; retained direct adapter calls in `bot/commands.js` (`/undo`, `executeActions`) and `bot/callbacks.js` (approve/drop callbacks) are explicitly documented operational or reorg boundaries rather than orphaned legacy writers, and no orphaned imports or dead helper exports were introduced by the pipeline migration.
+- [x] Audit R1 (Dead Code Removal): legacy prompt-driven task-writing paths are gone; retained direct adapter calls in `bot/commands.js` (`/undo`, `executeActions`) and `bot/callbacks.js` (approve/drop callbacks) are explicitly documented operational boundaries rather than orphaned legacy writers, and no orphaned imports or dead helper exports were introduced by the pipeline migration.
 
 ## Changelog
 - 2026-04-28: R5 remains partially completed — all 555 automated tests pass (no skips, no xfails, no new failures). Manual smoke test of core create/update/complete/delete flows still pending.

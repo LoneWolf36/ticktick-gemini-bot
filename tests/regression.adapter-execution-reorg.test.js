@@ -4,7 +4,7 @@ import { readFileSync } from 'node:fs';
 import axios from 'axios';
 
 import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../services/shared-utils.js';
-import { executeActions, registerCommands } from '../bot/commands.js';
+import { registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer, buildWorkStylePromptNote } from '../services/gemini.js';
 import { createIntentExtractor, detectWorkStyleModeIntent, QuotaExhaustedError } from '../services/intent-extraction.js';
 import { createPipeline } from '../services/pipeline.js';
@@ -687,98 +687,6 @@ test('markdown parser normalizes hash-divider and preserves bold formatting', ()
   assert.match(html, /────────/);
 });
 
-test('executeActions accepts suggested_schedule update alias and applies dueDate', async () => {
-  const calls = [];
-  const ticktick = {
-    updateTask: async (taskId, changes) => {
-      calls.push({ taskId, changes });
-      return { id: taskId };
-    },
-    completeTask: async () => {},
-    createTask: async () => {}
-  };
-
-  const currentTasks = [{ id: 'task-1', title: 'Netflix task', projectId: 'p-1' }];
-  const actions = [{ type: 'update', taskId: 'task-1', changes: { suggested_schedule: 'today' } }];
-
-  const result = await executeActions(actions, ticktick, currentTasks);
-
-  assert.equal(result.outcomes[0], 'Updated: "Netflix task"');
-  assert.equal(typeof calls[0].changes.dueDate, 'string');
-  assert.ok(calls[0].changes.dueDate.includes('T'));
-  assert.ok(!calls[0].changes.dueDate.includes('T23:59:00.000'));
-});
-
-test('executeActions policy sweep prioritizes active tasks with priority 0', async () => {
-  const calls = [];
-  const ticktick = {
-    updateTask: async (taskId, changes) => {
-      calls.push({ taskId, changes });
-      return { id: taskId };
-    },
-    completeTask: async () => {},
-    createTask: async () => {}
-  };
-
-  const currentTasks = [
-    { id: 't-1', title: 'Netflix System Design', projectId: 'p-inbox', projectName: 'Inbox', priority: 0, status: 0 },
-  ];
-
-  const { outcomes } = await executeActions([], ticktick, currentTasks, {
-    enforcePolicySweep: true,
-    projects: [
-      { id: 'p-inbox', name: 'Inbox' },
-      { id: 'p-career', name: 'Career' },
-    ],
-  });
-
-  assert.ok(outcomes.some((o) => o.includes('Policy sweep appended 1 action')));
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].taskId, 't-1');
-  assert.ok([1, 3, 5].includes(calls[0].changes.priority));
-  // Conservative classifier no longer routes non-strategic tasks to Career via keyword matching.
-  // Inbox tasks without strong strategic signals stay in Inbox.
-  assert.equal(calls[0].changes.projectId, 'p-inbox');
-});
-
-test('executeActions policy sweep inherits urgent maintenance priority from shared ranking', async () => {
-  const calls = [];
-  const ticktick = {
-    updateTask: async (taskId, changes) => {
-      calls.push({ taskId, changes });
-      return { id: taskId };
-    },
-    completeTask: async () => {},
-    createTask: async () => {},
-  };
-
-  const currentTasks = [
-    {
-      id: 'rent-1',
-      title: 'Schedule maintenance check',
-      projectId: 'p-inbox',
-      projectName: 'Inbox',
-      priority: 0,
-      dueDate: '2026-03-10',
-      status: 0,
-    },
-  ];
-
-  await executeActions([], ticktick, currentTasks, {
-    enforcePolicySweep: true,
-    nowIso: '2026-03-10T10:00:00Z',
-    projects: [
-      { id: 'p-inbox', name: 'Inbox' },
-      { id: 'p-admin', name: 'Admin' },
-    ],
-  });
-
-  assert.equal(calls.length, 1);
-  assert.equal(calls[0].taskId, 'rent-1');
-  assert.equal(calls[0].changes.priority, 3);
-  assert.equal(calls[0].changes.projectId, 'p-inbox');
-});
-
 test('GeminiAnalyzer classifies invalid API key errors and repairs sloppy JSON', () => {
   const analyzer = new GeminiAnalyzer(['dummy-key']);
   const leakedKeyError = { status: 403, message: 'Your API key was reported as leaked. Please use another API key.' };
@@ -1332,117 +1240,6 @@ test('pipeline shortens urgent confirmations and clarification prompts while kee
   assert.equal(urgentFailure.confirmationText, standardFailure.confirmationText);
 });
 
-test('GeminiAnalyzer fallback reorg keeps recovery inbox work in place without exact match', () => {
-  const analyzer = new GeminiAnalyzer(['dummy-key']);
-  const tasks = [
-    {
-      id: 'task-recovery',
-      title: 'Book therapy session for burnout recovery',
-      projectId: 'p-inbox',
-      projectName: 'Inbox',
-      priority: 0,
-      status: 0,
-    },
-  ];
-  const projects = [
-    { id: 'p-inbox', name: 'Inbox' },
-    { id: 'p-health', name: 'Health' },
-    { id: 'p-admin', name: 'Admin' },
-  ];
-
-  const proposal = analyzer._buildFallbackReorgProposal(tasks, projects);
-
-  assert.equal(proposal.actions.length, 1);
-  assert.deepEqual(proposal.actions[0], {
-    type: 'update',
-    taskId: 'task-recovery',
-    changes: {
-      priority: 1,
-    },
-  });
-});
-
-test('GeminiAnalyzer reorg normalization omits recovery routing without exact match', () => {
-  const analyzer = new GeminiAnalyzer(['dummy-key']);
-  const tasks = [
-    {
-      id: 'task-recovery',
-      title: 'Book therapy session for burnout recovery',
-      projectId: 'p-inbox',
-      projectName: 'Inbox',
-      priority: 0,
-      status: 0,
-    },
-  ];
-  const projects = [
-    { id: 'p-inbox', name: 'Inbox' },
-    { id: 'p-health', name: 'Health' },
-    { id: 'p-admin', name: 'Admin' },
-  ];
-
-  const normalized = analyzer._normalizeReorgProposal({
-    summary: 'Reorganize',
-    questions: [],
-    actions: [
-      {
-        type: 'update',
-        taskId: 'task-recovery',
-        changes: {},
-      },
-    ],
-  }, tasks, projects);
-
-  assert.equal(normalized.actions.length, 1);
-  assert.deepEqual(normalized.actions[0], {
-    type: 'update',
-    taskId: 'task-recovery',
-    changes: {
-      projectId: 'p-inbox',
-    },
-  });
-});
-
-test('GeminiAnalyzer reorg normalization fills recovery routing from shared policy', () => {
-  const analyzer = new GeminiAnalyzer(['dummy-key']);
-  const tasks = [
-    {
-      id: 'task-recovery',
-      title: 'Book therapy session for burnout recovery',
-      projectId: 'p-inbox',
-      projectName: 'Inbox',
-      priority: 0,
-      status: 0,
-    },
-  ];
-  const projects = [
-    { id: 'p-inbox', name: 'Inbox' },
-    { id: 'p-health', name: 'Health' },
-    { id: 'p-admin', name: 'Admin' },
-  ];
-
-  const normalized = analyzer._normalizeReorgProposal({
-    summary: 'Reorganize',
-    questions: [],
-    actions: [
-      {
-        type: 'update',
-        taskId: 'task-recovery',
-        changes: {},
-      },
-    ],
-  }, tasks, projects);
-
-  assert.equal(normalized.actions.length, 1);
-  assert.deepEqual(normalized.actions[0], {
-    type: 'update',
-    taskId: 'task-recovery',
-    changes: {
-      projectId: 'p-inbox',
-    },
-  });
-});
-
-
 test('TickTickAdapter updateTask verifyAfterWrite treats timezone-equivalent dueDate values as verified', async () => {
   const client = Object.create(TickTickClient.prototype);
   client.getTask = async () => ({
@@ -1469,30 +1266,4 @@ test('TickTickAdapter updateTask verifyAfterWrite treats timezone-equivalent due
   assert.equal(result.verified, true,
     'dueDate TZ-equivalent values should verify successfully');
   assert.equal(result.verificationNote, 'Verified against TickTick API');
-});
-
-test('reorg apply reports TickTick changes separately from local-only work', async () => {
-  const adapter = {
-    updateTask: async () => ({ id: 'task-1' }),
-  };
-
-  const fakeStore = { addUndoEntry: async () => {}, markTaskProcessed: async () => {} };
-  const { operationReceipt, executionSummary } = await executeActions(
-    [
-      { type: 'update', taskId: 'task-1', changes: { priority: 5 } },
-      { type: 'drop', taskId: 'task-1', changes: {} },
-    ],
-    adapter,
-    [{ id: 'task-1', title: 'Mixed Work', projectId: 'p-1', priority: 3 }],
-    { projects: [{ id: 'p-1', name: 'Work' }], store: fakeStore },
-  );
-
-  assert.equal(executionSummary.attempted, 2);
-  assert.equal(executionSummary.succeeded, 2);
-  assert.equal(executionSummary.ticktickChanged, 1);
-  assert.equal(executionSummary.localOnly, 1);
-  assert.equal(operationReceipt.status, 'applied');
-  assert.equal(operationReceipt.applied, true);
-  assert.match(operationReceipt.message, /1\/2 changed in TickTick/);
-  assert.match(operationReceipt.message, /1 local-only/);
 });

@@ -24,11 +24,10 @@ When understanding the codebase, consult sources in this priority order:
 | `services/normalizer.js` | Deterministic normalization of intents → TickTick actions |
 | `services/ticktick-adapter.js` | Executes actions against TickTick API (retry, rollback, OAuth refresh) |
 | `services/ticktick.js` | Low-level TickTick API client (CRUD, OAuth, filter, move) |
-| `services/gemini.js` | Gemini AI client (briefing, digest, reorg, chat, intent extraction) |
+| `services/gemini.js` | Gemini AI client (briefing, digest, chat, intent extraction) |
 | `services/task-resolver.js` | Resolves natural-language task references → TickTick task IDs |
 | `services/shared-utils.js` | Shared labels, keyboards, message builders, date helpers |
 | `services/undo-executor.js` | Executes undo rollback entries against the TickTick adapter |
-| `services/reorg-executor.js` | Dispatches single reorg actions against the TickTick adapter |
 | `services/store.js` | State persistence (Redis or JSON file). Pending tasks, modes, clarifications |
 | `services/scheduler.js` | Cron jobs: polling, briefings, deferred retry |
 | `services/project-policy.js` | Configurable project categories, priorities, scoring |
@@ -145,7 +144,6 @@ Summary composition lives in `services/summary-surfaces/`. Entry points:
 | `mut:cancel` | Mut cancel | Cancel mutation clarification |
 | `mut:confirm` | Confirm gate | Confirm non-exact mutation |
 | `mut:confirm:cancel` | Confirm cancel | Cancel non-exact mutation confirmation |
-| `reorg:{action}` | Reorg action | Apply/refine/cancel reorg proposal |
 | `menu:{cmd}` | Menu shortcut | Route to command handler |
 | `cl:{preference}` | Checklist pick | Choose checklist/separate/skip |
 

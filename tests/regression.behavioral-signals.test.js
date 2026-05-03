@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../services/shared-utils.js';
-import { executeActions, registerCommands } from '../bot/commands.js';
+import { registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer, buildWorkStylePromptNote } from '../services/gemini.js';
 import { createIntentExtractor, detectWorkStyleModeIntent, QuotaExhaustedError } from '../services/intent-extraction.js';
 import { createPipeline } from '../services/pipeline.js';
@@ -982,7 +982,6 @@ test('/memory command shows active patterns retention window and last signal dat
   registerCommands(
     bot,
     { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://example.test/auth', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
-    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }) },
     { listActiveTasks: async () => [], listProjects: async () => [] },
     {},
   );
@@ -1015,7 +1014,6 @@ test('/memory command handles empty signal state gracefully', async () => {
   registerCommands(
     bot,
     { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://example.test/auth', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
-    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }) },
     { listActiveTasks: async () => [], listProjects: async () => [] },
     {},
   );
@@ -1039,7 +1037,6 @@ test('/memory command fails open when signal lookup errors', async () => {
   registerCommands(
     bot,
     { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://example.test/auth', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
-    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }) },
     { listActiveTasks: async () => [], listProjects: async () => [] },
     {},
   );
@@ -1063,7 +1060,6 @@ test('/forget command clears all behavioral signals for user', async () => {
   registerCommands(
     bot,
     { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://example.test/auth', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
-    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }) },
     { listActiveTasks: async () => [], listProjects: async () => [] },
     {},
   );
@@ -1114,7 +1110,6 @@ test('/forget command works when no signals exist', async () => {
   registerCommands(
     bot,
     { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://example.test/auth', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
-    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }) },
     { listActiveTasks: async () => [], listProjects: async () => [] },
     {},
   );
@@ -1145,7 +1140,6 @@ test('/memory after /forget shows no active patterns', async () => {
   registerCommands(
     bot,
     { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://example.test/auth', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
-    { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }) },
     { listActiveTasks: async () => [], listProjects: async () => [] },
     {},
   );

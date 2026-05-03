@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { readFileSync } from 'node:fs';
 
 import { appendUrgentModeReminder, parseTelegramMarkdownToHTML } from '../services/shared-utils.js';
-import { executeActions, registerCommands } from '../bot/commands.js';
+import { registerCommands } from '../bot/commands.js';
 import { GeminiAnalyzer, buildWorkStylePromptNote } from '../services/gemini.js';
 import { createIntentExtractor, detectWorkStyleModeIntent, QuotaExhaustedError } from '../services/intent-extraction.js';
 import { createPipeline } from '../services/pipeline.js';
@@ -828,7 +828,6 @@ test('registerCommands uses shared briefing surface and preserves urgent reminde
           },
         };
       },
-      generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
     },
     {
       listActiveTasks: async () => [],
@@ -918,7 +917,6 @@ test('registerCommands still answers manual briefing requests in focus mode', as
           },
         };
       },
-      generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
     },
     {
       listActiveTasks: async () => [],
@@ -1011,7 +1009,6 @@ test('registerCommands uses shared weekly surface and sends formatted output', a
           },
         };
       },
-      generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
     },
     {
       listActiveTasks: async () => [],
@@ -1186,7 +1183,6 @@ test('registerCommands uses shared daily-close surface and passes processed hist
           },
         };
       },
-      generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
     },
     {},
     {},
@@ -1252,7 +1248,6 @@ test('registerCommands short-circuits briefing daily_close and weekly when quota
       generateWeeklyDigestSummary: async () => {
         throw new Error('generateWeeklyDigestSummary should not be called when quota is exhausted');
       },
-      generateReorgProposal: async () => ({ summary: '', actions: [], questions: [] }),
     },
     {},
     {},
@@ -1416,4 +1411,3 @@ test('runWeeklyDigestJob passes historyAvailable false when processed-task histo
   assert.equal(summaryCalls, 1);
 
 });
-

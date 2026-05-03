@@ -15,7 +15,7 @@ Governing document: `context/refs/product-vision.md`
 
 | Domain | Cavekit File | Requirements | Complexity | Description |
 |--------|-------------|-------------|------------|-------------|
-| Task Pipeline | cavekit-task-pipeline.md | 17 | complex | Core task capture, mutation, intent extraction, normalization, adapter, command surfaces, guided reorg, autonomous poll auto-apply |
+| Task Pipeline | cavekit-task-pipeline.md | 16 | complex | Core task capture, mutation, intent extraction, normalization, adapter, command surfaces, autonomous poll auto-apply |
 | Pipeline Hardening | cavekit-pipeline-hardening.md | 12 | complex | Testing harness, failure classification, retry/rollback, observability |
 | Cleanup | cavekit-cleanup.md | 5 | quick | Dead code removal, docs alignment, env standardization |
 | Checklists | cavekit-checklists.md | 7 | medium | Checklist extraction, subtask creation, disambiguation |

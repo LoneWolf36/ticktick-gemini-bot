@@ -142,14 +142,12 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - [x] `/reset` wipes bot-local state only after explicit confirmation and never mutates TickTick tasks
 **Dependencies:** R4, R9, R10
 
-### R16: Guided Reorg
-**Description:** System generates AI-driven task restructuring proposals (project moves, priority changes, inbox cleanup) and lets the user apply, refine, or cancel them.
+### R16: Guided Reorg (retired)
+**Description:** Removed from product scope.
 **Acceptance Criteria:**
-- [x] `/reorg` fetches all tasks and projects, then produces a structured proposal with summary, actions, and clarification questions
-- [x] Proposal actions support create, update, complete, and drop types against existing TickTick tasks
-- [x] User can apply the proposal (executes actions via adapter), refine it (sends refinement to AI), or cancel it
-- [x] Reorg refinement state persists across messages and resumes correctly
-- [x] Policy sweep appends inferred priority/project fixes to reorg actions when `enforcePolicySweep` is enabled
+- [x] No user-facing `/reorg` surface remains.
+- [x] No proposal/refinement/apply flow remains in command docs or acceptance mapping.
+- [x] Historical references kept only where needed for audit trail.
 **Dependencies:** R4
 
 ### R17: Autonomous Poll Auto-Apply
@@ -190,9 +188,9 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - [x] R9 (Free-Form Mutation Intent): `services/intent-extraction.js` now includes explicit free-form mutation mapping guidance/examples for update/complete/delete/rename phrasing, and `tests/intent-extraction.test.js` covers extraction-shape regressions for "move buy groceries to tomorrow", "done buy groceries", "delete old wifi task", and "rename netflix task to finish system design notes".
 - [x] R12 (Privacy-Aware Pipeline Logging): `services/pipeline.js`, `services/pipeline-context.js`, and `services/pipeline-observability.js` now keep request/intent/action tracing while redacting raw user messages, task titles, task descriptions, and target queries from lifecycle snapshots, observability sink contexts, and console/telemetry metadata; `tests/regression.pipeline-logging-privacy.test.js` plus `tests/pipeline-context.test.js` cover telemetry, lifecycle, and console privacy boundaries.
 - [x] Drift rate limiter: removed 2026-04-19 (YAGNI for 1-user MVP; listed as out-of-scope here).
-- [x] R16 (Guided Reorg): `/reorg` fetch/refine/apply/cancel flow, schema-backed actions, and policy sweep are implemented and now checked explicitly.
+- [x] R16 (Guided Reorg retired): no active `/reorg` flow remains; docs/tests now treat it as removed.
 - [x] R17 (Autonomous Poll Auto-Apply): scheduler polling, auto-apply notifications, status/docs/config exposure, and quota/auth parking behavior are now owned explicitly instead of inferred from status/config references.
-- [x] Validation-facing comments in live harnesses and reorg services were updated to reflect their final Cavekit ownership/exclusion status.
+- [x] Validation-facing comments in live harnesses were updated to reflect their final Cavekit ownership/exclusion status.
 
 ## Changelog
 - 2026-04-25: R9 completed — intent extraction mutation guidance now includes canonical free-form update/complete/delete/rename examples and focused intent extraction regression coverage verifies expected structured shapes for all four R9 acceptance prompts.
@@ -203,6 +201,6 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 - 2026-04-22: R3 completed — deterministic normalization now has direct code and regression evidence for title cleanup, filler suppression, project/date/repeat handling, and malformed-input rejection.
 - 2026-04-22: R10 completed — mutation target resolution now fails closed on ambiguity, prefers exact matches over fuzzier candidates, returns not-found without writes, and requires clarification for pronoun-only or unsafe delete references.
 - 2026-04-20: R17 completed — autonomous poll auto-apply policy is explicitly owned, documented, and mapped to scheduler/status behavior.
-- 2026-04-20: R15 and R16 completed — command surfaces are explicitly checked, reorg flow is fully mapped, and remaining auto-apply ownership is isolated as the next signal cleanup item.
+- 2026-04-20: R15 completed; R16 retired after reorg removal, and remaining auto-apply ownership is isolated as the next signal cleanup item.
 - 2026-04-19: R1 and R4 completed — intent extraction field validation, regression coverage, adapter boundary enforcement, intent preservation on failure.
 - 2026-04-18: Migrated from kitty-specs 001-task-operations-pipeline and 002-natural-language-task-mutations

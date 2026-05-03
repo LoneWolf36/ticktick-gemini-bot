@@ -39,7 +39,7 @@ export async function executeUndoEntry(entry, adapter) {
     const rollbackType = entry.rollbackType;
 
     if (!rollbackType) {
-        // Legacy undo: update-based restore (pre-rollback entries from approve/reorg flows)
+        // Legacy undo: update-based restore (pre-rollback approve flows)
         await adapter.updateTask(entry.taskId, {
             originalProjectId: entry.appliedProjectId || entry.originalProjectId,
             projectId: entry.originalProjectId,

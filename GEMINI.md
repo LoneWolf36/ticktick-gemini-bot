@@ -1,13 +1,13 @@
 # TickTick AI Accountability Partner
 
-An AI-powered Telegram bot that connects to TickTick and acts as a proactive accountability partner using Gemini AI to analyze, reorganize, and manage tasks.
+An AI-powered Telegram bot that connects to TickTick and acts as a proactive accountability partner using Gemini AI to analyze and manage tasks.
 
 ## Project Overview
 
 *   **Technologies:** Node.js (ESM), Express, Grammy (Telegram Bot Framework), Gemini AI (via `@google/genai`), Redis (ioredis), node-cron.
 *   **Core Purpose:** Automates task management by parsing natural language intents from Telegram, normalizing them into structured TickTick operations, and applying them via a dedicated adapter.
 *   **Architecture:**
-    *   **Bot Layer:** Handles Telegram commands (`/scan`, `/briefing`, `/reorg`, etc.) and free-form messages.
+    *   **Bot Layer:** Handles Telegram commands (`/scan`, `/briefing`, etc.) and free-form messages.
     *   **Write Pipeline:** `Intent Extraction` -> `Deterministic Normalization` -> `TickTick Adapter Execution`.
     *   **Summary Surfaces:** Scheduler/briefing/weekly paths are read-only and do not mutate TickTick.
 
@@ -50,7 +50,7 @@ The project uses **Cavekit** for spec-driven development. Domain kits are in `co
 *   **Error Handling:** Use the `QuotaExhaustedError` for AI key rotation and ensure the pipeline handles TickTick API unavailability gracefully (cavekit-pipeline-hardening R12).
 
 ### Command Surface Integration
-*   Write commands (`/scan`, `/review`, `/reorg`, free-form mutation intents) must route through `services/pipeline.js`.
+*   Write commands (`/scan`, `/review`, free-form mutation intents) must route through `services/pipeline.js`.
 *   Read/summarization commands (`/briefing`, `/weekly`, `/pending`, `/status`) remain non-write surfaces.
 
 ## Project Structure

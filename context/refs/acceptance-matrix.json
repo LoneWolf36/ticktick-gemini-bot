@@ -25,7 +25,7 @@
       "R13": ["tests/regression.long-message-handling.test.js::long message extraction and normalization limits"],
       "R14": ["tests/regression.pipeline-hardening-mutation.test.js::WP07 T072: batch-style mutation phrasing is rejected with single-target guidance"],
       "R15": ["tests/regression.work-style-commands-scheduler.test.js::registerCommands uses shared briefing surface and preserves urgent reminder"],
-      "R16": ["tests/regression.adapter-execution-reorg.test.js::GeminiAnalyzer fallback reorg routes recovery inbox work into Health"],
+      "R16": ["retired: guided reorg removed from product scope"],
       "R17": ["tests/regression.work-style-commands-scheduler.test.js::focus mode suppresses non-critical scheduler notifications but allows critical alerts"]
     },
     "cavekit-pipeline-hardening": {

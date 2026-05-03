@@ -65,7 +65,6 @@ const DEFAULT_STATE = {
     chatId: null,
     workStyleModes: {},       // R1: { [userId]: { mode, expiresAt } }
     pendingTasks: {},    // Analyzed + sent to Telegram, awaiting user review
-    pendingReorg: null,  // Proposed global reorg plan awaiting apply/refine/cancel
     pendingMutationClarification: null, // Pending mutation clarification state for free-form handler
     pendingMutationConfirmation: null,   // Pending destructive/non-exact mutation confirmation gate
     pendingChecklistClarification: null, // Pending checklist vs separate-tasks clarification
@@ -174,7 +173,6 @@ async function loadFromRedis() {
                 stats: { ...DEFAULT_STATE.stats, ...rest.stats },
                 workStyleModes: rest.workStyleModes || {},
                 pendingTasks: rest.pendingTasks || {},
-                pendingReorg: rest.pendingReorg || null,
                 pendingMutationClarification: rest.pendingMutationClarification || null,
                 pendingMutationConfirmation: rest.pendingMutationConfirmation || null,
                 pendingChecklistClarification: rest.pendingChecklistClarification || null,
@@ -250,7 +248,6 @@ function loadFromFile() {
             stats: { ...DEFAULT_STATE.stats, ...rest.stats },
             workStyleModes: rest.workStyleModes || {},
             pendingTasks: rest.pendingTasks || {},
-            pendingReorg: rest.pendingReorg || null,
             pendingMutationClarification: rest.pendingMutationClarification || null,
             pendingMutationConfirmation: rest.pendingMutationConfirmation || null,
             pendingChecklistClarification: rest.pendingChecklistClarification || null,
@@ -988,24 +985,6 @@ export function getPendingBatch({ limit = 5, sortBy = 'sentAt' } = {}) {
 export function getNextPendingTask() {
     const batch = getPendingBatch({ limit: 1, sortBy: 'sentAt' });
     return batch.length > 0 ? batch[0] : null;
-}
-
-// Reorg proposal state
-export function getPendingReorg() {
-    return state.pendingReorg;
-}
-
-export async function setPendingReorg(data) {
-    state.pendingReorg = {
-        ...data,
-        updatedAt: new Date().toISOString(),
-    };
-    await save();
-}
-
-export async function clearPendingReorg() {
-    state.pendingReorg = null;
-    await save();
 }
 
 // ─── Pending Mutation Clarification ──────────────────────────

@@ -10,12 +10,6 @@ descriptions, or message text.</p>
 Pattern signals classify the 8 behavioral-memory pattern families using
 derived metadata only — never raw titles, descriptions, or message text.</p>
 </dd>
-<dt><a href="#module_services/reorg-executor">services/reorg-executor</a></dt>
-<dd><p>Reorg action executor — single action dispatch against the TickTick adapter.</p>
-<p>Extracted from bot/commands.js executeActions(). Handles create, update,
-complete, and drop action types for Gemini reorg proposals and policy sweeps.
-Returns structured results; caller persists state (undo logs, processed marks).</p>
-</dd>
 <dt><a href="#module_services/undo-executor">services/undo-executor</a></dt>
 <dd><p>Undo execution helpers — revert pipeline mutations through the TickTick adapter.</p>
 <p>Moved from bot/utils.js to eliminate the passthrough re-export layer.
@@ -88,10 +82,6 @@ it must not own orchestration, routing, or mutation decisions.</p>
 </dd>
 <dt><a href="#USER_FAILURE_MESSAGES">USER_FAILURE_MESSAGES</a> : <code>Record.&lt;string, string&gt;</code></dt>
 <dd><p>User-facing messages for different failure classes.</p>
-</dd>
-<dt><a href="#reorgSchema">reorgSchema</a></dt>
-<dd><p>Gemini response schema for reorganization proposals.
-Cavekit ownership: Task Pipeline R16 (Guided Reorg).</p>
 </dd>
 <dt><a href="#BRIEFING_SUMMARY_SECTION_KEYS">BRIEFING_SUMMARY_SECTION_KEYS</a> : <code>Array.&lt;string&gt;</code></dt>
 <dd><p>Section keys for daily briefing summaries.</p>
@@ -963,10 +953,7 @@ Never throws — returns { mod, source, path } with null mod on complete failure
 <dd><p>Register all inline keyboard callback handlers.</p>
 </dd>
 <dt><a href="#registerCommands">registerCommands(bot, ticktick, gemini, adapter, pipeline, [config])</a></dt>
-<dd><p>Registers operational commands (/start, /menu, /status, /reset) and product surface commands (/scan, /pending, /reorg, /undo, /briefing, /weekly, /daily_close, /memory, /forget, /urgent, /focus, /normal, /mode).</p>
-</dd>
-<dt><a href="#executeActions">executeActions(actions, adapter, currentTasks, [options])</a> ⇒ <code>Promise.&lt;Object&gt;</code></dt>
-<dd><p>Execute a list of structured actions against TickTick.</p>
+<dd><p>Registers operational commands (/start, /menu, /status, /reset) and product surface commands (/scan, /pending, /undo, /briefing, /weekly, /daily_close, /memory, /forget, /urgent, /focus, /normal, /mode).</p>
 </dd>
 <dt><a href="#createBot">createBot(token, ticktick, gemini, adapter, pipeline, [config])</a> ⇒ <code>Bot</code></dt>
 <dd><p>Factory function to create and configure a Telegram bot instance.</p>
@@ -1346,108 +1333,6 @@ Task mutation event passed into the classifier.
 | [planningSubtypeB] | <code>boolean</code> \| <code>null</code> | Overload planning marker |
 | timestamp | <code>string</code> | ISO timestamp of the event |
 
-<a name="module_services/reorg-executor"></a>
-
-## services/reorg-executor
-Reorg action executor — single action dispatch against the TickTick adapter.
-
-Extracted from bot/commands.js executeActions(). Handles create, update,
-complete, and drop action types for Gemini reorg proposals and policy sweeps.
-Returns structured results; caller persists state (undo logs, processed marks).
-
-
-* [services/reorg-executor](#module_services/reorg-executor)
-    * _static_
-        * [.executeReorgAction(action, task, adapter, [options])](#module_services/reorg-executor.executeReorgAction) ⇒ <code>Promise.&lt;{outcomes: Array.&lt;string&gt;, undoEntry: (Object\|null), taskId: (string\|null), actionType: (string\|null), error: (string\|null)}&gt;</code>
-    * _inner_
-        * [~resolveDueDate(value, [explicitPriority])](#module_services/reorg-executor..resolveDueDate) ⇒ <code>string</code> \| <code>null</code>
-        * [~buildProjectMap([projects])](#module_services/reorg-executor..buildProjectMap) ⇒ <code>Map.&lt;string, string&gt;</code>
-        * [~describeUpdateChanges(changes, task, projectMap)](#module_services/reorg-executor..describeUpdateChanges) ⇒ <code>string</code>
-        * [~describeCreateDetails(changes, projectMap, resolvedDueDate)](#module_services/reorg-executor..describeCreateDetails) ⇒ <code>string</code>
-
-<a name="module_services/reorg-executor.executeReorgAction"></a>
-
-### services/reorg-executor.executeReorgAction(action, task, adapter, [options]) ⇒ <code>Promise.&lt;{outcomes: Array.&lt;string&gt;, undoEntry: (Object\|null), taskId: (string\|null), actionType: (string\|null), error: (string\|null)}&gt;</code>
-Execute a single reorg action against TickTick via the adapter.
-
-Handles action types:
-- `create`: Creates a new task via `adapter.createTask`
-- `update`: Updates a task via `adapter.updateTask`, returns an undo entry
-- `complete`: Completes a task via `adapter.completeTask`
-- `drop`: Deprioritizes a task via `adapter.updateTask` (does not delete)
-
-**Kind**: static method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)  
-**Returns**: <code>Promise.&lt;{outcomes: Array.&lt;string&gt;, undoEntry: (Object\|null), taskId: (string\|null), actionType: (string\|null), error: (string\|null)}&gt;</code> - Structured result:
-  - `outcomes`: Outcome message(s) for the action (may include multiple messages
-    e.g. sensitive-content warning + update description)
-  - `undoEntry`: Undo entry object for update actions (null otherwise)
-  - `taskId`: The task ID involved in the action
-  - `actionType`: The action type ('create', 'update', 'complete', 'drop')
-  - `error`: Error message if the action failed; null on success  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| action | <code>Object</code> |  | The action to execute ({ type, taskId, changes }) |
-| task | <code>Object</code> \| <code>null</code> |  | Current TickTick task object (null for create actions) |
-| adapter | <code>Object</code> |  | TickTick adapter instance (createTask, updateTask, completeTask) |
-| [options] | <code>Object</code> | <code>{}</code> | Execution options |
-| [options.projectMap] | <code>Map.&lt;string, string&gt;</code> |  | Pre-built project ID-to-name map |
-| [options.projects] | <code>Array.&lt;Object&gt;</code> |  | Raw project array (fallback for building projectMap) |
-
-<a name="module_services/reorg-executor..resolveDueDate"></a>
-
-### services/reorg-executor~resolveDueDate(value, [explicitPriority]) ⇒ <code>string</code> \| <code>null</code>
-Resolve a due date string to TickTick ISO format.
-Uses priority-based label mapping for schedule slot resolution.
-
-**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)  
-**Returns**: <code>string</code> \| <code>null</code> - Resolved ISO due date string, or null if input is empty  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| value | <code>string</code> \| <code>null</code> \| <code>undefined</code> | Raw due date value |
-| [explicitPriority] | <code>number</code> | Priority value guiding label choice (1, 3, 5, etc.) |
-
-<a name="module_services/reorg-executor..buildProjectMap"></a>
-
-### services/reorg-executor~buildProjectMap([projects]) ⇒ <code>Map.&lt;string, string&gt;</code>
-Build a project ID-to-name map from a project array.
-
-**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)  
-**Returns**: <code>Map.&lt;string, string&gt;</code> - Map of project ID to project name  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| [projects] | <code>Array.&lt;Object&gt;</code> | <code>[]</code> | Array of project objects with `id` and `name` fields |
-
-<a name="module_services/reorg-executor..describeUpdateChanges"></a>
-
-### services/reorg-executor~describeUpdateChanges(changes, task, projectMap) ⇒ <code>string</code>
-Describe priority/project/title/due changes for an update action.
-
-**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)  
-**Returns**: <code>string</code> - Formatted change description (empty string if no changes)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| changes | <code>Object</code> | The update changes object |
-| task | <code>Object</code> | The current task object for comparison |
-| projectMap | <code>Map.&lt;string, string&gt;</code> | Project ID to name map |
-
-<a name="module_services/reorg-executor..describeCreateDetails"></a>
-
-### services/reorg-executor~describeCreateDetails(changes, projectMap, resolvedDueDate) ⇒ <code>string</code>
-Describe priority/project/title/due aspects for a create action.
-
-**Kind**: inner method of [<code>services/reorg-executor</code>](#module_services/reorg-executor)  
-**Returns**: <code>string</code> - Formatted detail string (empty string if no extras)  
-
-| Param | Type | Description |
-| --- | --- | --- |
-| changes | <code>Object</code> | The create changes object |
-| projectMap | <code>Map.&lt;string, string&gt;</code> | Project ID to name map |
-| resolvedDueDate | <code>string</code> \| <code>null</code> | Resolved ISO due date string |
-
 <a name="module_services/undo-executor"></a>
 
 ## services/undo-executor
@@ -1612,12 +1497,6 @@ Reasons for a request being classified as non-task.
 User-facing messages for different failure classes.
 
 **Kind**: global constant  
-<a name="reorgSchema"></a>
-
-## reorgSchema
-Gemini response schema for reorganization proposals.Cavekit ownership: Task Pipeline R16 (Guided Reorg).
-
-**Kind**: global constant  
 <a name="BRIEFING_SUMMARY_SECTION_KEYS"></a>
 
 ## BRIEFING\_SUMMARY\_SECTION\_KEYS : <code>Array.&lt;string&gt;</code>
@@ -1663,13 +1542,15 @@ Evidence sources for weekly watchouts.
 <a name="MAX_CHECKLIST_ITEMS"></a>
 
 ## MAX\_CHECKLIST\_ITEMS
-Maximum number of checklist items allowed in a single create action.Prevents brain-dump overload and keeps checklists execution-friendly.
+Maximum number of checklist items allowed in a single create action.
+Prevents brain-dump overload and keeps checklists execution-friendly.
 
 **Kind**: global constant  
 <a name="CHECKLIST_ITEM_SHAPE"></a>
 
 ## CHECKLIST\_ITEM\_SHAPE
-Shape descriptor for checklist items in extracted intent output.Used by validateIntentAction to check checklistItems arrays.
+Shape descriptor for checklist items in extracted intent output.
+Used by validateIntentAction to check checklistItems arrays.
 
 **Kind**: global constant  
 <a name="briefingSummarySchema"></a>
@@ -2852,7 +2733,8 @@ Builds a structured pipeline failure result object.
 <a name="createPipeline"></a>
 
 ## createPipeline(options) ⇒ <code>Object</code>
-Create a pipeline instance that orchestrates intent extraction, normalization,and TickTick adapter execution.
+Create a pipeline instance that orchestrates intent extraction, normalization,
+and TickTick adapter execution.
 
 **Kind**: global function  
 **Returns**: <code>Object</code> - - `processMessage(userMessage, options?)` → `{ type: 'task'|'preview'|'blocked'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`
@@ -2869,7 +2751,10 @@ Create a pipeline instance that orchestrates intent extraction, normalization,a
 <a name="createPipeline..processMessageWithContext"></a>
 
 ### createPipeline~processMessageWithContext()
-Builds a request context then runs processMessage — canonicalcontext-wired entry point.  All bot handlers, callbacks, andscheduler poll paths should call this instead of duplicatingthe createRequestContext → processMessage dance locally.
+Builds a request context then runs processMessage — canonical
+context-wired entry point.  All bot handlers, callbacks, and
+scheduler poll paths should call this instead of duplicating
+the createRequestContext → processMessage dance locally.
 
 **Kind**: inner method of [<code>createPipeline</code>](#createPipeline)  
 <a name="resolveProjectCategory"></a>
@@ -3728,13 +3613,15 @@ Persist a Telegram chat ID to the store.
 <a name="getWorkStyleMode"></a>
 
 ## getWorkStyleMode()
-Get the current work-style mode for a user.Returns the active mode, automatically reverting to standard if expired.
+Get the current work-style mode for a user.
+Returns the active mode, automatically reverting to standard if expired.
 
 **Kind**: global function  
 <a name="setWorkStyleMode"></a>
 
 ## setWorkStyleMode(userId, mode, options)
-Set the work-style mode for a user.Mode transitions are explicit — never changes without user action or auto-expiry.
+Set the work-style mode for a user.
+Mode transitions are explicit — never changes without user action or auto-expiry.
 
 **Kind**: global function  
 
@@ -3910,7 +3797,8 @@ Get all undo entries sharing a batchId.
 <a name="getLastAutoApplyBatch"></a>
 
 ## getLastAutoApplyBatch() ⇒ <code>Array.&lt;Object&gt;</code>
-Get all undo entries from the most recent auto-apply batch.Groups by batchId; if no batchId, falls back to the single most recent auto-apply entry.
+Get all undo entries from the most recent auto-apply batch.
+Groups by batchId; if no batchId, falls back to the single most recent auto-apply entry.
 
 **Kind**: global function  
 **Returns**: <code>Array.&lt;Object&gt;</code> - Array of undo entries from the same batch  
@@ -4431,7 +4319,7 @@ Register all inline keyboard callback handlers.
 <a name="registerCommands"></a>
 
 ## registerCommands(bot, ticktick, gemini, adapter, pipeline, [config])
-Registers operational commands (/start, /menu, /status, /reset) and product surface commands (/scan, /pending, /reorg, /undo, /briefing, /weekly, /daily_close, /memory, /forget, /urgent, /focus, /normal, /mode).
+Registers operational commands (/start, /menu, /status, /reset) and product surface commands (/scan, /pending, /undo, /briefing, /weekly, /daily_close, /memory, /forget, /urgent, /focus, /normal, /mode).
 
 **Kind**: global function  
 
@@ -4443,21 +4331,6 @@ Registers operational commands (/start, /menu, /status, /reset) and product surf
 | adapter | [<code>TickTickAdapter</code>](#TickTickAdapter) |  | TickTick adapter instance. |
 | pipeline | <code>Object</code> |  | Pipeline instance. |
 | [config] | <code>Object</code> | <code>{}</code> | Bot configuration options. |
-
-<a name="executeActions"></a>
-
-## executeActions(actions, adapter, currentTasks, [options]) ⇒ <code>Promise.&lt;Object&gt;</code>
-Execute a list of structured actions against TickTick.
-
-**Kind**: global function  
-**Returns**: <code>Promise.&lt;Object&gt;</code> - Object containing `outcomes` (string array), `hasUndoableActions` (boolean), `executionSummary` (counts), and `operationReceipt` (receipt object).  
-
-| Param | Type | Default | Description |
-| --- | --- | --- | --- |
-| actions | <code>Array.&lt;Object&gt;</code> |  | Array of action objects (create, update, drop, complete). |
-| adapter | [<code>TickTickAdapter</code>](#TickTickAdapter) |  | The adapter to execute writes. |
-| currentTasks | <code>Array.&lt;Object&gt;</code> |  | Snapshot of active tasks for lookup. |
-| [options] | <code>Object</code> | <code>{}</code> | Execution options. |
 
 <a name="createBot"></a>
 
