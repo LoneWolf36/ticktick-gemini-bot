@@ -312,7 +312,7 @@ export function buildFieldDiff(snapshot = {}, action = {}, { projects = [] } = {
     const change = action || {};
     const diffs = [];
 
-    if (Object.prototype.hasOwnProperty.call(change, 'title') && normalizeComparableValue(source.title) !== normalizeComparableValue(change.title)) {
+    if (Object.prototype.hasOwnProperty.call(change, 'title') && typeof change.title === 'string' && change.title.trim() && normalizeComparableValue(source.title) !== normalizeComparableValue(change.title)) {
         pushDiff(diffs, 'title', 'Title', source.title, change.title, '');
     }
 
@@ -1337,8 +1337,11 @@ export function buildFreeformReceipt(result, { projects = [] } = {}) {
             lines.push(`🗑️ **Deleted:** "${snapshot?.title || action.title || 'Task'}"`);
         }
 
-        if (record.verified === false) {
-            const note = typeof record.verificationNote === 'string' ? record.verificationNote.toLowerCase() : '';
+        const verificationState = record.verified ?? record.result?.verified;
+        const verificationNote = record.verificationNote ?? record.result?.verificationNote;
+
+        if (verificationState === false) {
+            const note = typeof verificationNote === 'string' ? verificationNote.toLowerCase() : '';
             if (note.includes('verification failed')) {
                 lines.push('⚠️ Verification did not confirm this change in TickTick.');
             } else {

@@ -299,6 +299,7 @@ Instructions:
 - Use "multi-task" splitStrategy when multiple independent tasks are detected.
 - Use "multi-day" splitStrategy when distinct days are named (not recurrence).
 - Set "repeatHint" when the user expresses a repeating pattern (e.g. "daily", "weekdays").
+- Preserve bounded recurrence phrases exactly when present (e.g. "every Sunday for a month", "weekly on Sunday for 1 month", "alternate day for 2 months", "every alternate day for 2 months").
 - Keep titles short, verb-first, without dates or project names.
 - Set confidence low when intent is ambiguous.
 - The output must be a JSON array of action objects.
@@ -643,7 +644,7 @@ Rules:
 - One action per distinct intent.
 - "multi-task" splitStrategy for multiple independent tasks.
 - "multi-day" splitStrategy for distinct days (not recurrence).
-- Set repeatHint for repeating patterns.
+- Set repeatHint for repeating patterns. Preserve bounded recurrence phrases exactly when possible (e.g. "every Sunday for a month", "every alternate day for 2 months") so normalizer can convert them to RRULE UNTIL.
 - Short, verb-first titles. No dates or project names in titles.
 - Low confidence for ambiguous intent.
 - JSON array of action objects.
@@ -685,7 +686,7 @@ const intentActionSchema = {
                     priority: { type: SchemaType.INTEGER, nullable: true, description: 'Priority: 0 (none), 1 (low), 3 (medium), 5 (high)' },
                     projectHint: { type: SchemaType.STRING, nullable: true, description: 'Project name hint' },
                     dueDate: { type: SchemaType.STRING, nullable: true, description: 'Due date in natural language or ISO format' },
-                    repeatHint: { type: SchemaType.STRING, nullable: true, description: 'Recurrence pattern' },
+                    repeatHint: { type: SchemaType.STRING, nullable: true, description: 'Recurrence pattern, preserving bounded duration phrases when present' },
                     splitStrategy: { type: SchemaType.STRING, nullable: true, description: 'How to split: multi-task, multi-day, or null' },
                     confidence: { type: SchemaType.NUMBER, nullable: true, description: 'Confidence score 0.0 to 1.0' },
                     checklistItems: {

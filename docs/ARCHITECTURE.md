@@ -72,6 +72,12 @@ Create actions only write to a deterministic TickTick destination. The normalize
 
 Missing destinations return a blocked result with `destination.confidence=missing`. Duplicate exact project names return blocked with `destination.confidence=ambiguous` and safe project choices. This keeps routing uncertainty visible and prevents silent writes to an unexpected project.
 
+## TickTick Repeat Update Contract
+
+Repeat mutations use the official TickTick update endpoint, not create/delete replacement. Because sparse `repeatFlag` updates can be accepted by the API without producing a UI-visible recurrence, `services/ticktick-adapter.js` sends a full anchored payload for repeat updates: `id`, `projectId`, title, schedule fields (`startDate`, `dueDate`, `isAllDay`, `timeZone`), existing reminders/priority/sort/items when present, and the new `repeatFlag`.
+
+The normalizer only emits deterministic RRULEs for supported repeat hints. Unsupported repeat phrases fail validation instead of becoming no-op writes. Existing task dates are reused as the recurrence anchor; undated weekly rules with concrete weekdays may infer the next matching weekday in the user's timezone; undated daily/alternate/monthly/yearly rules block and ask for an anchor rather than silently choosing today. Verification re-fetches TickTick state and must warn the user when recurrence or anchor fields are not confirmed.
+
 ## Runtime Endpoints
 
 ### `/health`

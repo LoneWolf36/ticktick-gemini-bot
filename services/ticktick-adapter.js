@@ -1,5 +1,5 @@
 import { TickTickClient } from './ticktick.js';
-import { validateChecklistItem } from './shared-utils.js';
+import { USER_TZ, validateChecklistItem } from './shared-utils.js';
 import { classifyTaskEvent } from './behavioral-signals.js';
 import { appendBehavioralSignals, DEFAULT_BEHAVIORAL_USER_ID } from './store.js';
 
@@ -80,6 +80,10 @@ function areEquivalentDueDates(expected, actual) {
 
 const VALID_REPEAT_FREQUENCIES = new Set(['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY']);
 const VALID_REPEAT_WEEKDAYS = new Set(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']);
+const VALID_REPEAT_KEYS = new Set(['FREQ', 'INTERVAL', 'BYDAY', 'COUNT', 'UNTIL', 'WKST']);
+const VALID_REPEAT_UNTIL = /^(?:\d{8}|\d{8}T\d{6}Z)$/;
+const VALID_REPEAT_UNTIL_DATE = /^\d{8}$/;
+const VALID_REPEAT_UNTIL_UTC = /^(\d{8})T(\d{6})Z$/;
 
 function normalizeByDayValue(value) {
     const days = value.split(',').map((day) => day.trim().toUpperCase()).filter(Boolean);
@@ -88,6 +92,7 @@ function normalizeByDayValue(value) {
     for (const day of days) {
         const match = day.match(/^([+-]?\d{1,2})?(MO|TU|WE|TH|FR|SA|SU)$/);
         if (!match || !VALID_REPEAT_WEEKDAYS.has(match[2])) return null;
+        if (match[1] && !['1', '2', '3', '4', '-1'].includes(match[1])) return null;
         normalizedDays.push(`${match[1] || ''}${match[2]}`);
     }
     return [...normalizedDays].sort().join(',');
@@ -111,11 +116,18 @@ function normalizeRepeatRuleParts(value) {
         const key = segmentTrimmed.slice(0, eqIndex).trim().toUpperCase();
         const rawValue = segmentTrimmed.slice(eqIndex + 1).trim();
         if (!key || !rawValue) return null;
+        if (!VALID_REPEAT_KEYS.has(key)) return null;
 
         let valueText = rawValue.toUpperCase();
         if (key === 'FREQ' && !VALID_REPEAT_FREQUENCIES.has(valueText)) return null;
         if (key === 'INTERVAL' && !/^\d+$/.test(valueText)) return null;
         if (key === 'INTERVAL' && Number.parseInt(valueText, 10) < 1) return null;
+        if (key === 'COUNT' && (!/^\d+$/.test(valueText) || Number.parseInt(valueText, 10) < 1)) return null;
+        if (key === 'UNTIL') {
+            valueText = parseRepeatUntilValue(valueText);
+            if (!valueText) return null;
+        }
+        if (key === 'WKST' && !VALID_REPEAT_WEEKDAYS.has(valueText)) return null;
         if (key === 'BYDAY') {
             valueText = normalizeByDayValue(rawValue);
             if (!valueText) return null;
@@ -147,6 +159,105 @@ function areEquivalentRepeatFlags(expected, actual) {
     const normalizedActual = normalizeRepeatRuleParts(actual);
     if (!normalizedExpected || !normalizedActual) return false;
     return normalizedExpected === normalizedActual;
+}
+
+function getTimezoneDateParts(timeZone, date = new Date()) {
+    const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        weekday: 'short',
+    }).formatToParts(date);
+    const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    return {
+        year: lookup.year,
+        month: lookup.month,
+        day: lookup.day,
+        weekday: lookup.weekday,
+    };
+}
+
+function parseRepeatUntilValue(value) {
+    if (VALID_REPEAT_UNTIL_DATE.test(value)) {
+        const year = Number.parseInt(value.slice(0, 4), 10);
+        const month = Number.parseInt(value.slice(4, 6), 10);
+        const day = Number.parseInt(value.slice(6, 8), 10);
+        if (month < 1 || month > 12 || day < 1 || day > 31) return null;
+        const dt = new Date(Date.UTC(year, month - 1, day));
+        if (dt.getUTCFullYear() !== year || dt.getUTCMonth() !== month - 1 || dt.getUTCDate() !== day) return null;
+        return value;
+    }
+
+    const match = value.match(VALID_REPEAT_UNTIL_UTC);
+    if (!match) return null;
+    const year = Number.parseInt(value.slice(0, 4), 10);
+    const month = Number.parseInt(value.slice(4, 6), 10);
+    const day = Number.parseInt(value.slice(6, 8), 10);
+    const hour = Number.parseInt(value.slice(9, 11), 10);
+    const minute = Number.parseInt(value.slice(11, 13), 10);
+    const second = Number.parseInt(value.slice(13, 15), 10);
+    if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) return null;
+    const dt = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
+    if (dt.getUTCFullYear() !== year || dt.getUTCMonth() !== month - 1 || dt.getUTCDate() !== day || dt.getUTCHours() !== hour || dt.getUTCMinutes() !== minute || dt.getUTCSeconds() !== second) return null;
+    return value;
+}
+
+function formatAllDayAnchorDate(timeZone, date = new Date()) {
+    const { year, month, day } = getTimezoneDateParts(timeZone, date);
+    return `${year}-${month}-${day}T00:00:00.000+0000`;
+}
+
+function getNextWeekdayDate(timeZone, targetWeekday, baseDate = new Date()) {
+    const weekdayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
+    const target = weekdayMap[targetWeekday];
+    if (target === undefined) return null;
+
+    const startParts = getTimezoneDateParts(timeZone, baseDate);
+    const currentWeekday = weekdayMap[startParts.weekday];
+    if (currentWeekday === undefined) return null;
+    const delta = (target - currentWeekday + 7) % 7;
+    const targetDate = new Date(baseDate);
+    targetDate.setUTCDate(targetDate.getUTCDate() + delta);
+    return targetDate;
+}
+
+function getNextByDayAnchorDate(timeZone, byDayValue, baseDate = new Date()) {
+    const weekdayLookup = { MO: 'Mon', TU: 'Tue', WE: 'Wed', TH: 'Thu', FR: 'Fri', SA: 'Sat', SU: 'Sun' };
+    const candidates = byDayValue.split(',')
+        .map((day) => weekdayLookup[day.slice(-2)])
+        .filter(Boolean)
+        .map((weekday) => getNextWeekdayDate(timeZone, weekday, baseDate))
+        .filter(Boolean);
+    if (candidates.length === 0) return null;
+    candidates.sort((a, b) => a.getTime() - b.getTime());
+    return candidates[0];
+}
+
+function inferRepeatAnchorFromRule(repeatFlag, timeZone = USER_TZ) {
+    const normalized = normalizeRepeatRuleParts(repeatFlag);
+    if (!normalized) return null;
+
+    const parts = Object.fromEntries(normalized.split(';').map((segment) => {
+        const index = segment.indexOf('=');
+        return [segment.slice(0, index), segment.slice(index + 1)];
+    }));
+    const freq = parts.FREQ;
+    const today = new Date();
+
+    if (freq === 'WEEKLY') {
+        if (parts.BYDAY) {
+            const targetDate = getNextByDayAnchorDate(timeZone, parts.BYDAY, today);
+            if (targetDate) return formatAllDayAnchorDate(timeZone, targetDate);
+        }
+        return null;
+    }
+
+    return null;
+}
+
+function hasNonEmptyString(value) {
+    return typeof value === 'string' && value.trim().length > 0;
 }
 
 /**
@@ -663,6 +774,15 @@ export class TickTickAdapter {
             if (expectedPayload.repeatFlag !== undefined && !areEquivalentRepeatFlags(expectedPayload.repeatFlag, task.repeatFlag)) {
                 mismatches.push('repeatFlag mismatch');
             }
+            if (expectedPayload.startDate !== undefined && !areEquivalentDueDates(expectedPayload.startDate, task.startDate)) {
+                mismatches.push(`startDate: expected "${expectedPayload.startDate}", got "${task.startDate}"`);
+            }
+            if (expectedPayload.isAllDay !== undefined && task.isAllDay !== expectedPayload.isAllDay) {
+                mismatches.push(`isAllDay: expected ${expectedPayload.isAllDay}, got ${task.isAllDay}`);
+            }
+            if (expectedPayload.timeZone !== undefined && task.timeZone !== expectedPayload.timeZone) {
+                mismatches.push(`timeZone: expected ${expectedPayload.timeZone}, got ${task.timeZone}`);
+            }
             if (mismatches.length > 0) {
                 const note = `Verification failed: ${mismatches.join('; ')}`;
                 this._log('updateTask', `WARNING { ${note} }`, true);
@@ -946,17 +1066,84 @@ export class TickTickAdapter {
             const existingTask = await this._client.getTask(projectId, taskId);
             const sourceProjectId = normalizedAction.originalProjectId || existingTask.projectId || projectId;
             const targetProjectId = normalizedAction.projectId ?? sourceProjectId;
+            const hasRepeatUpdate = Object.prototype.hasOwnProperty.call(normalizedAction, 'repeatFlag') && normalizedAction.repeatFlag !== undefined;
+            const wantsRepeat = hasRepeatUpdate && !([null, ''].includes(normalizedAction.repeatFlag));
+
+            if (hasRepeatUpdate && wantsRepeat) {
+                const normalizedRepeat = normalizeRepeatRuleParts(normalizedAction.repeatFlag);
+                if (!normalizedRepeat) {
+                    const err = new Error('repeatFlag update requires a valid RRULE value');
+                    err.code = 'VALIDATION_ERROR';
+                    throw err;
+                }
+                const inferredAnchor = normalizedAction.dueDate || normalizedAction.startDate || existingTask.dueDate || existingTask.startDate || inferRepeatAnchorFromRule(normalizedAction.repeatFlag, USER_TZ);
+                if (!inferredAnchor) {
+                    const err = new Error('repeatFlag update requires a dueDate or startDate anchor');
+                    err.code = 'VALIDATION_ERROR';
+                    throw err;
+                }
+            }
 
             const updatePayload = {};
 
-            if (normalizedAction.title !== undefined) updatePayload.title = normalizedAction.title;
-            if (normalizedAction.dueDate !== undefined) updatePayload.dueDate = normalizedAction.dueDate;
-            if (normalizedAction.priority !== undefined) updatePayload.priority = normalizedAction.priority;
-            if (targetProjectId !== undefined && targetProjectId !== null) updatePayload.projectId = targetProjectId;
-            if (normalizedAction.repeatFlag !== undefined) updatePayload.repeatFlag = normalizedAction.repeatFlag;
+            const payloadTitle = hasNonEmptyString(normalizedAction.title) ? normalizedAction.title.trim() : existingTask.title;
+            const payloadContent = Object.prototype.hasOwnProperty.call(normalizedAction, 'content')
+                ? normalizedAction.content
+                : existingTask.content;
+            const payloadDesc = Object.prototype.hasOwnProperty.call(normalizedAction, 'desc')
+                ? normalizedAction.desc
+                : existingTask.desc;
+            const payloadIsAllDay = Object.prototype.hasOwnProperty.call(normalizedAction, 'isAllDay')
+                ? normalizedAction.isAllDay
+                : existingTask.isAllDay;
+            const payloadStartDate = Object.prototype.hasOwnProperty.call(normalizedAction, 'startDate')
+                ? normalizedAction.startDate
+                : existingTask.startDate;
+            const payloadDueDate = Object.prototype.hasOwnProperty.call(normalizedAction, 'dueDate')
+                ? normalizedAction.dueDate
+                : existingTask.dueDate;
+            const payloadTimeZone = Object.prototype.hasOwnProperty.call(normalizedAction, 'timeZone')
+                ? normalizedAction.timeZone
+                : existingTask.timeZone;
+            const payloadReminders = Object.prototype.hasOwnProperty.call(normalizedAction, 'reminders')
+                ? normalizedAction.reminders
+                : existingTask.reminders;
+            const payloadPriority = Object.prototype.hasOwnProperty.call(normalizedAction, 'priority')
+                ? normalizedAction.priority
+                : existingTask.priority;
+            const payloadSortOrder = Object.prototype.hasOwnProperty.call(normalizedAction, 'sortOrder')
+                ? normalizedAction.sortOrder
+                : existingTask.sortOrder;
+            const payloadItems = Object.prototype.hasOwnProperty.call(normalizedAction, 'items')
+                ? normalizedAction.items
+                : existingTask.items;
+
+            if (hasRepeatUpdate && wantsRepeat) {
+                const anchor = normalizedAction.dueDate || normalizedAction.startDate || existingTask.dueDate || existingTask.startDate || inferRepeatAnchorFromRule(normalizedAction.repeatFlag, USER_TZ);
+                updatePayload.id = existingTask.id || taskId;
+                updatePayload.projectId = targetProjectId;
+                updatePayload.title = payloadTitle;
+                if (typeof payloadContent === 'string' && payloadContent.trim().length > 0) updatePayload.content = payloadContent;
+                if (payloadDesc !== undefined) updatePayload.desc = payloadDesc;
+                updatePayload.isAllDay = payloadIsAllDay ?? true;
+                updatePayload.startDate = payloadStartDate || anchor;
+                updatePayload.dueDate = payloadDueDate || anchor;
+                updatePayload.timeZone = payloadTimeZone || USER_TZ;
+                if (payloadReminders !== undefined) updatePayload.reminders = payloadReminders;
+                if (payloadPriority !== undefined) updatePayload.priority = payloadPriority;
+                if (payloadSortOrder !== undefined) updatePayload.sortOrder = payloadSortOrder;
+                if (payloadItems !== undefined) updatePayload.items = payloadItems;
+                updatePayload.repeatFlag = normalizedAction.repeatFlag;
+            } else {
+                if (hasNonEmptyString(normalizedAction.title)) updatePayload.title = normalizedAction.title.trim();
+                if (normalizedAction.dueDate !== undefined) updatePayload.dueDate = normalizedAction.dueDate;
+                if (normalizedAction.priority !== undefined) updatePayload.priority = normalizedAction.priority;
+                if (targetProjectId !== undefined && targetProjectId !== null) updatePayload.projectId = targetProjectId;
+                if (normalizedAction.repeatFlag !== undefined) updatePayload.repeatFlag = normalizedAction.repeatFlag;
+            }
 
             // Handle content merge with adapter-owned single merge path
-            if (Object.prototype.hasOwnProperty.call(normalizedAction, 'content')) {
+            if (Object.prototype.hasOwnProperty.call(normalizedAction, 'content') && !hasRepeatUpdate) {
                 const isTitleChange = normalizedAction.title !== undefined && normalizedAction.title !== existingTask.title;
                 const effectiveMergeContent = isTitleChange ? false : (normalizedAction.mergeContent !== false);
                 const contentMerge = this._mergeTaskContent(
@@ -997,6 +1184,13 @@ export class TickTickAdapter {
                 );
                 updatedTask.verified = verifyResult.verified;
                 updatedTask.verificationNote = verifyResult.verificationNote;
+                updatedTask._verificationContext = {
+                    expectedStartDate: updatePayload.startDate,
+                    expectedDueDate: updatePayload.dueDate,
+                    expectedIsAllDay: updatePayload.isAllDay,
+                    expectedTimeZone: updatePayload.timeZone,
+                    expectedRepeatFlag: updatePayload.repeatFlag,
+                };
             }
 
             // Non-blocking behavioral signal observation

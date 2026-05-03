@@ -159,6 +159,19 @@ function _formatISO(date, timezone = 'Europe/Dublin', endOfDay = true) {
     return `${year}-${mm}-${dd}T${hh}:${min}:00.000${tzOffset}`;
 }
 
+function _formatRruleUntilUtc(date) {
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    return `${year}${month}${day}T235959Z`;
+}
+
+function _addMonthsUtc(date, months) {
+    const next = new Date(date.getTime());
+    next.setUTCMonth(next.getUTCMonth() + months);
+    return next;
+}
+
 /**
  * Normalizes a title to be concise, verb-led, and noise-free.
  * 
@@ -457,6 +470,7 @@ function _normalizeChecklistItems(rawItems) {
  * Supported patterns:
  * - Simple: "daily", "weekdays", "weekends", "weekly", "biweekly", "monthly", "yearly"
  * - "every <day>": "every monday", "every sunday"
+ * - Bounded: "every sunday for a month", "weekly on monday for 1 month"
  * - "every <day> and <day>": "every tuesday and thursday"
  * - "weekly on <day>": "weekly on monday", "weekly on friday"
  * - "every other day": RRULE:FREQ=DAILY;INTERVAL=2
@@ -464,10 +478,11 @@ function _normalizeChecklistItems(rawItems) {
  * @param {string|null} repeatHint - Natural language recurrence hint
  * @returns {string|null} RRULE string or null if unrecognized
  */
-function _convertRepeatHint(repeatHint) {
+function _convertRepeatHint(repeatHint, { currentDate = new Date(), timezone = 'Europe/Dublin' } = {}) {
     if (!repeatHint) return null;
 
     const normalized = repeatHint.toLowerCase().trim();
+    const now = _coerceDate(currentDate, new Date());
 
     // Check explicit mappings (e.g. daily, weekdays)
     if (REPEAT_MAPPINGS[normalized]) {
@@ -484,6 +499,15 @@ function _convertRepeatHint(repeatHint) {
         return 'RRULE:FREQ=DAILY;INTERVAL=2';
     }
 
+    const boundedAltDayMatch = normalized.match(/^(?:every\s+)?(?:other|alternate)\s+day\s+for\s+(\d+)\s+months?$/);
+    if (boundedAltDayMatch) {
+        const months = Number.parseInt(boundedAltDayMatch[1], 10);
+        if (Number.isFinite(months) && months > 0) {
+            const until = _formatRruleUntilUtc(_addMonthsUtc(now, months));
+            return `RRULE:FREQ=DAILY;INTERVAL=2;UNTIL=${until}`;
+        }
+    }
+
     // Handle "weekly on <day>" pattern
     const weeklyOnMatch = normalized.match(/^weekly\s+on\s+(\w+)$/);
     if (weeklyOnMatch) {
@@ -491,6 +515,15 @@ function _convertRepeatHint(repeatHint) {
         const dayCode = DAY_MAPPINGS[dayName];
         if (dayCode) {
             return `RRULE:FREQ=WEEKLY;BYDAY=${dayCode}`;
+        }
+    }
+
+    const boundedWeeklyGeneric = normalized.match(/^weekly\s+on\s+(\w+)\s+for\s+(?:a|1)\s+month$/);
+    if (boundedWeeklyGeneric) {
+        const dayCode = DAY_MAPPINGS[boundedWeeklyGeneric[1].toLowerCase()];
+        if (dayCode) {
+            const until = _formatRruleUntilUtc(_addMonthsUtc(now, 1));
+            return `RRULE:FREQ=WEEKLY;BYDAY=${dayCode};UNTIL=${until}`;
         }
     }
 
@@ -512,15 +545,23 @@ function _convertRepeatHint(repeatHint) {
         if (matchedDays.length > 0) {
             return `RRULE:FREQ=WEEKLY;BYDAY=${matchedDays.join(',')}`;
         }
+
+        const boundedSingleDay = remainder.match(/^(\w+)\s+for\s+(?:a|1)\s+month$/);
+        if (boundedSingleDay) {
+            const dayCode = DAY_MAPPINGS[boundedSingleDay[1].toLowerCase()];
+            if (!dayCode) return null;
+            const until = _formatRruleUntilUtc(_addMonthsUtc(now, 1));
+            return `RRULE:FREQ=WEEKLY;BYDAY=${dayCode};UNTIL=${until}`;
+        }
     }
 
     console.warn(`[Normalizer] Unrecognized repeat hint: "${repeatHint}"`);
     return null;
 }
 
-function _resolveRepeatFlag(intentAction = {}) {
+function _resolveRepeatFlag(intentAction = {}, options = {}) {
     if (typeof intentAction.repeatHint === 'string' && intentAction.repeatHint.trim()) {
-        return _convertRepeatHint(intentAction.repeatHint);
+        return _convertRepeatHint(intentAction.repeatHint, options);
     }
 
     if (typeof intentAction.repeatFlag === 'string' && intentAction.repeatFlag.trim()) {
@@ -742,6 +783,9 @@ export function validateMutationBatch(actions) {
  */
 function _validateAction(action, minConfidence = 0.5) {
     const errors = [];
+    if (Array.isArray(action.validationErrors) && action.validationErrors.length > 0) {
+        errors.push(...action.validationErrors);
+    }
 
     const validTypes = ['create', 'update', 'complete', 'delete'];
     if (!validTypes.includes(action.type)) {
@@ -913,11 +957,18 @@ export function normalizeAction(intentAction, options = {}) {
             ? undefined
             : resolvedProject.projectId,
         dueDate: isMutation && intentAction.dueDate == null ? undefined : _expandDueDate(intentAction.dueDate, options),
-        repeatFlag: isMutation && !hasRepeatIntent ? undefined : _resolveRepeatFlag(intentAction),
+        repeatFlag: isMutation && !hasRepeatIntent ? undefined : _resolveRepeatFlag(intentAction, options),
         splitStrategy: intentAction.splitStrategy || 'single',
         valid: true,
         validationErrors: []
     };
+
+    if (hasRepeatIntent && !normalized.repeatFlag) {
+        const repeatHint = typeof intentAction.repeatHint === 'string' ? intentAction.repeatHint.trim() : '';
+        const repeatFlag = typeof intentAction.repeatFlag === 'string' ? intentAction.repeatFlag.trim() : '';
+        const repeatLabel = repeatHint || repeatFlag || 'repeat pattern';
+        normalized.validationErrors.push(`Unsupported repeat pattern: ${repeatLabel}`);
+    }
 
     const hintedProjectName = typeof intentAction.projectHint === 'string' ? intentAction.projectHint.trim().toLowerCase() : '';
     const exactMatches = hintedProjectName

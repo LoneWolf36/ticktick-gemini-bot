@@ -175,8 +175,7 @@ test('freeform receipt warns when verification is unavailable', () => {
         results: [
             {
                 status: 'succeeded',
-                verified: false,
-                verificationNote: 'Verification skipped due to fetch error: timeout',
+                result: { verified: false, verificationNote: 'Verification skipped due to fetch error: timeout' },
                 action: { type: 'update' },
                 rollbackStep: { payload: { snapshot: { title: 'Hidden task' } } },
             },

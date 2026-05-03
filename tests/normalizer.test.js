@@ -584,6 +584,93 @@ describe('Recurrence Conversion (FR-008)', () => {
             });
             assert.strictEqual(result.repeatFlag, 'RRULE:FREQ=DAILY;INTERVAL=2');
         });
+
+        it('should convert "every sunday for a month" to bounded weekly RRULE', () => {
+            const result = normalizeAction(
+                {
+                    type: 'create',
+                    title: 'Task',
+                    repeatHint: 'every sunday for a month',
+                },
+                { currentDate: '2026-03-01T10:00:00.000Z', timezone: 'Europe/Dublin' },
+            );
+
+            assert.match(result.repeatFlag, /^RRULE:FREQ=WEEKLY;BYDAY=SU;UNTIL=20260401T235959Z$/);
+        });
+
+        it('should convert "weekly on sunday for 1 month" to bounded weekly RRULE', () => {
+            const result = normalizeAction(
+                {
+                    type: 'create',
+                    title: 'Task',
+                    repeatHint: 'weekly on sunday for 1 month',
+                },
+                { currentDate: '2026-03-01T10:00:00.000Z', timezone: 'Europe/Dublin' },
+            );
+
+            assert.match(result.repeatFlag, /^RRULE:FREQ=WEEKLY;BYDAY=SU;UNTIL=20260401T235959Z$/);
+        });
+
+        it('should convert "every monday for a month" to bounded weekly RRULE', () => {
+            const result = normalizeAction(
+                {
+                    type: 'create',
+                    title: 'Task',
+                    repeatHint: 'every monday for a month',
+                },
+                { currentDate: '2026-03-01T10:00:00.000Z', timezone: 'Europe/Dublin' },
+            );
+
+            assert.match(result.repeatFlag, /^RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20260401T235959Z$/);
+        });
+
+        it('should convert "every alternate day for 2 months" to bounded daily RRULE', () => {
+            const result = normalizeAction(
+                {
+                    type: 'create',
+                    title: 'Task',
+                    repeatHint: 'every alternate day for 2 months',
+                },
+                { currentDate: '2026-03-01T10:00:00.000Z', timezone: 'Europe/Dublin' },
+            );
+
+            assert.match(result.repeatFlag, /^RRULE:FREQ=DAILY;INTERVAL=2;UNTIL=20260501T235959Z$/);
+        });
+
+        it('should convert "alternate day for 2 months" to bounded daily RRULE', () => {
+            const result = normalizeAction(
+                {
+                    type: 'create',
+                    title: 'Task',
+                    repeatHint: 'alternate day for 2 months',
+                },
+                { currentDate: '2026-03-01T10:00:00.000Z', timezone: 'Europe/Dublin' },
+            );
+
+            assert.match(result.repeatFlag, /^RRULE:FREQ=DAILY;INTERVAL=2;UNTIL=20260501T235959Z$/);
+        });
+
+        it('should mark unsupported repeat hints invalid', () => {
+            const result = normalizeAction({
+                type: 'create',
+                title: 'Task',
+                repeatHint: 'twice a week',
+            });
+
+            assert.equal(result.valid, false);
+            assert.ok(result.validationErrors.some((msg) => msg.startsWith('Unsupported repeat pattern:')));
+        });
+
+        it('should pass through direct RRULE repeatFlag', () => {
+            const result = normalizeAction({
+                type: 'create',
+                title: 'Task',
+                repeatFlag: 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE',
+            });
+
+            assert.equal(result.valid, true);
+            assert.equal(result.repeatFlag, 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE');
+        });
     });
 
     describe('_convertRepeatHint - "weekly on <day>" patterns', () => {
