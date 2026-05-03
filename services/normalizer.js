@@ -139,9 +139,9 @@ function _getTimezoneOffsetMinutes(year, month, day, hour, minute, timezone) {
 /**
  * Formats a Date object to TickTick ISO format
  */
-function _formatISO(date, timezone = 'Europe/Dublin', endOfDay = true) {
-    const h = endOfDay ? 23 : 0;
-    const m = endOfDay ? 59 : 0;
+function _formatISO(date, timezone = 'Europe/Dublin', hour = 0, minute = 0) {
+    const h = hour;
+    const m = minute;
     const year = date.getFullYear();
     const month = date.getMonth();
     const day = date.getDate();
@@ -607,19 +607,68 @@ function _resolveProject(projectHint, projects = [], defaultProjectId = null, ta
 }
 
 /**
+ * Extracts time hint from a due date string.
+ * Returns { cleaned, hour, minute, isAllDay }.
+ * If no time hint found, isAllDay is true and hour/minute are 0.
+ */
+function _extractTimeHint(dateString) {
+    const result = { cleaned: dateString, hour: 0, minute: 0, isAllDay: true };
+    if (!dateString) return result;
+
+    const lower = dateString.toLowerCase().trim();
+
+    // "at 9am", "at 3:30pm", "at 14:00"
+    const atTimeMatch = lower.match(/\s+at\s+(\d{1,2})(?::(\d{2}))?\s*(am|pm)?\s*$/);
+    if (atTimeMatch) {
+        let h = parseInt(atTimeMatch[1], 10);
+        const min = atTimeMatch[2] ? parseInt(atTimeMatch[2], 10) : 0;
+        const meridiem = atTimeMatch[3];
+        if (meridiem === 'pm' && h < 12) h += 12;
+        if (meridiem === 'am' && h === 12) h = 0;
+        if (h >= 0 && h <= 23 && min >= 0 && min <= 59) {
+            result.cleaned = lower.slice(0, atTimeMatch.index).trim();
+            result.hour = h;
+            result.minute = min;
+            result.isAllDay = false;
+            return result;
+        }
+    }
+
+    // "morning", "afternoon", "evening" as suffix
+    const slotMatch = lower.match(/\s+(morning|afternoon|evening)\s*$/);
+    if (slotMatch) {
+        const slot = slotMatch[1];
+        result.cleaned = lower.slice(0, slotMatch.index).trim();
+        result.isAllDay = false;
+        if (slot === 'morning') { result.hour = 9; result.minute = 0; }
+        else if (slot === 'afternoon') { result.hour = 14; result.minute = 0; }
+        else if (slot === 'evening') { result.hour = 18; result.minute = 0; }
+        return result;
+    }
+
+    return result;
+}
+
+/**
  * Expands relative dates to absolute ISO strings.
+ * Returns { dueDate: string|null, isAllDay: boolean }.
+ * isAllDay is true unless user specified a time hint (morning, afternoon, evening, at X).
  * Keeps simple relative-date handling inside the normalizer to avoid bot-layer coupling.
  */
 function _expandDueDate(dueDateString, { currentDate = new Date(), timezone = 'Europe/Dublin' } = {}) {
-    if (!dueDateString) return null;
+    if (!dueDateString) return { dueDate: null, isAllDay: true };
     const dateLower = dueDateString.toLowerCase().trim();
-    if (dateLower === 'someday') return null;
+    if (dateLower === 'someday') return { dueDate: null, isAllDay: true };
 
     // Already ISO format (YYYY-MM-DD...)
     if (/^\d{4}-\d{2}-\d{2}/.test(dateLower)) {
-        // Basic pass-through: We're not doing heavy manipulation if the LLM provided an ISO string directly.
-        return dateLower;
+        // Pass-through: LLM provided an ISO string directly.
+        // If it has a time component beyond midnight, treat as timed.
+        const hasTime = /T\d{2}:\d{2}/.test(dateLower) && !/T00:00:00/.test(dateLower);
+        return { dueDate: dateLower, isAllDay: !hasTime };
     }
+
+    const { cleaned, hour, minute, isAllDay } = _extractTimeHint(dateLower);
 
     const now = _getNowComponents(timezone, currentDate);
     const baseDate = new Date(now.year, now.month, now.day);
@@ -629,26 +678,28 @@ function _expandDueDate(dueDateString, { currentDate = new Date(), timezone = 'E
         targetDate.setDate(targetDate.getDate() + n);
     };
 
-    if (dateLower === 'today') {
+    const dateOnly = cleaned;
+
+    if (dateOnly === 'today') {
         // 0 offset
-    } else if (dateLower === 'tomorrow') {
+    } else if (dateOnly === 'tomorrow') {
         addDays(1);
-    } else if (dateLower === 'this-week') {
+    } else if (dateOnly === 'this-week') {
         const daysUntilFriday = (5 - now.dayOfWeek + 7) % 7 || 7;
         addDays(daysUntilFriday);
-    } else if (dateLower === 'next-week' || dateLower === 'next week') {
+    } else if (dateOnly === 'next-week' || dateOnly === 'next week') {
         const daysUntilMonday = (8 - now.dayOfWeek) % 7 || 7;
         addDays(daysUntilMonday);
     } else {
         // Handle days of the week: "monday", "this tuesday", "next wednesday"
-        let targetDayName = dateLower;
+        let targetDayName = dateOnly;
         let isNext = false;
 
-        if (dateLower.startsWith('next ')) {
+        if (dateOnly.startsWith('next ')) {
             isNext = true;
-            targetDayName = dateLower.slice(5).trim();
-        } else if (dateLower.startsWith('this ')) {
-            targetDayName = dateLower.slice(5).trim();
+            targetDayName = dateOnly.slice(5).trim();
+        } else if (dateOnly.startsWith('this ')) {
+            targetDayName = dateOnly.slice(5).trim();
         }
 
         const targetDayIndex = DAY_INDEX[targetDayName];
@@ -659,11 +710,11 @@ function _expandDueDate(dueDateString, { currentDate = new Date(), timezone = 'E
             addDays(daysToAdd);
         } else {
             // Unrecognized
-            return null;
+            return { dueDate: null, isAllDay: true };
         }
     }
 
-    return _formatISO(targetDate, timezone, true);
+    return { dueDate: _formatISO(targetDate, timezone, hour, minute), isAllDay };
 }
 
 /**
@@ -940,6 +991,17 @@ export function normalizeAction(intentAction, options = {}) {
         normalizedContent,
         options.defaultProjectResolution || null,
     );
+    // Expand dueDate and extract isAllDay from time hints
+    let expandedDueDate, expandedIsAllDay;
+    if (isMutation && intentAction.dueDate == null) {
+        expandedDueDate = undefined;
+        expandedIsAllDay = undefined; // don't touch
+    } else {
+        const dueDateResult = _expandDueDate(intentAction.dueDate, options);
+        expandedDueDate = dueDateResult.dueDate;
+        expandedIsAllDay = dueDateResult.isAllDay;
+    }
+
     const normalized = {
         _index: Number.isInteger(intentAction._index) ? intentAction._index : null,
         type: _resolveActionType(intentAction, options.existingTask),
@@ -956,7 +1018,8 @@ export function normalizeAction(intentAction, options = {}) {
         projectId: isMutation && !intentAction.projectHint
             ? undefined
             : resolvedProject.projectId,
-        dueDate: isMutation && intentAction.dueDate == null ? undefined : _expandDueDate(intentAction.dueDate, options),
+        dueDate: expandedDueDate,
+        isAllDay: expandedIsAllDay,
         repeatFlag: isMutation && !hasRepeatIntent ? undefined : _resolveRepeatFlag(intentAction, options),
         splitStrategy: intentAction.splitStrategy || 'single',
         valid: true,

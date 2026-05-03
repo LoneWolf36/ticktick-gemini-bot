@@ -767,6 +767,61 @@ describe('Integration Tests', () => {
         assert.strictEqual(result.validationErrors.length, 0);
     });
 
+    it('should set isAllDay true for plain date tasks without time hint', () => {
+        const result = normalizeAction({
+            type: 'create',
+            title: 'Buy groceries',
+            dueDate: 'tomorrow',
+        }, { currentDate: new Date('2026-05-03T10:00:00Z'), timezone: 'Europe/Dublin' });
+
+        assert.strictEqual(result.isAllDay, true);
+        assert.ok(result.dueDate.includes('T00:00:00.000'));
+    });
+
+    it('should set isAllDay false and parse time hint "at 9am"', () => {
+        const result = normalizeAction({
+            type: 'create',
+            title: 'Standup meeting',
+            dueDate: 'tomorrow at 9am',
+        }, { currentDate: new Date('2026-05-03T10:00:00Z'), timezone: 'Europe/Dublin' });
+
+        assert.strictEqual(result.isAllDay, false);
+        assert.ok(result.dueDate.includes('T09:00:00.000'));
+    });
+
+    it('should set isAllDay false and parse time hint "morning"', () => {
+        const result = normalizeAction({
+            type: 'create',
+            title: 'Review PR',
+            dueDate: 'today morning',
+        }, { currentDate: new Date('2026-05-03T10:00:00Z'), timezone: 'Europe/Dublin' });
+
+        assert.strictEqual(result.isAllDay, false);
+        assert.ok(result.dueDate.includes('T09:00:00.000'));
+    });
+
+    it('should set isAllDay false and parse time hint "afternoon"', () => {
+        const result = normalizeAction({
+            type: 'create',
+            title: 'Gym session',
+            dueDate: 'friday afternoon',
+        }, { currentDate: new Date('2026-05-03T10:00:00Z'), timezone: 'Europe/Dublin' });
+
+        assert.strictEqual(result.isAllDay, false);
+        assert.ok(result.dueDate.includes('T14:00:00.000'));
+    });
+
+    it('should set isAllDay false and parse time hint "at 3:30pm"', () => {
+        const result = normalizeAction({
+            type: 'create',
+            title: 'Call dentist',
+            dueDate: 'tomorrow at 3:30pm',
+        }, { currentDate: new Date('2026-05-03T10:00:00Z'), timezone: 'Europe/Dublin' });
+
+        assert.strictEqual(result.isAllDay, false);
+        assert.ok(result.dueDate.includes('T15:30:00.000'));
+    });
+
     it('should handle recurring task creation', () => {
         const result = normalizeAction({
             type: 'create',
@@ -831,7 +886,8 @@ describe('Integration Tests', () => {
         assert.strictEqual(results.length, 3);
         assert.ok(results.every(r => r.type === 'create'));
         assert.ok(results.every(r => r.repeatFlag === null));
-        assert.ok(results.every(r => typeof r.dueDate === 'string' && r.dueDate.includes('T23:59:00.000')));
+        assert.ok(results.every(r => typeof r.dueDate === 'string' && r.dueDate.includes('T00:00:00.000')));
+        assert.ok(results.every(r => r.isAllDay === true));
     });
 
     it('should not split multi-day dueDate when recurrence hint is present', () => {

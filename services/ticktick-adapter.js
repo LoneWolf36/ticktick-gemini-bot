@@ -205,7 +205,28 @@ function parseRepeatUntilValue(value) {
 
 function formatAllDayAnchorDate(timeZone, date = new Date()) {
     const { year, month, day } = getTimezoneDateParts(timeZone, date);
-    return `${year}-${month}-${day}T00:00:00.000+0000`;
+    // Compute actual TZ offset at midnight local time (not hardcoded UTC)
+    const y = parseInt(year);
+    const m = parseInt(month) - 1;
+    const d = parseInt(day);
+    const utcGuess = new Date(Date.UTC(y, m, d, 0, 0, 0));
+    const fmt = new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric', month: '2-digit', day: '2-digit',
+        hour: '2-digit', minute: '2-digit', second: '2-digit',
+        hour12: false,
+    });
+    const parts = Object.fromEntries(fmt.formatToParts(utcGuess).map((p) => [p.type, p.value]));
+    const localizedAsUtc = Date.UTC(
+        parseInt(parts.year), parseInt(parts.month) - 1, parseInt(parts.day),
+        parseInt(parts.hour === '24' ? '0' : parts.hour), parseInt(parts.minute), parseInt(parts.second)
+    );
+    const offsetMinutes = Math.round((localizedAsUtc - utcGuess.getTime()) / 60000);
+    const sign = offsetMinutes >= 0 ? '+' : '-';
+    const absOffset = Math.abs(offsetMinutes);
+    const oh = String(Math.floor(absOffset / 60)).padStart(2, '0');
+    const om = String(absOffset % 60).padStart(2, '0');
+    return `${year}-${month}-${day}T00:00:00.000${sign}${oh}${om}`;
 }
 
 function getNextWeekdayDate(timeZone, targetWeekday, baseDate = new Date()) {
@@ -804,20 +825,30 @@ export class TickTickAdapter {
      * @private
      */
     async _verifyComplete(projectId, taskId) {
-        try {
-            const task = await this._client.getTask(projectId, taskId);
-            const isCompleted = task.status !== 0 && task.status !== undefined;
-            if (!isCompleted) {
-                const note = `Verification failed: task status is ${task.status} (expected completed)`;
+        const VERIFY_DELAY_MS = 800;
+        const MAX_RETRIES = 1;
+        for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            try {
+                await new Promise((resolve) => setTimeout(resolve, VERIFY_DELAY_MS));
+                const task = await this._client.getTask(projectId, taskId);
+                const isCompleted = task.status !== 0 && task.status !== undefined;
+                if (!isCompleted && attempt < MAX_RETRIES) {
+                    this._log('completeTask', `VERIFY_RETRY { attempt: ${attempt + 1}, status: ${task.status} }`);
+                    continue;
+                }
+                if (!isCompleted) {
+                    const note = `Verification failed: task status is ${task.status} (expected completed)`;
+                    this._log('completeTask', `WARNING { ${note} }`, true);
+                    return { verified: false, verificationNote: note };
+                }
+                return { verified: true, verificationNote: 'Verified against TickTick API' };
+            } catch (err) {
+                const note = `Verification skipped due to fetch error: ${err.message}`;
                 this._log('completeTask', `WARNING { ${note} }`, true);
                 return { verified: false, verificationNote: note };
             }
-            return { verified: true, verificationNote: 'Verified against TickTick API' };
-        } catch (err) {
-            const note = `Verification skipped due to fetch error: ${err.message}`;
-            this._log('completeTask', `WARNING { ${note} }`, true);
-            return { verified: false, verificationNote: note };
         }
+        return { verified: false, verificationNote: 'Verification exhausted retries' };
     }
 
     /**
@@ -892,6 +923,16 @@ export class TickTickAdapter {
             if (validatedPriority !== null) taskData.priority = validatedPriority;
             if (validatedProjectId !== null) taskData.projectId = validatedProjectId;
             if (normalizedAction.repeatFlag !== undefined && normalizedAction.repeatFlag !== null) taskData.repeatFlag = normalizedAction.repeatFlag;
+
+            // Propagate isAllDay and timeZone for scheduling context
+            if (normalizedAction.isAllDay !== undefined) taskData.isAllDay = normalizedAction.isAllDay;
+            if (validatedDueDate !== null && normalizedAction.isAllDay !== false) {
+                // All-day tasks: set isAllDay explicitly so TickTick renders correctly
+                if (taskData.isAllDay === undefined) taskData.isAllDay = true;
+            }
+            if (taskData.repeatFlag || taskData.isAllDay !== undefined) {
+                taskData.timeZone = normalizedAction.timeZone || USER_TZ;
+            }
 
             // Map checklist items to TickTick items payload
             const checklistInputCount = Array.isArray(normalizedAction.checklistItems) ? normalizedAction.checklistItems.length : 0;

@@ -86,7 +86,8 @@ test('pipeline context resolves dentist Thursday through the normalizer path', a
   assert.deepEqual(axCalls[0].options.availableProjects, DEFAULT_PROJECTS.map((project) => project.name));
   assert.equal(adapterCalls.create.length, 1);
   assert.equal(adapterCalls.create[0].title, 'Book dentist appointment');
-  assert.match(adapterCalls.create[0].dueDate, /^2026-03-12T23:59:00\.000[+-]\d{4}$/);
+  assert.match(adapterCalls.create[0].dueDate, /^2026-03-12T00:00:00\.000[+-]\d{4}$/);
+  assert.equal(adapterCalls.create[0].isAllDay, true);
 });
 
 test('pipeline context routes undated groceries to admin/personal project via content inference', async () => {
@@ -145,7 +146,8 @@ test('pipeline context keeps date-only currentDate stable in negative-offset tim
 
   assert.equal(result.type, 'task');
   assert.equal(adapterCalls.create.length, 1);
-  assert.match(adapterCalls.create[0].dueDate, /^2026-03-10T23:59:00\.000-\d{4}$/);
+  assert.match(adapterCalls.create[0].dueDate, /^2026-03-10T00:00:00\.000-\d{4}$/);
+  assert.equal(adapterCalls.create[0].isAllDay, true);
 });
 
 test('pipeline context resolves project hints from available projects', async () => {

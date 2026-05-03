@@ -357,6 +357,7 @@ Validate — require non-empty title, default status to 0 (incomplete),
 <ul>
 <li>Simple: &quot;daily&quot;, &quot;weekdays&quot;, &quot;weekends&quot;, &quot;weekly&quot;, &quot;biweekly&quot;, &quot;monthly&quot;, &quot;yearly&quot;</li>
 <li>&quot;every <day>&quot;: &quot;every monday&quot;, &quot;every sunday&quot;</li>
+<li>Bounded: &quot;every sunday for a month&quot;, &quot;weekly on monday for 1 month&quot;</li>
 <li>&quot;every <day> and <day>&quot;: &quot;every tuesday and thursday&quot;</li>
 <li>&quot;weekly on <day>&quot;: &quot;weekly on monday&quot;, &quot;weekly on friday&quot;</li>
 <li>&quot;every other day&quot;: RRULE:FREQ=DAILY;INTERVAL=2</li>
@@ -373,8 +374,15 @@ Expects a list of projects from the TickTick API.</p>
 <li>defaultProjectId only when no projectHint exists and resolution is not provided</li>
 </ol>
 </dd>
+<dt><a href="#_extractTimeHint">_extractTimeHint()</a></dt>
+<dd><p>Extracts time hint from a due date string.
+Returns { cleaned, hour, minute, isAllDay }.
+If no time hint found, isAllDay is true and hour/minute are 0.</p>
+</dd>
 <dt><a href="#_expandDueDate">_expandDueDate()</a></dt>
 <dd><p>Expands relative dates to absolute ISO strings.
+Returns { dueDate: string|null, isAllDay: boolean }.
+isAllDay is true unless user specified a time hint (morning, afternoon, evening, at X).
 Keeps simple relative-date handling inside the normalizer to avoid bot-layer coupling.</p>
 </dd>
 <dt><a href="#_normalizeContentForMutation">_normalizeContentForMutation(newContent, existingContent)</a> ⇒ <code>string</code> | <code>null</code></dt>
@@ -2134,6 +2142,7 @@ Converts natural-language recurrence hints to RRULE strings.
 Supported patterns:
 - Simple: "daily", "weekdays", "weekends", "weekly", "biweekly", "monthly", "yearly"
 - "every <day>": "every monday", "every sunday"
+- Bounded: "every sunday for a month", "weekly on monday for 1 month"
 - "every <day> and <day>": "every tuesday and thursday"
 - "weekly on <day>": "weekly on monday", "weekly on friday"
 - "every other day": RRULE:FREQ=DAILY;INTERVAL=2
@@ -2158,10 +2167,20 @@ Resolution order:
 4. defaultProjectId only when no projectHint exists and resolution is not provided
 
 **Kind**: global function  
+<a name="_extractTimeHint"></a>
+
+## \_extractTimeHint()
+Extracts time hint from a due date string.
+Returns { cleaned, hour, minute, isAllDay }.
+If no time hint found, isAllDay is true and hour/minute are 0.
+
+**Kind**: global function  
 <a name="_expandDueDate"></a>
 
 ## \_expandDueDate()
 Expands relative dates to absolute ISO strings.
+Returns { dueDate: string|null, isAllDay: boolean }.
+isAllDay is true unless user specified a time hint (morning, afternoon, evening, at X).
 Keeps simple relative-date handling inside the normalizer to avoid bot-layer coupling.
 
 **Kind**: global function  
