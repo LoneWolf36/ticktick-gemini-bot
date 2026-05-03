@@ -78,6 +78,77 @@ function areEquivalentDueDates(expected, actual) {
     return expectedTime === actualTime;
 }
 
+const VALID_REPEAT_FREQUENCIES = new Set(['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY']);
+const VALID_REPEAT_WEEKDAYS = new Set(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']);
+
+function normalizeByDayValue(value) {
+    const days = value.split(',').map((day) => day.trim().toUpperCase()).filter(Boolean);
+    if (days.length === 0) return null;
+    const normalizedDays = [];
+    for (const day of days) {
+        const match = day.match(/^([+-]?\d{1,2})?(MO|TU|WE|TH|FR|SA|SU)$/);
+        if (!match || !VALID_REPEAT_WEEKDAYS.has(match[2])) return null;
+        normalizedDays.push(`${match[1] || ''}${match[2]}`);
+    }
+    return [...normalizedDays].sort().join(',');
+}
+
+function normalizeRepeatRuleParts(value) {
+    if (typeof value !== 'string') return null;
+    const trimmed = value.trim();
+    if (!trimmed) return null;
+
+    const normalized = trimmed.replace(/^RRULE:/i, '');
+    if (!normalized.trim()) return null;
+
+    const parts = [];
+    for (const segment of normalized.split(';')) {
+        const segmentTrimmed = segment.trim();
+        if (!segmentTrimmed) continue;
+        const eqIndex = segmentTrimmed.indexOf('=');
+        if (eqIndex <= 0) return null;
+
+        const key = segmentTrimmed.slice(0, eqIndex).trim().toUpperCase();
+        const rawValue = segmentTrimmed.slice(eqIndex + 1).trim();
+        if (!key || !rawValue) return null;
+
+        let valueText = rawValue.toUpperCase();
+        if (key === 'FREQ' && !VALID_REPEAT_FREQUENCIES.has(valueText)) return null;
+        if (key === 'INTERVAL' && !/^\d+$/.test(valueText)) return null;
+        if (key === 'INTERVAL' && Number.parseInt(valueText, 10) < 1) return null;
+        if (key === 'BYDAY') {
+            valueText = normalizeByDayValue(rawValue);
+            if (!valueText) return null;
+        }
+        parts.push([key, valueText]);
+    }
+
+    const freqPart = parts.find(([key]) => key === 'FREQ');
+    if (!freqPart) return null;
+
+    if (!parts.some(([key]) => key === 'INTERVAL')) {
+        parts.push(['INTERVAL', '1']);
+    }
+
+    parts.sort(([a], [b]) => a.localeCompare(b));
+    return parts.map(([key, partValue]) => `${key}=${partValue}`).join(';');
+}
+
+function areEquivalentRepeatFlags(expected, actual) {
+    const expectedIsEmpty = expected === null || expected === undefined || (typeof expected === 'string' && expected.trim() === '');
+    const actualIsEmpty = actual === null || actual === undefined || (typeof actual === 'string' && actual.trim() === '');
+    if (expectedIsEmpty || actualIsEmpty) {
+        return expectedIsEmpty && actualIsEmpty;
+    }
+
+    if (typeof expected !== 'string' || typeof actual !== 'string') return false;
+
+    const normalizedExpected = normalizeRepeatRuleParts(expected);
+    const normalizedActual = normalizeRepeatRuleParts(actual);
+    if (!normalizedExpected || !normalizedActual) return false;
+    return normalizedExpected === normalizedActual;
+}
+
 /**
  * Extracts and concatenates error message chunks from an error object or API response.
  * @param {Error|object} error - The error object to parse
@@ -589,7 +660,7 @@ export class TickTickAdapter {
             if (expectedPayload.projectId !== undefined && task.projectId !== expectedPayload.projectId) {
                 mismatches.push(`projectId: expected ${expectedPayload.projectId}, got ${task.projectId}`);
             }
-            if (expectedPayload.repeatFlag !== undefined && task.repeatFlag !== expectedPayload.repeatFlag) {
+            if (expectedPayload.repeatFlag !== undefined && !areEquivalentRepeatFlags(expectedPayload.repeatFlag, task.repeatFlag)) {
                 mismatches.push('repeatFlag mismatch');
             }
             if (mismatches.length > 0) {

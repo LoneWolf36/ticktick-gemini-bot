@@ -240,6 +240,23 @@ test('buildTaskCardFromAction update omits unchanged fields', () => {
     assert.ok(!card.includes('undefined'), 'should not leak undefined');
 });
 
+test('buildFieldDiff omits title when action title is absent and labels repeat nicely', () => {
+    const diffs = buildFieldDiff(
+        {
+            title: 'Weekly review',
+            repeatFlag: 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+        },
+        {
+            repeatFlag: 'RRULE:FREQ=DAILY;INTERVAL=2',
+        },
+    );
+
+    assert.equal(diffs.some((diff) => diff.field === 'title'), false, 'should not show title diff when title is absent');
+    assert.equal(diffs.find((diff) => diff.field === 'repeat')?.oldValue, 'Weekdays');
+    assert.equal(diffs.find((diff) => diff.field === 'repeat')?.newValue, 'Every other day');
+    assert.equal(JSON.stringify(diffs).includes('RRULE'), false, 'should not expose raw RRULE in diff');
+});
+
 // ─── taskReviewKeyboard — Button Labels ──────────────────────
 
 test('taskReviewKeyboard update has Apply, Edit, Skip, Delete, Stop', () => {

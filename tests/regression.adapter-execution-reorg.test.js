@@ -99,6 +99,139 @@ test('TickTickAdapter includes the existing projectId when updating only a due d
   assert.equal(Object.hasOwn(updatePayload, 'originalProjectId'), false);
 });
 
+test('TickTickAdapter _verifyUpdate accepts equivalent repeat flags with reordered RRULE parts', async () => {
+  const client = Object.create(TickTickClient.prototype);
+  client.getTask = async () => ({
+    id: 'task-repeat-verify',
+    projectId: 'project-repeat',
+    repeatFlag: 'RRULE:INTERVAL=2;FREQ=DAILY',
+  });
+
+  const adapter = new TickTickAdapter(client);
+  const result = await adapter._verifyUpdate('task-repeat-verify', 'project-repeat', {
+    repeatFlag: 'FREQ=DAILY;INTERVAL=2',
+  });
+
+  assert.equal(result.verified, true);
+});
+
+test('TickTickAdapter _verifyUpdate still rejects non-equivalent repeat flags', async () => {
+  const client = Object.create(TickTickClient.prototype);
+  client.getTask = async () => ({
+    id: 'task-repeat-mismatch',
+    projectId: 'project-repeat',
+    repeatFlag: 'FREQ=WEEKLY;BYDAY=MO,WE',
+  });
+
+  const adapter = new TickTickAdapter(client);
+  const result = await adapter._verifyUpdate('task-repeat-mismatch', 'project-repeat', {
+    repeatFlag: 'FREQ=WEEKLY;BYDAY=TU,TH',
+  });
+
+  assert.equal(result.verified, false);
+  assert.match(result.verificationNote, /repeatFlag mismatch/);
+});
+
+test('TickTickAdapter _verifyUpdate treats repeatFlag RRULE canonical forms as equivalent', async () => {
+  const client = Object.create(TickTickClient.prototype);
+  client.getTask = async () => ({
+    id: 'task-repeat-canonical',
+    projectId: 'project-repeat',
+    repeatFlag: 'RRULE:freq=weekly;byday=WE,MO',
+  });
+
+  const adapter = new TickTickAdapter(client);
+  const result = await adapter._verifyUpdate('task-repeat-canonical', 'project-repeat', {
+    repeatFlag: 'FREQ=weekly;BYDAY=MO,WE;INTERVAL=1',
+  });
+
+  assert.equal(result.verified, true);
+});
+
+test('TickTickAdapter _verifyUpdate rejects invalid repeatFlag strings even when both fail parse', async () => {
+  const client = Object.create(TickTickClient.prototype);
+  client.getTask = async () => ({
+    id: 'task-repeat-invalid',
+    projectId: 'project-repeat',
+    repeatFlag: 'nonsense-one',
+  });
+
+  const adapter = new TickTickAdapter(client);
+  const result = await adapter._verifyUpdate('task-repeat-invalid', 'project-repeat', {
+    repeatFlag: 'nonsense-two',
+  });
+
+  assert.equal(result.verified, false);
+  assert.match(result.verificationNote, /repeatFlag mismatch/);
+});
+
+test('TickTickAdapter _verifyUpdate treats empty repeatFlag values as equivalent only when both empty', async () => {
+  const client = Object.create(TickTickClient.prototype);
+  client.getTask = async () => ({
+    id: 'task-repeat-empty',
+    projectId: 'project-repeat',
+    repeatFlag: '',
+  });
+
+  const adapter = new TickTickAdapter(client);
+  const result = await adapter._verifyUpdate('task-repeat-empty', 'project-repeat', {
+    repeatFlag: null,
+  });
+
+  assert.equal(result.verified, true);
+});
+
+test('TickTickAdapter _verifyUpdate rejects clearing repeat when TickTick keeps invalid repeatFlag', async () => {
+  const client = Object.create(TickTickClient.prototype);
+  client.getTask = async () => ({
+    id: 'task-repeat-clear-mismatch',
+    projectId: 'project-repeat',
+    repeatFlag: 'nonsense-repeat',
+  });
+
+  const adapter = new TickTickAdapter(client);
+  const result = await adapter._verifyUpdate('task-repeat-clear-mismatch', 'project-repeat', {
+    repeatFlag: null,
+  });
+
+  assert.equal(result.verified, false);
+  assert.match(result.verificationNote, /repeatFlag mismatch/);
+});
+
+test('TickTickAdapter _verifyUpdate rejects semantically invalid repeatFlag values even when structurally similar', async () => {
+  const client = Object.create(TickTickClient.prototype);
+  client.getTask = async () => ({
+    id: 'task-repeat-invalid-semantics',
+    projectId: 'project-repeat',
+    repeatFlag: 'INTERVAL=1;FREQ=NOPE;BYDAY=XX,YY',
+  });
+
+  const adapter = new TickTickAdapter(client);
+  const result = await adapter._verifyUpdate('task-repeat-invalid-semantics', 'project-repeat', {
+    repeatFlag: 'FREQ=NOPE;BYDAY=YY,XX',
+  });
+
+  assert.equal(result.verified, false);
+  assert.match(result.verificationNote, /repeatFlag mismatch/);
+});
+
+test('TickTickAdapter _verifyUpdate rejects identical semantically invalid repeatFlag values', async () => {
+  const client = Object.create(TickTickClient.prototype);
+  client.getTask = async () => ({
+    id: 'task-repeat-identical-invalid',
+    projectId: 'project-repeat',
+    repeatFlag: 'FREQ=NOPE;BYDAY=YY,XX',
+  });
+
+  const adapter = new TickTickAdapter(client);
+  const result = await adapter._verifyUpdate('task-repeat-identical-invalid', 'project-repeat', {
+    repeatFlag: 'FREQ=NOPE;BYDAY=YY,XX',
+  });
+
+  assert.equal(result.verified, false);
+  assert.match(result.verificationNote, /repeatFlag mismatch/);
+});
+
 test('TickTickAdapter findProjectByName resolves exact project name deterministically', async () => {
   const client = Object.create(TickTickClient.prototype);
   client.getProjects = async () => ([

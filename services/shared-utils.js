@@ -241,6 +241,53 @@ function dateLabelFor(value) {
     });
 }
 
+const WEEKDAY_LABELS = {
+    MO: 'Mon',
+    TU: 'Tue',
+    WE: 'Wed',
+    TH: 'Thu',
+    FR: 'Fri',
+    SA: 'Sat',
+    SU: 'Sun',
+};
+
+function normalizeRepeatLabel(value) {
+    if (value === undefined || value === null || value === '') return 'None';
+    if (typeof value !== 'string') return String(value);
+
+    const raw = value.trim();
+    if (!raw) return 'None';
+
+    const normalized = raw.replace(/^RRULE:/i, '');
+    const parts = new Map();
+    for (const segment of normalized.split(';')) {
+        const [key, ...rest] = segment.split('=');
+        if (!key || rest.length === 0) continue;
+        parts.set(key.toUpperCase(), rest.join('=').toUpperCase());
+    }
+
+    const freq = parts.get('FREQ');
+    const interval = parts.get('INTERVAL') || '1';
+    const byday = parts.get('BYDAY');
+
+    if (freq === 'DAILY' && interval === '2') return 'Every other day';
+    if (freq === 'DAILY' && interval === '1') return 'Daily';
+    if (freq === 'WEEKLY' && interval === '2' && !byday) return 'Biweekly';
+    if (freq === 'WEEKLY' && interval === '1' && !byday) return 'Weekly';
+    if (freq === 'MONTHLY' && interval === '1' && !byday) return 'Monthly';
+    if (freq === 'YEARLY' && interval === '1' && !byday) return 'Yearly';
+
+    if (freq === 'WEEKLY' && byday) {
+        const days = byday.split(',').filter(Boolean);
+        if (days.length === 5 && ['MO', 'TU', 'WE', 'TH', 'FR'].every((day) => days.includes(day))) return 'Weekdays';
+        if (days.length === 2 && ['SA', 'SU'].every((day) => days.includes(day))) return 'Weekends';
+        const namedDays = days.map((day) => WEEKDAY_LABELS[day] || day).filter(Boolean);
+        if (namedDays.length > 0) return `Weekly on ${namedDays.join(', ')}`;
+    }
+
+    return 'Custom repeat';
+}
+
 function pushDiff(diffs, field, label, oldValue, newValue, emoji) {
     if (normalizeComparableValue(oldValue) === normalizeComparableValue(newValue)) return;
     diffs.push({
@@ -265,7 +312,9 @@ export function buildFieldDiff(snapshot = {}, action = {}, { projects = [] } = {
     const change = action || {};
     const diffs = [];
 
-    pushDiff(diffs, 'title', 'Title', source.title, change.title, '');
+    if (Object.prototype.hasOwnProperty.call(change, 'title') && normalizeComparableValue(source.title) !== normalizeComparableValue(change.title)) {
+        pushDiff(diffs, 'title', 'Title', source.title, change.title, '');
+    }
 
     const oldProjectId = source.projectId || source.originalProjectId || null;
     const newProjectId = change.projectId || change.appliedProjectId || null;
@@ -295,7 +344,7 @@ export function buildFieldDiff(snapshot = {}, action = {}, { projects = [] } = {
     }
 
     if (change.repeatFlag !== undefined && normalizeComparableValue(source.repeatFlag) !== normalizeComparableValue(change.repeatFlag)) {
-        pushDiff(diffs, 'repeat', 'Repeat', source.repeatFlag || 'None', change.repeatFlag || 'None', '🔄');
+        pushDiff(diffs, 'repeat', 'Repeat', normalizeRepeatLabel(source.repeatFlag), normalizeRepeatLabel(change.repeatFlag), '🔄');
     }
 
     return diffs;
@@ -1286,6 +1335,15 @@ export function buildFreeformReceipt(result, { projects = [] } = {}) {
             lines.push(`✅ **Completed:** "${snapshot?.title || action.title || 'Task'}"`);
         } else if (action.type === 'delete') {
             lines.push(`🗑️ **Deleted:** "${snapshot?.title || action.title || 'Task'}"`);
+        }
+
+        if (record.verified === false) {
+            const note = typeof record.verificationNote === 'string' ? record.verificationNote.toLowerCase() : '';
+            if (note.includes('verification failed')) {
+                lines.push('⚠️ Verification did not confirm this change in TickTick.');
+            } else {
+                lines.push('⚠️ Update sent; verification unavailable.');
+            }
         }
     }
 

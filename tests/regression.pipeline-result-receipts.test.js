@@ -1,6 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { buildFreeformPipelineResultReceipt } from '../bot/pipeline-result-receipts.js';
+import { buildFreeformReceipt } from '../services/shared-utils.js';
 
 test('freeform receipt helper persists undo entries and adds undo button only on success', async () => {
     const stored = [];
@@ -135,4 +136,53 @@ test('freeform receipt helper omits undo affordance without rollback step', asyn
     assert.equal(receipt.undoCount, 0);
     assert.equal(receipt.replyExtra.reply_markup, undefined);
     assert.match(receipt.text, /Completed/);
+});
+
+test('freeform receipt includes verification warning without leaking raw errors', () => {
+    const text = buildFreeformReceipt({
+        results: [
+            {
+                status: 'succeeded',
+                verified: false,
+                verificationNote: 'Verification failed: repeatFlag mismatch',
+                action: { type: 'update' },
+                rollbackStep: { payload: { snapshot: { title: 'Hidden task', repeatFlag: 'FREQ=DAILY' } } },
+            },
+        ],
+    });
+
+    assert.match(text, /Verification did not confirm this change in TickTick/);
+    assert.doesNotMatch(text, /RRULE/);
+});
+
+test('freeform receipt omits title diff when update title missing', () => {
+    const text = buildFreeformReceipt({
+        results: [
+            {
+                status: 'succeeded',
+                action: { type: 'update' },
+                rollbackStep: { payload: { snapshot: { title: 'Task name', repeatFlag: 'RRULE:FREQ=DAILY' } } },
+            },
+        ],
+    });
+
+    assert.doesNotMatch(text, /Task name" →/);
+    assert.doesNotMatch(text, /RRULE/);
+});
+
+test('freeform receipt warns when verification is unavailable', () => {
+    const text = buildFreeformReceipt({
+        results: [
+            {
+                status: 'succeeded',
+                verified: false,
+                verificationNote: 'Verification skipped due to fetch error: timeout',
+                action: { type: 'update' },
+                rollbackStep: { payload: { snapshot: { title: 'Hidden task' } } },
+            },
+        ],
+    });
+
+    assert.match(text, /verification unavailable/);
+    assert.doesNotMatch(text, /timeout/);
 });
