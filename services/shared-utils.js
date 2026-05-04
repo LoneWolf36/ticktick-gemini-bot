@@ -973,6 +973,8 @@ export function parseTelegramMarkdownToHTML(text) {
     escaped = escaped.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
     escaped = escaped.replace(/\*([^*]+)\*/g, '<i>$1</i>');
     escaped = escaped.replace(/~~(.*?)~~/g, '<s>$1</s>');
+    escaped = escaped.replace(/`([^`]+)`/g, '<code>$1</code>');
+    escaped = escaped.replace(/^&gt; (.+)$/gm, '<blockquote>$1</blockquote>');
     return escaped;
 }
 
@@ -1029,13 +1031,13 @@ export function appendUrgentModeReminder(text, urgentMode) {
  */
 export function formatBriefingHeader({ kind }) {
     if (kind === 'daily') {
-        return `**MORNING BRIEFING**\n${userTodayFormatted()}\n${'─'.repeat(16)}\n\n`;
+        return `🌅 **MORNING BRIEFING**\n${userTodayFormatted()}\n${'─'.repeat(16)}\n\n`;
     }
     if (kind === 'daily_close') {
-        return `**END-OF-DAY REFLECTION**\n${userTodayFormatted()}\n${'─'.repeat(16)}\n\n`;
+        return `🌙 **END-OF-DAY REFLECTION**\n${userTodayFormatted()}\n${'─'.repeat(16)}\n\n`;
     }
     if (kind === 'weekly') {
-        return `**WEEKLY ACCOUNTABILITY REVIEW**\n${'─'.repeat(16)}\n\n`;
+        return `📊 **WEEKLY ACCOUNTABILITY REVIEW**\n${'─'.repeat(16)}\n\n`;
     }
     return '';
 }

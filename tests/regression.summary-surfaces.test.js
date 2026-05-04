@@ -714,7 +714,7 @@ test('formatSummary renders fixed section order across briefing and weekly varia
       context: { urgentMode: false },
       header: 'WEEKLY ACCOUNTABILITY REVIEW',
       sectionOrder: ['**Progress**', '**Carry forward**', '**Next focus**', '**Watchouts**', '**Notes**'],
-      mustContain: ['Overdue tasks accumulating: 2 active tasks are overdue right now.'],
+      mustContain: ['**Overdue tasks accumulating**', '> 2 active tasks are overdue right now.'],
       assertExtra: () => {},
     },
   ];
@@ -751,7 +751,7 @@ test('formatSummary keeps empty sections compact and Telegram-safe', () => {
   assert.match(weeklyResult.text, /\*\*Carry forward\*\*:\n- None/);
   assert.equal(weeklyResult.text.includes('**Next focus**'), false);
   assert.match(weeklyResult.text, /\*\*Watchouts\*\*:\n- None/);
-  assert.match(weeklyResult.text, /\[Warning\] Processed-task history was unavailable\./);
+  assert.match(weeklyResult.text, /⚠️ \*\*Processed-task history was unavailable\.\*\*/);
 
   const dailyHtml = parseTelegramMarkdownToHTML(dailyResult.text);
   const weeklyHtml = parseTelegramMarkdownToHTML(weeklyResult.text);
@@ -790,7 +790,7 @@ test('composeDailyCloseSummary acknowledges meaningful progress without cheerlea
     rankingResult,
   });
 
-  assert.ok(result.summary.stats.includes('Completed: 2'));
+  assert.ok(result.summary.stats.includes('Completed: `2`'));
   assert.match(result.summary.reflection, /meaningful work/i);
   assert.match(result.summary.reset_cue, /Tomorrow’s restart/i);
 });

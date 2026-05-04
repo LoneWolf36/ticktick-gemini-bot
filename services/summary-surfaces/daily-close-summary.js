@@ -52,10 +52,10 @@ function buildStats({ todayHistory = [], activeTasks = [] } = {}) {
     const droppedCount = todayHistory.filter((entry) => entry.dropped === true).length;
 
     return [
-        `Completed: ${approvedCount}`,
-        `Skipped: ${skippedCount}`,
-        `Dropped: ${droppedCount}`,
-        `Still open: ${activeTasks.length}`,
+        `Completed: \`${approvedCount}\``,
+        `Skipped: \`${skippedCount}\``,
+        `Dropped: \`${droppedCount}\``,
+        `Still open: \`${activeTasks.length}\``,
     ];
 }
 

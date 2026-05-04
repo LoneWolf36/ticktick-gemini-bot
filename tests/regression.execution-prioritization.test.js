@@ -1139,6 +1139,7 @@ test('execution prioritization is deterministic for identical input and context'
 test('execution prioritization conservative classifier returns safe defaults without strong evidence', () => {
   const options = {
     goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+    nowIso: '2026-05-04T12:00:00Z',
   };
 
   // Recipe task in routine project -> priority 1
@@ -1154,7 +1155,7 @@ test('execution prioritization conservative classifier returns safe defaults wit
   assert.equal(executionPrioritization.inferPriorityValueFromTask(lifeAdminTask, options), 1);
 
   // Task with due date within 7 days -> priority 3
-  const nearDueTask = { title: 'Submit paperwork', projectName: 'Admin', dueDate: '2026-05-02T10:00:00Z' };
+  const nearDueTask = { title: 'Submit paperwork', projectName: 'Admin', dueDate: '2026-05-06T10:00:00Z' };
   assert.equal(executionPrioritization.inferPriorityValueFromTask(nearDueTask, options), 3);
 
   // Task with urgent keyword -> priority 3
@@ -1182,4 +1183,144 @@ test('execution prioritization conservative classifier returns core goal only fo
   // Action verb + schedule but in routine project -> priority 1
   const routineProjectTask = { title: 'Prepare interview notes', projectName: 'Routines & Tracking', dueDate: '2026-04-25T10:00:00Z' };
   assert.equal(executionPrioritization.inferPriorityValueFromTask(routineProjectTask, options), 1);
+});
+
+test('ranking filter drops tasks with due date more than 14 days from now', () => {
+  const nowIso = '2026-05-04T12:00:00Z';
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-far-future',
+      title: 'Plan Q3 goals',
+      projectName: 'Career',
+      dueDate: '2026-05-25T12:00:00Z',
+      status: 0,
+    }),
+    normalizePriorityCandidate({
+      id: 'task-near-future',
+      title: 'Prepare interview notes',
+      projectName: 'Career',
+      dueDate: '2026-05-14T12:00:00Z',
+      status: 0,
+    }),
+    normalizePriorityCandidate({
+      id: 'task-no-date',
+      title: 'Organize inbox',
+      projectName: 'Admin',
+      status: 0,
+    }),
+  ];
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+    nowIso,
+  });
+
+  const result = rankPriorityCandidatesForTest(candidates, context);
+
+  const rankedIds = result.ranked.map((d) => d.taskId);
+  assert.ok(rankedIds.includes('task-near-future'), 'task due within 14 days should be included');
+  assert.ok(rankedIds.includes('task-no-date'), 'task with no due date should be included');
+  assert.ok(!rankedIds.includes('task-far-future'), 'task due >14 days should be filtered out');
+});
+
+test('ranking filter keeps tasks due within 14 days', () => {
+  const nowIso = '2026-05-04T12:00:00Z';
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-ten-days',
+      title: 'Submit report',
+      projectName: 'Career',
+      dueDate: '2026-05-14T12:00:00Z',
+      status: 0,
+    }),
+  ];
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+    nowIso,
+  });
+
+  const result = rankPriorityCandidatesForTest(candidates, context);
+
+  assert.equal(result.ranked.length, 1);
+  assert.equal(result.ranked[0].taskId, 'task-ten-days');
+});
+
+test('ranking filter keeps tasks with no due date', () => {
+  const nowIso = '2026-05-04T12:00:00Z';
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-no-date',
+      title: 'Organize inbox',
+      projectName: 'Admin',
+      status: 0,
+    }),
+  ];
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('', { source: 'fallback' }),
+    nowIso,
+  });
+
+  const result = rankPriorityCandidatesForTest(candidates, context);
+
+  assert.equal(result.ranked.length, 1);
+  assert.equal(result.ranked[0].taskId, 'task-no-date');
+});
+
+test('ranking auto-suggests P3 for strategic task with P1 priority', () => {
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-strategic-p1',
+      title: 'Prepare backend interview notes',
+      projectName: 'Career & Job Search',
+      priority: 1,
+      status: 0,
+    }),
+  ];
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+  });
+
+  const result = rankPriorityCandidatesForTest(candidates, context);
+
+  assert.equal(result.ranked.length, 1);
+  assert.equal(result.ranked[0].suggestedPriority, 3);
+});
+
+test('ranking does not suggest P3 for strategic task already at P3', () => {
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-strategic-p3',
+      title: 'Prepare backend interview notes',
+      projectName: 'Career & Job Search',
+      priority: 3,
+      status: 0,
+    }),
+  ];
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+  });
+
+  const result = rankPriorityCandidatesForTest(candidates, context);
+
+  assert.equal(result.ranked.length, 1);
+  assert.equal(result.ranked[0].suggestedPriority, undefined);
+});
+
+test('ranking does not suggest P3 for admin task with P1 priority', () => {
+  const candidates = [
+    normalizePriorityCandidate({
+      id: 'task-admin-p1',
+      title: 'Pay electricity bill',
+      projectName: 'Life Admin',
+      priority: 1,
+      status: 0,
+    }),
+  ];
+  const context = buildRankingContext({
+    goalThemeProfile: createGoalThemeProfile('GOALS:\n1. Land a senior backend role', { source: 'user_context' }),
+  });
+
+  const result = rankPriorityCandidatesForTest(candidates, context);
+
+  assert.equal(result.ranked.length, 1);
+  assert.equal(result.ranked[0].suggestedPriority, undefined);
 });

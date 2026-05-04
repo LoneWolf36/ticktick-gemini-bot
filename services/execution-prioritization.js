@@ -467,6 +467,14 @@ function assessCandidate(candidate, context) {
         };
     }
 
+    // Auto-infer P3 for strategic tasks with low priority
+    let suggestedPriority = undefined;
+    const projectCategory = resolveProjectCategory(candidate.projectName);
+    if (projectCategory?.category === 'strategic' && (candidate.priority == null || candidate.priority === 1)) {
+        suggestedPriority = 3;
+        console.log(`[RankingAutoPriority] Strategic task "${candidate.title}" has low priority — suggesting P3`);
+    }
+
     const themeMatches = inferThemeMatches(candidate, context.goalThemeProfile);
     const urgency = parseUrgency(candidate, context.nowIso);
     const degraded = context.goalThemeProfile.confidence !== 'explicit';
@@ -520,6 +528,7 @@ function assessCandidate(candidate, context) {
         exceptionApplied,
         exceptionReason,
         fallbackUsed: degraded || rationaleCode === 'fallback',
+        suggestedPriority,
     };
 }
 
@@ -738,6 +747,7 @@ export function createRankingDecision(decision = {}) {
         exceptionApplied: decision.exceptionApplied === true,
         exceptionReason: decision.exceptionReason || 'none',
         fallbackUsed: decision.fallbackUsed === true,
+        suggestedPriority: decision.suggestedPriority,
     };
 }
 
@@ -800,10 +810,24 @@ export function buildRecommendationResult({ ranked = [], degradedReason = 'none'
 export function rankPriorityCandidates(input, maybeContext) {
     const rawCandidates = Array.isArray(input) ? input : (input?.candidates || []);
     const context = buildRankingContext(Array.isArray(input) ? maybeContext : input?.context);
-    const candidates = rawCandidates
+    const normalized = rawCandidates
         .map((candidate) => (candidate?.taskId ? candidate : normalizePriorityCandidate(candidate)))
         .filter((candidate) => candidate && candidate.taskId)
         .filter((candidate) => candidate.status === 0 || candidate.status == null);
+
+    // Filter out candidates with due dates > 14 days from now
+    const now = Date.now();
+    const FOURTEEN_DAYS_MS = 14 * 24 * 60 * 60 * 1000;
+    const candidates = normalized.filter((candidate) => {
+        if (!candidate.dueDate) return true;
+        const dueMs = Date.parse(candidate.dueDate);
+        if (Number.isNaN(dueMs)) return true;
+        return (dueMs - now) <= FOURTEEN_DAYS_MS;
+    });
+    const droppedCount = normalized.length - candidates.length;
+    if (droppedCount > 0) {
+        console.log(`[RankingFilter] Dropped ${droppedCount} tasks with due date >14 days`);
+    }
 
     if (candidates.length === 0) {
         const result = buildRecommendationResult({
@@ -844,6 +868,7 @@ export function rankPriorityCandidates(input, maybeContext) {
         exceptionApplied: assessment.exceptionApplied,
         exceptionReason: assessment.exceptionReason,
         fallbackUsed: assessment.fallbackUsed,
+        suggestedPriority: assessment.suggestedPriority,
     }));
 
     const degradedReason = context.goalThemeProfile.confidence === 'explicit'

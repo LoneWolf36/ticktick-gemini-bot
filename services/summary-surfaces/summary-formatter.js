@@ -47,8 +47,10 @@ function formatNotices(notices = []) {
         .map((notice) => {
             const message = normalizeInline(notice?.message);
             if (!message) return '';
-            const severity = notice?.severity === 'warning' ? 'Warning' : 'Info';
-            return `[${severity}] ${message}`;
+            if (notice?.severity === 'warning') {
+                return `⚠️ **${message}**`;
+            }
+            return `ℹ️ ${message}`;
         })
         .filter(Boolean);
 
@@ -61,8 +63,8 @@ function formatBriefing(summary = {}, context = {}) {
         .map((item) => {
             const title = normalizeInline(item?.title) || 'Untitled task';
             const rationale = normalizeInline(item?.rationale_text);
-            if (urgentMode) return title;
-            return rationale ? `${title} (${rationale})` : title;
+            if (urgentMode) return `**${title}**`;
+            return rationale ? `**${title}**\n> ${rationale}` : `**${title}**`;
         });
 
     const focus = normalizeInline(summary.focus) || EMPTY_LABEL;
@@ -73,7 +75,9 @@ function formatBriefing(summary = {}, context = {}) {
     sections.push(`**Focus**: ${focus}`);
 
     if (priorities.length > 0) {
-        sections.push(`**Top priorities**:\n${urgentMode ? renderNumberedList(priorities.slice(0, 2)) : renderNumberedList(priorities)}`);
+        const listItems = urgentMode ? priorities.slice(0, 2) : priorities;
+        const rendered = listItems.map((item, index) => `${index + 1}. ${item}`).join('\n');
+        sections.push(`**Top priorities**:\n${rendered}`);
     }
 
     if (!urgentMode && whyNow.length > 0) {
@@ -96,7 +100,7 @@ function formatWeekly(summary = {}, context = {}) {
             const title = normalizeInline(item?.title);
             if (!title) return '';
             const reason = normalizeInline(item?.reason);
-            return reason ? `${title} (${reason})` : title;
+            return reason ? `**${title}**\n> ${reason}` : `**${title}**`;
         })
         .filter(Boolean);
 
@@ -105,7 +109,7 @@ function formatWeekly(summary = {}, context = {}) {
             const label = normalizeInline(item?.label);
             const evidence = normalizeInline(item?.evidence);
             if (!label || !evidence) return '';
-            return `${label}: ${evidence}`;
+            return `**${label}**\n> ${evidence}`;
         })
         .filter(Boolean);
 
@@ -116,14 +120,14 @@ function formatWeekly(summary = {}, context = {}) {
         if (Array.isArray(summary.next_focus) && summary.next_focus.length > 0) {
             sections.push(`**Next focus**:\n${renderNumberedList(summary.next_focus.slice(0, 2))}`);
         }
-        sections.push(`**Watchouts**:\n${renderList(watchouts)}`);
+        sections.push(`**Watchouts**:\n${watchouts.length > 0 ? watchouts.map((item) => `- ${item}`).join('\n') : '- None'}`);
     } else {
         sections.push(`**Progress**:\n${renderList(summary.progress)}`);
-        sections.push(`**Carry forward**:\n${renderList(carryForward)}`);
+        sections.push(`**Carry forward**:\n${carryForward.length > 0 ? carryForward.map((item) => `- ${item}`).join('\n') : '- None'}`);
         if (Array.isArray(summary.next_focus) && summary.next_focus.length > 0) {
             sections.push(`**Next focus**:\n${renderNumberedList(summary.next_focus)}`);
         }
-        sections.push(`**Watchouts**:\n${renderList(watchouts)}`);
+        sections.push(`**Watchouts**:\n${watchouts.length > 0 ? watchouts.map((item) => `- ${item}`).join('\n') : '- None'}`);
         sections.push(`**Notes**:\n${formatNotices(summary.notices)}`);
     }
 

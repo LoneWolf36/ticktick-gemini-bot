@@ -926,7 +926,8 @@ test('urgent mode trims niceties without skipping safety or substantive content'
   assert.match(urgentWeekly, /Protected deep-work block/);
   assert.match(urgentWeekly, /Finish interview prep pack/);
   assert.match(urgentWeekly, /Protect backend study block/);
-  assert.match(urgentWeekly, /Overdue tasks accumulating: 4 tasks slipped this week/);
+  assert.match(urgentWeekly, /\*\*Overdue tasks accumulating\*\*/);
+  assert.match(urgentWeekly, /> 4 tasks slipped this week/);
   assert.doesNotMatch(urgentWeekly, /Carry forward/i);
   assert.doesNotMatch(urgentWeekly, /Notices/i);
 });

@@ -316,6 +316,7 @@ export class TickTickAdapter {
         this._projectCache = null;
         this._projectCacheTs = 0;
         this._defaultProjectId = process.env.TICKTICK_DEFAULT_PROJECT_ID || null;
+        this._autoApplyStrategicPriority = process.env.AUTO_APPLY_STRATEGIC_PRIORITY !== 'false';
     }
 
     /**
@@ -1304,6 +1305,27 @@ export class TickTickAdapter {
             this._log('restoreTask', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
             throw classified;
         }
+    }
+
+    /**
+     * Applies a suggested priority to a task, if auto-apply is enabled.
+     * Used by the ranking system to auto-promote strategic low-priority tasks.
+     *
+     * @param {string} taskId - Task ID to update
+     * @param {string} projectId - Project ID containing the task
+     * @param {number} suggestedPriority - Suggested priority value (3 or 5)
+     * @returns {Promise<Object|null>} Updated task object, or null if skipped
+     */
+    async applySuggestedPriority(taskId, projectId, suggestedPriority) {
+        if (!this._autoApplyStrategicPriority) {
+            this._log('applySuggestedPriority', `SKIPPED { autoApply: false }`);
+            return null;
+        }
+        if (!suggestedPriority) {
+            return null;
+        }
+        this._log('applySuggestedPriority', { taskId, projectId, suggestedPriority });
+        return this.updateTask(taskId, { priority: suggestedPriority, projectId });
     }
 
     /**
