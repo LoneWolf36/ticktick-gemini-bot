@@ -10,6 +10,8 @@
  * - Mixed create+mutation or multi-mutation batches are rejected cleanly.
  */
 
+import { coerceDate, getZonedDateParts, getTimezoneOffsetMinutes, formatTickTickISO } from './date-utils.js';
+
 // Title normalization constants
 const DATE_PATTERNS = /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next\s+\w+|this\s+\w+)\b/gi;
 const PRIORITY_PATTERNS = /^(urgent|important|critical|asap|high priority)[:\s-]*/i;
@@ -60,19 +62,16 @@ const DAY_INDEX = {
 };
 
 /**
- * Gets local current date components formatted by the system timezone.
+ * Resolves a date value to a Date object, handling string ISO and number timestamps.
+ * Delegates to the shared coerceDate from date-utils.
  */
 function _coerceDate(value, fallback = new Date()) {
-    if (value instanceof Date) return value;
-    if (typeof value === 'string' || typeof value === 'number') {
-        const parsed = new Date(value);
-        if (!Number.isNaN(parsed.getTime())) return parsed;
-    }
-    return fallback instanceof Date ? fallback : new Date();
+    return coerceDate(value, fallback);
 }
 
 /**
  * Gets local current date components formatted by the system timezone.
+ * Handles YYYY-MM-DD string input for deterministic testing.
  */
 function _getNowComponents(timezone = 'Europe/Dublin', currentDate = new Date()) {
     if (typeof currentDate === 'string') {
@@ -90,73 +89,30 @@ function _getNowComponents(timezone = 'Europe/Dublin', currentDate = new Date())
         }
     }
 
-    const resolvedDate = _coerceDate(currentDate, new Date());
-    const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: timezone,
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', hour12: false,
-    }).formatToParts(resolvedDate);
-
-    const get = (type) => parts.find(p => p.type === type)?.value;
+    const resolvedDate = coerceDate(currentDate, new Date());
+    const parts = getZonedDateParts(resolvedDate, timezone);
     return {
-        year: parseInt(get('year')),
-        month: parseInt(get('month')) - 1, // 0-indexed
-        day: parseInt(get('day')),
-        dayOfWeek: new Date(
-            parseInt(get('year')),
-            parseInt(get('month')) - 1,
-            parseInt(get('day'))
-        ).getDay()
+        year: parts.year,
+        month: parts.month,
+        day: parts.day,
+        dayOfWeek: parts.weekday,
     };
 }
 
+/**
+ * Computes the timezone offset in minutes for given local date/time and timezone.
+ * Delegates to the shared function from date-utils.
+ */
 function _getTimezoneOffsetMinutes(year, month, day, hour, minute, timezone) {
-    const utcGuess = new Date(Date.UTC(year, month, day, hour, minute, 0));
-    const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone: timezone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        second: '2-digit',
-        hour12: false,
-    }).formatToParts(utcGuess);
-
-    const get = (type) => parseInt(parts.find(p => p.type === type)?.value, 10);
-    const localizedAsUtc = Date.UTC(
-        get('year'),
-        get('month') - 1,
-        get('day'),
-        get('hour'),
-        get('minute'),
-        get('second')
-    );
-
-    return Math.round((localizedAsUtc - utcGuess.getTime()) / 60000);
+    return getTimezoneOffsetMinutes(year, month, day, hour, minute, timezone);
 }
 
 /**
- * Formats a Date object to TickTick ISO format
+ * Formats a Date object to TickTick ISO format with timezone offset.
+ * Delegates to the shared formatTickTickISO from date-utils.
  */
 function _formatISO(date, timezone = 'Europe/Dublin', hour = 0, minute = 0) {
-    const h = hour;
-    const m = minute;
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const day = date.getDate();
-    const offsetMinutes = _getTimezoneOffsetMinutes(year, month, day, h, m, timezone);
-    const sign = offsetMinutes >= 0 ? '+' : '-';
-    const absOffsetMinutes = Math.abs(offsetMinutes);
-    const offsetHours = String(Math.floor(absOffsetMinutes / 60)).padStart(2, '0');
-    const offsetRemainderMinutes = String(absOffsetMinutes % 60).padStart(2, '0');
-    const tzOffset = `${sign}${offsetHours}${offsetRemainderMinutes}`;
-
-    const mm = String(month + 1).padStart(2, '0');
-    const dd = String(day).padStart(2, '0');
-    const hh = String(h).padStart(2, '0');
-    const min = String(m).padStart(2, '0');
-    return `${year}-${mm}-${dd}T${hh}:${min}:00.000${tzOffset}`;
+    return formatTickTickISO(date, timezone, { hour, minute });
 }
 
 function _formatRruleUntilUtc(date) {
@@ -655,7 +611,7 @@ function _extractTimeHint(dateString) {
  * isAllDay is true unless user specified a time hint (morning, afternoon, evening, at X).
  * Keeps simple relative-date handling inside the normalizer to avoid bot-layer coupling.
  */
-function _expandDueDate(dueDateString, { currentDate = new Date(), timezone = 'Europe/Dublin' } = {}) {
+function _expandDueDate(dueDateString, { currentDate = new Date(), timezone = 'Europe/Dublin', anchorDate } = {}) {
     if (!dueDateString) return { dueDate: null, isAllDay: true };
     const dateLower = dueDateString.toLowerCase().trim();
     if (dateLower === 'someday') return { dueDate: null, isAllDay: true };
@@ -670,7 +626,11 @@ function _expandDueDate(dueDateString, { currentDate = new Date(), timezone = 'E
 
     const { cleaned, hour, minute, isAllDay } = _extractTimeHint(dateLower);
 
-    const now = _getNowComponents(timezone, currentDate);
+    // When anchorDate is provided (e.g. task.createdTime), use it as the basis
+    // for relative date calculations. This ensures "Friday" always refers to the
+    // correct Friday relative to when the task was created, not when it's processed.
+    const effectiveCurrentDate = anchorDate || currentDate;
+    const now = _getNowComponents(timezone, effectiveCurrentDate);
     const baseDate = new Date(now.year, now.month, now.day);
     let targetDate = new Date(baseDate);
 
@@ -1000,6 +960,22 @@ export function normalizeAction(intentAction, options = {}) {
         const dueDateResult = _expandDueDate(intentAction.dueDate, options);
         expandedDueDate = dueDateResult.dueDate;
         expandedIsAllDay = dueDateResult.isAllDay;
+    }
+
+    // Preserve existing due date when auto-applying: if the existing task has a
+    // dueDate set by the user and the LLM-inferred dueDate is not based on
+    // explicit date phrases in the title, skip the dueDate change.
+    if (expandedDueDate != null && options.existingTask?.dueDate && options.preserveExistingDueDate !== false) {
+        const taskTitle = intentAction.title || '';
+        const hasDatePhrase = DATE_PATTERNS.test(taskTitle);
+        DATE_PATTERNS.lastIndex = 0; // reset global regex state
+        if (!hasDatePhrase) {
+            // No date phrase in title — LLM likely inferred a dueDate.
+            // Preserve the user-set existing dueDate.
+            console.log(`[Normalizer] Preserved existing due date for "${taskTitle}" (user-set: ${options.existingTask.dueDate})`);
+            expandedDueDate = undefined;
+            expandedIsAllDay = undefined;
+        }
     }
 
     const normalized = {

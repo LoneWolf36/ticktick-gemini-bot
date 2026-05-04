@@ -973,4 +973,82 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
             }
         }
     });
+
+    // ─── Granular Auto-Apply Field Undo ────────────────────────
+    // Handles per-field revert/keep buttons on auto-apply notifications.
+    // Callback format: autoapply:revert:{batchId}:{taskId}:{field}
+    // Keep format: autoapply:keep:{batchId}:{taskId}:{field}
+    bot.callbackQuery(/^autoapply:(revert|keep):([^:]+):([^:]+):([^:]+)$/, async (ctx) => {
+        if (!isAuthorized(ctx)) {
+            await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
+            return;
+        }
+
+        const [, action, batchId, taskId, field] = ctx.match;
+
+        if (action === 'keep') {
+            await safeAnswerCallbackQuery(ctx, { text: '✅ Kept as applied' });
+            // Remove the field snapshot so it won't appear again
+            const snapshot = store.getAutoApplyFieldSnapshot(batchId, taskId);
+            if (snapshot?.[field]) {
+                await store.revertAutoApplyField(batchId, taskId, field);
+            }
+            try {
+                await editWithMarkdown(ctx, `✅ **Kept** "${field}" change for this task.`, { reply_markup: new InlineKeyboard() });
+            } catch { /* best-effort */ }
+            return;
+        }
+
+        if (action === 'revert') {
+            await safeAnswerCallbackQuery(ctx, { text: '↩️ Reverting...' });
+            const snapshot = store.getAutoApplyFieldSnapshot(batchId, taskId);
+            if (!snapshot?.[field]) {
+                await safeAnswerCallbackQuery(ctx, { text: '⚠️ Field already reverted' });
+                try {
+                    await editWithMarkdown(ctx, `⚠️ "${field}" was already reverted.`, { reply_markup: new InlineKeyboard() });
+                } catch { /* best-effort */ }
+                return;
+            }
+
+            try {
+                // Revert the field: restore the original value
+                const reverted = await store.revertAutoApplyField(batchId, taskId, field);
+                if (!reverted) {
+                    throw new Error('No snapshot data for field');
+                }
+
+                // Build and execute the revert update
+                const updatePayload = { id: taskId };
+                // Map display field names back to TickTick fields
+                const fieldMapping = {
+                    title: 'title',
+                    project: 'projectId',
+                    priority: 'priority',
+                    due: 'dueDate',
+                    content: 'content',
+                    repeat: 'repeatFlag',
+                };
+                const tickTickField = fieldMapping[field];
+                if (tickTickField) {
+                    updatePayload[tickTickField] = reverted.from;
+                }
+
+                // Update the task in TickTick via adapter
+                const taskEntry = store.getUndoBatch(batchId).find(e => e.appliedTaskId === taskId);
+                const projectId = taskEntry?.source?.projectId || null;
+                await adapter.updateTask(taskId, { ...updatePayload, originalProjectId: projectId });
+
+                await safeAnswerCallbackQuery(ctx, { text: `↩️ ${field} reverted` });
+                try {
+                    await editWithMarkdown(ctx, `↩️ **Reverted** "${field}" to original value.`, { reply_markup: new InlineKeyboard() });
+                } catch { /* best-effort */ }
+            } catch (err) {
+                console.error('[AutoApply:Revert] Error:', err.message);
+                try {
+                    await editWithMarkdown(ctx, `⚠️ Failed to revert "${field}". Task may have changed in TickTick.`, { reply_markup: new InlineKeyboard() });
+                } catch { /* best-effort */ }
+            }
+            return;
+        }
+    });
 }

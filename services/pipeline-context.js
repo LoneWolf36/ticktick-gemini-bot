@@ -1,5 +1,6 @@
 import crypto from 'crypto';
 import { getUserTimezone } from './user-settings.js';
+import { coerceDate as coerceDateFromUtils } from './date-utils.js';
 
 /**
  * List of required fields for a valid pipeline request context.
@@ -220,17 +221,13 @@ function normalizeChecklistContext(value) {
 
 /**
  * Coerces a value to a Date object.
+ * Delegates to the shared coerceDate from date-utils.
  * @param {*} value - Value to coerce
  * @param {Date} fallback - Fallback Date if coercion fails
  * @returns {Date}
  */
 function coerceDate(value, fallback) {
-    if (value instanceof Date) return value;
-    if (typeof value === 'string' || typeof value === 'number') {
-        const parsed = new Date(value);
-        if (!Number.isNaN(parsed.getTime())) return parsed;
-    }
-    return fallback instanceof Date ? fallback : new Date();
+    return coerceDateFromUtils(value, fallback);
 }
 
 /**

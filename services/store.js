@@ -1327,6 +1327,47 @@ export function getLastAutoApplyBatch() {
 }
 
 /**
+ * Get per-field snapshot for a specific task in an auto-apply batch.
+ * @param {string} batchId - Auto-apply batch ID
+ * @param {string} taskId - Task ID to find
+ * @returns {Object|null} fieldSnapshots object or null if not found
+ */
+export function getAutoApplyFieldSnapshot(batchId, taskId) {
+    if (!batchId || !taskId) return null;
+    const entry = state.undoLog.find(e =>
+        e.batchId === batchId && e.appliedTaskId === taskId && e.fieldSnapshots
+    );
+    return entry?.fieldSnapshots || null;
+}
+
+/**
+ * Revert a specific field for a task in an auto-apply batch.
+ * Removes the field from fieldSnapshots after successful revert.
+ * Returns the snapshot data needed for the revert (old value).
+ *
+ * @param {string} batchId - Auto-apply batch ID
+ * @param {string} taskId - Task ID to revert field for
+ * @param {string} field - Field name to revert (e.g. 'project', 'priority', 'due', 'title')
+ * @returns {Object|null} { from: oldValue, to: newValue } or null if not found
+ */
+export async function revertAutoApplyField(batchId, taskId, field) {
+    if (!batchId || !taskId || !field) return null;
+    const entry = state.undoLog.find(e =>
+        e.batchId === batchId && e.appliedTaskId === taskId && e.fieldSnapshots
+    );
+    if (!entry?.fieldSnapshots?.[field]) return null;
+
+    const snapshot = entry.fieldSnapshots[field];
+    // Remove the reverted field from snapshots
+    delete entry.fieldSnapshots[field];
+    if (Object.keys(entry.fieldSnapshots).length === 0) {
+        delete entry.fieldSnapshots;
+    }
+    await save();
+    return { from: snapshot.from, to: snapshot.to };
+}
+
+/**
  * Remove specific undo entries by reference identity.
  * @param {Array<Object>} entries - Entries to remove
  */

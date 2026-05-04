@@ -6,6 +6,7 @@ import { validateOperationReceipt } from './operation-receipt.js';
 import { buildAutoApplyNotification, buildFieldDiff, buildUndoEntry, userTimeString, filterProcessedThisWeek, sendWithMarkdown } from './shared-utils.js';
 import { persistPipelineUndoEntries } from './pipeline-undo-persistence.js';
 import { logSummarySurfaceEvent } from './summary-surfaces/index.js';
+import { getZonedDateParts } from './date-utils.js';
 
 /**
  * Enum for scheduler notification types to manage suppression and logging.
@@ -98,21 +99,10 @@ export function buildSchedulingMetadata(scheduleKey, scheduledForIso, graceWindo
 }
 
 function getZonedClockParts(date, timezone) {
-    const formatter = new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone,
-        weekday: 'short',
-        hour: '2-digit',
-        minute: '2-digit',
-        hour12: false,
-    });
-    const parts = formatter.formatToParts(date);
-    const weekday = parts.find((part) => part.type === 'weekday')?.value;
-    const hour = Number.parseInt(parts.find((part) => part.type === 'hour')?.value || '0', 10);
-    const minute = Number.parseInt(parts.find((part) => part.type === 'minute')?.value || '0', 10);
-
+    const parts = getZonedDateParts(date, timezone);
     return {
-        weekday: WEEKDAY_INDEX[weekday] ?? null,
-        minutesSinceMidnight: (hour * 60) + minute,
+        weekday: parts.weekday,
+        minutesSinceMidnight: (parts.hour * 60) + parts.minute,
     };
 }
 
@@ -811,7 +801,9 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
             for (const task of batch) {
                 try {
                     const userMessage = task.title + (task.content ? `\n${task.content}` : '');
-                    const result = await processPipelineMessage(userMessage, {
+                    // Auto-apply: pass createdTime as anchorDate for relative date anchoring,
+                    // and enable due date preservation for tasks that already have user-set due dates.
+                    const autoApplyOptions = {
                         existingTask: task,
                         entryPoint: 'scheduler:poll',
                         mode: 'poll',
@@ -819,7 +811,14 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                         activeTasks: allTasks,
                         blockedActionTypes: ['delete', 'complete'],
                         applyMode: 'metadata-only',
-                    });
+                    };
+                    if (task.createdTime) {
+                        autoApplyOptions.anchorDate = task.createdTime;
+                    }
+                    if (task.dueDate) {
+                        autoApplyOptions.preserveExistingDueDate = true;
+                    }
+                    const result = await processPipelineMessage(userMessage, autoApplyOptions);
 
                     if (result.type === 'error') {
                         if (result.failure?.class === 'quota') {
@@ -841,18 +840,28 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
 
                         await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: true });
                         for (const action of appliedActions) {
+                            const diffs = buildFieldDiff(task, action, { projects });
                             autoApplied.push({
                                 title: action.title || task.title,
                                 schedule: action.dueDate ? action.dueDate.split('T')[0] : null,
                                 movedTo: action.projectId && action.projectId !== task.projectId
                                     ? (projects.find(p => p.id === action.projectId)?.name || action.projectId)
                                     : null,
-                                diffs: buildFieldDiff(task, action, { projects }),
+                                diffs,
                             });
                         }
-                        // Create undo entry per task with batchId for batch undo
+                        // Create undo entry per task with batchId for batch undo,
+                        // including per-field snapshots for granular revert.
                         const lastAction = [...appliedActions].reverse().find(a => a.type !== 'drop');
                         if (lastAction) {
+                            // Build per-field snapshots from diffs for granular undo
+                            const fieldSnapshots = {};
+                            for (const action of appliedActions) {
+                                const diffs = buildFieldDiff(task, action, { projects });
+                                for (const d of diffs) {
+                                    fieldSnapshots[d.field] = { from: d.oldValue, to: d.newValue };
+                                }
+                            }
                             const undoEntry = buildUndoEntry({
                                 source: task,
                                 action: 'auto-apply',
@@ -864,7 +873,11 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                                 },
                                 appliedTaskId: task.id,
                             });
-                            await store.addUndoEntry({ ...undoEntry, batchId });
+                            await store.addUndoEntry({
+                                ...undoEntry,
+                                batchId,
+                                fieldSnapshots: Object.keys(fieldSnapshots).length > 0 ? fieldSnapshots : undefined,
+                            });
                         }
                     } else {
                         await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });

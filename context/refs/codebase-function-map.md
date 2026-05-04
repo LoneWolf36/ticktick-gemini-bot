@@ -240,6 +240,20 @@ All magic numbers from the codebase are extracted here with documentation.</p>
 ## Functions
 
 <dl>
+<dt><a href="#coerceDate">coerceDate(value, [fallback])</a> ⇒ <code>Date</code></dt>
+<dd><p>Coerces a value to a Date object.</p>
+</dd>
+<dt><a href="#getZonedDateParts">getZonedDateParts(date, timezone)</a> ⇒ <code>Object</code></dt>
+<dd><p>Gets local date parts in a specific timezone using Intl.DateTimeFormat.
+Returns structured date components for the given date at the given timezone.</p>
+</dd>
+<dt><a href="#getTimezoneOffsetMinutes">getTimezoneOffsetMinutes(year, month, day, hour, minute, timezone)</a> ⇒ <code>number</code></dt>
+<dd><p>Computes the timezone offset in minutes for a given local date/time and timezone.</p>
+</dd>
+<dt><a href="#formatTickTickISO">formatTickTickISO(date, timezone, [options])</a> ⇒ <code>string</code></dt>
+<dd><p>Formats a Date object to a TickTick-compatible ISO datetime string with timezone offset.
+Produces format: YYYY-MM-DDTHH:mm:ss.000±HHMM</p>
+</dd>
 <dt><a href="#createGoalThemeProfile">createGoalThemeProfile(rawContext, [options])</a> ⇒ <code>object</code></dt>
 <dd><p>Creates a goal theme profile from raw context.</p>
 </dd>
@@ -297,13 +311,20 @@ Strategy: strip examples, strip verbose filler, keep schema + core rules.</p>
 <dd><p>Creates a Gemini-based intent extraction service.</p>
 </dd>
 <dt><a href="#_coerceDate">_coerceDate()</a></dt>
-<dd><p>Gets local current date components formatted by the system timezone.</p>
+<dd><p>Resolves a date value to a Date object, handling string ISO and number timestamps.
+Delegates to the shared coerceDate from date-utils.</p>
 </dd>
 <dt><a href="#_getNowComponents">_getNowComponents()</a></dt>
-<dd><p>Gets local current date components formatted by the system timezone.</p>
+<dd><p>Gets local current date components formatted by the system timezone.
+Handles YYYY-MM-DD string input for deterministic testing.</p>
+</dd>
+<dt><a href="#_getTimezoneOffsetMinutes">_getTimezoneOffsetMinutes()</a></dt>
+<dd><p>Computes the timezone offset in minutes for given local date/time and timezone.
+Delegates to the shared function from date-utils.</p>
 </dd>
 <dt><a href="#_formatISO">_formatISO()</a></dt>
-<dd><p>Formats a Date object to TickTick ISO format</p>
+<dd><p>Formats a Date object to TickTick ISO format with timezone offset.
+Delegates to the shared formatTickTickISO from date-utils.</p>
 </dd>
 <dt><a href="#_normalizeTitle">_normalizeTitle(rawTitle, maxLength)</a> ⇒ <code>string</code></dt>
 <dd><p>Normalizes a title to be concise, verb-led, and noise-free.</p>
@@ -470,7 +491,8 @@ batch shape is unsupported (mixed create+mutation, multi-mutation).</p>
 <dd><p>Normalizes and validates checklist context metadata.</p>
 </dd>
 <dt><a href="#coerceDate">coerceDate(value, fallback)</a> ⇒ <code>Date</code></dt>
-<dd><p>Coerces a value to a Date object.</p>
+<dd><p>Coerces a value to a Date object.
+Delegates to the shared coerceDate from date-utils.</p>
 </dd>
 <dt><a href="#formatCurrentDate">formatCurrentDate(date, timezone)</a> ⇒ <code>string</code></dt>
 <dd><p>Formats a Date as a YYYY-MM-DD string in a specific timezone.</p>
@@ -828,6 +850,14 @@ Preserves the pending snapshot, flags the processed entry stale, and removes it 
 <dt><a href="#getLastAutoApplyBatch">getLastAutoApplyBatch()</a> ⇒ <code>Array.&lt;Object&gt;</code></dt>
 <dd><p>Get all undo entries from the most recent auto-apply batch.
 Groups by batchId; if no batchId, falls back to the single most recent auto-apply entry.</p>
+</dd>
+<dt><a href="#getAutoApplyFieldSnapshot">getAutoApplyFieldSnapshot(batchId, taskId)</a> ⇒ <code>Object</code> | <code>null</code></dt>
+<dd><p>Get per-field snapshot for a specific task in an auto-apply batch.</p>
+</dd>
+<dt><a href="#revertAutoApplyField">revertAutoApplyField(batchId, taskId, field)</a> ⇒ <code>Object</code> | <code>null</code></dt>
+<dd><p>Revert a specific field for a task in an auto-apply batch.
+Removes the field from fieldSnapshots after successful revert.
+Returns the snapshot data needed for the revert (old value).</p>
 </dd>
 <dt><a href="#removeUndoEntries">removeUndoEntries(entries)</a></dt>
 <dd><p>Remove specific undo entries by reference identity.</p>
@@ -1783,6 +1813,71 @@ Wraps ctx.answerCallbackQuery with timeout telemetry.
 | ctx | <code>Object</code> | Grammy context |
 | [options] | <code>Object</code> | answerCallbackQuery options |
 
+<a name="coerceDate"></a>
+
+## coerceDate(value, [fallback]) ⇒ <code>Date</code>
+Coerces a value to a Date object.
+
+**Kind**: global function  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| value | <code>Date</code> \| <code>string</code> \| <code>number</code> \| <code>undefined</code> \| <code>null</code> |  | Value to coerce |
+| [fallback] | <code>Date</code> | <code>new Date()</code> | Fallback Date if coercion fails |
+
+<a name="getZonedDateParts"></a>
+
+## getZonedDateParts(date, timezone) ⇒ <code>Object</code>
+Gets local date parts in a specific timezone using Intl.DateTimeFormat.
+Returns structured date components for the given date at the given timezone.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> - year: 4-digit year
+  month: 0-indexed month (0=January)
+  day: 1-indexed day of month
+  hour: 0-23
+  minute: 0-59
+  weekday: 0-6 (0=Sunday)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| date | <code>Date</code> | Date to get parts for |
+| timezone | <code>string</code> | IANA timezone string (e.g. 'Europe/Dublin') |
+
+<a name="getTimezoneOffsetMinutes"></a>
+
+## getTimezoneOffsetMinutes(year, month, day, hour, minute, timezone) ⇒ <code>number</code>
+Computes the timezone offset in minutes for a given local date/time and timezone.
+
+**Kind**: global function  
+**Returns**: <code>number</code> - Offset in minutes (positive = ahead of UTC)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| year | <code>number</code> | Local year |
+| month | <code>number</code> | Local month (0-indexed) |
+| day | <code>number</code> | Local day |
+| hour | <code>number</code> | Local hour (0-23) |
+| minute | <code>number</code> | Local minute (0-59) |
+| timezone | <code>string</code> | IANA timezone string |
+
+<a name="formatTickTickISO"></a>
+
+## formatTickTickISO(date, timezone, [options]) ⇒ <code>string</code>
+Formats a Date object to a TickTick-compatible ISO datetime string with timezone offset.
+Produces format: YYYY-MM-DDTHH:mm:ss.000±HHMM
+
+**Kind**: global function  
+**Returns**: <code>string</code> - Formatted ISO string with timezone offset  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| date | <code>Date</code> |  | Date to format |
+| timezone | <code>string</code> |  | IANA timezone string |
+| [options] | <code>object</code> | <code>{}</code> | Options |
+| [options.hour] | <code>number</code> | <code>0</code> | Hour override (0-23) |
+| [options.minute] | <code>number</code> | <code>0</code> | Minute override (0-59) |
+
 <a name="createGoalThemeProfile"></a>
 
 ## createGoalThemeProfile(rawContext, [options]) ⇒ <code>object</code>
@@ -2016,19 +2111,29 @@ Creates a Gemini-based intent extraction service.
 <a name="_coerceDate"></a>
 
 ## \_coerceDate()
-Gets local current date components formatted by the system timezone.
+Resolves a date value to a Date object, handling string ISO and number timestamps.
+Delegates to the shared coerceDate from date-utils.
 
 **Kind**: global function  
 <a name="_getNowComponents"></a>
 
 ## \_getNowComponents()
 Gets local current date components formatted by the system timezone.
+Handles YYYY-MM-DD string input for deterministic testing.
+
+**Kind**: global function  
+<a name="_getTimezoneOffsetMinutes"></a>
+
+## \_getTimezoneOffsetMinutes()
+Computes the timezone offset in minutes for given local date/time and timezone.
+Delegates to the shared function from date-utils.
 
 **Kind**: global function  
 <a name="_formatISO"></a>
 
 ## \_formatISO()
-Formats a Date object to TickTick ISO format
+Formats a Date object to TickTick ISO format with timezone offset.
+Delegates to the shared formatTickTickISO from date-utils.
 
 **Kind**: global function  
 <a name="_normalizeTitle"></a>
@@ -2425,7 +2530,7 @@ Normalizes and validates checklist context metadata.
 <a name="coerceDate"></a>
 
 ## coerceDate(value, fallback) ⇒ <code>Date</code>
-Coerces a value to a Date object.
+Coerces a value to a Date object.Delegates to the shared coerceDate from date-utils.
 
 **Kind**: global function  
 
@@ -3821,6 +3926,35 @@ Groups by batchId; if no batchId, falls back to the single most recent auto-appl
 
 **Kind**: global function  
 **Returns**: <code>Array.&lt;Object&gt;</code> - Array of undo entries from the same batch  
+<a name="getAutoApplyFieldSnapshot"></a>
+
+## getAutoApplyFieldSnapshot(batchId, taskId) ⇒ <code>Object</code> \| <code>null</code>
+Get per-field snapshot for a specific task in an auto-apply batch.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> \| <code>null</code> - fieldSnapshots object or null if not found  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| batchId | <code>string</code> | Auto-apply batch ID |
+| taskId | <code>string</code> | Task ID to find |
+
+<a name="revertAutoApplyField"></a>
+
+## revertAutoApplyField(batchId, taskId, field) ⇒ <code>Object</code> \| <code>null</code>
+Revert a specific field for a task in an auto-apply batch.
+Removes the field from fieldSnapshots after successful revert.
+Returns the snapshot data needed for the revert (old value).
+
+**Kind**: global function  
+**Returns**: <code>Object</code> \| <code>null</code> - { from: oldValue, to: newValue } or null if not found  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| batchId | <code>string</code> | Auto-apply batch ID |
+| taskId | <code>string</code> | Task ID to revert field for |
+| field | <code>string</code> | Field name to revert (e.g. 'project', 'priority', 'due', 'title') |
+
 <a name="removeUndoEntries"></a>
 
 ## removeUndoEntries(entries)

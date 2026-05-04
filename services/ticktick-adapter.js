@@ -2,6 +2,7 @@ import { TickTickClient } from './ticktick.js';
 import { USER_TZ, validateChecklistItem } from './shared-utils.js';
 import { classifyTaskEvent } from './behavioral-signals.js';
 import { appendBehavioralSignals, DEFAULT_BEHAVIORAL_USER_ID } from './store.js';
+import { getZonedDateParts, getTimezoneOffsetMinutes } from './date-utils.js';
 
 /**
  * Project cache TTL in milliseconds.
@@ -162,19 +163,13 @@ function areEquivalentRepeatFlags(expected, actual) {
 }
 
 function getTimezoneDateParts(timeZone, date = new Date()) {
-    const parts = new Intl.DateTimeFormat('en-CA', {
-        timeZone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        weekday: 'short',
-    }).formatToParts(date);
-    const lookup = Object.fromEntries(parts.map((part) => [part.type, part.value]));
+    const parts = getZonedDateParts(date, timeZone);
+    const weekdayMap = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
     return {
-        year: lookup.year,
-        month: lookup.month,
-        day: lookup.day,
-        weekday: lookup.weekday,
+        year: String(parts.year),
+        month: String(parts.month + 1).padStart(2, '0'),
+        day: String(parts.day).padStart(2, '0'),
+        weekday: weekdayMap[parts.weekday],
     };
 }
 
@@ -205,23 +200,10 @@ function parseRepeatUntilValue(value) {
 
 function formatAllDayAnchorDate(timeZone, date = new Date()) {
     const { year, month, day } = getTimezoneDateParts(timeZone, date);
-    // Compute actual TZ offset at midnight local time (not hardcoded UTC)
     const y = parseInt(year);
     const m = parseInt(month) - 1;
     const d = parseInt(day);
-    const utcGuess = new Date(Date.UTC(y, m, d, 0, 0, 0));
-    const fmt = new Intl.DateTimeFormat('en-CA', {
-        timeZone,
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', second: '2-digit',
-        hour12: false,
-    });
-    const parts = Object.fromEntries(fmt.formatToParts(utcGuess).map((p) => [p.type, p.value]));
-    const localizedAsUtc = Date.UTC(
-        parseInt(parts.year), parseInt(parts.month) - 1, parseInt(parts.day),
-        parseInt(parts.hour === '24' ? '0' : parts.hour), parseInt(parts.minute), parseInt(parts.second)
-    );
-    const offsetMinutes = Math.round((localizedAsUtc - utcGuess.getTime()) / 60000);
+    const offsetMinutes = getTimezoneOffsetMinutes(y, m, d, 0, 0, timeZone);
     const sign = offsetMinutes >= 0 ? '+' : '-';
     const absOffset = Math.abs(offsetMinutes);
     const oh = String(Math.floor(absOffset / 60)).padStart(2, '0');

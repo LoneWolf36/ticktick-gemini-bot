@@ -1803,6 +1803,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 existingTaskContent: resolvedTaskContent || context.existingTask?.content || null,
                 timezone: context.timezone,
                 currentDate: context.currentDate,
+                anchorDate: options.anchorDate || null,
+                preserveExistingDueDate: options.preserveExistingDueDate,
             };
 
             const normalizeStartedAt = Date.now();
