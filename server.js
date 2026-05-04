@@ -32,10 +32,10 @@ const {
     TELEGRAM_WEBHOOK_SECRET = '',
     AUTO_APPLY_LIFE_ADMIN = 'true',
     AUTO_APPLY_MODE = 'metadata-only',
-    GEMINI_MODEL_FAST = 'gemini-2.5-flash',
-    GEMINI_MODEL_ADVANCED = 'gemini-2.5-pro',
+    GEMINI_MODEL_FAST,
+    GEMINI_MODEL_ADVANCED,
     GEMINI_MODEL_FAST_FALLBACKS = '',
-    GEMINI_MODEL_ADVANCED_FALLBACKS = 'gemini-2.5-flash',
+    GEMINI_MODEL_ADVANCED_FALLBACKS = '',
     DEFAULT_PROJECT_NAME = null,
     // TICKTICK_ACCESS_TOKEN is loaded by dotenv and used by TickTickClient internally
     // (validated at first API call, not at startup — the OAuth flow sets it)
@@ -47,6 +47,8 @@ const REQUIRED_VARS = {
     TICKTICK_REDIRECT_URI,
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
+    GEMINI_MODEL_FAST,
+    GEMINI_MODEL_ADVANCED,
 };
 
 const parseModelList = (val) => val.split(',').map(s => s.trim()).filter(Boolean);
