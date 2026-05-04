@@ -309,7 +309,6 @@ async function main() {
 
       registerCommands(bot, ticktick, gemini, adapter, pipeline, {
         autoApplyLifeAdmin: false,
-        autoApplyDrops: false,
         autoApplyMode: 'metadata-only',
       });
       registerCallbacks(bot, adapter, pipeline);

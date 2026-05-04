@@ -155,7 +155,7 @@ See `context/refs/product-vision.md` for governing behavioral scope.
 **Acceptance Criteria:**
 - [x] Scheduler polling sends newly discovered tasks through the shared pipeline in bounded batches instead of a separate write path
 - [x] Auto-applied batches produce a compact user notification and respect focus-mode suppression rules for non-critical scheduled notifications
-- [x] Operational surfaces and deployment/docs expose `AUTO_APPLY_LIFE_ADMIN`, `AUTO_APPLY_DROPS`, and `AUTO_APPLY_MODE` as the autonomous-intake policy settings
+- [x] Operational surfaces and deployment/docs expose \`AUTO_APPLY_LIFE_ADMIN\` and \`AUTO_APPLY_MODE\` as the autonomous-intake policy settings
 - [x] Quota exhaustion or expired auth parks/suppresses autonomous intake with explicit user-facing notification instead of silent failure
 **Dependencies:** R4, R15
 

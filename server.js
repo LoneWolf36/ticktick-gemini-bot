@@ -31,7 +31,6 @@ const {
     PORT = '8080',
     TELEGRAM_WEBHOOK_SECRET = '',
     AUTO_APPLY_LIFE_ADMIN = 'true',
-    AUTO_APPLY_DROPS = 'false',
     AUTO_APPLY_MODE = 'metadata-only',
     GEMINI_MODEL_FAST = 'gemini-2.5-flash',
     GEMINI_MODEL_ADVANCED = 'gemini-2.5-pro',
@@ -100,7 +99,6 @@ try {
 
 const botConfig = {
     autoApplyLifeAdmin: AUTO_APPLY_LIFE_ADMIN === 'true',
-    autoApplyDrops: AUTO_APPLY_DROPS === 'true',
     autoApplyMode: AUTO_APPLY_MODE,
 };
 

@@ -46,7 +46,6 @@ import { detectBehavioralPatterns } from '../services/behavioral-patterns.js';
 export function registerCommands(bot, ticktick, gemini, adapter, pipeline, config = {}) {
     const {
         autoApplyLifeAdmin = false,
-        autoApplyDrops = false,
         autoApplyMode = 'metadata-only',
     } = config;
 
@@ -261,27 +260,27 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
         const lines = [
             '**📊 Status**\n',
-            '**TickTick live state**',
+            '**📊 TickTick live state**',
             `Active tasks in TickTick: ${backendCount === null ? 'unavailable' : backendCount}`,
             formatLastSyncLine(sync),
             `Connection: ${ticktick.isAuthenticated() ? 'connected' : 'not connected'}`,
             '',
-            '**Local review queue**',
+            '**📋 Local review queue**',
             `Pending review: ${local.pendingReview}`,
             `Failed / parked: ${local.failedParked}`,
             `Clarifications waiting: ${local.clarifications}`,
             '',
-            '**Deferred queue**',
+            '**⏳ Deferred queue**',
             `Pending retry: ${pendingRetry} items`,
             `Next retry: ${nextRetryText}`,
             `Failed permanently: ${failedPermanently} items`,
             '',
-            '**Running job**',
+            '**⚡ Running job**',
             intakeLock.locked
                 ? formatBusyLockMessage(intakeLock, 'Running job')
                 : '⏳ Running job busy: no',
             '',
-            '**Recent activity**',
+            '**📈 Recent activity**',
             `Analyzed: ${stats.tasksAnalyzed}  |  Approved: ${stats.tasksApproved}`,
             `Skipped: ${stats.tasksSkipped}  |  Dropped: ${stats.tasksDropped}`,
             `Auto-applied: ${stats.tasksAutoApplied || 0}`,

@@ -2192,6 +2192,18 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 return true;
             });
 
+            // Strip title/content from update actions when applyMode is metadata-only.
+            // This prevents title rewrites and content rewrites, allowing only metadata
+            // changes (priority, project, schedule) to pass through.
+            if (options.applyMode === 'metadata-only') {
+                for (const a of executableActions) {
+                    if (a.type === 'update') {
+                        delete a.title;
+                        delete a.content;
+                    }
+                }
+            }
+
             const executionResult = await _executeActions(executableActions, adapter, context, telemetry);
             context = updatePipelineContext(context, (draft) => {
                 draft.lifecycle.execute.status = executionResult.terminalFailure ? 'failure' : 'success';

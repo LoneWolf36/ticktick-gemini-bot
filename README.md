@@ -207,7 +207,7 @@ docker run --env-file .env -p 8080:8080 ticktick-bot
 | `PORT` | No | `10000` for Render (default in render.yaml) |
 | `USER_TIMEZONE` | No | Your timezone (default: `Europe/Dublin`) |
 | `AUTO_APPLY_LIFE_ADMIN` | No | Auto-apply life-admin tasks (default: `true`) |
-| `AUTO_APPLY_DROPS` | No | Auto-apply drop candidates (default: `false`) |
+
 | `AUTO_APPLY_MODE` | No | `metadata-only` or `full` (default: `metadata-only`) |
 | `DEBUG_RECEIPTS` | No | Local development only. Set `true` with `NODE_ENV=development` to include developer diagnostics in receipts; keep `false` for normal use and production. |
 | `BEHAVIORAL_SIGNAL_RETENTION_DAYS` | No | Active behavioral-signal window in days (default: `30`) |

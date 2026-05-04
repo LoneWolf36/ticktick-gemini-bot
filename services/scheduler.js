@@ -612,12 +612,11 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
         pollMinutes = 5,
         timezone = 'Europe/Dublin',
         autoApplyLifeAdmin = false,
-        autoApplyDrops = false,
         autoApplyMode = 'metadata-only',
         graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES,
     } = config;
 
-    const autoConfig = { autoApplyLifeAdmin, autoApplyDrops, autoApplyMode };
+    const autoConfig = { autoApplyLifeAdmin, autoApplyMode };
     const schedulerConfig = { dailyHour, weeklyDay, timezone, graceWindowMinutes };
 
     console.log(`Scheduler starting (timezone: ${timezone})`);
@@ -819,6 +818,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                         availableProjects: projects,
                         activeTasks: allTasks,
                         blockedActionTypes: ['delete', 'complete'],
+                        applyMode: 'metadata-only',
                     });
 
                     if (result.type === 'error') {
@@ -836,7 +836,6 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
 
                         const appliedActions = result.actions.filter(a => {
                             if (a.type === 'delete' || a.type === 'complete') return false;
-                            if (a.type === 'drop' && !autoApplyDrops) return false;
                             return true;
                         });
 

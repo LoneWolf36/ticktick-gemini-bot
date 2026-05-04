@@ -59,8 +59,6 @@ services:
       # Optional — auto-apply behavior (defaults shown)
       - key: AUTO_APPLY_LIFE_ADMIN
         value: "false"
-      - key: AUTO_APPLY_DROPS
-        value: "false"
       - key: AUTO_APPLY_MODE
         value: metadata-only
       # Optional — auto-write strategic priority
