@@ -1432,3 +1432,4 @@ describe('Mutation-safe field preservation', () => {
         assert.strictEqual(result.priority, 5);
     });
 });
+

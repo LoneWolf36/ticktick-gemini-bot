@@ -80,11 +80,12 @@ function _getNowComponents(timezone = 'Europe/Dublin', currentDate = new Date())
             const year = parseInt(dateOnlyMatch[1], 10);
             const month = parseInt(dateOnlyMatch[2], 10) - 1;
             const day = parseInt(dateOnlyMatch[3], 10);
+            const parts = getZonedDateParts(new Date(year, month, day, 12, 0, 0), timezone);
             return {
                 year,
                 month,
                 day,
-                dayOfWeek: new Date(year, month, day).getDay()
+                dayOfWeek: parts.weekday,
             };
         }
     }
@@ -645,7 +646,7 @@ function _expandDueDate(dueDateString, { currentDate = new Date(), timezone = 'E
     } else if (dateOnly === 'tomorrow') {
         addDays(1);
     } else if (dateOnly === 'this-week') {
-        const daysUntilFriday = (5 - now.dayOfWeek + 7) % 7 || 7;
+        const daysUntilFriday = now.dayOfWeek === 5 ? 0 : (5 - now.dayOfWeek + 7) % 7;
         addDays(daysUntilFriday);
     } else if (dateOnly === 'next-week' || dateOnly === 'next week') {
         const daysUntilMonday = (8 - now.dayOfWeek) % 7 || 7;
@@ -653,10 +654,8 @@ function _expandDueDate(dueDateString, { currentDate = new Date(), timezone = 'E
     } else {
         // Handle days of the week: "monday", "this tuesday", "next wednesday"
         let targetDayName = dateOnly;
-        let isNext = false;
 
         if (dateOnly.startsWith('next ')) {
-            isNext = true;
             targetDayName = dateOnly.slice(5).trim();
         } else if (dateOnly.startsWith('this ')) {
             targetDayName = dateOnly.slice(5).trim();
@@ -664,9 +663,20 @@ function _expandDueDate(dueDateString, { currentDate = new Date(), timezone = 'E
 
         const targetDayIndex = DAY_INDEX[targetDayName];
         if (targetDayIndex !== undefined) {
+            const isThisPrefix = dateOnly.startsWith('this ');
+            const isNextPrefix = dateOnly.startsWith('next ');
+            const isBareDay = !isThisPrefix && !isNextPrefix;
+
             let daysToAdd = (targetDayIndex - now.dayOfWeek + 7) % 7;
-            if (daysToAdd === 0) daysToAdd = 7; // e.g. it's Monday, and you say "Monday" -> assume next Monday.
-            if (isNext) daysToAdd += 7;
+            if (daysToAdd === 0) {
+                // Today IS the target day
+                if (isNextPrefix) daysToAdd = 7; // "next monday" on Monday -> next week
+                // "this monday" on Monday -> 0 (today)
+                // bare "monday" on Monday -> could be today or next week; use 7 for consistency with old behavior
+                if (isBareDay) daysToAdd = 7;
+            } else {
+                if (isNextPrefix) daysToAdd += 7;
+            }
             addDays(daysToAdd);
         } else {
             // Unrecognized

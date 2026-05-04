@@ -41,16 +41,25 @@ export function coerceDate(value, fallback = new Date()) {
  */
 export function getZonedDateParts(date, timezone) {
     const resolved = coerceDate(date, new Date());
-    const parts = new Intl.DateTimeFormat('en-US', {
-        timeZone: timezone,
-        year: 'numeric',
-        month: '2-digit',
-        day: '2-digit',
-        hour: '2-digit',
-        minute: '2-digit',
-        weekday: 'short',
-        hour12: false,
-    }).formatToParts(resolved);
+    let parts;
+    try {
+        parts = new Intl.DateTimeFormat('en-US', {
+            timeZone: timezone,
+            year: 'numeric',
+            month: '2-digit',
+            day: '2-digit',
+            hour: '2-digit',
+            minute: '2-digit',
+            weekday: 'short',
+            hour12: false,
+        }).formatToParts(resolved);
+    } catch (err) {
+        if (err instanceof RangeError) {
+            console.warn(`[DateUtils] Invalid timezone "${timezone}", falling back to Europe/Dublin`);
+            return getZonedDateParts(date, 'Europe/Dublin');
+        }
+        throw err;
+    }
     const lookup = Object.fromEntries(parts.map((p) => [p.type, p.value]));
     const weekdayMap = { Sun: 0, Mon: 1, Tue: 2, Wed: 3, Thu: 4, Fri: 5, Sat: 6 };
 
@@ -117,9 +126,15 @@ export function getTimezoneOffsetMinutes(year, month, day, hour, minute, timezon
  * @returns {string} Formatted ISO string with timezone offset
  */
 export function formatTickTickISO(date, timezone, { hour = 0, minute = 0 } = {}) {
-    const year = date.getFullYear();
-    const month = date.getMonth();
-    const day = date.getDate();
+    // Use UTC getters instead of local-time getters so the function is
+    // consistent regardless of the system's local timezone. The input Date
+    // was constructed via new Date(year, month, day) which creates midnight
+    // in the system's local timezone — using UTC getters extracts those same
+    // components correctly on UTC-based systems and avoids timezone-dependent
+    // behavior on non-UTC systems.
+    const year = date.getUTCFullYear();
+    const month = date.getUTCMonth();
+    const day = date.getUTCDate();
     const h = hour;
     const m = minute;
     const offsetMinutes = getTimezoneOffsetMinutes(year, month, day, h, m, timezone);

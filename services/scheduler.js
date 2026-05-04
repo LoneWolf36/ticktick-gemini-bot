@@ -854,12 +854,27 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
                         // including per-field snapshots for granular revert.
                         const lastAction = [...appliedActions].reverse().find(a => a.type !== 'drop');
                         if (lastAction) {
-                            // Build per-field snapshots from diffs for granular undo
+                            // Build per-field snapshots from raw values for granular undo
+                            // Must store raw TickTick field values, not display-formatted strings
                             const fieldSnapshots = {};
                             for (const action of appliedActions) {
-                                const diffs = buildFieldDiff(task, action, { projects });
-                                for (const d of diffs) {
-                                    fieldSnapshots[d.field] = { from: d.oldValue, to: d.newValue };
+                                if (action.title != null && action.title !== task.title) {
+                                    fieldSnapshots.title = { from: task.title, to: action.title };
+                                }
+                                if (action.projectId != null && action.projectId !== task.projectId) {
+                                    fieldSnapshots.projectId = { from: task.projectId, to: action.projectId };
+                                }
+                                if (action.priority != null && action.priority !== task.priority) {
+                                    fieldSnapshots.priority = { from: task.priority, to: action.priority };
+                                }
+                                if (action.dueDate != null && action.dueDate !== task.dueDate) {
+                                    fieldSnapshots.dueDate = { from: task.dueDate, to: action.dueDate };
+                                }
+                                if (action.content != null && action.content !== task.content) {
+                                    fieldSnapshots.content = { from: task.content, to: action.content };
+                                }
+                                if (action.repeatFlag != null && action.repeatFlag !== task.repeatFlag) {
+                                    fieldSnapshots.repeatFlag = { from: task.repeatFlag, to: action.repeatFlag };
                                 }
                             }
                             const undoEntry = buildUndoEntry({

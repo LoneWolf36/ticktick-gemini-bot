@@ -821,7 +821,7 @@ export function rankPriorityCandidates(input, maybeContext) {
     const candidates = normalized.filter((candidate) => {
         if (!candidate.dueDate) return true;
         const dueMs = Date.parse(candidate.dueDate);
-        if (Number.isNaN(dueMs)) return true;
+        if (Number.isNaN(dueMs)) return false; // Invalid date -> drop
         return (dueMs - now) <= FOURTEEN_DAYS_MS;
     });
     const droppedCount = normalized.length - candidates.length;
