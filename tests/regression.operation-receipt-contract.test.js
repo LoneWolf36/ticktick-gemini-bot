@@ -5,7 +5,7 @@ import {
     assertValidOperationReceipt,
     OPERATION_RECEIPT_VALUES,
     formatBusyLockMessage,
-    validateOperationReceipt,
+    validateOperationReceipt
 } from '../services/operation-receipt.js';
 
 const baseReceipt = Object.freeze({
@@ -19,7 +19,7 @@ const baseReceipt = Object.freeze({
     traceId: 'trace-123',
     dryRun: false,
     applied: false,
-    fallbackUsed: false,
+    fallbackUsed: false
 });
 
 function receipt(overrides = {}) {
@@ -34,7 +34,7 @@ test('operation receipt exposes canonical stage-one vocabulary', () => {
         'blocked',
         'deferred',
         'failed',
-        'busy',
+        'busy'
     ]);
     assert.ok(OPERATION_RECEIPT_VALUES.scopes.includes('ticktick_live'));
     assert.ok(OPERATION_RECEIPT_VALUES.scopes.includes('local_review_queue'));
@@ -52,7 +52,7 @@ test('operation receipt accepts valid blocked and applied outcomes', () => {
         operationType: 'update',
         nextAction: 'none',
         applied: true,
-        results: [{ status: 'succeeded' }],
+        results: [{ status: 'succeeded' }]
     });
 
     assert.equal(validateOperationReceipt(applied).valid, true);
@@ -60,11 +60,13 @@ test('operation receipt accepts valid blocked and applied outcomes', () => {
 });
 
 test('operation receipt requires message trace id and fallback flag', () => {
-    const result = validateOperationReceipt(receipt({
-        message: '',
-        traceId: '',
-        fallbackUsed: 'no',
-    }));
+    const result = validateOperationReceipt(
+        receipt({
+            message: '',
+            traceId: '',
+            fallbackUsed: 'no'
+        })
+    );
 
     assert.equal(result.valid, false);
     assert.match(result.errors.join('\n'), /message must be a non-empty string/);
@@ -73,14 +75,16 @@ test('operation receipt requires message trace id and fallback flag', () => {
 });
 
 test('operation receipt rejects unknown vocabulary values', () => {
-    const result = validateOperationReceipt(receipt({
-        status: 'done',
-        scope: 'cache',
-        operationType: 'move_fast',
-        nextAction: 'guess',
-        errorClass: 'raw_error',
-        destination: { confidence: 'probably' },
-    }));
+    const result = validateOperationReceipt(
+        receipt({
+            status: 'done',
+            scope: 'cache',
+            operationType: 'move_fast',
+            nextAction: 'guess',
+            errorClass: 'raw_error',
+            destination: { confidence: 'probably' }
+        })
+    );
 
     assert.equal(result.valid, false);
     assert.match(result.errors.join('\n'), /status must be one of/);
@@ -92,55 +96,65 @@ test('operation receipt rejects unknown vocabulary values', () => {
 });
 
 test('operation receipt rejects dry-run or unchanged applied outcomes', () => {
-    const dryRunApplied = validateOperationReceipt(receipt({
-        status: 'applied',
-        changed: true,
-        dryRun: true,
-        applied: true,
-    }));
+    const dryRunApplied = validateOperationReceipt(
+        receipt({
+            status: 'applied',
+            changed: true,
+            dryRun: true,
+            applied: true
+        })
+    );
     assert.equal(dryRunApplied.valid, false);
     assert.match(dryRunApplied.errors.join('\n'), /dryRun receipts cannot be applied/);
 
-    const unchangedApplied = validateOperationReceipt(receipt({
-        status: 'applied',
-        changed: false,
-        applied: true,
-    }));
+    const unchangedApplied = validateOperationReceipt(
+        receipt({
+            status: 'applied',
+            changed: false,
+            applied: true
+        })
+    );
     assert.equal(unchangedApplied.valid, false);
     assert.match(unchangedApplied.errors.join('\n'), /applied receipts require changed=true/);
     assert.match(unchangedApplied.errors.join('\n'), /changed=false cannot use applied status/);
 
-    const missingSucceededResult = validateOperationReceipt(receipt({
-        status: 'applied',
-        changed: true,
-        applied: true,
-        scope: 'ticktick_live',
-        results: [{ status: 'failed' }],
-    }));
+    const missingSucceededResult = validateOperationReceipt(
+        receipt({
+            status: 'applied',
+            changed: true,
+            applied: true,
+            scope: 'ticktick_live',
+            results: [{ status: 'failed' }]
+        })
+    );
     assert.equal(missingSucceededResult.valid, false);
     assert.match(missingSucceededResult.errors.join('\n'), /at least one succeeded result/);
 });
 
 test('operation receipt rejects applied outcomes outside live exact or configured destinations', () => {
-    const wrongScope = validateOperationReceipt(receipt({
-        status: 'applied',
-        scope: 'local_review_queue',
-        changed: true,
-        applied: true,
-        results: [{ status: 'succeeded' }],
-    }));
+    const wrongScope = validateOperationReceipt(
+        receipt({
+            status: 'applied',
+            scope: 'local_review_queue',
+            changed: true,
+            applied: true,
+            results: [{ status: 'succeeded' }]
+        })
+    );
     assert.equal(wrongScope.valid, false);
     assert.match(wrongScope.errors.join('\n'), /applied receipts must describe ticktick_live scope/);
 
     for (const confidence of ['ambiguous', 'missing']) {
-        const result = validateOperationReceipt(receipt({
-            status: 'applied',
-            scope: 'ticktick_live',
-            changed: true,
-            applied: true,
-            results: [{ status: 'succeeded' }],
-            destination: { confidence },
-        }));
+        const result = validateOperationReceipt(
+            receipt({
+                status: 'applied',
+                scope: 'ticktick_live',
+                changed: true,
+                applied: true,
+                results: [{ status: 'succeeded' }],
+                destination: { confidence }
+            })
+        );
         assert.equal(result.valid, false, `${confidence} destination should not apply`);
         assert.match(result.errors.join('\n'), /applied receipts require exact or configured destination confidence/);
     }
@@ -152,87 +166,104 @@ test('busy lock copy is consistent across surfaces', () => {
 });
 
 test('operation receipt enforces pending-confirmation details without marking changes applied', () => {
-    const missingDetails = validateOperationReceipt(receipt({
-        status: 'pending_confirmation',
-        operationType: 'update',
-        nextAction: 'apply',
-    }));
+    const missingDetails = validateOperationReceipt(
+        receipt({
+            status: 'pending_confirmation',
+            operationType: 'update',
+            nextAction: 'apply'
+        })
+    );
     assert.equal(missingDetails.valid, false);
     assert.match(missingDetails.errors.join('\n'), /confirmation details/);
     assert.match(missingDetails.errors.join('\n'), /proposed destination/);
 
-    const valid = validateOperationReceipt(receipt({
-        status: 'pending_confirmation',
-        operationType: 'update',
-        nextAction: 'apply',
-        destination: {
-            confidence: 'ambiguous',
-            choices: [
-                { projectId: 'proj-1', projectName: 'Inbox' },
-                { projectId: 'proj-2', projectName: 'Planning' },
-            ],
-        },
-        confirmation: {
-            target: { taskId: 'task-1' },
-            outcome: 'Confirm project before updating task.',
-        },
-    }));
+    const valid = validateOperationReceipt(
+        receipt({
+            status: 'pending_confirmation',
+            operationType: 'update',
+            nextAction: 'apply',
+            destination: {
+                confidence: 'ambiguous',
+                choices: [
+                    { projectId: 'proj-1', projectName: 'Inbox' },
+                    { projectId: 'proj-2', projectName: 'Planning' }
+                ]
+            },
+            confirmation: {
+                target: { taskId: 'task-1' },
+                outcome: 'Confirm project before updating task.'
+            }
+        })
+    );
     assert.equal(valid.valid, true);
 
-    const emptyTarget = validateOperationReceipt(receipt({
-        status: 'pending_confirmation',
-        operationType: 'update',
-        nextAction: 'apply',
-        destination: { confidence: 'configured', projectId: 'proj-1' },
-        confirmation: {
-            target: {},
-            outcome: 'Confirm project before updating task.',
-        },
-    }));
+    const emptyTarget = validateOperationReceipt(
+        receipt({
+            status: 'pending_confirmation',
+            operationType: 'update',
+            nextAction: 'apply',
+            destination: { confidence: 'configured', projectId: 'proj-1' },
+            confirmation: {
+                target: {},
+                outcome: 'Confirm project before updating task.'
+            }
+        })
+    );
     assert.equal(emptyTarget.valid, false);
     assert.match(emptyTarget.errors.join('\n'), /target requires a safe identifier/);
 
-    const ambiguousWithoutChoices = validateOperationReceipt(receipt({
-        status: 'pending_confirmation',
-        operationType: 'create',
-        nextAction: 'apply',
-        destination: { confidence: 'ambiguous' },
-        confirmation: {
-            target: { previewId: 'preview-1' },
-            outcome: 'Choose a destination before creating task.',
-        },
-    }));
+    const ambiguousWithoutChoices = validateOperationReceipt(
+        receipt({
+            status: 'pending_confirmation',
+            operationType: 'create',
+            nextAction: 'apply',
+            destination: { confidence: 'ambiguous' },
+            confirmation: {
+                target: { previewId: 'preview-1' },
+                outcome: 'Choose a destination before creating task.'
+            }
+        })
+    );
     assert.equal(ambiguousWithoutChoices.valid, false);
     assert.match(ambiguousWithoutChoices.errors.join('\n'), /ambiguous destinations require destination\.choices/);
 
-    const missingDestination = validateOperationReceipt(receipt({
-        status: 'pending_confirmation',
-        operationType: 'update',
-        nextAction: 'apply',
-        destination: { confidence: 'missing' },
-        confirmation: {
-            target: { taskId: 'task-1' },
-            outcome: 'Choose a destination before updating task.',
-        },
-    }));
+    const missingDestination = validateOperationReceipt(
+        receipt({
+            status: 'pending_confirmation',
+            operationType: 'update',
+            nextAction: 'apply',
+            destination: { confidence: 'missing' },
+            confirmation: {
+                target: { taskId: 'task-1' },
+                outcome: 'Choose a destination before updating task.'
+            }
+        })
+    );
     assert.equal(missingDestination.valid, false);
     assert.match(missingDestination.errors.join('\n'), /cannot use missing destination confidence/);
 });
 
 test('operation receipt restricts dry-run statuses to preview or blocked', () => {
-    assert.equal(validateOperationReceipt(receipt({
-        status: 'preview',
-        scope: 'preview',
-        dryRun: true,
-        nextAction: 'apply',
-    })).valid, true);
+    assert.equal(
+        validateOperationReceipt(
+            receipt({
+                status: 'preview',
+                scope: 'preview',
+                dryRun: true,
+                nextAction: 'apply'
+            })
+        ).valid,
+        true
+    );
 
-    const result = validateOperationReceipt(receipt({
-        status: 'deferred',
-        scope: 'deferred_queue',
-        dryRun: true,
-        nextAction: 'wait',
-    }));
+    const result = validateOperationReceipt(
+        receipt({
+            status: 'deferred',
+            scope: 'deferred_queue',
+            dryRun: true,
+            nextAction: 'wait'
+        })
+    );
 
     assert.equal(result.valid, false);
     assert.match(result.errors.join('\n'), /dryRun receipts must have preview or blocked status/);
@@ -252,16 +283,18 @@ test('operation receipt requires safe next actions for blocked deferred failed a
 });
 
 test('operation receipt rejects raw private task or user text fields', () => {
-    const result = validateOperationReceipt(receipt({
-        metadata: {
-            title: 'raw task title',
-            nested: {
-                content: 'raw task notes',
-                messageText: 'raw user command',
-                targetQuery: 'what the user typed',
-            },
-        },
-    }));
+    const result = validateOperationReceipt(
+        receipt({
+            metadata: {
+                title: 'raw task title',
+                nested: {
+                    content: 'raw task notes',
+                    messageText: 'raw user command',
+                    targetQuery: 'what the user typed'
+                }
+            }
+        })
+    );
 
     assert.equal(result.valid, false);
     assert.match(result.errors.join('\n'), /metadata\.title/);
@@ -271,17 +304,19 @@ test('operation receipt rejects raw private task or user text fields', () => {
 });
 
 test('operation receipt rejects raw rollback snapshots inside the receipt', () => {
-    const result = validateOperationReceipt(receipt({
-        rollback: {
-            type: 'restore_updated',
-            payload: {
-                snapshot: {
-                    title: 'raw previous title',
-                    content: 'raw previous notes',
-                },
-            },
-        },
-    }));
+    const result = validateOperationReceipt(
+        receipt({
+            rollback: {
+                type: 'restore_updated',
+                payload: {
+                    snapshot: {
+                        title: 'raw previous title',
+                        content: 'raw previous notes'
+                    }
+                }
+            }
+        })
+    );
 
     assert.equal(result.valid, false);
     assert.match(result.errors.join('\n'), /rollback\.payload\.snapshot\.title/);
@@ -291,6 +326,6 @@ test('operation receipt rejects raw rollback snapshots inside the receipt', () =
 test('operation receipt assertion throws with invariant details', () => {
     assert.throws(
         () => assertValidOperationReceipt(receipt({ status: 'applied', changed: false, applied: true })),
-        /Invalid operation receipt:.*applied receipts require changed=true/s,
+        /Invalid operation receipt:.*applied receipts require changed=true/s
     );
 });

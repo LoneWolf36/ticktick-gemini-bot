@@ -19,13 +19,15 @@ function confidenceWeight(confidence) {
 function isFreshPattern(pattern, nowMs = Date.now()) {
     const windowEndMs = parsePatternTime(pattern?.windowEnd) ?? parsePatternTime(pattern?.windowStart);
     if (windowEndMs === null) return false;
-    return windowEndMs >= nowMs - (RETENTION_DAYS * DAY_MS);
+    return windowEndMs >= nowMs - RETENTION_DAYS * DAY_MS;
 }
 
 function isSupportedPatternType(type) {
-    return type === BehavioralPatternType.SNOOZE_SPIRAL
-        || type === BehavioralPatternType.PLANNING_TYPE_A
-        || type === BehavioralPatternType.PLANNING_TYPE_B;
+    return (
+        type === BehavioralPatternType.SNOOZE_SPIRAL ||
+        type === BehavioralPatternType.PLANNING_TYPE_A ||
+        type === BehavioralPatternType.PLANNING_TYPE_B
+    );
 }
 
 function hasRepeatedEvidence(pattern) {
@@ -103,6 +105,6 @@ export function buildBehavioralPatternNotice(patterns = [], { nowIso = null } = 
         code: 'behavioral_pattern',
         message: describePattern(pattern),
         severity: 'info',
-        evidence_source: 'behavioral_memory',
+        evidence_source: 'behavioral_memory'
     };
 }

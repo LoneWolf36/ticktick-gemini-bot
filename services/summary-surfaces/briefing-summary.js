@@ -38,7 +38,7 @@ function buildPriorityItems(activeTasks = [], ranking = []) {
                 due_date: task.dueDate || null,
                 priority_label: toPriorityLabel(task.priority),
                 rationale_code: decision.rationaleCode || null,
-                rationale_text: decision.rationaleText || decision.rationaleCode || 'High-impact active work.',
+                rationale_text: decision.rationaleText || decision.rationaleCode || 'High-impact active work.'
             };
         })
         .filter(Boolean);
@@ -47,15 +47,17 @@ function buildPriorityItems(activeTasks = [], ranking = []) {
         return rankedItems.slice(0, 3);
     }
 
-    return sortTasksByDueDate(activeTasks).slice(0, 3).map((task) => ({
-        task_id: task.id || task.taskId || 'unknown-task',
-        title: task.title || 'Untitled task',
-        project_name: task.projectName || null,
-        due_date: task.dueDate || null,
-        priority_label: toPriorityLabel(task.priority),
-        rationale_code: null,
-        rationale_text: 'High-impact active work.',
-    }));
+    return sortTasksByDueDate(activeTasks)
+        .slice(0, 3)
+        .map((task) => ({
+            task_id: task.id || task.taskId || 'unknown-task',
+            title: task.title || 'Untitled task',
+            project_name: task.projectName || null,
+            due_date: task.dueDate || null,
+            priority_label: toPriorityLabel(task.priority),
+            rationale_code: null,
+            rationale_text: 'High-impact active work.'
+        }));
 }
 
 function limitRecommendationsForConfidence(priorities = [], rankingResult = null) {
@@ -69,11 +71,14 @@ function limitRecommendationsForConfidence(priorities = [], rankingResult = null
 
 function ensureGoalAlignedPriority(priorities = [], fallbackPriorities = []) {
     const normalized = Array.isArray(priorities) ? priorities.filter(Boolean) : [];
-    const goalCandidate = (Array.isArray(fallbackPriorities) ? fallbackPriorities : [])
-        .find((item) => item?.rationale_code === 'goal_alignment');
+    const goalCandidate = (Array.isArray(fallbackPriorities) ? fallbackPriorities : []).find(
+        (item) => item?.rationale_code === 'goal_alignment'
+    );
 
     if (!goalCandidate) return normalized.slice(0, 3);
-    if (normalized.some((item) => item?.task_id === goalCandidate.task_id || item?.rationale_code === 'goal_alignment')) {
+    if (
+        normalized.some((item) => item?.task_id === goalCandidate.task_id || item?.rationale_code === 'goal_alignment')
+    ) {
         return normalized.slice(0, 3);
     }
 
@@ -92,7 +97,7 @@ function buildNotices({ activeTasks = [], behavioralPatterns = [], context = {},
             code: 'sparse_tasks',
             message: 'Task list is sparse, so this briefing keeps focus tight.',
             severity: 'info',
-            evidence_source: 'tasks',
+            evidence_source: 'tasks'
         });
     }
 
@@ -101,7 +106,7 @@ function buildNotices({ activeTasks = [], behavioralPatterns = [], context = {},
             code: 'degraded_ranking',
             message: rankingResult.degradedReason || 'Priority ranking confidence is degraded.',
             severity: 'warning',
-            evidence_source: 'system',
+            evidence_source: 'system'
         });
     }
 
@@ -110,12 +115,12 @@ function buildNotices({ activeTasks = [], behavioralPatterns = [], context = {},
             code: 'delivery_context',
             message: 'TickTick fetch failed, so this briefing uses partial local context only.',
             severity: 'warning',
-            evidence_source: 'system',
+            evidence_source: 'system'
         });
     }
 
     const behavioralNotice = buildBehavioralPatternNotice(behavioralPatterns, {
-        nowIso: context.generatedAtIso,
+        nowIso: context.generatedAtIso
     });
     if (behavioralNotice) {
         notices.push(behavioralNotice);
@@ -126,7 +131,7 @@ function buildNotices({ activeTasks = [], behavioralPatterns = [], context = {},
             code: 'urgent_mode_active',
             message: 'Urgent mode is active and biasing the plan toward immediate execution.',
             severity: 'info',
-            evidence_source: 'state',
+            evidence_source: 'state'
         });
     }
 
@@ -142,20 +147,20 @@ function normalizeModelSummary(summary = {}) {
             project_name: item?.project_name ?? null,
             due_date: item?.due_date ?? null,
             priority_label: item?.priority_label ?? null,
-            rationale_text: toString(item?.rationale_text, ''),
+            rationale_text: toString(item?.rationale_text, '')
         })),
-        why_now: toArray(summary.why_now).map((item) => toString(item)).filter(Boolean),
+        why_now: toArray(summary.why_now)
+            .map((item) => toString(item))
+            .filter(Boolean),
         start_now: toString(summary.start_now, ''),
         notices: toArray(summary.notices).map((notice) => ({
             code: toString(notice?.code, ''),
             message: toString(notice?.message, ''),
             severity: toString(notice?.severity, ''),
-            evidence_source: toString(notice?.evidence_source, ''),
-        })),
+            evidence_source: toString(notice?.evidence_source, '')
+        }))
     };
 }
-
-
 
 function deduplicateStrings(items) {
     return [...new Set((Array.isArray(items) ? items : []).filter((s) => typeof s === 'string'))];
@@ -171,11 +176,7 @@ function deduplicateNoticesByMessage(notices) {
     });
 }
 
-function mergePriorities({
-    modelPriorities = [],
-    fallbackPriorities = [],
-    activeTasks = [],
-} = {}) {
+function mergePriorities({ modelPriorities = [], fallbackPriorities = [], activeTasks = [] } = {}) {
     const byTaskId = new Map(activeTasks.map((task) => [task.id || task.taskId, task]));
     const fallbackByTaskId = new Map(fallbackPriorities.map((item) => [item.task_id, item]));
     const merged = [];
@@ -193,7 +194,7 @@ function mergePriorities({
             project_name: item.project_name ?? task?.projectName ?? fallback?.project_name ?? null,
             due_date: item.due_date ?? task?.dueDate ?? fallback?.due_date ?? null,
             priority_label: item.priority_label ?? toPriorityLabel(task?.priority) ?? fallback?.priority_label ?? null,
-            rationale_text: toString(item.rationale_text, fallback?.rationale_text || 'High-impact active work.'),
+            rationale_text: toString(item.rationale_text, fallback?.rationale_text || 'High-impact active work.')
         };
 
         if (normalized.task_id) seen.add(normalized.task_id);
@@ -230,7 +231,7 @@ export function composeBriefingSummarySections({
     behavioralPatterns = [],
     rankingResult = null,
     context = {},
-    modelSummary = null,
+    modelSummary = null
 } = {}) {
     const normalizedTasks = asActiveTasks(activeTasks);
     const ranking = Array.isArray(rankingResult?.ranked) ? rankingResult.ranked : [];
@@ -251,11 +252,17 @@ export function composeBriefingSummarySections({
         : 'Review active tasks, select one high-impact action, and begin immediately.';
 
     const modelNormalized = normalizeModelSummary(modelSummary || {});
-    const priorities = limitRecommendationsForConfidence(ensureGoalAlignedPriority(mergePriorities({
-        modelPriorities: modelNormalized.priorities,
-        fallbackPriorities,
-        activeTasks: normalizedTasks,
-    }), fallbackPriorities), rankingResult);
+    const priorities = limitRecommendationsForConfidence(
+        ensureGoalAlignedPriority(
+            mergePriorities({
+                modelPriorities: modelNormalized.priorities,
+                fallbackPriorities,
+                activeTasks: normalizedTasks
+            }),
+            fallbackPriorities
+        ),
+        rankingResult
+    );
     const topPriority = priorities[0];
 
     if (normalizedTasks.length === 0) {
@@ -266,8 +273,8 @@ export function composeBriefingSummarySections({
             start_now: 'No briefing actions right now.',
             notices: mergeNotices(
                 buildNotices({ activeTasks: normalizedTasks, behavioralPatterns, context, rankingResult }),
-                modelNormalized.notices,
-            ),
+                modelNormalized.notices
+            )
         };
     }
 
@@ -288,9 +295,11 @@ export function composeBriefingSummarySections({
         priorities: finalPriorities,
         why_now: deduplicateStrings(whyNow),
         start_now: startNow,
-        notices: deduplicateNoticesByMessage(mergeNotices(
-            buildNotices({ activeTasks: normalizedTasks, behavioralPatterns, context, rankingResult }),
-            modelNormalized.notices,
-        )),
+        notices: deduplicateNoticesByMessage(
+            mergeNotices(
+                buildNotices({ activeTasks: normalizedTasks, behavioralPatterns, context, rankingResult }),
+                modelNormalized.notices
+            )
+        )
     };
 }

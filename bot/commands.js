@@ -6,10 +6,19 @@ import { InlineKeyboard } from 'grammy';
 import { USER_CONTEXT } from '../services/gemini.js';
 import { taskReviewKeyboard } from './callbacks.js';
 import {
-    buildTaskCard, buildTaskCardFromAction,
-    sleep, userLocaleString, isAuthorized, guardAccess,
-    filterProcessedThisWeek, buildQuotaExhaustedMessage,
-    replyWithMarkdown, sendWithMarkdown, editWithMarkdown, truncateMessage, pendingToAnalysis,
+    buildTaskCard,
+    buildTaskCardFromAction,
+    sleep,
+    userLocaleString,
+    isAuthorized,
+    guardAccess,
+    filterProcessedThisWeek,
+    buildQuotaExhaustedMessage,
+    replyWithMarkdown,
+    sendWithMarkdown,
+    editWithMarkdown,
+    truncateMessage,
+    pendingToAnalysis,
     buildMutationCandidateKeyboard,
     buildMutationClarificationMessage,
     buildMutationConfirmationMessage,
@@ -18,13 +27,18 @@ import {
     PRIORITY_LABEL,
     retryWithBackoff,
     isFollowUpMessage,
-    answerCallbackQueryBestEffort,
+    answerCallbackQueryBestEffort
 } from '../services/shared-utils.js';
 import { buildFreeformPipelineResultReceipt } from './pipeline-result-receipts.js';
 import { formatPipelineFailure, executeUndoBatch } from '../services/undo-executor.js';
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { formatBusyLockMessage } from '../services/operation-receipt.js';
-import { createGoalThemeProfile, inferPriorityLabelFromTask, inferPriorityValueFromTask, inferProjectIdFromTask } from '../services/execution-prioritization.js';
+import {
+    createGoalThemeProfile,
+    inferPriorityLabelFromTask,
+    inferPriorityValueFromTask,
+    inferProjectIdFromTask
+} from '../services/execution-prioritization.js';
 import { projectPolicy } from '../services/project-policy.js';
 import { detectWorkStyleModeIntent } from '../services/intent-extraction.js';
 import { detectBehavioralPatterns } from '../services/behavioral-patterns.js';
@@ -44,24 +58,22 @@ import { detectBehavioralPatterns } from '../services/behavioral-patterns.js';
  * @description Registers operational commands (/start, /menu, /status, /reset) and product surface commands (/scan, /pending, /undo, /briefing, /weekly, /daily_close, /memory, /forget, /urgent, /focus, /normal, /mode).
  */
 export function registerCommands(bot, ticktick, gemini, adapter, pipeline, config = {}) {
-    const {
-        autoApplyLifeAdmin = false,
-        autoApplyMode = 'metadata-only',
-    } = config;
+    const { autoApplyLifeAdmin = false, autoApplyMode = 'metadata-only' } = config;
 
-    const menuKeyboard = () => new InlineKeyboard()
-        .text('🔍 Scan', 'menu:scan')
-        .text('⏳ Pending', 'menu:pending')
-        .row()
-        .text('🌅 Morning', 'menu:briefing')
-        .text('🌙 Evening', 'menu:daily_close')
-        .text('📊 Weekly', 'menu:weekly')
-        .row()
-        .text('⚡ Urgent', 'menu:urgent')
-        .text('🎯 Focus', 'menu:focus')
-        .text('🧘 Normal', 'menu:normal')
-        .row()
-        .text('📈 Status', 'menu:status');
+    const menuKeyboard = () =>
+        new InlineKeyboard()
+            .text('🔍 Scan', 'menu:scan')
+            .text('⏳ Pending', 'menu:pending')
+            .row()
+            .text('🌅 Morning', 'menu:briefing')
+            .text('🌙 Evening', 'menu:daily_close')
+            .text('📊 Weekly', 'menu:weekly')
+            .row()
+            .text('⚡ Urgent', 'menu:urgent')
+            .text('🎯 Focus', 'menu:focus')
+            .text('🧘 Normal', 'menu:normal')
+            .row()
+            .text('📈 Status', 'menu:status');
 
     const buildAiUnavailableMessage = () => {
         const quotaResume = gemini.quotaResumeTime?.();
@@ -76,7 +88,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         workStyleMode,
         urgentMode: workStyleMode === store.MODE_URGENT,
         tonePolicy: 'preserve_existing',
-        generatedAtIso: new Date().toISOString(),
+        generatedAtIso: new Date().toISOString()
     });
 
     const formatLastSyncLine = (sync = {}) => {
@@ -120,18 +132,17 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
 
         const allSignals = await store.getBehavioralSignals(userId, { includeExpired: true });
-        const activePatterns = detectBehavioralPatterns(allSignals, { nowMs })
-            .filter((pattern) => pattern.eligibleForSurfacing === true);
+        const activePatterns = detectBehavioralPatterns(allSignals, { nowMs }).filter(
+            (pattern) => pattern.eligibleForSurfacing === true
+        );
 
-        const lastSignalTimestamp = allSignals
-            .map((signal) => Date.parse(signal?.timestamp || ''))
-            .filter(Number.isFinite)
-            .sort((left, right) => right - left)[0] || null;
+        const lastSignalTimestamp =
+            allSignals
+                .map((signal) => Date.parse(signal?.timestamp || ''))
+                .filter(Number.isFinite)
+                .sort((left, right) => right - left)[0] || null;
 
-        const lines = [
-            '**🧠 Behavioral Memory Summary**',
-            '',
-        ];
+        const lines = ['**🧠 Behavioral Memory Summary**', ''];
 
         if (activePatterns.length === 0) {
             lines.push(`No active patterns in the last ${store.BEHAVIORAL_SIGNAL_RETENTION_DAYS} days.`);
@@ -141,13 +152,17 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 lines.push(`${index + 1}. ${describePatternForMemory(pattern)} (${pattern.confidence} confidence)`);
             });
             if (activePatterns.length > 3) {
-                lines.push(`- ${activePatterns.length - 3} additional active pattern(s) are retained but omitted here for brevity.`);
+                lines.push(
+                    `- ${activePatterns.length - 3} additional active pattern(s) are retained but omitted here for brevity.`
+                );
             }
         }
 
         lines.push('');
         lines.push(`**Retention Window:** ${store.BEHAVIORAL_SIGNAL_RETENTION_DAYS} days`);
-        lines.push(`**Last Signal Date:** ${lastSignalTimestamp ? userLocaleString(new Date(lastSignalTimestamp).toISOString()) : 'No retained signals yet'}`);
+        lines.push(
+            `**Last Signal Date:** ${lastSignalTimestamp ? userLocaleString(new Date(lastSignalTimestamp).toISOString()) : 'No retained signals yet'}`
+        );
         lines.push('');
         lines.push('_Derived patterns only. No raw task titles or raw message text are stored in behavioral memory._');
 
@@ -166,43 +181,40 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
     // ─── /start (operational bootstrap / command discovery) ──
     bot.command('start', async (ctx) => {
-        if (!await guardAccess(ctx)) return;
+        if (!(await guardAccess(ctx))) return;
         const chatId = ctx.chat.id;
         await store.setChatId(chatId);
         await replyWithMarkdown(
             ctx,
             `**🧠 TickTick AI Accountability Partner**\n\n` +
-            `Connected! I'll help you focus on what actually matters.\n\n` +
-            `**Core commands:**\n` +
-            `/scan — Analyze new tasks\n` +
-            `/briefing — Today's plan\n` +
-            `/pending — Review queue\n` +
-            `/status — System overview\n\n` +
-            `Tap /menu for all commands, or just send me a task naturally.`,
+                `Connected! I'll help you focus on what actually matters.\n\n` +
+                `**Core commands:**\n` +
+                `/scan — Analyze new tasks\n` +
+                `/briefing — Today's plan\n` +
+                `/pending — Review queue\n` +
+                `/status — System overview\n\n` +
+                `Tap /menu for all commands, or just send me a task naturally.`,
             { reply_markup: menuKeyboard() }
         );
     });
 
     bot.command('menu', async (ctx) => {
-        if (!await guardAccess(ctx)) return;
-        await replyWithMarkdown(
-            ctx,
-            `**Quick Actions**\nTap a shortcut below or type a command.`,
-            { reply_markup: menuKeyboard() }
-        );
+        if (!(await guardAccess(ctx))) return;
+        await replyWithMarkdown(ctx, `**Quick Actions**\nTap a shortcut below or type a command.`, {
+            reply_markup: menuKeyboard()
+        });
     });
-
 
     // ─── /reset ──────────────────────────────────────────────
     bot.command('reset', async (ctx) => {
-        if (!await guardAccess(ctx)) return;
+        if (!(await guardAccess(ctx))) return;
         const arg = ctx.match?.trim();
         if (arg !== 'CONFIRM') {
             await ctx.reply(
                 '⚠️ This will wipe ALL bot data:\n' +
-                '• Pending tasks\n• Processed tasks\n• Undo history\n• Stats\n\n' +
-                'Your TickTick tasks are NOT affected.\n\n' +
-                'To confirm, type: /reset CONFIRM'
+                    '• Pending tasks\n• Processed tasks\n• Undo history\n• Stats\n\n' +
+                    'Your TickTick tasks are NOT affected.\n\n' +
+                    'To confirm, type: /reset CONFIRM'
             );
             return;
         }
@@ -221,7 +233,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
     // ─── /status ──────────────────────────────────────────────
     async function cmdStatus(ctx) {
-        if (!await guardAccess(ctx)) return;
+        if (!(await guardAccess(ctx))) return;
 
         let backendCount = null;
         try {
@@ -244,7 +256,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         let nextRetryText = '—';
         if (pendingRetry > 0) {
             const oldest = deferredIntents
-                .filter(e => typeof e.nextAttemptAt === 'number')
+                .filter((e) => typeof e.nextAttemptAt === 'number')
                 .sort((a, b) => a.nextAttemptAt - b.nextAttemptAt)[0];
             if (oldest) {
                 const seconds = Math.max(0, Math.ceil((oldest.nextAttemptAt - Date.now()) / 1000));
@@ -276,14 +288,12 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             `Failed permanently: ${failedPermanently} items`,
             '',
             '**⚡ Running job**',
-            intakeLock.locked
-                ? formatBusyLockMessage(intakeLock, 'Running job')
-                : '⏳ Running job busy: no',
+            intakeLock.locked ? formatBusyLockMessage(intakeLock, 'Running job') : '⏳ Running job busy: no',
             '',
             '**📈 Recent activity**',
             `Analyzed: ${stats.tasksAnalyzed}  |  Approved: ${stats.tasksApproved}`,
             `Skipped: ${stats.tasksSkipped}  |  Dropped: ${stats.tasksDropped}`,
-            `Auto-applied: ${stats.tasksAutoApplied || 0}`,
+            `Auto-applied: ${stats.tasksAutoApplied || 0}`
         ];
 
         const quotaResume = gemini.quotaResumeTime();
@@ -298,7 +308,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
 
         await replyWithMarkdown(ctx, lines.join('\n'));
-    };
+    }
 
     const resolveWorkStyleModeUserId = (ctx) => ctx.from?.id ?? ctx.chat?.id ?? null;
 
@@ -307,7 +317,10 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     const formatModeReply = (state, confirmation) => {
         const lines = [confirmation, `Current mode: ${formatModeLabel(state.mode)}`];
         if (state.expiresAt) {
-            const expiry = new Date(state.expiresAt).toLocaleTimeString('en-IE', { hour: '2-digit', minute: '2-digit' });
+            const expiry = new Date(state.expiresAt).toLocaleTimeString('en-IE', {
+                hour: '2-digit',
+                minute: '2-digit'
+            });
             lines.push(`Expires: ${expiry}`);
         }
         return lines.join('\n');
@@ -315,7 +328,9 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
     const replyWithMixedModeClarification = async (ctx) => {
         await applyWorkStyleMode(ctx, store.MODE_STANDARD);
-        await ctx.reply('Heard mixed mode signals. Staying in STANDARD mode for now. If you want urgency, say /urgent. If you want deliberate planning, say /focus.');
+        await ctx.reply(
+            'Heard mixed mode signals. Staying in STANDARD mode for now. If you want urgency, say /urgent. If you want deliberate planning, say /focus.'
+        );
     };
 
     const applyWorkStyleMode = async (ctx, mode, { expiryMs } = {}) => {
@@ -330,7 +345,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             const confirmationMap = {
                 [store.MODE_URGENT]: 'Urgent mode activated.',
                 [store.MODE_FOCUS]: 'Focus mode activated.',
-                [store.MODE_STANDARD]: 'Standard mode active.',
+                [store.MODE_STANDARD]: 'Standard mode active.'
             };
             await ctx.reply(formatModeReply(state, confirmationMap[mode] || 'Work style updated.'));
             return true;
@@ -360,26 +375,26 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     };
 
     async function cmdUrgent(ctx) {
-        if (!await guardAccess(ctx)) return;
+        if (!(await guardAccess(ctx))) return;
         await applyWorkStyleMode(ctx, store.MODE_URGENT, { expiryMs: store.DEFAULT_URGENT_EXPIRY_MS });
-    };
+    }
 
     async function cmdFocus(ctx) {
-        if (!await guardAccess(ctx)) return;
+        if (!(await guardAccess(ctx))) return;
         await applyWorkStyleMode(ctx, store.MODE_FOCUS);
-    };
+    }
 
     async function cmdNormal(ctx) {
-        if (!await guardAccess(ctx)) return;
+        if (!(await guardAccess(ctx))) return;
         await applyWorkStyleMode(ctx, store.MODE_STANDARD);
-    };
+    }
 
     bot.command('mode', async (ctx) => {
-        if (!await guardAccess(ctx)) return;
+        if (!(await guardAccess(ctx))) return;
         await replyWithCurrentMode(ctx);
     });
 
-        bot.command('scan', cmdScan);
+    bot.command('scan', cmdScan);
     bot.command('pending', cmdPending);
     bot.command('review', cmdReview);
     bot.command('briefing', cmdBriefing);
@@ -400,7 +415,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         status: cmdStatus,
         urgent: cmdUrgent,
         focus: cmdFocus,
-        normal: cmdNormal,
+        normal: cmdNormal
     };
 
     bot.callbackQuery(/^menu:(.+)$/, async (ctx) => {
@@ -410,28 +425,33 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
         const cmd = ctx.match[1];
         await answerCallbackQueryBestEffort(ctx);
-        
+
         if (handlers[cmd]) {
             await handlers[cmd](ctx);
         }
     });
 
-
-
-
     // ─── /scan — manual poll, BATCHED (up to soft-cap slots) ──
     async function cmdScan(ctx) {
-        if (!await guardAccess(ctx)) return;
-        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected. Run the OAuth flow first.'); return; }
+        if (!(await guardAccess(ctx))) return;
+        if (!ticktick.isAuthenticated()) {
+            await ctx.reply('🔴 TickTick not connected. Run the OAuth flow first.');
+            return;
+        }
 
         const MAX_PENDING_REVIEW = 5;
         const availableSlots = MAX_PENDING_REVIEW - store.getPendingCount();
         if (availableSlots <= 0) {
-            await ctx.reply(`⏳ Review queue full (${MAX_PENDING_REVIEW}/${MAX_PENDING_REVIEW}). Run /pending to clear.`);
+            await ctx.reply(
+                `⏳ Review queue full (${MAX_PENDING_REVIEW}/${MAX_PENDING_REVIEW}). Run /pending to clear.`
+            );
             return;
         }
 
-        if (!store.tryAcquireIntakeLock({ owner: 'bot:scan' })) { await ctx.reply(formatBusyLockMessage(store.getIntakeLockStatus(), 'Scan')); return; }
+        if (!store.tryAcquireIntakeLock({ owner: 'bot:scan' })) {
+            await ctx.reply(formatBusyLockMessage(store.getIntakeLockStatus(), 'Scan'));
+            return;
+        }
 
         let backgroundPromise = Promise.resolve();
         try {
@@ -444,14 +464,14 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 console.log(`🧹 Scan reconciled: removed ${removedPending} pending, ${removedFailed} failed`);
             }
 
-            const availableProjects = typeof adapter.listProjects === 'function'
-                ? await adapter.listProjects()
-                : [];
+            const availableProjects = typeof adapter.listProjects === 'function' ? await adapter.listProjects() : [];
             const workStyleMode = await resolveCurrentWorkStyleMode(ctx);
-            const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
+            const targetTasks = allTasks.filter((t) => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
-                await ctx.reply(`Scan complete. No new local review items queued. TickTick active: ${allTasks.length}. Already known locally: ${allTasks.length - targetTasks.length}.`);
+                await ctx.reply(
+                    `Scan complete. No new local review items queued. TickTick active: ${allTasks.length}. Already known locally: ${allTasks.length - targetTasks.length}.`
+                );
                 return;
             }
 
@@ -466,14 +486,16 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 const task = batch[0];
                 try {
                     const userMessage = task.title + (task.content ? `\n${task.content}` : '');
-                    const result = await retryWithBackoff(() => processPipelineMessage(userMessage, {
-                        existingTask: task,
-                        entryPoint: 'telegram:scan',
-                        mode: 'scan',
-                        availableProjects,
-                        workStyleMode,
-                        dryRun: true,
-                    }));
+                    const result = await retryWithBackoff(() =>
+                        processPipelineMessage(userMessage, {
+                            existingTask: task,
+                            entryPoint: 'telegram:scan',
+                            mode: 'scan',
+                            availableProjects,
+                            workStyleMode,
+                            dryRun: true
+                        })
+                    );
 
                     if (isReviewPreviewResult(result)) {
                         const action = result.actions?.[0];
@@ -500,7 +522,11 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     } else if (result.type === 'pending-confirmation') {
                         // Fail-closed: scan/review is automated and cannot handle interactive
                         // confirmation. Park task as processed so it doesn't re-queue.
-                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false, pendingConfirmation: true });
+                        await store.markTaskProcessed(task.id, {
+                            originalTitle: task.title,
+                            autoApplied: false,
+                            pendingConfirmation: true
+                        });
                     } else {
                         await store.markTaskFailed(task.id, `unknown_result_type: ${result.type}`);
                     }
@@ -519,17 +545,21 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             if (firstQueuedTask) {
                 const card = buildTaskCardFromAction(firstQueuedTask, firstQueuedAction, availableProjects);
                 const summaryLine = `${allTasks.length} active in TickTick · ${targetTasks.length} unreviewed locally · Showing next`;
-                const msg = await replyWithMarkdown(ctx, `${summaryLine}\n\n${card}\n\n_(Preview — not yet applied)_`, { reply_markup: taskReviewKeyboard(firstQueuedTask.id, firstQueuedPendingData.actionType) });
+                const msg = await replyWithMarkdown(ctx, `${summaryLine}\n\n${card}\n\n_(Preview — not yet applied)_`, {
+                    reply_markup: taskReviewKeyboard(firstQueuedTask.id, firstQueuedPendingData.actionType)
+                });
                 await store.setCurrentReviewSession(ctx.chat.id, {
                     messageId: msg.message_id,
                     chatId: ctx.chat.id,
                     source: 'scan',
                     startedAt: new Date().toISOString(),
                     startingProcessedCount: store.getProcessedCount(),
-                    totalTasks: batch.length,
+                    totalTasks: batch.length
                 });
             } else {
-                await ctx.reply(`Scan complete. No new local review items queued. TickTick active: ${allTasks.length}. Already known locally: ${allTasks.length - targetTasks.length}.`);
+                await ctx.reply(
+                    `Scan complete. No new local review items queued. TickTick active: ${allTasks.length}. Already known locally: ${allTasks.length - targetTasks.length}.`
+                );
             }
 
             // Phase 2: background processing for remaining tasks
@@ -540,30 +570,42 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         for (const task of remainingTasks) {
                             try {
                                 const userMessage = task.title + (task.content ? `\n${task.content}` : '');
-                                const result = await retryWithBackoff(() => processPipelineMessage(userMessage, {
-                                    existingTask: task,
-                                    entryPoint: 'telegram:scan',
-                                    mode: 'scan',
-                                    availableProjects,
-                                    workStyleMode,
-                                    dryRun: true,
-                                }));
+                                const result = await retryWithBackoff(() =>
+                                    processPipelineMessage(userMessage, {
+                                        existingTask: task,
+                                        entryPoint: 'telegram:scan',
+                                        mode: 'scan',
+                                        availableProjects,
+                                        workStyleMode,
+                                        dryRun: true
+                                    })
+                                );
                                 if (isReviewPreviewResult(result)) {
                                     const action = result.actions?.[0];
                                     if (action) {
                                         const pendingData = buildPendingDataFromAction(task, action, availableProjects);
                                         await store.markTaskPending(task.id, pendingData);
                                     } else {
-                                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                                        await store.markTaskProcessed(task.id, {
+                                            originalTitle: task.title,
+                                            autoApplied: false
+                                        });
                                     }
                                 } else if (result.type === 'error') {
                                     await store.markTaskFailed(task.id, result.failure?.summary || 'pipeline_error');
                                 } else if (result.type === 'clarification') {
                                     await store.markTaskFailed(task.id, 'clarification_needed');
                                 } else if (result.type === 'non-task') {
-                                    await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                                    await store.markTaskProcessed(task.id, {
+                                        originalTitle: task.title,
+                                        autoApplied: false
+                                    });
                                 } else if (result.type === 'pending-confirmation') {
-                                    await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false, pendingConfirmation: true });
+                                    await store.markTaskProcessed(task.id, {
+                                        originalTitle: task.title,
+                                        autoApplied: false,
+                                        pendingConfirmation: true
+                                    });
                                 } else {
                                     await store.markTaskFailed(task.id, `unknown_result_type: ${result.type}`);
                                 }
@@ -577,7 +619,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     }
                 })();
             }
-
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
                 await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
@@ -593,11 +634,11 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
             store.releaseIntakeLock();
         }
-    };
+    }
 
     // ─── /pending — re-surface un-reviewed tasks ──────────────
     async function cmdPending(ctx) {
-        if (!await guardAccess(ctx)) return;
+        if (!(await guardAccess(ctx))) return;
         const pendingCount = store.getPendingCount();
 
         if (pendingCount === 0) {
@@ -616,9 +657,10 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
             const sync = store.getOperationalSnapshot().tickTickSync || {};
 
-            const tickTickState = liveTaskCount === null
-                ? `TickTick live task count unavailable right now. ${formatLastSuccessfulSyncLine(sync)}.`
-                : `TickTick still has ${liveTaskCount} live task(s).`;
+            const tickTickState =
+                liveTaskCount === null
+                    ? `TickTick live task count unavailable right now. ${formatLastSuccessfulSyncLine(sync)}.`
+                    : `TickTick still has ${liveTaskCount} live task(s).`;
             await ctx.reply(`Local review queue empty. ${tickTickState}`);
             return;
         }
@@ -630,34 +672,39 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         if (next) {
             const [taskId, data] = next;
             const analysis = pendingToAnalysis(data);
-            const card = buildTaskCard({
-                title: data.originalTitle,
-                projectName: data.projectName,
-                priority: data.originalPriority,
-                content: data.originalContent,
-                dueDate: data.originalDueDate,
-            }, analysis);
-            const msg = await replyWithMarkdown(ctx, card, { reply_markup: taskReviewKeyboard(taskId, data.actionType) });
+            const card = buildTaskCard(
+                {
+                    title: data.originalTitle,
+                    projectName: data.projectName,
+                    priority: data.originalPriority,
+                    content: data.originalContent,
+                    dueDate: data.originalDueDate
+                },
+                analysis
+            );
+            const msg = await replyWithMarkdown(ctx, card, {
+                reply_markup: taskReviewKeyboard(taskId, data.actionType)
+            });
             await store.setCurrentReviewSession(ctx.chat.id, {
                 messageId: msg.message_id,
                 chatId: ctx.chat.id,
                 source: 'pending',
                 startedAt: new Date().toISOString(),
-                totalTasks: pendingCount,
+                totalTasks: pendingCount
             });
         }
 
         if (pendingCount > 1) {
             await ctx.reply(`📝 ${pendingCount - 1} more task(s) after this one.`);
         }
-    };
+    }
 
     // ─── /undo — revert last applied change (single or batch) ──
     // RETAINED BOUNDARY: /undo restores previously applied structured changes
     // directly through the adapter. It is an operational recovery path, not a
     // product-feature drift from the canonical pipeline write path.
     bot.command('undo', async (ctx) => {
-        if (!await guardAccess(ctx)) return;
+        if (!(await guardAccess(ctx))) return;
         const last = store.getLastUndoEntry();
 
         if (!last) {
@@ -685,12 +732,15 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 await store.removeUndoEntries(successful);
             }
 
-            const msg = reverted.length > 0
-                ? `↩️ **Reverted ${reverted.length} change(s):**\n${reverted.map(t => `• "${t}"`).join('\n')}`
-                : '↩️ **Nothing was reverted.** Check the adapter logs for details.';
+            const msg =
+                reverted.length > 0
+                    ? `↩️ **Reverted ${reverted.length} change(s):**\n${reverted.map((t) => `• "${t}"`).join('\n')}`
+                    : '↩️ **Nothing was reverted.** Check the adapter logs for details.';
 
             await replyWithMarkdown(ctx, msg);
-            console.log(`[UNDO] Reverted ${reverted.length} change(s) (${successful.length} successful) at ${new Date().toISOString()}`);
+            console.log(
+                `[UNDO] Reverted ${reverted.length} change(s) (${successful.length} successful) at ${new Date().toISOString()}`
+            );
         } catch (err) {
             console.error('Undo error:', err.message);
             await ctx.reply('Undo failed. The task may have changed in TickTick. Try /status.');
@@ -699,8 +749,11 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
     // ─── /briefing ────────────────────────────────────────────
     async function cmdBriefing(ctx) {
-        if (!await guardAccess(ctx)) return;
-        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
+        if (!(await guardAccess(ctx))) return;
+        if (!ticktick.isAuthenticated()) {
+            await ctx.reply('🔴 TickTick not connected.');
+            return;
+        }
         if (gemini.isQuotaExhausted()) {
             await replyWithMarkdown(ctx, buildQuotaExhaustedMessage(gemini));
             return;
@@ -716,7 +769,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 userId,
                 workStyleMode,
                 urgentMode: context.urgentMode,
-                generatedAtIso: context.generatedAtIso,
+                generatedAtIso: context.generatedAtIso
             });
             logSummarySurfaceEvent({ context, result: briefingResult, deliveryStatus: 'ready' });
             await replyWithMarkdown(ctx, briefingResult.formattedText);
@@ -730,12 +783,15 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
             await ctx.reply('Could not generate the briefing right now. Try again in a moment.');
         }
-    };
+    }
 
     // ─── /weekly ──────────────────────────────────────────────
     async function cmdWeekly(ctx) {
-        if (!await guardAccess(ctx)) return;
-        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
+        if (!(await guardAccess(ctx))) return;
+        if (!ticktick.isAuthenticated()) {
+            await ctx.reply('🔴 TickTick not connected.');
+            return;
+        }
         if (gemini.isQuotaExhausted()) {
             await replyWithMarkdown(ctx, buildQuotaExhaustedMessage(gemini));
             return;
@@ -755,20 +811,20 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 workStyleMode,
                 urgentMode: context.urgentMode,
                 generatedAtIso: context.generatedAtIso,
-                historyAvailable,
+                historyAvailable
             });
             logSummarySurfaceEvent({
                 context,
                 result: weeklyResult,
                 deliveryStatus: 'ready',
-                extra: { historyAvailable },
+                extra: { historyAvailable }
             });
             await replyWithMarkdown(ctx, weeklyResult.formattedText);
             logSummarySurfaceEvent({
                 context,
                 result: weeklyResult,
                 deliveryStatus: 'sent',
-                extra: { historyAvailable },
+                extra: { historyAvailable }
             });
             await store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         } catch (err) {
@@ -779,12 +835,15 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
             await ctx.reply('Could not generate the weekly digest right now. Try again in a moment.');
         }
-    };
+    }
 
     // ─── /daily_close (cavekit-briefings R7 manual surface) ──
     async function cmdDailyClose(ctx) {
-        if (!await guardAccess(ctx)) return;
-        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected.'); return; }
+        if (!(await guardAccess(ctx))) return;
+        if (!ticktick.isAuthenticated()) {
+            await ctx.reply('🔴 TickTick not connected.');
+            return;
+        }
         if (gemini.isQuotaExhausted()) {
             await replyWithMarkdown(ctx, buildQuotaExhaustedMessage(gemini));
             return;
@@ -803,20 +862,20 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 workStyleMode,
                 urgentMode: context.urgentMode,
                 generatedAtIso: context.generatedAtIso,
-                historyAvailable,
+                historyAvailable
             });
             logSummarySurfaceEvent({
                 context,
                 result: dailyCloseResult,
                 deliveryStatus: 'ready',
-                extra: { historyAvailable },
+                extra: { historyAvailable }
             });
             await replyWithMarkdown(ctx, dailyCloseResult.formattedText);
             logSummarySurfaceEvent({
                 context,
                 result: dailyCloseResult,
                 deliveryStatus: 'sent',
-                extra: { historyAvailable },
+                extra: { historyAvailable }
             });
         } catch (err) {
             logSummarySurfaceEvent({ context, deliveryStatus: 'failed', error: err });
@@ -826,11 +885,11 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
             await ctx.reply('Could not generate the daily close right now. Try again in a moment.');
         }
-    };
+    }
 
     // ─── /memory (cavekit-behavioral-memory R8) ──
     bot.command('memory', async (ctx) => {
-        if (!await guardAccess(ctx)) return;
+        if (!(await guardAccess(ctx))) return;
         const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
         if (!userId) {
             await ctx.reply('❌ Could not identify user for behavioral memory.');
@@ -848,7 +907,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
     // ─── /forget (cavekit-behavioral-memory R9) ──
     bot.command('forget', async (ctx) => {
-        if (!await guardAccess(ctx)) return;
+        if (!(await guardAccess(ctx))) return;
         const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
         if (!userId) {
             await ctx.reply('❌ Could not identify user for behavioral memory.');
@@ -857,7 +916,9 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
         try {
             const deletedCount = await store.deleteBehavioralSignals(userId);
-            await ctx.reply(`🧠 Behavioral memory cleared. ${deletedCount} signal(s) removed. Previously stored patterns will no longer influence future summaries.`);
+            await ctx.reply(
+                `🧠 Behavioral memory cleared. ${deletedCount} signal(s) removed. Previously stored patterns will no longer influence future summaries.`
+            );
         } catch (err) {
             console.error('[ForgetCommand] Error:', err.message);
             await ctx.reply('❌ Failed to clear behavioral memory. Please try again.');
@@ -866,17 +927,25 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
     // ─── /review ──────────────────────────────────────────────
     async function cmdReview(ctx) {
-        if (!await guardAccess(ctx)) return;
-        if (!ticktick.isAuthenticated()) { await ctx.reply('🔴 TickTick not connected. Run the OAuth flow first.'); return; }
+        if (!(await guardAccess(ctx))) return;
+        if (!ticktick.isAuthenticated()) {
+            await ctx.reply('🔴 TickTick not connected. Run the OAuth flow first.');
+            return;
+        }
 
         const MAX_PENDING_REVIEW = 5;
         const availableSlots = MAX_PENDING_REVIEW - store.getPendingCount();
         if (availableSlots <= 0) {
-            await ctx.reply(`⏳ Review queue full (${MAX_PENDING_REVIEW}/${MAX_PENDING_REVIEW}). Run /pending to clear.`);
+            await ctx.reply(
+                `⏳ Review queue full (${MAX_PENDING_REVIEW}/${MAX_PENDING_REVIEW}). Run /pending to clear.`
+            );
             return;
         }
 
-        if (!store.tryAcquireIntakeLock({ owner: 'bot:review' })) { await ctx.reply(formatBusyLockMessage(store.getIntakeLockStatus(), 'Review')); return; }
+        if (!store.tryAcquireIntakeLock({ owner: 'bot:review' })) {
+            await ctx.reply(formatBusyLockMessage(store.getIntakeLockStatus(), 'Review'));
+            return;
+        }
 
         let backgroundPromise = Promise.resolve();
         try {
@@ -889,13 +958,13 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 console.log(`🧹 Review reconciled: removed ${removedPending} pending, ${removedFailed} failed`);
             }
 
-            const availableProjects = typeof adapter.listProjects === 'function'
-                ? await adapter.listProjects()
-                : [];
-            const targetTasks = allTasks.filter(t => !store.isTaskKnown(t.id));
+            const availableProjects = typeof adapter.listProjects === 'function' ? await adapter.listProjects() : [];
+            const targetTasks = allTasks.filter((t) => !store.isTaskKnown(t.id));
 
             if (targetTasks.length === 0) {
-                await ctx.reply(`Review complete. No new local review items queued. TickTick active: ${allTasks.length}. Already known locally: ${allTasks.length - targetTasks.length}.`);
+                await ctx.reply(
+                    `Review complete. No new local review items queued. TickTick active: ${allTasks.length}. Already known locally: ${allTasks.length - targetTasks.length}.`
+                );
                 return;
             }
 
@@ -912,14 +981,16 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 const task = batch[0];
                 try {
                     const userMessage = task.title + (task.content ? `\n${task.content}` : '');
-                    const result = await retryWithBackoff(() => processPipelineMessage(userMessage, {
-                        existingTask: task,
-                        entryPoint: 'telegram:review',
-                        mode: 'review',
-                        availableProjects,
-                        workStyleMode,
-                        dryRun: true,
-                    }));
+                    const result = await retryWithBackoff(() =>
+                        processPipelineMessage(userMessage, {
+                            existingTask: task,
+                            entryPoint: 'telegram:review',
+                            mode: 'review',
+                            availableProjects,
+                            workStyleMode,
+                            dryRun: true
+                        })
+                    );
 
                     if (isReviewPreviewResult(result)) {
                         const action = result.actions?.[0];
@@ -944,7 +1015,11 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     } else if (result.type === 'non-task') {
                         await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
                     } else if (result.type === 'pending-confirmation') {
-                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false, pendingConfirmation: true });
+                        await store.markTaskProcessed(task.id, {
+                            originalTitle: task.title,
+                            autoApplied: false,
+                            pendingConfirmation: true
+                        });
                     } else {
                         await store.markTaskFailed(task.id, `unknown_result_type: ${result.type}`);
                     }
@@ -963,17 +1038,21 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             if (firstQueuedTask) {
                 const card = buildTaskCardFromAction(firstQueuedTask, firstQueuedAction, availableProjects);
                 const summaryLine = `${allTasks.length} active in TickTick · ${targetTasks.length} unreviewed locally · Showing next`;
-                const msg = await replyWithMarkdown(ctx, `${summaryLine}\n\n${card}\n\n_(Preview — not yet applied)_`, { reply_markup: taskReviewKeyboard(firstQueuedTask.id, firstQueuedPendingData.actionType) });
+                const msg = await replyWithMarkdown(ctx, `${summaryLine}\n\n${card}\n\n_(Preview — not yet applied)_`, {
+                    reply_markup: taskReviewKeyboard(firstQueuedTask.id, firstQueuedPendingData.actionType)
+                });
                 await store.setCurrentReviewSession(ctx.chat.id, {
                     messageId: msg.message_id,
                     chatId: ctx.chat.id,
                     source: 'review',
                     startedAt: new Date().toISOString(),
                     startingProcessedCount: store.getProcessedCount(),
-                    totalTasks: batch.length,
+                    totalTasks: batch.length
                 });
             } else {
-                await ctx.reply(`Review complete. No new local review items queued. TickTick active: ${allTasks.length}. Already known locally: ${allTasks.length - targetTasks.length}.`);
+                await ctx.reply(
+                    `Review complete. No new local review items queued. TickTick active: ${allTasks.length}. Already known locally: ${allTasks.length - targetTasks.length}.`
+                );
             }
 
             // Phase 2: background processing for remaining tasks
@@ -984,30 +1063,42 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         for (const task of remainingTasks) {
                             try {
                                 const userMessage = task.title + (task.content ? `\n${task.content}` : '');
-                                const result = await retryWithBackoff(() => processPipelineMessage(userMessage, {
-                                    existingTask: task,
-                                    entryPoint: 'telegram:review',
-                                    mode: 'review',
-                                    availableProjects,
-                                    workStyleMode,
-                                    dryRun: true,
-                                }));
+                                const result = await retryWithBackoff(() =>
+                                    processPipelineMessage(userMessage, {
+                                        existingTask: task,
+                                        entryPoint: 'telegram:review',
+                                        mode: 'review',
+                                        availableProjects,
+                                        workStyleMode,
+                                        dryRun: true
+                                    })
+                                );
                                 if (isReviewPreviewResult(result)) {
                                     const action = result.actions?.[0];
                                     if (action) {
                                         const pendingData = buildPendingDataFromAction(task, action, availableProjects);
                                         await store.markTaskPending(task.id, pendingData);
                                     } else {
-                                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                                        await store.markTaskProcessed(task.id, {
+                                            originalTitle: task.title,
+                                            autoApplied: false
+                                        });
                                     }
                                 } else if (result.type === 'error') {
                                     await store.markTaskFailed(task.id, result.failure?.summary || 'pipeline_error');
                                 } else if (result.type === 'clarification') {
                                     await store.markTaskFailed(task.id, 'clarification_needed');
                                 } else if (result.type === 'non-task') {
-                                    await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                                    await store.markTaskProcessed(task.id, {
+                                        originalTitle: task.title,
+                                        autoApplied: false
+                                    });
                                 } else if (result.type === 'pending-confirmation') {
-                                    await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false, pendingConfirmation: true });
+                                    await store.markTaskProcessed(task.id, {
+                                        originalTitle: task.title,
+                                        autoApplied: false,
+                                        pendingConfirmation: true
+                                    });
                                 } else {
                                     await store.markTaskFailed(task.id, `unknown_result_type: ${result.type}`);
                                 }
@@ -1021,7 +1112,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     }
                 })();
             }
-
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
                 await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
@@ -1037,7 +1127,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
             store.releaseIntakeLock();
         }
-    };
+    }
 
     // ─── Catch-all: free-form messages → Pipeline ─────────────
     bot.on('message:text', async (ctx) => {
@@ -1080,8 +1170,9 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
 
         pendingRefinement = store.getPendingTaskRefinement();
         if (pendingRefinement?.taskId) {
-            const isReplyToForceReply = pendingRefinement.mode === 'force_reply'
-                && ctx.message?.reply_to_message?.message_id === pendingRefinement.forceReplyMessageId;
+            const isReplyToForceReply =
+                pendingRefinement.mode === 'force_reply' &&
+                ctx.message?.reply_to_message?.message_id === pendingRefinement.forceReplyMessageId;
             const isOldStyleRefinement = !pendingRefinement.mode || pendingRefinement.mode !== 'force_reply';
 
             if (isReplyToForceReply || isOldStyleRefinement) {
@@ -1107,20 +1198,27 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                             entryPoint: 'telegram:refine',
                             mode: 'interactive',
                             availableProjects,
-                            workStyleMode,
+                            workStyleMode
                         });
 
                         if (result.type === 'error') {
                             await ctx.reply(formatPipelineFailure(result));
                         } else if (result.type === 'task') {
-                            await store.markTaskProcessed(pendingRefinementId, { originalTitle: data.originalTitle, autoApplied: true });
+                            await store.markTaskProcessed(pendingRefinementId, {
+                                originalTitle: data.originalTitle,
+                                autoApplied: true
+                            });
                             const { text: receipt, replyExtra } = await buildFreeformPipelineResultReceipt({
                                 result,
                                 store,
                                 userId,
-                                projects: availableProjects,
+                                projects: availableProjects
                             });
-                            await replyWithMarkdown(ctx, truncateMessage(`Refined "${data.originalTitle}":\n\n${receipt}`, 4000), replyExtra);
+                            await replyWithMarkdown(
+                                ctx,
+                                truncateMessage(`Refined "${data.originalTitle}":\n\n${receipt}`, 4000),
+                                replyExtra
+                            );
 
                             // Store recent task context
                             if (userId) {
@@ -1129,7 +1227,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                                     title: data.originalTitle,
                                     projectId: data.originalProjectId,
                                     content: data.originalContent || undefined,
-                                    source: 'refine:applied',
+                                    source: 'refine:applied'
                                 });
                             }
                         } else {
@@ -1150,7 +1248,6 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
         }
 
-
         // New pipeline path. Note: we leave gemini check in for the coach fallback optionally.
         await ctx.reply('Working on that...');
         try {
@@ -1162,11 +1259,12 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 await store.clearPendingChecklistClarification();
                 console.log('[ChecklistClarification] Reply received, resuming with answer:', answer);
 
-                const resolvedMode = answer === 'checklist' || answer === 'checklist please' || answer === 'subtasks'
-                    ? 'checklist'
-                    : answer === 'separate' || answer === 'separate tasks' || answer === 'separate'
-                        ? 'separate'
-                        : answer === 'skip' || answer === 'cancel' || answer === 'nevermind'
+                const resolvedMode =
+                    answer === 'checklist' || answer === 'checklist please' || answer === 'subtasks'
+                        ? 'checklist'
+                        : answer === 'separate' || answer === 'separate tasks' || answer === 'separate'
+                          ? 'separate'
+                          : answer === 'skip' || answer === 'cancel' || answer === 'nevermind'
                             ? 'skip'
                             : null; // ambiguous reply — treat as fallback
                 const availableProjects = await adapter.listProjects();
@@ -1179,24 +1277,27 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         mode: 'interactive',
                         skipChecklist: true,
                         availableProjects,
-                        workStyleMode,
+                        workStyleMode
                     });
                     if (result.type === 'task') {
                         const { text: receipt, replyExtra } = await buildFreeformPipelineResultReceipt({
                             result,
                             store,
                             userId,
-                            projects: availableProjects,
+                            projects: availableProjects
                         });
                         await replyWithMarkdown(ctx, truncateMessage(receipt, 4000), replyExtra);
                         if (userId && result.actions?.[0]) {
                             const action = result.actions[0];
                             await store.setRecentTaskContext(userId, {
-                                taskId: action.type === 'create' ? (result.results?.[0]?.result?.id || 'unknown') : (action.taskId || 'unknown'),
+                                taskId:
+                                    action.type === 'create'
+                                        ? result.results?.[0]?.result?.id || 'unknown'
+                                        : action.taskId || 'unknown',
                                 title: result.results?.[0]?.result?.title || action.title || 'Task',
                                 projectId: action.projectId,
                                 content: result.results?.[0]?.result?.content || action.content || undefined,
-                                source: 'checklist:create',
+                                source: 'checklist:create'
                             });
                         }
                     } else if (result.type === 'error') {
@@ -1214,24 +1315,27 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         mode: 'interactive',
                         checklistPreference: resolvedMode,
                         availableProjects,
-                        workStyleMode,
+                        workStyleMode
                     });
                     if (result.type === 'task') {
                         const { text: receipt, replyExtra } = await buildFreeformPipelineResultReceipt({
                             result,
                             store,
                             userId,
-                            projects: availableProjects,
+                            projects: availableProjects
                         });
                         await replyWithMarkdown(ctx, truncateMessage(receipt, 4000), replyExtra);
                         if (userId && result.actions?.[0]) {
                             const action = result.actions[0];
                             await store.setRecentTaskContext(userId, {
-                                taskId: action.type === 'create' ? (result.results?.[0]?.result?.id || 'unknown') : (action.taskId || 'unknown'),
+                                taskId:
+                                    action.type === 'create'
+                                        ? result.results?.[0]?.result?.id || 'unknown'
+                                        : action.taskId || 'unknown',
                                 title: result.results?.[0]?.result?.title || action.title || 'Task',
                                 projectId: action.projectId,
                                 content: result.results?.[0]?.result?.content || action.content || undefined,
-                                source: 'checklist:create',
+                                source: 'checklist:create'
                             });
                         }
                     } else if (result.type === 'error') {
@@ -1249,23 +1353,26 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     mode: 'interactive',
                     skipChecklist: true, // Never create inferred checklist after ignored clarification
                     availableProjects,
-                    workStyleMode,
+                    workStyleMode
                 });
                 if (result.type === 'task') {
                     const { text: receipt, replyExtra } = await buildFreeformPipelineResultReceipt({
                         result,
                         store,
                         userId,
-                        projects: availableProjects,
+                        projects: availableProjects
                     });
                     await replyWithMarkdown(ctx, truncateMessage(receipt, 4000), replyExtra);
                     if (userId && result.actions?.[0]) {
                         const action = result.actions[0];
                         await store.setRecentTaskContext(userId, {
-                            taskId: action.type === 'create' ? (result.results?.[0]?.result?.id || 'unknown') : (action.taskId || 'unknown'),
+                            taskId:
+                                action.type === 'create'
+                                    ? result.results?.[0]?.result?.id || 'unknown'
+                                    : action.taskId || 'unknown',
                             title: action.title || 'Task',
                             projectId: action.projectId,
-                            source: 'checklist:create',
+                            source: 'checklist:create'
                         });
                     }
                 } else if (result.type === 'error') {
@@ -1277,14 +1384,12 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
 
             // Follow-up detection: bind short/pronoun messages to recently discussed task
-            const availableProjects = typeof adapter.listProjects === 'function'
-                ? await adapter.listProjects()
-                : [];
+            const availableProjects = typeof adapter.listProjects === 'function' ? await adapter.listProjects() : [];
             let pipelineOptions = {
                 entryPoint: 'telegram:freeform',
                 mode: 'interactive',
                 availableProjects,
-                workStyleMode: await resolveCurrentWorkStyleMode(ctx),
+                workStyleMode: await resolveCurrentWorkStyleMode(ctx)
             };
             let recentTask = null;
             if (userId && !pipelineOptions.existingTask) {
@@ -1294,7 +1399,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         pipelineOptions.existingTask = {
                             id: recentTask.taskId,
                             title: recentTask.title,
-                            projectId: recentTask.projectId,
+                            projectId: recentTask.projectId
                         };
                     }
                 }
@@ -1307,7 +1412,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     result,
                     store,
                     userId,
-                    projects: availableProjects,
+                    projects: availableProjects
                 });
                 await replyWithMarkdown(ctx, truncateMessage(receipt, 4000), replyExtra);
 
@@ -1321,7 +1426,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                                 title: action.title,
                                 content: result.results?.[0]?.result?.content || action.content || undefined,
                                 projectId: action.projectId,
-                                source: 'freeform:create',
+                                source: 'freeform:create'
                             });
                         } else if (['update', 'complete', 'delete'].includes(action.type) && action.taskId) {
                             await store.setRecentTaskContext(userId, {
@@ -1329,7 +1434,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                                 title: result.results?.[0]?.result?.title || action.title || 'Task',
                                 content: result.results?.[0]?.result?.content || action.content || undefined,
                                 projectId: action.projectId,
-                                source: `freeform:${action.type}`,
+                                source: `freeform:${action.type}`
                             });
                         }
                     }
@@ -1348,16 +1453,18 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 if (reason === 'ambiguous_checklist_vs_multi_task') {
                     // Checklist vs separate-tasks clarification.
                     const intents = result.clarification?.candidates || [];
-                    const question = result.confirmationText || 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?';
+                    const question =
+                        result.confirmationText ||
+                        'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?';
 
                     // Persist pending clarification with TTL (T052)
                     await store.setPendingChecklistClarification({
                         originalMessage: userMessage,
-                        intents: intents.map(i => ({ type: i.type, title: i.title, projectHint: i.projectHint })),
+                        intents: intents.map((i) => ({ type: i.type, title: i.title, projectHint: i.projectHint })),
                         chatId: ctx.chat?.id ?? null,
                         userId: ctx.from?.id ?? null,
                         entryPoint: 'telegram:freeform',
-                        mode: 'interactive',
+                        mode: 'interactive'
                     });
                     console.log('[ChecklistClarification] Question sent — pending state persisted');
 
@@ -1368,7 +1475,9 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         .row()
                         .text('⏭ Just one task', 'cl:skip');
 
-                    await replyWithMarkdown(ctx, question + '\n\nReply with your choice or tap a button:', { reply_markup: keyboard });
+                    await replyWithMarkdown(ctx, question + '\n\nReply with your choice or tap a button:', {
+                        reply_markup: keyboard
+                    });
                 } else {
                     // Existing mutation clarification flow plus create-fragment clarification.
                     const candidates = result.clarification?.candidates || [];
@@ -1379,20 +1488,17 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                         await store.setPendingMutationClarification({
                             originalMessage: userMessage,
                             candidates: candidates
-                                .map(c => ({ id: c.id || c.taskId, title: c.title }))
-                                .filter(c => c.id),
+                                .map((c) => ({ id: c.id || c.taskId, title: c.title }))
+                                .filter((c) => c.id),
                             intentSummary: result.confirmationText,
                             chatId: ctx.chat?.id ?? null,
                             userId: ctx.from?.id ?? null,
                             entryPoint: 'telegram:freeform',
-                            mode: 'interactive',
+                            mode: 'interactive'
                         });
-                        const msg = buildMutationClarificationMessage(
-                            reason,
-                            candidates,
-                            result.confirmationText,
-                            { workStyleMode: result.workStyleMode || await resolveCurrentWorkStyleMode(ctx) }
-                        );
+                        const msg = buildMutationClarificationMessage(reason, candidates, result.confirmationText, {
+                            workStyleMode: result.workStyleMode || (await resolveCurrentWorkStyleMode(ctx))
+                        });
                         const keyboard = buildMutationCandidateKeyboard(candidates);
                         await replyWithMarkdown(ctx, msg, { reply_markup: keyboard });
                     }
@@ -1411,16 +1517,18 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     userId: userId ?? null,
                     entryPoint: result.entryPoint || 'telegram:freeform',
                     mode: result.mode || 'interactive',
-                    workStyleMode: result.workStyleMode || null,
+                    workStyleMode: result.workStyleMode || null
                 });
-                const msg = buildMutationConfirmationMessage(
-                    result.pendingConfirmation,
-                    { workStyleMode: result.workStyleMode || await resolveCurrentWorkStyleMode(ctx) },
-                );
+                const msg = buildMutationConfirmationMessage(result.pendingConfirmation, {
+                    workStyleMode: result.workStyleMode || (await resolveCurrentWorkStyleMode(ctx))
+                });
                 const keyboard = buildMutationConfirmationKeyboard();
                 await replyWithMarkdown(ctx, msg, { reply_markup: keyboard });
             } else if (result.type === 'not-found') {
-                await ctx.reply(result.confirmationText || `I couldn't find that task. Try a more specific name, or create it first.`);
+                await ctx.reply(
+                    result.confirmationText ||
+                        `I couldn't find that task. Try a more specific name, or create it first.`
+                );
             } else if (result.type === 'error') {
                 await ctx.reply(formatPipelineFailure(result));
             }

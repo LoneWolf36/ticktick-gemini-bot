@@ -10,10 +10,7 @@ import test from 'node:test';
 import assert from 'node:assert/strict';
 import { createPipelineHarness, DEFAULT_ACTIVE_TASKS, DEFAULT_PROJECTS } from './pipeline-harness.js';
 import * as store from '../services/store.js';
-import {
-    buildMutationConfirmationMessage,
-    buildMutationConfirmationKeyboard,
-} from '../services/shared-utils.js';
+import { buildMutationConfirmationMessage, buildMutationConfirmationKeyboard } from '../services/shared-utils.js';
 import { validateOperationReceipt } from '../services/operation-receipt.js';
 import { AIHardQuotaError } from '../services/gemini.js';
 
@@ -25,20 +22,28 @@ async function resetStore() {
 test('pending-confirmation: non-exact delete returns pending-confirmation type and does not call adapter', async () => {
     await resetStore();
     const harness = createPipelineHarness({
-        intents: [
-            { type: 'delete', title: 'groceries', confidence: 0.95, targetQuery: 'groceries' },
-        ],
+        intents: [{ type: 'delete', title: 'groceries', confidence: 0.95, targetQuery: 'groceries' }],
         activeTasks: [
-            { id: 'task-del-01', title: 'Buy groceries', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
-        ],
+            {
+                id: 'task-del-01',
+                title: 'Buy groceries',
+                projectId: 'inbox',
+                projectName: 'Inbox',
+                priority: 1,
+                status: 0
+            }
+        ]
     });
 
     const result = await harness.processMessage('delete the groceries task');
 
     // "groceries" is a contains match for "Buy groceries" → non-exact
     assert.equal(result.type, 'pending-confirmation');
-    assert.equal(harness.adapterCalls.delete.length, 0,
-        'adapter delete should NOT be called for non-exact match without confirmation');
+    assert.equal(
+        harness.adapterCalls.delete.length,
+        0,
+        'adapter delete should NOT be called for non-exact match without confirmation'
+    );
     assert.ok(result.pendingConfirmation, 'result should include pendingConfirmation block');
     assert.equal(result.pendingConfirmation.actionType, 'delete');
     assert.equal(result.pendingConfirmation.matchConfidence, 'high');
@@ -51,11 +56,18 @@ test('mutation-shaped create is repaired to update and never creates duplicate t
     await resetStore();
     const harness = createPipelineHarness({
         intents: [
-            { type: 'create', title: 'Pick up prescription', priority: 5, confidence: 0.92, projectHint: 'Career' },
+            { type: 'create', title: 'Pick up prescription', priority: 5, confidence: 0.92, projectHint: 'Career' }
         ],
         activeTasks: [
-            { id: 'task-med-01', title: 'Pick up prescription', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
-        ],
+            {
+                id: 'task-med-01',
+                title: 'Pick up prescription',
+                projectId: 'inbox',
+                projectName: 'Inbox',
+                priority: 1,
+                status: 0
+            }
+        ]
     });
 
     const result = await harness.processMessage('Make pick up prescription high priority');
@@ -70,30 +82,44 @@ test('mutation-shaped create is repaired to update and never creates duplicate t
 test('mutation-shaped create asks clarification when target cannot resolve', async () => {
     await resetStore();
     const harness = createPipelineHarness({
-        intents: [
-            { type: 'create', title: 'Book appointment', priority: 5, confidence: 0.92, projectHint: 'Career' },
-        ],
+        intents: [{ type: 'create', title: 'Book appointment', priority: 5, confidence: 0.92, projectHint: 'Career' }],
         activeTasks: [
-            { id: 'task-other-01', title: 'Review notes', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
-        ],
+            {
+                id: 'task-other-01',
+                title: 'Review notes',
+                projectId: 'inbox',
+                projectName: 'Inbox',
+                priority: 1,
+                status: 0
+            }
+        ]
     });
 
     const result = await harness.processMessage('Make book appointment high priority');
 
     assert.equal(result.type, 'not-found');
-    assert.equal(harness.adapterCalls.create.length, 0, 'safe default must not create when update target is unresolved');
+    assert.equal(
+        harness.adapterCalls.create.length,
+        0,
+        'safe default must not create when update target is unresolved'
+    );
     assert.equal(harness.adapterCalls.update.length, 0);
 });
 
 test('pending-confirmation: prefix match for delete returns pending-confirmation', async () => {
     await resetStore();
     const harness = createPipelineHarness({
-        intents: [
-            { type: 'delete', title: 'Buy', confidence: 0.9, targetQuery: 'Buy' },
-        ],
+        intents: [{ type: 'delete', title: 'Buy', confidence: 0.9, targetQuery: 'Buy' }],
         activeTasks: [
-            { id: 'task-del-02', title: 'Buy groceries', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
-        ],
+            {
+                id: 'task-del-02',
+                title: 'Buy groceries',
+                projectId: 'inbox',
+                projectName: 'Inbox',
+                priority: 1,
+                status: 0
+            }
+        ]
     });
 
     const result = await harness.processMessage('delete the buy task');
@@ -108,12 +134,17 @@ test('pending-confirmation: prefix match for delete returns pending-confirmation
 test('pending-confirmation: fuzzy/token_overlap match for delete returns pending-confirmation with medium confidence', async () => {
     await resetStore();
     const harness = createPipelineHarness({
-        intents: [
-            { type: 'delete', title: 'grocries', confidence: 0.8, targetQuery: 'grocries' },
-        ],
+        intents: [{ type: 'delete', title: 'grocries', confidence: 0.8, targetQuery: 'grocries' }],
         activeTasks: [
-            { id: 'task-del-03', title: 'Buy groceries', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
-        ],
+            {
+                id: 'task-del-03',
+                title: 'Buy groceries',
+                projectId: 'inbox',
+                projectName: 'Inbox',
+                priority: 1,
+                status: 0
+            }
+        ]
     });
 
     const result = await harness.processMessage('delete the grocries task');
@@ -128,18 +159,28 @@ test('pending-confirmation update receipt uses real destination and no fake plac
     await resetStore();
     const harness = createPipelineHarness({
         intents: [
-            { type: 'update', title: null, projectHint: 'Career', confidence: 0.95, targetQuery: 'weekly report' },
+            { type: 'update', title: null, projectHint: 'Career', confidence: 0.95, targetQuery: 'weekly report' }
         ],
         activeTasks: [
-            { id: 'task-upd-01', title: 'Write weekly report', projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa', projectName: 'Inbox', priority: 5, status: 0 },
-        ],
+            {
+                id: 'task-upd-01',
+                title: 'Write weekly report',
+                projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+                projectName: 'Inbox',
+                priority: 5,
+                status: 0
+            }
+        ]
     });
 
     const result = await harness.processMessage('move weekly report to Career');
 
     assert.equal(result.type, 'pending-confirmation');
     assert.equal(validateOperationReceipt(result.operationReceipt).valid, true);
-    assert.deepEqual(result.operationReceipt.destination, { confidence: 'configured', projectId: 'bbbbbbbbbbbbbbbbbbbbbbbb' });
+    assert.deepEqual(result.operationReceipt.destination, {
+        confidence: 'configured',
+        projectId: 'bbbbbbbbbbbbbbbbbbbbbbbb'
+    });
     assert.notEqual(result.operationReceipt.destination?.projectId, 'pending');
     assert.notEqual(result.operationReceipt.destination?.projectId, 'aaaaaaaaaaaaaaaaaaaaaaaa');
 });
@@ -148,35 +189,50 @@ test('pending-confirmation update receipt ignores unknown projectId destinations
     await resetStore();
     const harness = createPipelineHarness({
         intents: [
-            { type: 'update', title: null, projectId: 'pending', confidence: 0.95, targetQuery: 'weekly report' },
+            { type: 'update', title: null, projectId: 'pending', confidence: 0.95, targetQuery: 'weekly report' }
         ],
         activeTasks: [
-            { id: 'task-upd-unknown-project', title: 'Write weekly report', projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa', projectName: 'Inbox', priority: 5, status: 0 },
-        ],
+            {
+                id: 'task-upd-unknown-project',
+                title: 'Write weekly report',
+                projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+                projectName: 'Inbox',
+                priority: 5,
+                status: 0
+            }
+        ]
     });
 
     const result = await harness.processMessage('move weekly report to unknown project');
 
     assert.equal(result.type, 'pending-confirmation');
-    assert.equal(result.operationReceipt, undefined, 'unknown projectId must not produce a configured destination receipt');
+    assert.equal(
+        result.operationReceipt,
+        undefined,
+        'unknown projectId must not produce a configured destination receipt'
+    );
 });
 
 test('exact delete still executes without confirmation', async () => {
     await resetStore();
     const harness = createPipelineHarness({
-        intents: [
-            { type: 'delete', title: 'Buy groceries', confidence: 0.95, targetQuery: 'Buy groceries' },
-        ],
+        intents: [{ type: 'delete', title: 'Buy groceries', confidence: 0.95, targetQuery: 'Buy groceries' }],
         activeTasks: [
-            { id: 'task-del-exact', title: 'Buy groceries', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
-        ],
+            {
+                id: 'task-del-exact',
+                title: 'Buy groceries',
+                projectId: 'inbox',
+                projectName: 'Inbox',
+                priority: 1,
+                status: 0
+            }
+        ]
     });
 
     const result = await harness.processMessage('delete Buy groceries');
 
     assert.equal(result.type, 'task');
-    assert.equal(harness.adapterCalls.delete.length, 1,
-        'exact match delete should execute without confirmation');
+    assert.equal(harness.adapterCalls.delete.length, 1, 'exact match delete should execute without confirmation');
     assert.equal(validateOperationReceipt(result.operationReceipt).valid, true);
     assert.equal(result.operationReceipt.status, 'applied');
     assert.equal(result.operationReceipt.message.includes('Buy groceries'), false);
@@ -187,11 +243,18 @@ test('pre-resolved taskId bypasses confirmation gate', async () => {
     await resetStore();
     const harness = createPipelineHarness({
         intents: [
-            { type: 'delete', taskId: 'task-pre-resolved', projectId: 'inbox', title: 'Some task', confidence: 0.95 },
+            { type: 'delete', taskId: 'task-pre-resolved', projectId: 'inbox', title: 'Some task', confidence: 0.95 }
         ],
         activeTasks: [
-            { id: 'task-pre-resolved', title: 'Some task', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
-        ],
+            {
+                id: 'task-pre-resolved',
+                title: 'Some task',
+                projectId: 'inbox',
+                projectName: 'Inbox',
+                priority: 1,
+                status: 0
+            }
+        ]
     });
 
     const result = await harness.processMessage('delete the task');
@@ -204,22 +267,26 @@ test('pre-resolved taskId bypasses confirmation gate', async () => {
 test('skipMutationConfirmation bypasses confirmation gate', async () => {
     await resetStore();
     const harness = createPipelineHarness({
-        intents: [
-            { type: 'delete', title: 'groceries', confidence: 0.95, targetQuery: 'groceries' },
-        ],
+        intents: [{ type: 'delete', title: 'groceries', confidence: 0.95, targetQuery: 'groceries' }],
         activeTasks: [
-            { id: 'task-del-skip', title: 'Buy groceries', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
-        ],
+            {
+                id: 'task-del-skip',
+                title: 'Buy groceries',
+                projectId: 'inbox',
+                projectName: 'Inbox',
+                priority: 1,
+                status: 0
+            }
+        ]
     });
 
     const result = await harness.processMessage('delete the groceries task', {
-        skipMutationConfirmation: true,
+        skipMutationConfirmation: true
     });
 
     // skipMutationConfirmation should allow non-exact match to proceed
     assert.equal(result.type, 'task');
-    assert.equal(harness.adapterCalls.delete.length, 1,
-        'delete should execute when skipMutationConfirmation is set');
+    assert.equal(harness.adapterCalls.delete.length, 1, 'delete should execute when skipMutationConfirmation is set');
 });
 
 test('missing project destination does not silently fall back to first project', async () => {
@@ -227,11 +294,9 @@ test('missing project destination does not silently fall back to first project',
     const harness = createPipelineHarness({
         projects: [
             { id: 'proj-career', name: 'Career' },
-            { id: 'proj-personal', name: 'Personal' },
+            { id: 'proj-personal', name: 'Personal' }
         ],
-        intents: [
-            { type: 'create', title: 'Renew passport', confidence: 0.94 },
-        ],
+        intents: [{ type: 'create', title: 'Renew passport', confidence: 0.94 }]
     });
 
     const result = await harness.processMessage('renew passport');
@@ -251,11 +316,9 @@ test('dry-run missing project destination stays blocked dry-run without writing'
     const harness = createPipelineHarness({
         projects: [
             { id: 'proj-career', name: 'Career' },
-            { id: 'proj-personal', name: 'Personal' },
+            { id: 'proj-personal', name: 'Personal' }
         ],
-        intents: [
-            { type: 'create', title: 'Renew passport', confidence: 0.94 },
-        ],
+        intents: [{ type: 'create', title: 'Renew passport', confidence: 0.94 }]
     });
 
     const result = await harness.processMessage('renew passport', { dryRun: true });
@@ -272,15 +335,13 @@ test('dry-run missing project destination stays blocked dry-run without writing'
 test('dry-run create stays preview-only and never writes', async () => {
     await resetStore();
     const harness = createPipelineHarness({
-        intents: [
-            { type: 'create', title: 'Draft note', confidence: 0.9, projectHint: 'Career' },
-        ],
+        intents: [{ type: 'create', title: 'Draft note', confidence: 0.9, projectHint: 'Career' }]
     });
 
     const result = await harness.processMessage('draft note', {
         dryRun: true,
         entryPoint: 'telegram',
-        mode: 'interactive',
+        mode: 'interactive'
     });
 
     assert.equal(result.type, 'preview', 'dry-run should return preview');
@@ -302,15 +363,13 @@ test('dry-run create stays preview-only and never writes', async () => {
 test('scan dry-run receipt reports scan command instead of freeform', async () => {
     await resetStore();
     const harness = createPipelineHarness({
-        intents: [
-            { type: 'create', title: 'Draft note', confidence: 0.9, projectHint: 'Career' },
-        ],
+        intents: [{ type: 'create', title: 'Draft note', confidence: 0.9, projectHint: 'Career' }]
     });
 
     const result = await harness.processMessage('draft note', {
         dryRun: true,
         entryPoint: 'telegram:scan',
-        mode: 'scan',
+        mode: 'scan'
     });
 
     assert.equal(result.type, 'preview');
@@ -321,16 +380,14 @@ test('scan dry-run receipt reports scan command instead of freeform', async () =
 test('adapter failure surfaces a valid failed operation receipt', async () => {
     await resetStore();
     const harness = createPipelineHarness({
-        intents: [
-            { type: 'create', title: 'Draft note', confidence: 0.9, projectHint: 'Career' },
-        ],
+        intents: [{ type: 'create', title: 'Draft note', confidence: 0.9, projectHint: 'Career' }],
         adapterOverrides: {
             createTask: async () => {
                 const error = new Error('TickTick unavailable');
                 error.code = 'SERVER_ERROR';
                 throw error;
-            },
-        },
+            }
+        }
     });
 
     const result = await harness.processMessage('draft note');
@@ -347,7 +404,7 @@ test('rollback-incomplete failure receipt reports external state changed', async
     const harness = createPipelineHarness({
         intents: [
             { type: 'update', title: null, targetQuery: 'weekly report', confidence: 0.95 },
-            { type: 'update', title: null, targetQuery: 'follow up note', confidence: 0.95 },
+            { type: 'update', title: null, targetQuery: 'follow up note', confidence: 0.95 }
         ],
         useRealNormalizer: false,
         normalizedActions: [
@@ -358,7 +415,7 @@ test('rollback-incomplete failure receipt reports external state changed', async
                 title: null,
                 priority: 5,
                 valid: true,
-                validationErrors: [],
+                validationErrors: []
             },
             {
                 type: 'update',
@@ -367,8 +424,8 @@ test('rollback-incomplete failure receipt reports external state changed', async
                 title: null,
                 priority: 1,
                 valid: true,
-                validationErrors: [],
-            },
+                validationErrors: []
+            }
         ],
         adapterOverrides: {
             updateTask: async (taskId, action) => {
@@ -384,18 +441,24 @@ test('rollback-incomplete failure receipt reports external state changed', async
                 const error = new Error('Rollback restore failed');
                 error.code = 'SERVER_ERROR';
                 throw error;
-            },
-        },
+            }
+        }
     });
 
     const result = await harness.processMessage('update report and add follow up note', {
-        skipMutationConfirmation: true,
+        skipMutationConfirmation: true
     });
 
     assert.equal(result.type, 'error');
     assert.equal(result.failure.class, 'rollback');
-    assert.equal(updateAttempts.some(call => call.taskId === 'task-updated-before-failure'), true);
-    assert.equal(updateAttempts.some(call => call.taskId === 'task-fails-after-update'), true);
+    assert.equal(
+        updateAttempts.some((call) => call.taskId === 'task-updated-before-failure'),
+        true
+    );
+    assert.equal(
+        updateAttempts.some((call) => call.taskId === 'task-fails-after-update'),
+        true
+    );
     assert.equal(validateOperationReceipt(result.operationReceipt).valid, true);
     assert.equal(result.operationReceipt.status, 'failed');
     assert.equal(result.operationReceipt.changed, true);
@@ -405,7 +468,7 @@ test('rollback-incomplete failure receipt reports external state changed', async
 test('dry-run malformed intent failure receipt preserves dry-run state', async () => {
     await resetStore();
     const harness = createPipelineHarness({
-        intents: { malformed: true },
+        intents: { malformed: true }
     });
 
     const result = await harness.processMessage('draft note', { dryRun: true });
@@ -427,12 +490,12 @@ test('AI quota deferral surfaces deferred operation receipt', async () => {
         deferIntent: async (payload) => {
             deferred.push(payload);
             return { id: 'deferred-ai-1' };
-        },
+        }
     });
 
     const result = await harness.processMessage('draft note', {
         entryPoint: 'deferred-retry',
-        mode: 'retry',
+        mode: 'retry'
     });
 
     assert.equal(result.type, 'error');
@@ -456,7 +519,7 @@ test('dry-run AI quota failure stays blocked and does not defer', async () => {
         deferIntent: async (payload) => {
             deferred.push(payload);
             return { id: 'deferred-ai-dry-run' };
-        },
+        }
     });
 
     const result = await harness.processMessage('draft note', { dryRun: true });
@@ -476,16 +539,21 @@ test('dry-run AI quota failure stays blocked and does not defer', async () => {
 test('blocked action types do not produce applied receipts when nothing executable runs', async () => {
     await resetStore();
     const harness = createPipelineHarness({
-        intents: [
-            { type: 'delete', title: 'Buy groceries', confidence: 0.95, targetQuery: 'Buy groceries' },
-        ],
+        intents: [{ type: 'delete', title: 'Buy groceries', confidence: 0.95, targetQuery: 'Buy groceries' }],
         activeTasks: [
-            { id: 'task-del-blocked', title: 'Buy groceries', projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa', projectName: 'Inbox', priority: 1, status: 0 },
-        ],
+            {
+                id: 'task-del-blocked',
+                title: 'Buy groceries',
+                projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+                projectName: 'Inbox',
+                priority: 1,
+                status: 0
+            }
+        ]
     });
 
     const result = await harness.processMessage('delete Buy groceries', {
-        blockedActionTypes: ['delete', 'complete'],
+        blockedActionTypes: ['delete', 'complete']
     });
 
     assert.equal(result.type, 'task');
@@ -504,7 +572,7 @@ test('buildMutationConfirmationMessage produces correct output', () => {
         matchConfidence: 'high',
         matchType: 'contains',
         score: 60,
-        reason: null,
+        reason: null
     };
 
     const msg = buildMutationConfirmationMessage(pendingData);
@@ -538,14 +606,13 @@ test('pendingMutationConfirmation store TTL expiry returns null', async () => {
         originalMessage: 'test',
         matchedTask: { taskId: 't1', title: 'Test' },
         actionType: 'delete',
-        createdAt: new Date(Date.now() - store.MUTATION_CONFIRMATION_TTL_MS - 1000).toISOString(),
+        createdAt: new Date(Date.now() - store.MUTATION_CONFIRMATION_TTL_MS - 1000).toISOString()
     };
     await store.setPendingMutationConfirmation(data);
 
     // Should return null due to TTL expiry
     const result = store.getPendingMutationConfirmation();
-    assert.equal(result, null,
-        'expired pending mutation confirmation should return null');
+    assert.equal(result, null, 'expired pending mutation confirmation should return null');
     await resetStore();
 });
 
@@ -560,18 +627,23 @@ test('buildMutationConfirmationMessage returns fallback for null input', () => {
 test('processMessageWithContext with non-exact match and skipMutationConfirmation executes', async () => {
     await resetStore();
     const harness = createPipelineHarness({
-        intents: [
-            { type: 'complete', title: 'weekly report', confidence: 0.9, targetQuery: 'weekly' },
-        ],
+        intents: [{ type: 'complete', title: 'weekly report', confidence: 0.9, targetQuery: 'weekly' }],
         activeTasks: [
-            { id: 'task-pmc-01', title: 'Write weekly report', projectId: 'inbox', projectName: 'Inbox', priority: 5, status: 0 },
-        ],
+            {
+                id: 'task-pmc-01',
+                title: 'Write weekly report',
+                projectId: 'inbox',
+                projectName: 'Inbox',
+                priority: 5,
+                status: 0
+            }
+        ]
     });
 
     // processMessageWithContext should inject context then pass skipMutationConfirmation through
     const result = await harness.pipeline.processMessageWithContext('complete the weekly report', {
         currentDate: '2026-03-10',
-        skipMutationConfirmation: true,
+        skipMutationConfirmation: true
     });
 
     assert.equal(result.type, 'task', 'skipMutationConfirmation should bypass the gate in processMessageWithContext');
@@ -582,12 +654,17 @@ test('processMessageWithContext with non-exact match and skipMutationConfirmatio
 test('duplicate confirm tap is no-op after pending cleared (duplicate-tap guard)', async () => {
     await resetStore();
     const harness = createPipelineHarness({
-        intents: [
-            { type: 'complete', title: 'weekly report', confidence: 0.9, targetQuery: 'weekly' },
-        ],
+        intents: [{ type: 'complete', title: 'weekly report', confidence: 0.9, targetQuery: 'weekly' }],
         activeTasks: [
-            { id: 'task-dct-01', title: 'Write weekly report', projectId: 'inbox', projectName: 'Inbox', priority: 5, status: 0 },
-        ],
+            {
+                id: 'task-dct-01',
+                title: 'Write weekly report',
+                projectId: 'inbox',
+                projectName: 'Inbox',
+                priority: 5,
+                status: 0
+            }
+        ]
     });
 
     // First call with the gate produces pending-confirmation
@@ -600,7 +677,7 @@ test('duplicate confirm tap is no-op after pending cleared (duplicate-tap guard)
     await store.setPendingMutationConfirmation({
         originalMessage: 'complete the weekly report',
         matchedTask: result1.pendingConfirmation.matchedTask,
-        actionType: result1.pendingConfirmation.actionType,
+        actionType: result1.pendingConfirmation.actionType
     });
 
     // 2. First confirm: clear pending, then resume through pipeline with skipMutationConfirmation
@@ -611,7 +688,7 @@ test('duplicate confirm tap is no-op after pending cleared (duplicate-tap guard)
     const result2 = await harness.processMessage('complete the weekly report', {
         existingTask: { id: 'task-dct-01', projectId: 'inbox', title: 'Write weekly report' },
         skipClarification: true,
-        skipMutationConfirmation: true,
+        skipMutationConfirmation: true
     });
     assert.equal(result2.type, 'task', 'first confirm should execute');
     assert.equal(harness.adapterCalls.complete.length, 1);
@@ -624,12 +701,15 @@ test('duplicate confirm tap is no-op after pending cleared (duplicate-tap guard)
     // Since there's no existingTask here, it would go through resolver again
     // which would produce another pending-confirmation rather than executing
     const result3 = await harness.processMessage('complete the weekly report', {
-        skipMutationConfirmation: true,
+        skipMutationConfirmation: true
     });
     // With skipMutationConfirmation it should execute
     assert.equal(result3.type, 'task');
-    assert.equal(harness.adapterCalls.complete.length, 2,
-        'second confirm with skipMutationConfirmation should execute but not double-count');
+    assert.equal(
+        harness.adapterCalls.complete.length,
+        2,
+        'second confirm with skipMutationConfirmation should execute but not double-count'
+    );
 });
 
 test('scan/review pending-confirmation marks task processed without confirm (fail-closed)', async () => {
@@ -637,22 +717,25 @@ test('scan/review pending-confirmation marks task processed without confirm (fai
     // dryRun=true simulates scan/review mode: pending-confirmation should mark task
     // as processed rather than raising unknown_result_type
     const harness = createPipelineHarness({
-        intents: [
-            { type: 'delete', title: 'groceries', confidence: 0.95, targetQuery: 'groceries' },
-        ],
+        intents: [{ type: 'delete', title: 'groceries', confidence: 0.95, targetQuery: 'groceries' }],
         activeTasks: [
-            { id: 'task-sc-01', title: 'Buy groceries', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
-        ],
+            {
+                id: 'task-sc-01',
+                title: 'Buy groceries',
+                projectId: 'inbox',
+                projectName: 'Inbox',
+                priority: 1,
+                status: 0
+            }
+        ]
     });
 
     const result = await harness.processMessage('delete the groceries task', {
-        dryRun: true,
+        dryRun: true
     });
 
-    assert.equal(result.type, 'pending-confirmation',
-        'pending-confirmation should be returned even in dryRun mode');
-    assert.equal(harness.adapterCalls.delete.length, 0,
-        'no adapter call should occur');
+    assert.equal(result.type, 'pending-confirmation', 'pending-confirmation should be returned even in dryRun mode');
+    assert.equal(harness.adapterCalls.delete.length, 0, 'no adapter call should occur');
 });
 
 test('pendingMutationConfirmation store set/get/clear lifecycle', async () => {
@@ -668,7 +751,7 @@ test('pendingMutationConfirmation store set/get/clear lifecycle', async () => {
         userId: 67890,
         entryPoint: 'telegram:freeform',
         mode: 'interactive',
-        workStyleMode: 'standard',
+        workStyleMode: 'standard'
     };
 
     // Initially null
@@ -690,28 +773,42 @@ test('pendingMutationConfirmation store set/get/clear lifecycle', async () => {
 test('pending-confirmation: name-overlap contains match returns pending-confirmation', async () => {
     await resetStore();
     const harness = createPipelineHarness({
-        intents: [
-            { type: 'complete', title: 'vendor', confidence: 0.9, targetQuery: 'vendor' },
-        ],
+        intents: [{ type: 'complete', title: 'vendor', confidence: 0.9, targetQuery: 'vendor' }],
         activeTasks: [
-            { id: 'task-vendor-01', title: 'Visa check with vendor', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
-            { id: 'task-other-01', title: 'Buy groceries', projectId: 'inbox', projectName: 'Inbox', priority: 1, status: 0 },
-        ],
+            {
+                id: 'task-vendor-01',
+                title: 'Visa check with vendor',
+                projectId: 'inbox',
+                projectName: 'Inbox',
+                priority: 1,
+                status: 0
+            },
+            {
+                id: 'task-other-01',
+                title: 'Buy groceries',
+                projectId: 'inbox',
+                projectName: 'Inbox',
+                priority: 1,
+                status: 0
+            }
+        ]
     });
 
     const result = await harness.processMessage('complete the vendor task');
 
     // "vendor" is a contains match for "Visa check with vendor" — non-exact
-    assert.equal(result.type, 'pending-confirmation',
-        'name-overlap contains match should require confirmation');
-    assert.equal(harness.adapterCalls.complete.length, 0,
-        'adapter complete should NOT be called for non-exact match without confirmation');
+    assert.equal(result.type, 'pending-confirmation', 'name-overlap contains match should require confirmation');
+    assert.equal(
+        harness.adapterCalls.complete.length,
+        0,
+        'adapter complete should NOT be called for non-exact match without confirmation'
+    );
     assert.ok(result.pendingConfirmation, 'result should include pendingConfirmation block');
-    assert.equal(result.pendingConfirmation.matchType, 'contains',
-        'should be a contains match');
-    assert.equal(result.pendingConfirmation.matchConfidence, 'high',
-        'contains match should be high confidence');
+    assert.equal(result.pendingConfirmation.matchType, 'contains', 'should be a contains match');
+    assert.equal(result.pendingConfirmation.matchConfidence, 'high', 'contains match should be high confidence');
     assert.equal(result.pendingConfirmation.actionType, 'complete');
-    assert.ok(result.confirmationText.includes('Visa check with vendor'),
-        'confirmation text should mention the matched task title');
+    assert.ok(
+        result.confirmationText.includes('Visa check with vendor'),
+        'confirmation text should mention the matched task title'
+    );
 });

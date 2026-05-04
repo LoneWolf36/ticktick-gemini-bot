@@ -5,7 +5,7 @@ import { createPipelineHarness } from './pipeline-harness.js';
 
 test('R7: pipeline truncates over-limit checklist items to 30', async () => {
     const checklistItems = Array.from({ length: 35 }, (_, index) => ({
-        title: `item ${index + 1}`,
+        title: `item ${index + 1}`
     }));
 
     const { processMessage, adapterCalls } = createPipelineHarness({
@@ -15,9 +15,9 @@ test('R7: pipeline truncates over-limit checklist items to 30', async () => {
                 title: 'Plan launch checklist',
                 confidence: 0.95,
                 projectHint: 'Career',
-                checklistItems,
-            },
-        ],
+                checklistItems
+            }
+        ]
     });
 
     const result = await processMessage('plan launch checklist with many steps');

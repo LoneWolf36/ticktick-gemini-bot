@@ -6,7 +6,12 @@
 
 import { describe, it, beforeEach } from 'node:test';
 import assert from 'node:assert/strict';
-import { normalizeAction, normalizeActions, normalizeActionBatch, validateMutationBatch } from '../services/normalizer.js';
+import {
+    normalizeAction,
+    normalizeActions,
+    normalizeActionBatch,
+    validateMutationBatch
+} from '../services/normalizer.js';
 import { DEFAULT_PROJECTS } from './pipeline-harness.js';
 
 describe('Normalizer Module', () => {
@@ -20,7 +25,7 @@ describe('Normalizer Module', () => {
                 type: 'create',
                 title: 'Test task'
             });
-            
+
             assert.ok(typeof result === 'object');
             assert.ok('type' in result);
             assert.ok('title' in result);
@@ -44,7 +49,7 @@ describe('Normalizer Module', () => {
                 { type: 'create', title: 'Task 1' },
                 { type: 'create', title: 'Task 2' }
             ]);
-            
+
             assert.strictEqual(results.length, 2);
             assert.ok(Array.isArray(results));
         });
@@ -54,12 +59,12 @@ describe('Normalizer Module', () => {
         it('should match opaque project IDs exactly', () => {
             const projects = [
                 { id: 'inbox118958109', name: 'Inbox' },
-                { id: 'career-xyz', name: 'Career' },
+                { id: 'career-xyz', name: 'Career' }
             ];
 
             const result = normalizeAction(
                 { type: 'create', title: 'Plan sprint', projectHint: 'inbox118958109' },
-                { projects },
+                { projects }
             );
 
             assert.strictEqual(result.projectId, 'inbox118958109');
@@ -69,7 +74,7 @@ describe('Normalizer Module', () => {
         it('should block unmatched hinted project and avoid default fallback', () => {
             const result = normalizeAction(
                 { type: 'create', title: 'Plan sprint', projectHint: 'Unknown team' },
-                { projects: DEFAULT_PROJECTS, defaultProjectId: DEFAULT_PROJECTS[0].id },
+                { projects: DEFAULT_PROJECTS, defaultProjectId: DEFAULT_PROJECTS[0].id }
             );
 
             assert.strictEqual(result.projectId, null);
@@ -80,7 +85,7 @@ describe('Normalizer Module', () => {
             const projects = [
                 { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', name: 'Inbox' },
                 { id: 'bbbbbbbbbbbbbbbbbbbbbbbb', name: 'Career' },
-                { id: 'cccccccccccccccccccccccc', name: 'Inbox' },
+                { id: 'cccccccccccccccccccccccc', name: 'Inbox' }
             ];
 
             const result = normalizeAction(
@@ -91,9 +96,9 @@ describe('Normalizer Module', () => {
                         confidence: 'ambiguous',
                         choices: projects
                             .filter((project) => project.name === 'Inbox')
-                            .map((project) => ({ projectId: project.id, projectName: project.name })),
-                    },
-                },
+                            .map((project) => ({ projectId: project.id, projectName: project.name }))
+                    }
+                }
             );
 
             assert.strictEqual(result.projectId, null);
@@ -210,13 +215,55 @@ describe('Title Normalization (FR-006)', () => {
         });
 
         it('should recognize common verbs', () => {
-            const verbs = ['add', 'book', 'buy', 'call', 'check', 'complete', 'create', 
-                          'delete', 'do', 'email', 'fetch', 'file', 'finish', 'fix', 'get', 
-                          'go', 'join', 'learn', 'make', 'meet', 'organize', 'pay', 'plan', 
-                          'prepare', 'read', 'register', 'remove', 'reply', 'review', 
-                          'schedule', 'send', 'set', 'setup', 'start', 'study', 'submit', 
-                          'take', 'talk', 'test', 'update', 'upload', 'verify', 'visit', 
-                          'wait', 'walk', 'watch', 'write'];
+            const verbs = [
+                'add',
+                'book',
+                'buy',
+                'call',
+                'check',
+                'complete',
+                'create',
+                'delete',
+                'do',
+                'email',
+                'fetch',
+                'file',
+                'finish',
+                'fix',
+                'get',
+                'go',
+                'join',
+                'learn',
+                'make',
+                'meet',
+                'organize',
+                'pay',
+                'plan',
+                'prepare',
+                'read',
+                'register',
+                'remove',
+                'reply',
+                'review',
+                'schedule',
+                'send',
+                'set',
+                'setup',
+                'start',
+                'study',
+                'submit',
+                'take',
+                'talk',
+                'test',
+                'update',
+                'upload',
+                'verify',
+                'visit',
+                'wait',
+                'walk',
+                'watch',
+                'write'
+            ];
 
             for (const verb of verbs) {
                 const result = normalizeAction({
@@ -224,8 +271,7 @@ describe('Title Normalization (FR-006)', () => {
                     title: `${verb} something`
                 });
                 // Should not add "Do" prefix
-                assert.ok(!result.title.startsWith('Do ' + verb), 
-                    `Verb "${verb}" should not get "Do" prefix`);
+                assert.ok(!result.title.startsWith('Do ' + verb), `Verb "${verb}" should not get "Do" prefix`);
             }
         });
 
@@ -248,12 +294,13 @@ describe('Title Normalization (FR-006)', () => {
 
     describe('_normalizeTitle - Truncation', () => {
         it('should truncate long titles at word boundary', () => {
-            const longTitle = 'This is a very long task title that exceeds the maximum character limit and should be truncated at the nearest word boundary';
+            const longTitle =
+                'This is a very long task title that exceeds the maximum character limit and should be truncated at the nearest word boundary';
             const result = normalizeAction({
                 type: 'create',
                 title: longTitle
             });
-            
+
             assert.ok(result.title.length <= 100);
             assert.ok(result.title.endsWith('…'));
         });
@@ -264,17 +311,20 @@ describe('Title Normalization (FR-006)', () => {
                 type: 'create',
                 title: longTitle
             });
-            
+
             assert.ok(result.title.length <= 100);
         });
 
         it('should respect custom maxLength', () => {
             const longTitle = 'This is a moderately long title';
-            const result = normalizeAction({
-                type: 'create',
-                title: longTitle
-            }, { maxTitleLength: 20 });
-            
+            const result = normalizeAction(
+                {
+                    type: 'create',
+                    title: longTitle
+                },
+                { maxTitleLength: 20 }
+            );
+
             assert.ok(result.title.length <= 20);
         });
     });
@@ -376,59 +426,74 @@ describe('Content Normalization (FR-007)', () => {
 
     describe('_normalizeContent - Content preservation (FR-007)', () => {
         it('should preserve existing content when new content is null', () => {
-            const result = normalizeAction({
-                type: 'update',
-                title: 'Task',
-                content: null
-            }, {
-                existingTaskContent: 'Existing task description'
-            });
+            const result = normalizeAction(
+                {
+                    type: 'update',
+                    title: 'Task',
+                    content: null
+                },
+                {
+                    existingTaskContent: 'Existing task description'
+                }
+            );
             assert.strictEqual(result.content, 'Existing task description');
         });
 
         it('should preserve existing content when new content is just noise', () => {
-            const result = normalizeAction({
-                type: 'update',
-                title: 'Task',
-                content: "You've got this! Stay motivated!"
-            }, {
-                existingTaskContent: 'Original detailed instructions'
-            });
+            const result = normalizeAction(
+                {
+                    type: 'update',
+                    title: 'Task',
+                    content: "You've got this! Stay motivated!"
+                },
+                {
+                    existingTaskContent: 'Original detailed instructions'
+                }
+            );
             assert.strictEqual(result.content, 'Original detailed instructions');
         });
 
         it('should append new content if it adds value', () => {
-            const result = normalizeAction({
-                type: 'update',
-                title: 'Task',
-                content: 'New step: Call the vendor at 555-1234'
-            }, {
-                existingTaskContent: 'Original instructions'
-            });
+            const result = normalizeAction(
+                {
+                    type: 'update',
+                    title: 'Task',
+                    content: 'New step: Call the vendor at 555-1234'
+                },
+                {
+                    existingTaskContent: 'Original instructions'
+                }
+            );
             assert.ok(result.content.includes('Original instructions'));
             assert.ok(result.content.includes('---'));
             assert.ok(result.content.includes('Call the vendor'));
         });
 
         it('should avoid duplication when new content is substring of existing', () => {
-            const result = normalizeAction({
-                type: 'update',
-                title: 'Task',
-                content: 'Original instructions'
-            }, {
-                existingTaskContent: 'Original instructions with more details'
-            });
+            const result = normalizeAction(
+                {
+                    type: 'update',
+                    title: 'Task',
+                    content: 'Original instructions'
+                },
+                {
+                    existingTaskContent: 'Original instructions with more details'
+                }
+            );
             assert.strictEqual(result.content, 'Original instructions with more details');
         });
 
         it('should keep existing content unchanged when new content is identical', () => {
-            const result = normalizeAction({
-                type: 'update',
-                title: 'Task',
-                content: 'Same content'
-            }, {
-                existingTaskContent: 'Same content'
-            });
+            const result = normalizeAction(
+                {
+                    type: 'update',
+                    title: 'Task',
+                    content: 'Same content'
+                },
+                {
+                    existingTaskContent: 'Same content'
+                }
+            );
             assert.strictEqual(result.content, 'Same content');
         });
     });
@@ -590,9 +655,9 @@ describe('Recurrence Conversion (FR-008)', () => {
                 {
                     type: 'create',
                     title: 'Task',
-                    repeatHint: 'every sunday for a month',
+                    repeatHint: 'every sunday for a month'
                 },
-                { currentDate: '2026-03-01T10:00:00.000Z', timezone: 'Europe/Dublin' },
+                { currentDate: '2026-03-01T10:00:00.000Z', timezone: 'Europe/Dublin' }
             );
 
             assert.match(result.repeatFlag, /^RRULE:FREQ=WEEKLY;BYDAY=SU;UNTIL=20260401T235959Z$/);
@@ -603,9 +668,9 @@ describe('Recurrence Conversion (FR-008)', () => {
                 {
                     type: 'create',
                     title: 'Task',
-                    repeatHint: 'weekly on sunday for 1 month',
+                    repeatHint: 'weekly on sunday for 1 month'
                 },
-                { currentDate: '2026-03-01T10:00:00.000Z', timezone: 'Europe/Dublin' },
+                { currentDate: '2026-03-01T10:00:00.000Z', timezone: 'Europe/Dublin' }
             );
 
             assert.match(result.repeatFlag, /^RRULE:FREQ=WEEKLY;BYDAY=SU;UNTIL=20260401T235959Z$/);
@@ -616,9 +681,9 @@ describe('Recurrence Conversion (FR-008)', () => {
                 {
                     type: 'create',
                     title: 'Task',
-                    repeatHint: 'every monday for a month',
+                    repeatHint: 'every monday for a month'
                 },
-                { currentDate: '2026-03-01T10:00:00.000Z', timezone: 'Europe/Dublin' },
+                { currentDate: '2026-03-01T10:00:00.000Z', timezone: 'Europe/Dublin' }
             );
 
             assert.match(result.repeatFlag, /^RRULE:FREQ=WEEKLY;BYDAY=MO;UNTIL=20260401T235959Z$/);
@@ -629,9 +694,9 @@ describe('Recurrence Conversion (FR-008)', () => {
                 {
                     type: 'create',
                     title: 'Task',
-                    repeatHint: 'every alternate day for 2 months',
+                    repeatHint: 'every alternate day for 2 months'
                 },
-                { currentDate: '2026-03-01T10:00:00.000Z', timezone: 'Europe/Dublin' },
+                { currentDate: '2026-03-01T10:00:00.000Z', timezone: 'Europe/Dublin' }
             );
 
             assert.match(result.repeatFlag, /^RRULE:FREQ=DAILY;INTERVAL=2;UNTIL=20260501T235959Z$/);
@@ -642,9 +707,9 @@ describe('Recurrence Conversion (FR-008)', () => {
                 {
                     type: 'create',
                     title: 'Task',
-                    repeatHint: 'alternate day for 2 months',
+                    repeatHint: 'alternate day for 2 months'
                 },
-                { currentDate: '2026-03-01T10:00:00.000Z', timezone: 'Europe/Dublin' },
+                { currentDate: '2026-03-01T10:00:00.000Z', timezone: 'Europe/Dublin' }
             );
 
             assert.match(result.repeatFlag, /^RRULE:FREQ=DAILY;INTERVAL=2;UNTIL=20260501T235959Z$/);
@@ -654,7 +719,7 @@ describe('Recurrence Conversion (FR-008)', () => {
             const result = normalizeAction({
                 type: 'create',
                 title: 'Task',
-                repeatHint: 'twice a week',
+                repeatHint: 'twice a week'
             });
 
             assert.equal(result.valid, false);
@@ -665,7 +730,7 @@ describe('Recurrence Conversion (FR-008)', () => {
             const result = normalizeAction({
                 type: 'create',
                 title: 'Task',
-                repeatFlag: 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE',
+                repeatFlag: 'RRULE:FREQ=WEEKLY;BYDAY=MO,WE'
             });
 
             assert.equal(result.valid, true);
@@ -768,55 +833,70 @@ describe('Integration Tests', () => {
     });
 
     it('should set isAllDay true for plain date tasks without time hint', () => {
-        const result = normalizeAction({
-            type: 'create',
-            title: 'Buy groceries',
-            dueDate: 'tomorrow',
-        }, { currentDate: new Date('2026-05-03T10:00:00Z'), timezone: 'Europe/Dublin' });
+        const result = normalizeAction(
+            {
+                type: 'create',
+                title: 'Buy groceries',
+                dueDate: 'tomorrow'
+            },
+            { currentDate: new Date('2026-05-03T10:00:00Z'), timezone: 'Europe/Dublin' }
+        );
 
         assert.strictEqual(result.isAllDay, true);
         assert.ok(result.dueDate.includes('T00:00:00.000'));
     });
 
     it('should set isAllDay false and parse time hint "at 9am"', () => {
-        const result = normalizeAction({
-            type: 'create',
-            title: 'Standup meeting',
-            dueDate: 'tomorrow at 9am',
-        }, { currentDate: new Date('2026-05-03T10:00:00Z'), timezone: 'Europe/Dublin' });
+        const result = normalizeAction(
+            {
+                type: 'create',
+                title: 'Standup meeting',
+                dueDate: 'tomorrow at 9am'
+            },
+            { currentDate: new Date('2026-05-03T10:00:00Z'), timezone: 'Europe/Dublin' }
+        );
 
         assert.strictEqual(result.isAllDay, false);
         assert.ok(result.dueDate.includes('T09:00:00.000'));
     });
 
     it('should set isAllDay false and parse time hint "morning"', () => {
-        const result = normalizeAction({
-            type: 'create',
-            title: 'Review PR',
-            dueDate: 'today morning',
-        }, { currentDate: new Date('2026-05-03T10:00:00Z'), timezone: 'Europe/Dublin' });
+        const result = normalizeAction(
+            {
+                type: 'create',
+                title: 'Review PR',
+                dueDate: 'today morning'
+            },
+            { currentDate: new Date('2026-05-03T10:00:00Z'), timezone: 'Europe/Dublin' }
+        );
 
         assert.strictEqual(result.isAllDay, false);
         assert.ok(result.dueDate.includes('T09:00:00.000'));
     });
 
     it('should set isAllDay false and parse time hint "afternoon"', () => {
-        const result = normalizeAction({
-            type: 'create',
-            title: 'Gym session',
-            dueDate: 'friday afternoon',
-        }, { currentDate: new Date('2026-05-03T10:00:00Z'), timezone: 'Europe/Dublin' });
+        const result = normalizeAction(
+            {
+                type: 'create',
+                title: 'Gym session',
+                dueDate: 'friday afternoon'
+            },
+            { currentDate: new Date('2026-05-03T10:00:00Z'), timezone: 'Europe/Dublin' }
+        );
 
         assert.strictEqual(result.isAllDay, false);
         assert.ok(result.dueDate.includes('T14:00:00.000'));
     });
 
     it('should set isAllDay false and parse time hint "at 3:30pm"', () => {
-        const result = normalizeAction({
-            type: 'create',
-            title: 'Call dentist',
-            dueDate: 'tomorrow at 3:30pm',
-        }, { currentDate: new Date('2026-05-03T10:00:00Z'), timezone: 'Europe/Dublin' });
+        const result = normalizeAction(
+            {
+                type: 'create',
+                title: 'Call dentist',
+                dueDate: 'tomorrow at 3:30pm'
+            },
+            { currentDate: new Date('2026-05-03T10:00:00Z'), timezone: 'Europe/Dublin' }
+        );
 
         assert.strictEqual(result.isAllDay, false);
         assert.ok(result.dueDate.includes('T15:30:00.000'));
@@ -836,14 +916,17 @@ describe('Integration Tests', () => {
     });
 
     it('should handle update with content preservation', () => {
-        const result = normalizeAction({
-            type: 'update',
-            taskId: '123',
-            title: 'Updated task',
-            content: "Stay motivated! New note: call vendor"
-        }, {
-            existingTaskContent: 'Original instructions here'
-        });
+        const result = normalizeAction(
+            {
+                type: 'update',
+                taskId: '123',
+                title: 'Updated task',
+                content: 'Stay motivated! New note: call vendor'
+            },
+            {
+                existingTaskContent: 'Original instructions here'
+            }
+        );
 
         assert.ok(result.content.includes('Original instructions here'));
         assert.ok(result.content.includes('call vendor'));
@@ -852,7 +935,7 @@ describe('Integration Tests', () => {
     it('should reject invalid actions', () => {
         const result = normalizeAction({
             type: 'create',
-            title: ''  // Empty title after normalization
+            title: '' // Empty title after normalization
         });
 
         assert.strictEqual(result.valid, false);
@@ -871,7 +954,7 @@ describe('Integration Tests', () => {
 
         assert.strictEqual(results.length, 3);
         // All should have the same normalized title
-        assert.ok(results.every(r => r.title === 'Study session'));
+        assert.ok(results.every((r) => r.title === 'Study session'));
     });
 
     it('should auto-split multi-day dueDate without explicit splitStrategy', () => {
@@ -879,15 +962,15 @@ describe('Integration Tests', () => {
             {
                 type: 'create',
                 title: 'Study system design',
-                dueDate: 'monday tuesday and wednesday',
+                dueDate: 'monday tuesday and wednesday'
             }
         ]);
 
         assert.strictEqual(results.length, 3);
-        assert.ok(results.every(r => r.type === 'create'));
-        assert.ok(results.every(r => r.repeatFlag === null));
-        assert.ok(results.every(r => typeof r.dueDate === 'string' && r.dueDate.includes('T00:00:00.000')));
-        assert.ok(results.every(r => r.isAllDay === true));
+        assert.ok(results.every((r) => r.type === 'create'));
+        assert.ok(results.every((r) => r.repeatFlag === null));
+        assert.ok(results.every((r) => typeof r.dueDate === 'string' && r.dueDate.includes('T00:00:00.000')));
+        assert.ok(results.every((r) => r.isAllDay === true));
     });
 
     it('should not split multi-day dueDate when recurrence hint is present', () => {
@@ -896,7 +979,7 @@ describe('Integration Tests', () => {
                 type: 'create',
                 title: 'Gym sessions',
                 dueDate: 'mon wed fri',
-                repeatHint: 'every weekday',
+                repeatHint: 'every weekday'
             }
         ]);
 
@@ -909,7 +992,7 @@ describe('Integration Tests', () => {
             type: 'create',
             title: 'Run daily',
             repeatFlag: 'RRULE:FREQ=DAILY;INTERVAL=1',
-            repeatHint: null,
+            repeatHint: null
         });
 
         assert.strictEqual(result.repeatFlag, 'RRULE:FREQ=DAILY;INTERVAL=1');
@@ -929,13 +1012,13 @@ describe('Validation Tests', () => {
     it('should require title for create actions', () => {
         const result = normalizeAction({ type: 'create', title: '' });
         assert.strictEqual(result.valid, false);
-        assert.ok(result.validationErrors.some(e => e.includes('title')));
+        assert.ok(result.validationErrors.some((e) => e.includes('title')));
     });
 
     it('should require taskId for update actions', () => {
         const result = normalizeAction({ type: 'update', title: 'Task' });
         assert.strictEqual(result.valid, false);
-        assert.ok(result.validationErrors.some(e => e.includes('taskId')));
+        assert.ok(result.validationErrors.some((e) => e.includes('taskId')));
     });
 
     it('should validate priority values', () => {
@@ -954,7 +1037,7 @@ describe('Validation Tests', () => {
         });
 
         assert.strictEqual(result.valid, false);
-        assert.ok(result.validationErrors.some(e => e.includes('Confidence')));
+        assert.ok(result.validationErrors.some((e) => e.includes('Confidence')));
     });
 });
 
@@ -965,18 +1048,21 @@ describe('Validation Tests', () => {
 describe('WP03: Mutation Action Normalization', () => {
     describe('Resolved update action', () => {
         it('should normalize a resolved update action with taskId', () => {
-            const result = normalizeAction({
-                type: 'update',
-                targetQuery: 'buy groceries',
-                title: null,
-                content: null,
-                priority: null,
-                dueDate: 'tomorrow',
-                confidence: 0.9
-            }, {
-                resolvedTask: { id: 'abc123', projectId: 'proj456', title: 'Buy groceries' },
-                existingTaskContent: 'Get milk, eggs, and bread'
-            });
+            const result = normalizeAction(
+                {
+                    type: 'update',
+                    targetQuery: 'buy groceries',
+                    title: null,
+                    content: null,
+                    priority: null,
+                    dueDate: 'tomorrow',
+                    confidence: 0.9
+                },
+                {
+                    resolvedTask: { id: 'abc123', projectId: 'proj456', title: 'Buy groceries' },
+                    existingTaskContent: 'Get milk, eggs, and bread'
+                }
+            );
 
             assert.strictEqual(result.type, 'update');
             assert.strictEqual(result.taskId, 'abc123');
@@ -987,44 +1073,53 @@ describe('WP03: Mutation Action Normalization', () => {
         });
 
         it('should preserve existing content when update has no new content', () => {
-            const result = normalizeAction({
-                type: 'update',
-                targetQuery: 'buy groceries',
-                title: null,
-                content: null,
-                confidence: 0.9
-            }, {
-                resolvedTask: { id: 'abc123', projectId: null, title: 'Buy groceries' },
-                existingTaskContent: 'Detailed shopping list with quantities'
-            });
+            const result = normalizeAction(
+                {
+                    type: 'update',
+                    targetQuery: 'buy groceries',
+                    title: null,
+                    content: null,
+                    confidence: 0.9
+                },
+                {
+                    resolvedTask: { id: 'abc123', projectId: null, title: 'Buy groceries' },
+                    existingTaskContent: 'Detailed shopping list with quantities'
+                }
+            );
 
             assert.strictEqual(result.content, 'Detailed shopping list with quantities');
         });
 
         it('should preserve existing content when update content is just filler', () => {
-            const result = normalizeAction({
-                type: 'update',
-                targetQuery: 'buy groceries',
-                content: "You've got this! Stay focused!",
-                confidence: 0.9
-            }, {
-                resolvedTask: { id: 'abc123', projectId: null, title: 'Buy groceries' },
-                existingTaskContent: 'Original detailed instructions'
-            });
+            const result = normalizeAction(
+                {
+                    type: 'update',
+                    targetQuery: 'buy groceries',
+                    content: "You've got this! Stay focused!",
+                    confidence: 0.9
+                },
+                {
+                    resolvedTask: { id: 'abc123', projectId: null, title: 'Buy groceries' },
+                    existingTaskContent: 'Original detailed instructions'
+                }
+            );
 
             assert.strictEqual(result.content, 'Original detailed instructions');
         });
 
         it('should append new content when it adds value', () => {
-            const result = normalizeAction({
-                type: 'update',
-                targetQuery: 'buy groceries',
-                content: 'Note: Also check for organic produce section',
-                confidence: 0.9
-            }, {
-                resolvedTask: { id: 'abc123', projectId: null, title: 'Buy groceries' },
-                existingTaskContent: 'Get milk, eggs, bread'
-            });
+            const result = normalizeAction(
+                {
+                    type: 'update',
+                    targetQuery: 'buy groceries',
+                    content: 'Note: Also check for organic produce section',
+                    confidence: 0.9
+                },
+                {
+                    resolvedTask: { id: 'abc123', projectId: null, title: 'Buy groceries' },
+                    existingTaskContent: 'Get milk, eggs, bread'
+                }
+            );
 
             assert.ok(result.content.includes('Get milk, eggs, bread'));
             assert.ok(result.content.includes('---'));
@@ -1032,28 +1127,34 @@ describe('WP03: Mutation Action Normalization', () => {
         });
 
         it('should omit title for mutations when no rename is intended', () => {
-            const result = normalizeAction({
-                type: 'update',
-                targetQuery: 'buy groceries',
-                title: null,
-                confidence: 0.9
-            }, {
-                resolvedTask: { id: 'abc123', projectId: null, title: 'Buy groceries' }
-            });
+            const result = normalizeAction(
+                {
+                    type: 'update',
+                    targetQuery: 'buy groceries',
+                    title: null,
+                    confidence: 0.9
+                },
+                {
+                    resolvedTask: { id: 'abc123', projectId: null, title: 'Buy groceries' }
+                }
+            );
 
             // undefined = "don't touch" — adapter skips the field, preserving existing title
             assert.strictEqual(result.title, undefined);
         });
 
         it('should apply new title when explicitly provided in rename', () => {
-            const result = normalizeAction({
-                type: 'update',
-                targetQuery: 'netflix task',
-                title: 'Finish system design notes',
-                confidence: 0.9
-            }, {
-                resolvedTask: { id: 'abc123', projectId: null, title: 'Watch Netflix tutorial' }
-            });
+            const result = normalizeAction(
+                {
+                    type: 'update',
+                    targetQuery: 'netflix task',
+                    title: 'Finish system design notes',
+                    confidence: 0.9
+                },
+                {
+                    resolvedTask: { id: 'abc123', projectId: null, title: 'Watch Netflix tutorial' }
+                }
+            );
 
             assert.strictEqual(result.title, 'Finish system design notes');
         });
@@ -1061,13 +1162,16 @@ describe('WP03: Mutation Action Normalization', () => {
 
     describe('Resolved complete action', () => {
         it('should normalize a resolved complete action with taskId', () => {
-            const result = normalizeAction({
-                type: 'complete',
-                targetQuery: 'buy groceries',
-                confidence: 0.95
-            }, {
-                resolvedTask: { id: 'abc123', projectId: 'proj456', title: 'Buy groceries' }
-            });
+            const result = normalizeAction(
+                {
+                    type: 'complete',
+                    targetQuery: 'buy groceries',
+                    confidence: 0.95
+                },
+                {
+                    resolvedTask: { id: 'abc123', projectId: 'proj456', title: 'Buy groceries' }
+                }
+            );
 
             assert.strictEqual(result.type, 'complete');
             assert.strictEqual(result.taskId, 'abc123');
@@ -1078,13 +1182,16 @@ describe('WP03: Mutation Action Normalization', () => {
 
     describe('Resolved delete action', () => {
         it('should normalize a resolved delete action with taskId', () => {
-            const result = normalizeAction({
-                type: 'delete',
-                targetQuery: 'old wifi task',
-                confidence: 0.9
-            }, {
-                resolvedTask: { id: 'abc123', projectId: null, title: 'Old wifi task' }
-            });
+            const result = normalizeAction(
+                {
+                    type: 'delete',
+                    targetQuery: 'old wifi task',
+                    confidence: 0.9
+                },
+                {
+                    resolvedTask: { id: 'abc123', projectId: null, title: 'Old wifi task' }
+                }
+            );
 
             assert.strictEqual(result.type, 'delete');
             assert.strictEqual(result.taskId, 'abc123');
@@ -1104,8 +1211,8 @@ describe('WP03: Mutation Missing Task Context (T032 — Fail Closed)', () => {
         });
 
         assert.strictEqual(result.valid, false);
-        assert.ok(result.validationErrors.some(e => e.includes('Missing taskId')));
-        assert.ok(result.validationErrors.some(e => e.includes('resolved task context')));
+        assert.ok(result.validationErrors.some((e) => e.includes('Missing taskId')));
+        assert.ok(result.validationErrors.some((e) => e.includes('resolved task context')));
     });
 
     it('should reject complete without resolved taskId', () => {
@@ -1116,7 +1223,7 @@ describe('WP03: Mutation Missing Task Context (T032 — Fail Closed)', () => {
         });
 
         assert.strictEqual(result.valid, false);
-        assert.ok(result.validationErrors.some(e => e.includes('Missing taskId')));
+        assert.ok(result.validationErrors.some((e) => e.includes('Missing taskId')));
     });
 
     it('should reject delete without resolved taskId', () => {
@@ -1127,18 +1234,21 @@ describe('WP03: Mutation Missing Task Context (T032 — Fail Closed)', () => {
         });
 
         assert.strictEqual(result.valid, false);
-        assert.ok(result.validationErrors.some(e => e.includes('Missing taskId')));
+        assert.ok(result.validationErrors.some((e) => e.includes('Missing taskId')));
     });
 
     it('should pass validation when taskId is resolved via options.existingTask', () => {
-        const result = normalizeAction({
-            type: 'update',
-            targetQuery: 'buy groceries',
-            dueDate: 'tomorrow',
-            confidence: 0.9
-        }, {
-            existingTask: { id: 'task789', projectId: 'proj123' }
-        });
+        const result = normalizeAction(
+            {
+                type: 'update',
+                targetQuery: 'buy groceries',
+                dueDate: 'tomorrow',
+                confidence: 0.9
+            },
+            {
+                existingTask: { id: 'task789', projectId: 'proj123' }
+            }
+        );
 
         assert.strictEqual(result.taskId, 'task789');
         assert.ok(result.valid);
@@ -1162,17 +1272,13 @@ describe('WP03: Batch Validation — Unsupported Mutation Shapes (T033)', () => 
         });
 
         it('should accept single create action', () => {
-            const result = validateMutationBatch([
-                { type: 'create', title: 'New task' }
-            ]);
+            const result = validateMutationBatch([{ type: 'create', title: 'New task' }]);
             assert.strictEqual(result.valid, true);
             assert.strictEqual(result.reason, null);
         });
 
         it('should accept single update action', () => {
-            const result = validateMutationBatch([
-                { type: 'update', taskId: 'abc123' }
-            ]);
+            const result = validateMutationBatch([{ type: 'update', taskId: 'abc123' }]);
             assert.strictEqual(result.valid, true);
         });
 
@@ -1232,10 +1338,8 @@ describe('WP03: Batch Validation — Unsupported Mutation Shapes (T033)', () => 
 
             assert.strictEqual(batchError, 'mixed_create_and_mutation');
             // All actions should be marked invalid
-            assert.ok(actions.every(a => !a.valid));
-            assert.ok(actions.every(a =>
-                a.validationErrors.some(e => e.includes('Batch validation failed'))
-            ));
+            assert.ok(actions.every((a) => !a.valid));
+            assert.ok(actions.every((a) => a.validationErrors.some((e) => e.includes('Batch validation failed'))));
         });
 
         it('should return batchError for large mutation batches', () => {
@@ -1247,15 +1351,24 @@ describe('WP03: Batch Validation — Unsupported Mutation Shapes (T033)', () => 
             ]);
 
             assert.strictEqual(batchError, 'multiple_mutations');
-            assert.ok(actions.every(a => !a.valid));
+            assert.ok(actions.every((a) => !a.valid));
         });
 
         it('should return null batchError for valid single mutation', () => {
-            const { actions, batchError } = normalizeActionBatch([
-                { type: 'update', taskId: 'abc123', targetQuery: 'buy groceries', dueDate: 'tomorrow', confidence: 0.9 }
-            ], {
-                resolvedTask: { id: 'abc123', title: 'Buy groceries' }
-            });
+            const { actions, batchError } = normalizeActionBatch(
+                [
+                    {
+                        type: 'update',
+                        taskId: 'abc123',
+                        targetQuery: 'buy groceries',
+                        dueDate: 'tomorrow',
+                        confidence: 0.9
+                    }
+                ],
+                {
+                    resolvedTask: { id: 'abc123', title: 'Buy groceries' }
+                }
+            );
 
             assert.strictEqual(batchError, null);
             assert.ok(actions[0].valid);
@@ -1275,60 +1388,72 @@ describe('WP03: Batch Validation — Unsupported Mutation Shapes (T033)', () => 
 
 describe('WP03: Mutation Content Preservation (T033)', () => {
     it('should preserve existing content on rename-only update', () => {
-        const result = normalizeAction({
-            type: 'update',
-            targetQuery: 'buy groceries',
-            title: 'Buy groceries and snacks',
-            content: null,
-            confidence: 0.9
-        }, {
-            resolvedTask: { id: 'abc123', title: 'Buy groceries' },
-            existingTaskContent: 'Milk, eggs, bread, cheese, and yogurt'
-        });
+        const result = normalizeAction(
+            {
+                type: 'update',
+                targetQuery: 'buy groceries',
+                title: 'Buy groceries and snacks',
+                content: null,
+                confidence: 0.9
+            },
+            {
+                resolvedTask: { id: 'abc123', title: 'Buy groceries' },
+                existingTaskContent: 'Milk, eggs, bread, cheese, and yogurt'
+            }
+        );
 
         assert.strictEqual(result.content, 'Milk, eggs, bread, cheese, and yogurt');
     });
 
     it('should preserve existing content on priority-only update', () => {
-        const result = normalizeAction({
-            type: 'update',
-            targetQuery: 'buy groceries',
-            priority: 1,
-            content: null,
-            confidence: 0.9
-        }, {
-            resolvedTask: { id: 'abc123', title: 'Buy groceries' },
-            existingTaskContent: 'Detailed shopping list'
-        });
+        const result = normalizeAction(
+            {
+                type: 'update',
+                targetQuery: 'buy groceries',
+                priority: 1,
+                content: null,
+                confidence: 0.9
+            },
+            {
+                resolvedTask: { id: 'abc123', title: 'Buy groceries' },
+                existingTaskContent: 'Detailed shopping list'
+            }
+        );
 
         assert.strictEqual(result.content, 'Detailed shopping list');
     });
 
     it('should preserve existing content on due-date-only update', () => {
-        const result = normalizeAction({
-            type: 'update',
-            targetQuery: 'buy groceries',
-            dueDate: 'tomorrow',
-            content: null,
-            confidence: 0.9
-        }, {
-            resolvedTask: { id: 'abc123', title: 'Buy groceries' },
-            existingTaskContent: 'Original instructions'
-        });
+        const result = normalizeAction(
+            {
+                type: 'update',
+                targetQuery: 'buy groceries',
+                dueDate: 'tomorrow',
+                content: null,
+                confidence: 0.9
+            },
+            {
+                resolvedTask: { id: 'abc123', title: 'Buy groceries' },
+                existingTaskContent: 'Original instructions'
+            }
+        );
 
         assert.strictEqual(result.content, 'Original instructions');
     });
 
     it('should not let update content wipe existing when new content is noise', () => {
-        const result = normalizeAction({
-            type: 'update',
-            targetQuery: 'buy groceries',
-            content: "This is important! Stay focused on your goals.",
-            confidence: 0.9
-        }, {
-            resolvedTask: { id: 'abc123', title: 'Buy groceries' },
-            existingTaskContent: 'Get milk and eggs from the corner store'
-        });
+        const result = normalizeAction(
+            {
+                type: 'update',
+                targetQuery: 'buy groceries',
+                content: 'This is important! Stay focused on your goals.',
+                confidence: 0.9
+            },
+            {
+                resolvedTask: { id: 'abc123', title: 'Buy groceries' },
+                existingTaskContent: 'Get milk and eggs from the corner store'
+            }
+        );
 
         assert.strictEqual(result.content, 'Get milk and eggs from the corner store');
     });
@@ -1336,14 +1461,17 @@ describe('WP03: Mutation Content Preservation (T033)', () => {
 
 describe('WP03: Mutation targetQuery Passthrough', () => {
     it('should include targetQuery on mutation actions', () => {
-        const result = normalizeAction({
-            type: 'update',
-            targetQuery: 'the meeting about project',
-            dueDate: 'friday',
-            confidence: 0.85
-        }, {
-            resolvedTask: { id: 'mtg001', title: 'Project sync meeting' }
-        });
+        const result = normalizeAction(
+            {
+                type: 'update',
+                targetQuery: 'the meeting about project',
+                dueDate: 'friday',
+                confidence: 0.85
+            },
+            {
+                resolvedTask: { id: 'mtg001', title: 'Project sync meeting' }
+            }
+        );
 
         assert.strictEqual(result.targetQuery, 'the meeting about project');
     });
@@ -1364,17 +1492,20 @@ describe('Mutation-safe field preservation', () => {
     it('should not wipe title, repeatFlag, or priority when only changing dueDate', () => {
         // Bug: "change Huzzi's periods to 29th april" wiped title, recurrence, and priority
         // because normalizer sent empty/null values for fields user never mentioned.
-        const result = normalizeAction({
-            type: 'update',
-            title: "Huzzi's periods",           // Gemini echoes task name for identification
-            targetQuery: "Huzzi's periods",      // same as title — not a rename
-            dueDate: '2026-04-29',
-            confidence: 0.9,
-            // No repeatHint, no repeatFlag, no priority — user didn't mention these
-        }, {
-            existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: "Huzzi's periods" },
-            existingTaskContent: 'Some existing content',
-        });
+        const result = normalizeAction(
+            {
+                type: 'update',
+                title: "Huzzi's periods", // Gemini echoes task name for identification
+                targetQuery: "Huzzi's periods", // same as title — not a rename
+                dueDate: '2026-04-29',
+                confidence: 0.9
+                // No repeatHint, no repeatFlag, no priority — user didn't mention these
+            },
+            {
+                existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: "Huzzi's periods" },
+                existingTaskContent: 'Some existing content'
+            }
+        );
 
         // Title should be undefined (don't touch) — not a rename
         assert.strictEqual(result.title, undefined);
@@ -1390,15 +1521,18 @@ describe('Mutation-safe field preservation', () => {
     });
 
     it('should include title when it is an explicit rename', () => {
-        const result = normalizeAction({
-            type: 'update',
-            title: 'New task name',
-            targetQuery: "Huzzi's periods",
-            dueDate: '2026-04-29',
-            confidence: 0.9,
-        }, {
-            existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: "Huzzi's periods" },
-        });
+        const result = normalizeAction(
+            {
+                type: 'update',
+                title: 'New task name',
+                targetQuery: "Huzzi's periods",
+                dueDate: '2026-04-29',
+                confidence: 0.9
+            },
+            {
+                existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: "Huzzi's periods" }
+            }
+        );
 
         // Title differs from targetQuery and existingTask — genuine rename
         assert.ok(result.title !== undefined);
@@ -1406,59 +1540,70 @@ describe('Mutation-safe field preservation', () => {
     });
 
     it('should include repeatFlag when user explicitly sets recurrence', () => {
-        const result = normalizeAction({
-            type: 'update',
-            title: null,
-            repeatHint: 'daily',
-            confidence: 0.9,
-        }, {
-            existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: 'Morning routine' },
-        });
+        const result = normalizeAction(
+            {
+                type: 'update',
+                title: null,
+                repeatHint: 'daily',
+                confidence: 0.9
+            },
+            {
+                existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: 'Morning routine' }
+            }
+        );
 
         assert.ok(result.repeatFlag !== undefined);
         assert.ok(result.repeatFlag.includes('FREQ=DAILY'));
     });
 
     it('should include priority when user explicitly sets it', () => {
-        const result = normalizeAction({
-            type: 'update',
-            title: null,
-            priority: 5,
-            confidence: 0.9,
-        }, {
-            existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: 'Important task' },
-        });
+        const result = normalizeAction(
+            {
+                type: 'update',
+                title: null,
+                priority: 5,
+                confidence: 0.9
+            },
+            {
+                existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: 'Important task' }
+            }
+        );
 
         assert.strictEqual(result.priority, 5);
     });
 
     it('should not wipe dueDate when mutation has empty string dueDate', () => {
         // Bug fix: LLM returns dueDate: '' — must not overwrite existing dueDate
-        const result = normalizeAction({
-            type: 'update',
-            title: null,
-            dueDate: '',
-            confidence: 0.9,
-        }, {
-            existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: 'Existing task', dueDate: '2026-04-15' },
-            existingTaskContent: null,
-        });
+        const result = normalizeAction(
+            {
+                type: 'update',
+                title: null,
+                dueDate: '',
+                confidence: 0.9
+            },
+            {
+                existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: 'Existing task', dueDate: '2026-04-15' },
+                existingTaskContent: null
+            }
+        );
 
         assert.strictEqual(result.dueDate, undefined);
     });
 
     it('should not wipe priority when mutation has empty string priority', () => {
         // Bug fix: LLM returns priority: '' — must not overwrite existing priority
-        const result = normalizeAction({
-            type: 'update',
-            title: null,
-            priority: '',
-            confidence: 0.9,
-        }, {
-            existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: 'Important task' },
-        });
+        const result = normalizeAction(
+            {
+                type: 'update',
+                title: null,
+                priority: '',
+                confidence: 0.9
+            },
+            {
+                existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: 'Important task' }
+            }
+        );
 
         assert.strictEqual(result.priority, undefined);
     });
 });
-

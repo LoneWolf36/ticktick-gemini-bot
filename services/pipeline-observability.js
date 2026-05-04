@@ -25,7 +25,7 @@ export function getTelemetryDedupStats() {
     pruneRecentTelemetry(Date.now());
     return {
         deduplicatedCount: _deduplicatedCount,
-        cacheSize: _recentTelemetry.size,
+        cacheSize: _recentTelemetry.size
     };
 }
 
@@ -34,7 +34,7 @@ const ENTRY_POINT_ALIASES = {
     telegram_message: 'telegram_message',
     telegram_review: 'telegram_review',
     scheduler: 'scheduler',
-    manual_command: 'manual_command',
+    manual_command: 'manual_command'
 };
 
 /**
@@ -105,7 +105,7 @@ export function createPipelineObservability({
     metricSink = null,
     traceSink = null,
     logger = console,
-    now = () => new Date(),
+    now = () => new Date()
 } = {}) {
     /**
      * Emits a telemetry event for a pipeline step.
@@ -148,12 +148,19 @@ export function createPipelineObservability({
             actionType: payload.actionType ?? null,
             attempt: payload.attempt ?? null,
             rolledBack: payload.rolledBack ?? null,
-            metadata: payload.metadata || {},
+            metadata: payload.metadata || {}
         };
 
         emitConsole(logger, event);
         await emitToSink(eventSink, 'emit', event, diagnosticContext);
-        await emitToSink(metricSink, 'increment', `pipeline.${event.step}.${event.status}`, 1, event, diagnosticContext);
+        await emitToSink(
+            metricSink,
+            'increment',
+            `pipeline.${event.step}.${event.status}`,
+            1,
+            event,
+            diagnosticContext
+        );
         await emitToSink(traceSink, 'addEvent', event.eventType, event, diagnosticContext);
         return event;
     }
@@ -165,12 +172,18 @@ export function createPipelineObservability({
      * @param {number} payload.durationMs - Duration in milliseconds
      */
     function emitLatencyHistogram({ stage, durationMs }) {
-        const bucket = durationMs < 1000 ? '<1s'
-            : durationMs < 3000 ? '<3s'
-                : durationMs < 6000 ? '<6s'
-                    : durationMs < 10000 ? '<10s'
-                        : durationMs < 30000 ? '<30s'
-                            : '>30s';
+        const bucket =
+            durationMs < 1000
+                ? '<1s'
+                : durationMs < 3000
+                  ? '<3s'
+                  : durationMs < 6000
+                    ? '<6s'
+                    : durationMs < 10000
+                      ? '<10s'
+                      : durationMs < 30000
+                        ? '<30s'
+                        : '>30s';
         const entry = { stage, bucket, durationMs, at: Date.now() };
         recentLatencies.push(entry);
         if (recentLatencies.length > MAX_RECENT_LATENCIES) recentLatencies.shift();
@@ -189,6 +202,6 @@ export function createPipelineObservability({
         emitLatencyHistogram,
         getRecentLatencies,
         getTelemetryDedupStats,
-        normalizeEntryPoint,
+        normalizeEntryPoint
     };
 }

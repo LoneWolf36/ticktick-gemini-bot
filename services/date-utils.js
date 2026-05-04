@@ -51,7 +51,7 @@ export function getZonedDateParts(date, timezone) {
             hour: '2-digit',
             minute: '2-digit',
             weekday: 'short',
-            hour12: false,
+            hour12: false
         }).formatToParts(resolved);
     } catch (err) {
         if (err instanceof RangeError) {
@@ -69,11 +69,9 @@ export function getZonedDateParts(date, timezone) {
         day: parseInt(lookup.day, 10),
         hour: parseInt(lookup.hour, 10),
         minute: parseInt(lookup.minute, 10),
-        weekday: weekdayMap[lookup.weekday] ?? new Date(
-            parseInt(lookup.year, 10),
-            parseInt(lookup.month, 10) - 1,
-            parseInt(lookup.day, 10)
-        ).getDay(),
+        weekday:
+            weekdayMap[lookup.weekday] ??
+            new Date(parseInt(lookup.year, 10), parseInt(lookup.month, 10) - 1, parseInt(lookup.day, 10)).getDay()
     };
 }
 
@@ -98,10 +96,10 @@ export function getTimezoneOffsetMinutes(year, month, day, hour, minute, timezon
         hour: '2-digit',
         minute: '2-digit',
         second: '2-digit',
-        hour12: false,
+        hour12: false
     }).formatToParts(utcGuess);
 
-    const get = (type) => parseInt(parts.find(p => p.type === type)?.value, 10);
+    const get = (type) => parseInt(parts.find((p) => p.type === type)?.value, 10);
     const localizedAsUtc = Date.UTC(
         get('year'),
         get('month') - 1,

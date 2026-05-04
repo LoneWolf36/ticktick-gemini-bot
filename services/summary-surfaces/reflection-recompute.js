@@ -19,14 +19,14 @@ export function buildReflectionRecomputeContext({
     processedHistory = [],
     historyAvailable = true,
     context = {},
-    sparseHistoryThreshold = 2,
+    sparseHistoryThreshold = 2
 } = {}) {
     const normalizedTasks = asActiveTasks(activeTasks);
     const normalizedHistory = asProcessedHistory(processedHistory);
     const available = historyAvailable === true;
     const historyIsSparse = available && normalizedHistory.length < sparseHistoryThreshold;
     const selectedPatterns = selectBehavioralPatternsForSummary(behavioralPatterns, {
-        nowIso: context.generatedAtIso,
+        nowIso: context.generatedAtIso
     });
 
     return {
@@ -36,7 +36,7 @@ export function buildReflectionRecomputeContext({
         activeTaskCount: normalizedTasks.length,
         processedHistoryCount: normalizedHistory.length,
         retainedPatternCount: selectedPatterns.length,
-        hasRetainedAggregates: selectedPatterns.length > 0,
+        hasRetainedAggregates: selectedPatterns.length > 0
     };
 }
 
@@ -59,7 +59,7 @@ export function buildReflectionRecomputeNotice(recomputeContext = {}, { surface 
             code: 'delivery_context',
             message: `${surface === 'daily_close' ? 'Daily close' : 'Weekly review'} context was recomputed from live tasks plus retained ${windowLabel} behavioral aggregates.`,
             severity: 'info',
-            evidence_source: 'behavioral_memory',
+            evidence_source: 'behavioral_memory'
         };
     }
 
@@ -67,6 +67,6 @@ export function buildReflectionRecomputeNotice(recomputeContext = {}, { surface 
         code: 'delivery_context',
         message: `${surface === 'daily_close' ? 'Daily close' : 'Weekly review'} context was recomputed from live tasks because retained aggregates were unavailable.`,
         severity: 'info',
-        evidence_source: 'tasks',
+        evidence_source: 'tasks'
     };
 }

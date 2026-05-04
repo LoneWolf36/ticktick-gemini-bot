@@ -11,7 +11,7 @@ import {
     buildTaskCardFromAction,
     buildTickTickUpdate,
     formatFieldDiff,
-    retryWithBackoff,
+    retryWithBackoff
 } from '../services/shared-utils.js';
 import { executeUndoBatch } from '../services/undo-executor.js';
 
@@ -26,7 +26,7 @@ test('buildTaskCard update shows Was / Will be and Changes for title, priority, 
         projectName: 'Inbox',
         priority: 1,
         content: '',
-        dueDate: null,
+        dueDate: null
     };
     const analysis = {
         improved_title: 'Do gym workout',
@@ -38,7 +38,7 @@ test('buildTaskCard update shows Was / Will be and Changes for title, priority, 
         description: 'Break into 3 sub-tasks and schedule first one.',
         sub_steps: ['Outline Q2 scope', 'Draft timeline', 'Review with team'],
         success_criteria: 'Draft submitted',
-        callout: 'Stop planning, start moving.',
+        callout: 'Stop planning, start moving.'
     };
 
     const card = buildTaskCard(task, analysis);
@@ -65,7 +65,7 @@ test('buildTaskCard update omits unchanged fields from Changes', () => {
         projectName: 'Inbox',
         priority: 3,
         content: '',
-        dueDate: null,
+        dueDate: null
     };
     const analysis = {
         improved_title: null,
@@ -77,7 +77,7 @@ test('buildTaskCard update omits unchanged fields from Changes', () => {
         description: null,
         sub_steps: [],
         success_criteria: null,
-        callout: null,
+        callout: null
     };
 
     const card = buildTaskCard(task, analysis);
@@ -96,7 +96,7 @@ test('buildTaskCard delete warning is present', () => {
         projectName: 'Inbox',
         priority: 0,
         content: '',
-        dueDate: null,
+        dueDate: null
     };
     const analysis = {
         improved_title: null,
@@ -108,7 +108,7 @@ test('buildTaskCard delete warning is present', () => {
         description: null,
         sub_steps: [],
         success_criteria: null,
-        callout: null,
+        callout: null
     };
 
     const card = buildTaskCard(task, analysis);
@@ -125,7 +125,7 @@ test('buildTaskCardFromAction update shows Was / Will be and field diffs', () =>
         projectId: 'inbox',
         priority: 1,
         content: '',
-        dueDate: null,
+        dueDate: null
     };
     const action = {
         type: 'update',
@@ -133,11 +133,11 @@ test('buildTaskCardFromAction update shows Was / Will be and field diffs', () =>
         priority: 5,
         projectId: 'health',
         dueDate: '2026-05-05T23:59:00.000+0100',
-        content: 'Break into sub-tasks.',
+        content: 'Break into sub-tasks.'
     };
     const projects = [
         { id: 'inbox', name: 'Inbox' },
-        { id: 'health', name: 'Health' },
+        { id: 'health', name: 'Health' }
     ];
 
     const card = buildTaskCardFromAction(task, action, projects);
@@ -156,11 +156,11 @@ test('buildTaskCardFromAction labels Inbox project IDs as Inbox', () => {
         projectId: 'inbox118958109',
         priority: 1,
         content: '',
-        dueDate: null,
+        dueDate: null
     };
     const action = {
         type: 'update',
-        projectId: 'health',
+        projectId: 'health'
     };
     const projects = [{ id: 'health', name: '💪Health & Life' }];
 
@@ -177,10 +177,10 @@ test('buildTaskCardFromAction complete shows context', () => {
         projectId: 'travel',
         priority: 3,
         content: '',
-        dueDate: '2026-05-05T23:59:00.000+0100',
+        dueDate: '2026-05-05T23:59:00.000+0100'
     };
     const action = {
-        type: 'complete',
+        type: 'complete'
     };
 
     const card = buildTaskCardFromAction(task, action);
@@ -198,10 +198,10 @@ test('buildTaskCardFromAction delete shows warning and context', () => {
         projectId: 'inbox',
         priority: 0,
         content: 'Some old content',
-        dueDate: null,
+        dueDate: null
     };
     const action = {
-        type: 'delete',
+        type: 'delete'
     };
 
     const card = buildTaskCardFromAction(task, action);
@@ -219,7 +219,7 @@ test('buildTaskCardFromAction update omits unchanged fields', () => {
         projectId: 'inbox',
         priority: 3,
         content: 'Existing content',
-        dueDate: '2026-05-05T23:59:00.000+0100',
+        dueDate: '2026-05-05T23:59:00.000+0100'
     };
     const action = {
         type: 'update',
@@ -227,7 +227,7 @@ test('buildTaskCardFromAction update omits unchanged fields', () => {
         priority: 3,
         projectId: 'inbox',
         dueDate: '2026-05-05T23:59:00.000+0100',
-        content: 'Existing content',
+        content: 'Existing content'
     };
 
     const card = buildTaskCardFromAction(task, action);
@@ -244,14 +244,18 @@ test('buildFieldDiff omits title when action title is absent and labels repeat n
     const diffs = buildFieldDiff(
         {
             title: 'Weekly review',
-            repeatFlag: 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+            repeatFlag: 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR'
         },
         {
-            repeatFlag: 'RRULE:FREQ=DAILY;INTERVAL=2',
-        },
+            repeatFlag: 'RRULE:FREQ=DAILY;INTERVAL=2'
+        }
     );
 
-    assert.equal(diffs.some((diff) => diff.field === 'title'), false, 'should not show title diff when title is absent');
+    assert.equal(
+        diffs.some((diff) => diff.field === 'title'),
+        false,
+        'should not show title diff when title is absent'
+    );
     assert.equal(diffs.find((diff) => diff.field === 'repeat')?.oldValue, 'Weekdays');
     assert.equal(diffs.find((diff) => diff.field === 'repeat')?.newValue, 'Every other day');
     assert.equal(JSON.stringify(diffs).includes('RRULE'), false, 'should not expose raw RRULE in diff');
@@ -262,7 +266,7 @@ test('buildFieldDiff omits title when action title is absent and labels repeat n
 test('taskReviewKeyboard update has Apply, Edit, Skip, Delete, Stop', () => {
     const keyboard = taskReviewKeyboard('task-123', 'update');
     const buttons = keyboard.inline_keyboard.flat();
-    const texts = buttons.map(b => b.text);
+    const texts = buttons.map((b) => b.text);
 
     assert.ok(texts.includes('Apply'), 'should have Apply button');
     assert.ok(texts.includes('Edit'), 'should have Edit button');
@@ -277,7 +281,7 @@ test('taskReviewKeyboard update has Apply, Edit, Skip, Delete, Stop', () => {
 test('taskReviewKeyboard complete has Complete, Skip, Delete, Stop', () => {
     const keyboard = taskReviewKeyboard('task-123', 'complete');
     const buttons = keyboard.inline_keyboard.flat();
-    const texts = buttons.map(b => b.text);
+    const texts = buttons.map((b) => b.text);
 
     assert.ok(texts.includes('Complete'), 'should have Complete button');
     assert.ok(texts.includes('Skip'), 'should have Skip button');
@@ -290,7 +294,7 @@ test('taskReviewKeyboard complete has Complete, Skip, Delete, Stop', () => {
 test('taskReviewKeyboard delete has Delete, Skip, Stop', () => {
     const keyboard = taskReviewKeyboard('task-123', 'delete');
     const buttons = keyboard.inline_keyboard.flat();
-    const texts = buttons.map(b => b.text);
+    const texts = buttons.map((b) => b.text);
 
     assert.ok(texts.includes('Delete'), 'should have Delete button');
     assert.ok(texts.includes('Skip'), 'should have Skip button');
@@ -311,7 +315,7 @@ function makeCallbackBot() {
         on(eventName, handler) {
             handlers.middleware.push({ eventName, handler });
             return bot;
-        },
+        }
     };
     return { bot, handlers };
 }
@@ -331,26 +335,30 @@ test('review apply continues when Telegram callback query is expired', async () 
         projectId: 'inbox',
         projectName: 'Inbox',
         improvedContent: 'Make this clearer.',
-        actionType: 'update',
+        actionType: 'update'
     });
 
     const { bot, handlers } = makeCallbackBot();
     const updates = [];
     const edits = [];
-    registerCallbacks(bot, {
-        getTaskSnapshot: async (id) => ({
-            id,
-            title: 'Expired callback task',
-            content: '',
-            priority: 1,
-            projectId: 'inbox',
-            dueDate: null,
-        }),
-        updateTask: async (id, update) => {
-            updates.push({ id, update });
-            return { id };
+    registerCallbacks(
+        bot,
+        {
+            getTaskSnapshot: async (id) => ({
+                id,
+                title: 'Expired callback task',
+                content: '',
+                priority: 1,
+                projectId: 'inbox',
+                dueDate: null
+            }),
+            updateTask: async (id, update) => {
+                updates.push({ id, update });
+                return { id };
+            }
         },
-    }, {});
+        {}
+    );
 
     const applyHandler = findCallbackHandler(handlers, '^a:');
     assert.equal(typeof applyHandler, 'function');
@@ -362,11 +370,19 @@ test('review apply continues when Telegram callback query is expired', async () 
         callbackQuery: { id: 'old-callback', message: { message_id: 10 } },
         telegram: {
             answerCallbackQuery: async () => {
-                throw new Error("Call to 'answerCallbackQuery' failed! (400: Bad Request: query is too old and response timeout expired or query ID is invalid)");
-            },
+                throw new Error(
+                    "Call to 'answerCallbackQuery' failed! (400: Bad Request: query is too old and response timeout expired or query ID is invalid)"
+                );
+            }
         },
-        editMessageText: async (text, opts) => { edits.push({ text, opts }); return {}; },
-        reply: async (text, opts) => { edits.push({ text, opts, reply: true }); return {}; },
+        editMessageText: async (text, opts) => {
+            edits.push({ text, opts });
+            return {};
+        },
+        reply: async (text, opts) => {
+            edits.push({ text, opts, reply: true });
+            return {};
+        }
     });
 
     assert.equal(updates.length, 1);
@@ -387,26 +403,30 @@ test('review apply does not mutate when pending record was already resolved else
         projectId: 'inbox',
         projectName: 'Inbox',
         improvedTitle: 'Fresh title',
-        actionType: 'update',
+        actionType: 'update'
     });
     await store.approveTask(taskId);
 
     const { bot, handlers } = makeCallbackBot();
     const updates = [];
-    registerCallbacks(bot, {
-        getTaskSnapshot: async (id) => ({
-            id,
-            title: 'Stale preview task',
-            content: '',
-            priority: 1,
-            projectId: 'inbox',
-            dueDate: null,
-        }),
-        updateTask: async (id, update) => {
-            updates.push({ id, update });
-            return { id };
+    registerCallbacks(
+        bot,
+        {
+            getTaskSnapshot: async (id) => ({
+                id,
+                title: 'Stale preview task',
+                content: '',
+                priority: 1,
+                projectId: 'inbox',
+                dueDate: null
+            }),
+            updateTask: async (id, update) => {
+                updates.push({ id, update });
+                return { id };
+            }
         },
-    }, {});
+        {}
+    );
 
     const applyHandler = findCallbackHandler(handlers, '^a:');
     assert.equal(typeof applyHandler, 'function');
@@ -418,7 +438,7 @@ test('review apply does not mutate when pending record was already resolved else
         callbackQuery: { id: 'stale-callback', message: { message_id: 10 } },
         answerCallbackQuery: async () => {},
         editMessageText: async () => ({}),
-        reply: async () => ({}),
+        reply: async () => ({})
     });
 
     assert.equal(updates.length, 0, 'stale preview apply should not mutate');
@@ -436,7 +456,7 @@ test('review apply double tap mutates once and second tap is already handled', a
         projectId: 'inbox',
         projectName: 'Inbox',
         improvedTitle: 'Double tap task updated',
-        actionType: 'update',
+        actionType: 'update'
     });
 
     const { bot, handlers } = makeCallbackBot();
@@ -446,21 +466,25 @@ test('review apply double tap mutates once and second tap is already handled', a
     const updateGate = new Promise((resolve) => {
         releaseUpdate = resolve;
     });
-    registerCallbacks(bot, {
-        getTaskSnapshot: async (id) => ({
-            id,
-            title: 'Double tap task',
-            content: '',
-            priority: 1,
-            projectId: 'inbox',
-            dueDate: null,
-        }),
-        updateTask: async (id, update) => {
-            answers.push(`update:${id}`);
-            await updateGate;
-            return { id, update };
+    registerCallbacks(
+        bot,
+        {
+            getTaskSnapshot: async (id) => ({
+                id,
+                title: 'Double tap task',
+                content: '',
+                priority: 1,
+                projectId: 'inbox',
+                dueDate: null
+            }),
+            updateTask: async (id, update) => {
+                answers.push(`update:${id}`);
+                await updateGate;
+                return { id, update };
+            }
         },
-    }, {});
+        {}
+    );
 
     const applyHandler = findCallbackHandler(handlers, '^a:');
     assert.equal(typeof applyHandler, 'function');
@@ -470,18 +494,34 @@ test('review apply double tap mutates once and second tap is already handled', a
         chat: { id: 999 },
         from: { id: 123 },
         callbackQuery: { id: 'cb-1', message: { message_id: 10 } },
-        answerCallbackQuery: async ({ text }) => { answers.push(text); },
-        editMessageText: async (text, opts) => { edits.push({ text, opts }); return {}; },
-        reply: async (text, opts) => { edits.push({ text, opts, reply: true }); return {}; },
+        answerCallbackQuery: async ({ text }) => {
+            answers.push(text);
+        },
+        editMessageText: async (text, opts) => {
+            edits.push({ text, opts });
+            return {};
+        },
+        reply: async (text, opts) => {
+            edits.push({ text, opts, reply: true });
+            return {};
+        }
     };
     const ctx2 = {
         match: [`a:${taskId}`, taskId],
         chat: { id: 999 },
         from: { id: 123 },
         callbackQuery: { id: 'cb-2', message: { message_id: 10 } },
-        answerCallbackQuery: async ({ text }) => { answers.push(text); },
-        editMessageText: async (text, opts) => { edits.push({ text, opts }); return {}; },
-        reply: async (text, opts) => { edits.push({ text, opts, reply: true }); return {}; },
+        answerCallbackQuery: async ({ text }) => {
+            answers.push(text);
+        },
+        editMessageText: async (text, opts) => {
+            edits.push({ text, opts });
+            return {};
+        },
+        reply: async (text, opts) => {
+            edits.push({ text, opts, reply: true });
+            return {};
+        }
     };
 
     const first = applyHandler(ctx1);
@@ -501,7 +541,7 @@ test('review apply and skip/drop race resolves once and blocks the other callbac
     await store.resetAll();
     const scenarios = [
         { name: 'apply+drop', secondPattern: '^d:', secondAnswer: 'Dropped.', secondMutateKey: 'deleteTask' },
-        { name: 'apply+skip', secondPattern: '^s:', secondAnswer: 'Skipped.', secondMutateKey: 'skipTask' },
+        { name: 'apply+skip', secondPattern: '^s:', secondAnswer: 'Skipped.', secondMutateKey: 'skipTask' }
     ];
 
     for (const scenario of scenarios) {
@@ -514,33 +554,39 @@ test('review apply and skip/drop race resolves once and blocks the other callbac
             projectId: 'inbox',
             projectName: 'Inbox',
             improvedTitle: `${scenario.name} task updated`,
-            actionType: 'update',
+            actionType: 'update'
         });
 
         const { bot, handlers } = makeCallbackBot();
         const answers = [];
         const mutations = [];
         let releaseApply;
-        const applyGate = new Promise((resolve) => { releaseApply = resolve; });
-        registerCallbacks(bot, {
-            getTaskSnapshot: async (id) => ({
-                id,
-                title: `${scenario.name} task`,
-                content: '',
-                priority: 1,
-                projectId: 'inbox',
-                dueDate: null,
-            }),
-            updateTask: async (id, update) => {
-                mutations.push(`update:${id}`);
-                await applyGate;
-                return { id, update };
+        const applyGate = new Promise((resolve) => {
+            releaseApply = resolve;
+        });
+        registerCallbacks(
+            bot,
+            {
+                getTaskSnapshot: async (id) => ({
+                    id,
+                    title: `${scenario.name} task`,
+                    content: '',
+                    priority: 1,
+                    projectId: 'inbox',
+                    dueDate: null
+                }),
+                updateTask: async (id, update) => {
+                    mutations.push(`update:${id}`);
+                    await applyGate;
+                    return { id, update };
+                },
+                deleteTask: async (id) => {
+                    mutations.push(`delete:${id}`);
+                    return { id };
+                }
             },
-            deleteTask: async (id) => {
-                mutations.push(`delete:${id}`);
-                return { id };
-            },
-        }, {});
+            {}
+        );
 
         const applyHandler = findCallbackHandler(handlers, '^a:');
         const secondHandler = findCallbackHandler(handlers, scenario.secondPattern);
@@ -552,25 +598,43 @@ test('review apply and skip/drop race resolves once and blocks the other callbac
             chat: { id: 999 },
             from: { id: 123 },
             callbackQuery: { id: callbackId, message: { message_id: 10 } },
-            answerCallbackQuery: async ({ text }) => { answers.push(text); },
-            editMessageText: async (text, opts) => { answers.push(text); return { text, opts }; },
-            reply: async (text, opts) => { answers.push(text); return { text, opts }; },
+            answerCallbackQuery: async ({ text }) => {
+                answers.push(text);
+            },
+            editMessageText: async (text, opts) => {
+                answers.push(text);
+                return { text, opts };
+            },
+            reply: async (text, opts) => {
+                answers.push(text);
+                return { text, opts };
+            }
         });
 
         const first = applyHandler(makeCtx(`${scenario.name}-apply`));
         await Promise.resolve();
         const second = secondHandler({
             ...makeCtx(`${scenario.name}-second`),
-            match: [`${scenario.secondPattern.slice(1)}${taskId}`, taskId],
+            match: [`${scenario.secondPattern.slice(1)}${taskId}`, taskId]
         });
 
         releaseApply?.();
         await Promise.all([first, second]);
 
-        assert.equal(mutations.filter((entry) => entry.startsWith('update:')).length, 1, `${scenario.name} should update once`);
-        assert.equal(mutations.filter((entry) => entry.startsWith('delete:')).length, scenario.secondMutateKey === 'deleteTask' ? 0 : 0);
+        assert.equal(
+            mutations.filter((entry) => entry.startsWith('update:')).length,
+            1,
+            `${scenario.name} should update once`
+        );
+        assert.equal(
+            mutations.filter((entry) => entry.startsWith('delete:')).length,
+            scenario.secondMutateKey === 'deleteTask' ? 0 : 0
+        );
         assert.ok(answers.includes('Already handled.'), `${scenario.name} should reject second callback`);
-        assert.ok(!answers.includes('Deleted.') && !answers.includes('Skipped.'), `${scenario.name} second callback should not proceed`);
+        assert.ok(
+            !answers.includes('Deleted.') && !answers.includes('Skipped.'),
+            `${scenario.name} second callback should not proceed`
+        );
         await store.resetAll();
     }
 });
@@ -588,25 +652,29 @@ test('review progress never uses global processed count as session progress', as
             originalProjectId: 'inbox',
             projectId: 'inbox',
             projectName: 'Inbox',
-            actionType: 'update',
+            actionType: 'update'
         });
     }
     await store.setCurrentReviewSession(999, {
         chatId: 999,
-        totalTasks: 3,
+        totalTasks: 3
     });
 
     const { bot, handlers } = makeCallbackBot();
     const edits = [];
-    registerCallbacks(bot, {
-        getTaskSnapshot: async () => ({
-            title: 'current-1',
-            content: '',
-            priority: 1,
-            projectId: 'inbox',
-            dueDate: null,
-        }),
-    }, {});
+    registerCallbacks(
+        bot,
+        {
+            getTaskSnapshot: async () => ({
+                title: 'current-1',
+                content: '',
+                priority: 1,
+                projectId: 'inbox',
+                dueDate: null
+            })
+        },
+        {}
+    );
     const skipHandler = findCallbackHandler(handlers, '^s:');
     assert.equal(typeof skipHandler, 'function');
 
@@ -616,12 +684,21 @@ test('review progress never uses global processed count as session progress', as
         from: { id: 123 },
         callbackQuery: { id: 'skip-callback', message: { message_id: 10 } },
         answerCallbackQuery: async () => {},
-        editMessageText: async (text, opts) => { edits.push({ text, opts }); return {}; },
-        reply: async (text, opts) => { edits.push({ text, opts, reply: true }); return {}; },
+        editMessageText: async (text, opts) => {
+            edits.push({ text, opts });
+            return {};
+        },
+        reply: async (text, opts) => {
+            edits.push({ text, opts, reply: true });
+            return {};
+        }
     });
 
     const latestText = edits.at(-1)?.text || '';
-    assert.ok(!latestText.includes('Task 11 of 3'), 'should not display impossible progress from global processed count');
+    assert.ok(
+        !latestText.includes('Task 11 of 3'),
+        'should not display impossible progress from global processed count'
+    );
     assert.match(latestText, /Task [12] of 3/);
     await store.resetAll();
 });
@@ -636,24 +713,31 @@ test('review apply blocks when live task changed externally', async () => {
         originalProjectId: 'inbox',
         projectId: 'inbox',
         projectName: 'Inbox',
-        actionType: 'update',
+        actionType: 'update'
     });
 
     const { bot, handlers } = makeCallbackBot();
     const updates = [];
     const answers = [];
     const edits = [];
-    registerCallbacks(bot, {
-        getTaskSnapshot: async () => ({
-            id: taskId,
-            title: 'Externally edited title',
-            content: 'Original content',
-            priority: 1,
-            projectId: 'inbox',
-            dueDate: null,
-        }),
-        updateTask: async (id, update) => { updates.push({ id, update }); return { id }; },
-    }, {});
+    registerCallbacks(
+        bot,
+        {
+            getTaskSnapshot: async () => ({
+                id: taskId,
+                title: 'Externally edited title',
+                content: 'Original content',
+                priority: 1,
+                projectId: 'inbox',
+                dueDate: null
+            }),
+            updateTask: async (id, update) => {
+                updates.push({ id, update });
+                return { id };
+            }
+        },
+        {}
+    );
 
     const applyHandler = findCallbackHandler(handlers, '^a:');
     await applyHandler({
@@ -661,9 +745,17 @@ test('review apply blocks when live task changed externally', async () => {
         chat: { id: 999 },
         from: { id: 123 },
         callbackQuery: { id: 'cb-change', message: { message_id: 10 } },
-        answerCallbackQuery: async ({ text }) => { answers.push(text); },
-        editMessageText: async (text, opts) => { edits.push({ text, opts }); return {}; },
-        reply: async (text, opts) => { edits.push({ text, opts, reply: true }); return {}; },
+        answerCallbackQuery: async ({ text }) => {
+            answers.push(text);
+        },
+        editMessageText: async (text, opts) => {
+            edits.push({ text, opts });
+            return {};
+        },
+        reply: async (text, opts) => {
+            edits.push({ text, opts, reply: true });
+            return {};
+        }
     });
 
     assert.equal(updates.length, 0);
@@ -686,23 +778,30 @@ test('review apply treats blank content and equivalent due date as unchanged', a
         originalProjectId: 'inbox',
         projectId: 'inbox',
         projectName: 'Inbox',
-        actionType: 'update',
+        actionType: 'update'
     });
 
     const { bot, handlers } = makeCallbackBot();
     const answers = [];
     const updates = [];
-    registerCallbacks(bot, {
-        getTaskSnapshot: async (id) => ({
-            id,
-            title: 'Blank content task',
-            content: undefined,
-            priority: 1,
-            projectId: 'inbox',
-            dueDate: '2026-05-02T00:00:00.000Z',
-        }),
-        updateTask: async (id, update) => { updates.push({ id, update }); return { id, update }; },
-    }, {});
+    registerCallbacks(
+        bot,
+        {
+            getTaskSnapshot: async (id) => ({
+                id,
+                title: 'Blank content task',
+                content: undefined,
+                priority: 1,
+                projectId: 'inbox',
+                dueDate: '2026-05-02T00:00:00.000Z'
+            }),
+            updateTask: async (id, update) => {
+                updates.push({ id, update });
+                return { id, update };
+            }
+        },
+        {}
+    );
 
     const applyHandler = findCallbackHandler(handlers, '^a:');
     await applyHandler({
@@ -710,9 +809,11 @@ test('review apply treats blank content and equivalent due date as unchanged', a
         chat: { id: 999 },
         from: { id: 123 },
         callbackQuery: { id: 'cb-blank', message: { message_id: 10 } },
-        answerCallbackQuery: async ({ text }) => { answers.push(text); },
+        answerCallbackQuery: async ({ text }) => {
+            answers.push(text);
+        },
         editMessageText: async () => ({}),
-        reply: async () => ({}),
+        reply: async () => ({})
     });
 
     assert.equal(updates.length, 1, 'blank content snapshot should not be stale');
@@ -731,17 +832,24 @@ test('review delete blocks when live task missing or adapter revalidation fails'
         originalProjectId: 'inbox',
         projectId: 'inbox',
         projectName: 'Inbox',
-        actionType: 'delete',
+        actionType: 'delete'
     });
 
     const { bot, handlers } = makeCallbackBot();
     const deletes = [];
     const answers = [];
     const edits = [];
-    registerCallbacks(bot, {
-        getTaskSnapshot: async () => null,
-        deleteTask: async (id) => { deletes.push(id); return { id }; },
-    }, {});
+    registerCallbacks(
+        bot,
+        {
+            getTaskSnapshot: async () => null,
+            deleteTask: async (id) => {
+                deletes.push(id);
+                return { id };
+            }
+        },
+        {}
+    );
 
     const dropHandler = findCallbackHandler(handlers, '^d:');
     await dropHandler({
@@ -749,9 +857,17 @@ test('review delete blocks when live task missing or adapter revalidation fails'
         chat: { id: 999 },
         from: { id: 123 },
         callbackQuery: { id: 'cb-missing', message: { message_id: 10 } },
-        answerCallbackQuery: async ({ text }) => { answers.push(text); },
-        editMessageText: async (text, opts) => { edits.push({ text, opts }); return {}; },
-        reply: async (text, opts) => { edits.push({ text, opts, reply: true }); return {}; },
+        answerCallbackQuery: async ({ text }) => {
+            answers.push(text);
+        },
+        editMessageText: async (text, opts) => {
+            edits.push({ text, opts });
+            return {};
+        },
+        reply: async (text, opts) => {
+            edits.push({ text, opts, reply: true });
+            return {};
+        }
     });
 
     assert.equal(deletes.length, 0);
@@ -769,17 +885,26 @@ test('review delete blocks when live task missing or adapter revalidation fails'
         originalProjectId: 'inbox',
         projectId: 'inbox',
         projectName: 'Inbox',
-        actionType: 'complete',
+        actionType: 'complete'
     });
 
     const { bot: bot2, handlers: handlers2 } = makeCallbackBot();
     const completes = [];
     const answers2 = [];
     const edits2 = [];
-    registerCallbacks(bot2, {
-        getTaskSnapshot: async () => { throw new Error('network down'); },
-        completeTask: async (id) => { completes.push(id); return { id }; },
-    }, {});
+    registerCallbacks(
+        bot2,
+        {
+            getTaskSnapshot: async () => {
+                throw new Error('network down');
+            },
+            completeTask: async (id) => {
+                completes.push(id);
+                return { id };
+            }
+        },
+        {}
+    );
 
     const applyHandler2 = findCallbackHandler(handlers2, '^a:');
     await applyHandler2({
@@ -787,9 +912,17 @@ test('review delete blocks when live task missing or adapter revalidation fails'
         chat: { id: 999 },
         from: { id: 123 },
         callbackQuery: { id: 'cb-error', message: { message_id: 10 } },
-        answerCallbackQuery: async ({ text }) => { answers2.push(text); },
-        editMessageText: async (text, opts) => { edits2.push({ text, opts }); return {}; },
-        reply: async (text, opts) => { edits2.push({ text, opts, reply: true }); return {}; },
+        answerCallbackQuery: async ({ text }) => {
+            answers2.push(text);
+        },
+        editMessageText: async (text, opts) => {
+            edits2.push({ text, opts });
+            return {};
+        },
+        reply: async (text, opts) => {
+            edits2.push({ text, opts, reply: true });
+            return {};
+        }
     });
 
     assert.equal(completes.length, 0);
@@ -828,16 +961,32 @@ test('executeUndoBatch returns successful entries only for applied actions', asy
             return { id: taskId };
         },
         deleteTask: async () => ({}),
-        createTask: async () => ({}),
+        createTask: async () => ({})
     };
 
-    const result = await executeUndoBatch([
-        { taskId: 'ok-1', originalTitle: 'One', rollbackType: 'restore_updated', snapshot: { title: 'One', projectId: 'inbox' } },
-        { taskId: 'fail-me', originalTitle: 'Two', rollbackType: 'restore_updated', snapshot: { title: 'Two', projectId: 'inbox' } },
-    ], adapter);
+    const result = await executeUndoBatch(
+        [
+            {
+                taskId: 'ok-1',
+                originalTitle: 'One',
+                rollbackType: 'restore_updated',
+                snapshot: { title: 'One', projectId: 'inbox' }
+            },
+            {
+                taskId: 'fail-me',
+                originalTitle: 'Two',
+                rollbackType: 'restore_updated',
+                snapshot: { title: 'Two', projectId: 'inbox' }
+            }
+        ],
+        adapter
+    );
 
     assert.deepEqual(calls, ['ok-1', 'fail-me']);
-    assert.deepEqual(result.successful.map((entry) => entry.taskId), ['ok-1']);
+    assert.deepEqual(
+        result.successful.map((entry) => entry.taskId),
+        ['ok-1']
+    );
     assert.deepEqual(result.reverted, ['One']);
 });
 
@@ -850,12 +999,12 @@ test('buildTaskCardFromAction does not leak internal field names or scores', () 
         projectId: 'inbox',
         priority: 3,
         content: '',
-        dueDate: null,
+        dueDate: null
     };
     const action = {
         type: 'update',
         title: 'Test updated',
-        priority: 5,
+        priority: 5
     };
 
     const card = buildTaskCardFromAction(task, action);
@@ -873,7 +1022,7 @@ test('buildTaskCard does not leak internal field names or scores', () => {
         projectName: 'Inbox',
         priority: 3,
         content: '',
-        dueDate: null,
+        dueDate: null
     };
     const analysis = {
         improved_title: 'Test updated',
@@ -885,7 +1034,7 @@ test('buildTaskCard does not leak internal field names or scores', () => {
         description: null,
         sub_steps: [],
         success_criteria: null,
-        callout: null,
+        callout: null
     };
 
     const card = buildTaskCard(task, analysis);
@@ -908,15 +1057,13 @@ test('buildAutoApplyNotification shows per-task field diffs when provided', () =
             title: 'Quarterly report',
             diffs: [
                 { field: 'priority', label: 'Priority', oldValue: 'Important', newValue: 'Core Goal', emoji: '🔴' },
-                { field: 'project', label: 'Project', oldValue: 'Inbox', newValue: 'Health', emoji: '📁' },
-            ],
+                { field: 'project', label: 'Project', oldValue: 'Inbox', newValue: 'Health', emoji: '📁' }
+            ]
         },
         {
             title: 'Buy groceries',
-            diffs: [
-                { field: 'due', label: 'Due', oldValue: 'None', newValue: 'Today', emoji: '📅' },
-            ],
-        },
+            diffs: [{ field: 'due', label: 'Due', oldValue: 'None', newValue: 'Today', emoji: '📅' }]
+        }
     ];
 
     const text = buildAutoApplyNotification(results);
@@ -933,7 +1080,7 @@ test('buildAutoApplyNotification shows per-task field diffs when provided', () =
 test('buildAutoApplyNotification limits to 5 tasks with overflow line', () => {
     const results = Array.from({ length: 8 }, (_, i) => ({
         title: `Task ${i + 1}`,
-        diffs: [],
+        diffs: []
     }));
 
     const text = buildAutoApplyNotification(results);
@@ -950,7 +1097,10 @@ test('buildAutoApplyNotification limits to 5 tasks with overflow line', () => {
 
 test('buildAutoApplyNotification shows skipped actions warning', () => {
     const results = [
-        { title: 'Finish report', diffs: [{ field: 'priority', label: 'Priority', oldValue: 'Important', newValue: 'Core Goal', emoji: '🔴' }] },
+        {
+            title: 'Finish report',
+            diffs: [{ field: 'priority', label: 'Priority', oldValue: 'Important', newValue: 'Core Goal', emoji: '🔴' }]
+        }
     ];
 
     const text = buildAutoApplyNotification(results, { hasSkippedActions: true });
@@ -963,10 +1113,8 @@ test('buildAutoApplyNotification does not contain internal jargon', () => {
     const results = [
         {
             title: 'Test task',
-            diffs: [
-                { field: 'title', label: 'Title', oldValue: 'Old', newValue: 'New', emoji: '' },
-            ],
-        },
+            diffs: [{ field: 'title', label: 'Title', oldValue: 'Old', newValue: 'New', emoji: '' }]
+        }
     ];
 
     const text = buildAutoApplyNotification(results);
@@ -982,7 +1130,7 @@ test('buildAutoApplyNotification preserves legacy schedule/movedTo format when n
     const results = [
         { title: 'Buy milk', schedule: '2026-04-30', movedTo: null },
         { title: 'Pay bills', schedule: null, movedTo: 'Health' },
-        { title: 'Untouched task', schedule: null, movedTo: null },
+        { title: 'Untouched task', schedule: null, movedTo: null }
     ];
 
     const text = buildAutoApplyNotification(results);
@@ -994,20 +1142,21 @@ test('buildAutoApplyNotification preserves legacy schedule/movedTo format when n
 });
 
 test('buildUndoEntryFromRollbackStep falls back to task id when title is missing', () => {
-    const entry = buildUndoEntryFromRollbackStep({
-        type: 'restore_updated',
-        targetTaskId: 'task-missing-title',
-        targetProjectId: 'inbox',
-        payload: { snapshot: { id: 'task-missing-title', title: '', content: '', projectId: 'inbox' } },
-    }, { type: 'update', title: '' });
+    const entry = buildUndoEntryFromRollbackStep(
+        {
+            type: 'restore_updated',
+            targetTaskId: 'task-missing-title',
+            targetProjectId: 'inbox',
+            payload: { snapshot: { id: 'task-missing-title', title: '', content: '', projectId: 'inbox' } }
+        },
+        { type: 'update', title: '' }
+    );
 
     assert.equal(entry.originalTitle, 'task-missing-title');
 });
 
 test('buildAutoApplyNotification keeps undo hint in output', () => {
-    const results = [
-        { title: 'One task', diffs: [] },
-    ];
+    const results = [{ title: 'One task', diffs: [] }];
 
     const text = buildAutoApplyNotification(results);
     assert.match(text, /Run \/undo/);

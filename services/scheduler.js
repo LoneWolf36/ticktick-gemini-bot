@@ -3,7 +3,14 @@ import cron from 'node-cron';
 import * as store from './store.js';
 import { computeNextAttemptAt } from './store.js';
 import { validateOperationReceipt } from './operation-receipt.js';
-import { buildAutoApplyNotification, buildFieldDiff, buildUndoEntry, userTimeString, filterProcessedThisWeek, sendWithMarkdown } from './shared-utils.js';
+import {
+    buildAutoApplyNotification,
+    buildFieldDiff,
+    buildUndoEntry,
+    userTimeString,
+    filterProcessedThisWeek,
+    sendWithMarkdown
+} from './shared-utils.js';
 import { persistPipelineUndoEntries } from './pipeline-undo-persistence.js';
 import { logSummarySurfaceEvent } from './summary-surfaces/index.js';
 import { getZonedDateParts } from './date-utils.js';
@@ -18,7 +25,7 @@ export const SCHEDULER_NOTIFICATION_TYPES = Object.freeze({
     PENDING_SUPPRESSION: 'pending_suppression',
     AUTO_APPLY: 'auto_apply',
     TOKEN_EXPIRED: 'token_expired',
-    QUOTA_EXHAUSTED: 'quota_exhausted',
+    QUOTA_EXHAUSTED: 'quota_exhausted'
 });
 
 // Default grace window for missed scheduled deliveries (in minutes)
@@ -30,13 +37,11 @@ const FOCUS_SUPPRESSED_NOTIFICATION_TYPES = new Set([
     SCHEDULER_NOTIFICATION_TYPES.DAILY_BRIEFING,
     SCHEDULER_NOTIFICATION_TYPES.WEEKLY_DIGEST,
     SCHEDULER_NOTIFICATION_TYPES.PENDING_SUPPRESSION,
-    SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY,
+    SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY
 ]);
 
 function getSafeErrorName(error) {
-    return typeof error?.name === 'string' && error.name.trim()
-        ? error.name.trim()
-        : 'Error';
+    return typeof error?.name === 'string' && error.name.trim() ? error.name.trim() : 'Error';
 }
 
 function getSafePipelineFailureReason(result) {
@@ -57,7 +62,6 @@ export function shouldSuppressScheduledNotification(workStyleMode, notificationT
     return workStyleMode === store.MODE_FOCUS && FOCUS_SUPPRESSED_NOTIFICATION_TYPES.has(notificationType);
 }
 
-
 /**
  * Check if a scheduled delivery should be sent based on last delivery time and grace window
  * @param {string|null} lastDeliveryIso - ISO timestamp of last delivery
@@ -65,7 +69,11 @@ export function shouldSuppressScheduledNotification(workStyleMode, notificationT
  * @param {number} graceWindowMinutes - Grace window in minutes
  * @returns {boolean} Whether delivery should be sent
  */
-export function shouldSendMissedDelivery(lastDeliveryIso, scheduledTimeIso, { nowIso = new Date().toISOString(), graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES } = {}) {
+export function shouldSendMissedDelivery(
+    lastDeliveryIso,
+    scheduledTimeIso,
+    { nowIso = new Date().toISOString(), graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES } = {}
+) {
     const scheduledMs = Date.parse(scheduledTimeIso || '');
     const nowMs = Date.parse(nowIso || '') || Date.now();
     if (!Number.isFinite(scheduledMs) || scheduledMs > nowMs) return false;
@@ -87,14 +95,18 @@ export function shouldSendMissedDelivery(lastDeliveryIso, scheduledTimeIso, { no
  * @param {number} graceWindowMinutes - Configured grace window
  * @returns {Object} Scheduling metadata context
  */
-export function buildSchedulingMetadata(scheduleKey, scheduledForIso, graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES) {
+export function buildSchedulingMetadata(
+    scheduleKey,
+    scheduledForIso,
+    graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES
+) {
     return {
         schedulingMetadata: {
             triggerKind: 'scheduled',
             scheduleKey,
             scheduledForIso,
-            graceWindowMinutes,
-        },
+            graceWindowMinutes
+        }
     };
 }
 
@@ -102,15 +114,20 @@ function getZonedClockParts(date, timezone) {
     const parts = getZonedDateParts(date, timezone);
     return {
         weekday: parts.weekday,
-        minutesSinceMidnight: (parts.hour * 60) + parts.minute,
+        minutesSinceMidnight: parts.hour * 60 + parts.minute
     };
 }
 
-function computeCatchupScheduledForIso({ scheduleKind, dailyHour = 8, weeklyDay = 0, timezone = 'Europe/Dublin', now = new Date(), graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES }) {
+function computeCatchupScheduledForIso({
+    scheduleKind,
+    dailyHour = 8,
+    weeklyDay = 0,
+    timezone = 'Europe/Dublin',
+    now = new Date(),
+    graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES
+}) {
     const { weekday, minutesSinceMidnight } = getZonedClockParts(now, timezone);
-    const scheduledMinutes = scheduleKind === 'weekly'
-        ? WEEKLY_DIGEST_HOUR * 60
-        : dailyHour * 60;
+    const scheduledMinutes = scheduleKind === 'weekly' ? WEEKLY_DIGEST_HOUR * 60 : dailyHour * 60;
 
     if (scheduleKind === 'weekly' && weekday !== weeklyDay) {
         return null;
@@ -121,7 +138,7 @@ function computeCatchupScheduledForIso({ scheduleKind, dailyHour = 8, weeklyDay 
         return null;
     }
 
-    return new Date(now.getTime() - (diffMinutes * 60 * 1000)).toISOString();
+    return new Date(now.getTime() - diffMinutes * 60 * 1000).toISOString();
 }
 
 /**
@@ -135,7 +152,6 @@ function computeCatchupScheduledForIso({ scheduleKind, dailyHour = 8, weeklyDay 
  * @returns {Promise<boolean>} True if successful
  */
 export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter, config = {} }) {
-
     if (!ticktick.isAuthenticated()) return false;
     const chatId = store.getChatId();
     if (!chatId) return false;
@@ -147,12 +163,12 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter, conf
     }
 
     console.log('Sending daily briefing...');
-    
+
     // Build scheduling metadata for consistent delivery path
     const scheduledForIso = config.scheduledForIso || new Date().toISOString();
     const graceWindowMinutes = config.graceWindowMinutes || DEFAULT_GRACE_WINDOW_MINUTES;
     const schedulingMetadata = buildSchedulingMetadata('daily-briefing', scheduledForIso, graceWindowMinutes);
-    
+
     const context = {
         kind: 'briefing',
         entryPoint: 'scheduler',
@@ -160,7 +176,7 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter, conf
         workStyleMode,
         urgentMode: workStyleMode === store.MODE_URGENT,
         generatedAtIso: new Date().toISOString(),
-        ...schedulingMetadata,
+        ...schedulingMetadata
     };
     let briefing = null;
     let tasks = [];
@@ -180,7 +196,7 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter, conf
 
         briefing = await gemini.generateDailyBriefingSummary(tasks, {
             ...context,
-            ticktickFetchFailed,
+            ticktickFetchFailed
         });
         if (typeof config.captureTopPriorityTaskIds === 'function') {
             const topIds = (Array.isArray(briefing?.summary?.priorities) ? briefing.summary.priorities : [])
@@ -202,7 +218,7 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter, conf
             context,
             result: briefing,
             deliveryStatus: 'sent',
-            extra: { pendingReviewCount: pendingCount },
+            extra: { pendingReviewCount: pendingCount }
         });
         await store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         return true;
@@ -211,11 +227,14 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter, conf
         console.error('Daily briefing error:', err.message);
         // Notify user so they know the briefing failed (not just silent failure)
         try {
-            const errorMsg = err.message === 'QUOTA_EXHAUSTED'
-                ? '⚠️ Daily briefing skipped — AI quota exhausted for today.'
-                : '❌ Daily briefing failed. Try /briefing manually.';
+            const errorMsg =
+                err.message === 'QUOTA_EXHAUSTED'
+                    ? '⚠️ Daily briefing skipped — AI quota exhausted for today.'
+                    : '❌ Daily briefing failed. Try /briefing manually.';
             await sendWithMarkdown(bot.api, chatId, errorMsg);
-        } catch (_) { /* don't let notification failure mask the original error */ }
+        } catch (_) {
+            /* don't let notification failure mask the original error */
+        }
         return false;
     }
 }
@@ -231,8 +250,14 @@ export async function runDailyBriefingJob({ bot, ticktick, gemini, adapter, conf
  * @param {Object} [deps.config={}] - Job configuration
  * @returns {Promise<boolean>} True if successful
  */
-export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, processedTasks = store.getProcessedTasks(), config = {} }) {
-
+export async function runWeeklyDigestJob({
+    bot,
+    ticktick,
+    gemini,
+    adapter,
+    processedTasks = store.getProcessedTasks(),
+    config = {}
+}) {
     if (!ticktick.isAuthenticated()) return false;
     const chatId = store.getChatId();
     if (!chatId) return false;
@@ -244,12 +269,12 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
     }
 
     console.log('Sending weekly digest...');
-    
+
     // Build scheduling metadata for consistent delivery path
     const scheduledForIso = config.scheduledForIso || new Date().toISOString();
     const graceWindowMinutes = config.graceWindowMinutes || DEFAULT_GRACE_WINDOW_MINUTES;
     const schedulingMetadata = buildSchedulingMetadata('weekly-digest', scheduledForIso, graceWindowMinutes);
-    
+
     const context = {
         kind: 'weekly',
         entryPoint: 'scheduler',
@@ -257,7 +282,7 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
         workStyleMode,
         urgentMode: workStyleMode === store.MODE_URGENT,
         generatedAtIso: new Date().toISOString(),
-        ...schedulingMetadata,
+        ...schedulingMetadata
     };
     let digest = null;
     let tasks = [];
@@ -275,7 +300,8 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
             console.error('Weekly digest task fetch failed:', fetchErr.message);
         }
 
-        const historyAvailable = typeof processedTasks === 'object' && processedTasks !== null && !Array.isArray(processedTasks);
+        const historyAvailable =
+            typeof processedTasks === 'object' && processedTasks !== null && !Array.isArray(processedTasks);
         const processed = historyAvailable ? processedTasks : {};
         const thisWeek = filterProcessedThisWeek(processed, ['sentAt']);
         const excludedTaskIds = config.excludedTaskIds || [];
@@ -283,13 +309,13 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
             ...context,
             historyAvailable,
             ticktickFetchFailed,
-            excludedTaskIds,
+            excludedTaskIds
         });
         logSummarySurfaceEvent({
             context,
             result: digest,
             deliveryStatus: 'ready',
-            extra: { historyAvailable },
+            extra: { historyAvailable }
         });
 
         await sendWithMarkdown(bot.api, chatId, digest.formattedText);
@@ -297,7 +323,7 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
             context,
             result: digest,
             deliveryStatus: 'sent',
-            extra: { historyAvailable },
+            extra: { historyAvailable }
         });
         await store.updateStats({ lastWeeklyDigest: new Date().toISOString() });
         return true;
@@ -306,11 +332,14 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
         console.error('Weekly digest error:', err.message);
         // Notify user so they know the digest failed (not just silent failure)
         try {
-            const errorMsg = err.message === 'QUOTA_EXHAUSTED'
-                ? '⚠️ Weekly digest skipped — AI quota exhausted for today.'
-                : '❌ Weekly digest failed. Will retry next cycle.';
+            const errorMsg =
+                err.message === 'QUOTA_EXHAUSTED'
+                    ? '⚠️ Weekly digest skipped — AI quota exhausted for today.'
+                    : '❌ Weekly digest failed. Will retry next cycle.';
             await sendWithMarkdown(bot.api, chatId, errorMsg);
-        } catch (_) { /* don't let notification failure mask the original error */ }
+        } catch (_) {
+            /* don't let notification failure mask the original error */
+        }
         return false;
     }
 }
@@ -328,7 +357,10 @@ export async function runWeeklyDigestJob({ bot, ticktick, gemini, adapter, proce
  * @param {number} [options.maxRetries=5] - Max intents to retry per invocation
  * @returns {{ retried: number, failed: number, remaining: number }}
  */
-export async function retryDeferredIntents({ adapter, pipeline, bot, gemini, store: storeApi = store } = {}, options = {}) {
+export async function retryDeferredIntents(
+    { adapter, pipeline, bot, gemini, store: storeApi = store } = {},
+    options = {}
+) {
     const { maxRetries = 5 } = options;
     const deferred = storeApi.getDeferredPipelineIntents();
     if (deferred.length === 0) return { retried: 0, failed: 0, givenUp: 0, remaining: 0 };
@@ -355,26 +387,34 @@ export async function retryDeferredIntents({ adapter, pipeline, bot, gemini, sto
             failureType: entry?.failureType || null,
             reason: normalizeDeferredFailureReason(entry?.reason),
             nextAttemptAt: entry?.nextAttemptAt || null,
-            attempts: entry?.retryCount || 0,
+            attempts: entry?.retryCount || 0
         };
     }
 
     function normalizeDeferredFailureReason(reason) {
-        return ['exhausted_retries', 'invalid_receipt', 'exception', 'invalid_entry', 'not_due', 'quota_exhausted']
-            .includes(reason)
+        return [
+            'exhausted_retries',
+            'invalid_receipt',
+            'exception',
+            'invalid_entry',
+            'not_due',
+            'quota_exhausted'
+        ].includes(reason)
             ? reason
             : 'deferred_retry_failed';
     }
 
     function isValidAppliedReceipt(receipt) {
         const validation = validateOperationReceipt(receipt);
-        return validation.valid
-            && receipt.status === 'applied'
-            && receipt.applied === true
-            && receipt.changed === true
-            && receipt.scope === 'ticktick_live'
-            && Array.isArray(receipt.results)
-            && receipt.results.some((item) => item?.status === 'succeeded');
+        return (
+            validation.valid &&
+            receipt.status === 'applied' &&
+            receipt.applied === true &&
+            receipt.changed === true &&
+            receipt.scope === 'ticktick_live' &&
+            Array.isArray(receipt.results) &&
+            receipt.results.some((item) => item?.status === 'succeeded')
+        );
     }
 
     for (const entry of batch) {
@@ -385,9 +425,8 @@ export async function retryDeferredIntents({ adapter, pipeline, bot, gemini, sto
             continue;
         }
 
-        const nextAttemptAtMs = typeof entry.nextAttemptAt === 'string'
-            ? Date.parse(entry.nextAttemptAt)
-            : entry.nextAttemptAt;
+        const nextAttemptAtMs =
+            typeof entry.nextAttemptAt === 'string' ? Date.parse(entry.nextAttemptAt) : entry.nextAttemptAt;
 
         // Exponential backoff: skip items that are not yet due
         if (Number.isFinite(nextAttemptAtMs) && now < nextAttemptAtMs) {
@@ -406,19 +445,27 @@ export async function retryDeferredIntents({ adapter, pipeline, bot, gemini, sto
         const currentRetryCount = entry.retryCount || 0;
         if (currentRetryCount >= 3) {
             await storeApi.removeDeferredPipelineIntent(entry.id);
-            await storeApi.addFailedDeferredIntent(redactDeferredEntry({ ...entry, reason: 'exhausted_retries', attempts: currentRetryCount }));
+            await storeApi.addFailedDeferredIntent(
+                redactDeferredEntry({ ...entry, reason: 'exhausted_retries', attempts: currentRetryCount })
+            );
             givenUp++;
-            console.log(`[DeferredQueue] ${JSON.stringify({
-                eventType: 'deferred.given_up',
-                taskId: entry.id,
-                reason: 'exhausted_retries',
-                attempts: currentRetryCount,
-            })}`);
+            console.log(
+                `[DeferredQueue] ${JSON.stringify({
+                    eventType: 'deferred.given_up',
+                    taskId: entry.id,
+                    reason: 'exhausted_retries',
+                    attempts: currentRetryCount
+                })}`
+            );
             if (bot) {
                 const chatId = storeApi.getChatId();
                 if (chatId) {
                     try {
-                        await sendWithMarkdown(bot.api, chatId, '❌ Deferred task failed after retries. Please retry manually.');
+                        await sendWithMarkdown(
+                            bot.api,
+                            chatId,
+                            '❌ Deferred task failed after retries. Please retry manually.'
+                        );
                     } catch {
                         // best effort
                     }
@@ -428,30 +475,37 @@ export async function retryDeferredIntents({ adapter, pipeline, bot, gemini, sto
         }
 
         try {
-            const processMessage = typeof pipeline.processMessageWithContext === 'function'
-                ? pipeline.processMessageWithContext
-                : pipeline.processMessage;
+            const processMessage =
+                typeof pipeline.processMessageWithContext === 'function'
+                    ? pipeline.processMessageWithContext
+                    : pipeline.processMessage;
 
             const result = await processMessage(entry.userMessage, {
                 entryPoint: entry.entryPoint || 'deferred-retry',
                 mode: entry.mode || 'interactive',
-                workStyleMode: entry.workStyleMode || undefined,
+                workStyleMode: entry.workStyleMode || undefined
             });
 
             const receipt = result?.operationReceipt;
             if (result.type === 'task' && isValidAppliedReceipt(receipt)) {
-                const { undoCount } = await persistPipelineUndoEntries({ result, store: storeApi, userId: entry.userId, batchPrefix: 'undo' });
+                const { undoCount } = await persistPipelineUndoEntries({
+                    result,
+                    store: storeApi,
+                    userId: entry.userId,
+                    batchPrefix: 'undo'
+                });
                 await storeApi.removeDeferredPipelineIntent(entry.id);
                 retried++;
-                notifications.push(undoCount > 0
-                    ? '✅ Deferred task applied. Undo available.'
-                    : '✅ Deferred task applied.');
+                notifications.push(
+                    undoCount > 0 ? '✅ Deferred task applied. Undo available.' : '✅ Deferred task applied.'
+                );
             } else if (result.type === 'error' && result.failure?.failureCategory === 'transient') {
                 // Still transient — increment retry count, compute next attempt, and leave in queue
                 const nextRetryCount = currentRetryCount + 1;
-                const nextAttemptAt = typeof storeApi.computeNextAttemptAt === 'function'
-                    ? storeApi.computeNextAttemptAt(nextRetryCount)
-                    : computeNextAttemptAt(nextRetryCount);
+                const nextAttemptAt =
+                    typeof storeApi.computeNextAttemptAt === 'function'
+                        ? storeApi.computeNextAttemptAt(nextRetryCount)
+                        : computeNextAttemptAt(nextRetryCount);
                 entry.retryCount = nextRetryCount;
                 entry.nextAttemptAt = nextAttemptAt;
                 await storeApi.updateDeferredPipelineIntent(entry);
@@ -460,7 +514,9 @@ export async function retryDeferredIntents({ adapter, pipeline, bot, gemini, sto
                 // Permanent failure or non-task result — remove to avoid infinite retry
                 await storeApi.removeDeferredPipelineIntent(entry.id);
                 failed++;
-                await storeApi.addFailedDeferredIntent(redactDeferredEntry({ ...entry, reason: 'invalid_receipt', attempts: currentRetryCount }));
+                await storeApi.addFailedDeferredIntent(
+                    redactDeferredEntry({ ...entry, reason: 'invalid_receipt', attempts: currentRetryCount })
+                );
                 notifications.push('❌ Deferred task could not be processed. Please retry manually.');
             }
         } catch (err) {
@@ -468,12 +524,18 @@ export async function retryDeferredIntents({ adapter, pipeline, bot, gemini, sto
             entry.retryCount = (entry.retryCount || 0) + 1;
             entry.nextAttemptAt = computeNextAttemptAt(entry.retryCount);
             if (entry.retryCount >= 3) {
-                await storeApi.addFailedDeferredIntent(redactDeferredEntry({ ...entry, reason: 'exception', attempts: entry.retryCount }));
+                await storeApi.addFailedDeferredIntent(
+                    redactDeferredEntry({ ...entry, reason: 'exception', attempts: entry.retryCount })
+                );
                 await storeApi.removeDeferredPipelineIntent(entry.id);
                 const chatId = storeApi.getChatId();
                 if (chatId && bot?.api) {
                     try {
-                        await sendWithMarkdown(bot.api, chatId, '❌ Deferred task failed after retries. Please retry manually.');
+                        await sendWithMarkdown(
+                            bot.api,
+                            chatId,
+                            '❌ Deferred task failed after retries. Please retry manually.'
+                        );
                     } catch (_) {
                         // best effort
                     }
@@ -492,7 +554,8 @@ export async function retryDeferredIntents({ adapter, pipeline, bot, gemini, sto
         const chatId = storeApi.getChatId();
         if (chatId) {
             try {
-                const msg = `🔄 *Deferred Retry*\n${notifications.join('\n')}` +
+                const msg =
+                    `🔄 *Deferred Retry*\n${notifications.join('\n')}` +
                     (remaining > 0 ? `\n\n${remaining} intent(s) still queued.` : '');
                 await sendWithMarkdown(bot.api, chatId, msg);
             } catch {
@@ -512,13 +575,16 @@ export async function retryDeferredIntents({ adapter, pipeline, bot, gemini, sto
  * @param {Object} [options] - Optional timing overrides for testing
  * @returns {Promise<{daily: boolean, weekly: boolean}>} Results of catch-up attempts
  */
-export async function runStartupCatchupJobs({ bot, ticktick, gemini, adapter, processedTasks = store.getProcessedTasks() }, config = {}, { now = new Date() } = {}) {
-
+export async function runStartupCatchupJobs(
+    { bot, ticktick, gemini, adapter, processedTasks = store.getProcessedTasks() },
+    config = {},
+    { now = new Date() } = {}
+) {
     const {
         dailyHour = 8,
         weeklyDay = 0,
         timezone = 'Europe/Dublin',
-        graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES,
+        graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES
     } = config;
 
     const stats = store.getStats();
@@ -531,9 +597,12 @@ export async function runStartupCatchupJobs({ bot, ticktick, gemini, adapter, pr
         dailyHour,
         timezone,
         now,
-        graceWindowMinutes,
+        graceWindowMinutes
     });
-    if (dailyScheduledForIso && shouldSendMissedDelivery(stats.lastDailyBriefing, dailyScheduledForIso, { nowIso, graceWindowMinutes })) {
+    if (
+        dailyScheduledForIso &&
+        shouldSendMissedDelivery(stats.lastDailyBriefing, dailyScheduledForIso, { nowIso, graceWindowMinutes })
+    ) {
         console.log('Handling missed daily briefing on startup...');
         results.daily = await runDailyBriefingJob({
             bot,
@@ -549,8 +618,8 @@ export async function runStartupCatchupJobs({ bot, ticktick, gemini, adapter, pr
                 scheduledForIso: dailyScheduledForIso,
                 captureTopPriorityTaskIds: (taskIds = []) => {
                     dailyPriorityTaskIds = Array.isArray(taskIds) ? taskIds : [];
-                },
-            },
+                }
+            }
         });
     }
 
@@ -559,9 +628,12 @@ export async function runStartupCatchupJobs({ bot, ticktick, gemini, adapter, pr
         weeklyDay,
         timezone,
         now,
-        graceWindowMinutes,
+        graceWindowMinutes
     });
-    if (weeklyScheduledForIso && shouldSendMissedDelivery(stats.lastWeeklyDigest, weeklyScheduledForIso, { nowIso, graceWindowMinutes })) {
+    if (
+        weeklyScheduledForIso &&
+        shouldSendMissedDelivery(stats.lastWeeklyDigest, weeklyScheduledForIso, { nowIso, graceWindowMinutes })
+    ) {
         console.log('Handling missed weekly digest on startup...');
         results.weekly = await runWeeklyDigestJob({
             bot,
@@ -576,8 +648,8 @@ export async function runStartupCatchupJobs({ bot, ticktick, gemini, adapter, pr
                 timezone,
                 graceWindowMinutes,
                 scheduledForIso: weeklyScheduledForIso,
-                excludedTaskIds: dailyPriorityTaskIds,
-            },
+                excludedTaskIds: dailyPriorityTaskIds
+            }
         });
     }
 
@@ -595,7 +667,6 @@ export async function runStartupCatchupJobs({ bot, ticktick, gemini, adapter, pr
  * @returns {Promise<void>}
  */
 export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, config) {
-
     const {
         dailyHour = 8,
         weeklyDay = 0,
@@ -603,7 +674,7 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
         timezone = 'Europe/Dublin',
         autoApplyLifeAdmin = false,
         autoApplyMode = 'metadata-only',
-        graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES,
+        graceWindowMinutes = DEFAULT_GRACE_WINDOW_MINUTES
     } = config;
 
     const autoConfig = { autoApplyLifeAdmin, autoApplyMode };
@@ -633,343 +704,397 @@ export async function startScheduler(bot, ticktick, gemini, adapter, pipeline, c
             ? pipeline.processMessageWithContext(userMessage, options)
             : pipeline.processMessage(userMessage, options);
 
-    cron.schedule(`*/${pollMinutes} * * * *`, async () => {
-        if (!ticktick.isAuthenticated()) {
-            if (!tokenExpiredNotified) {
-                tokenExpiredNotified = true;
-                const chatId = store.getChatId();
-                if (chatId) {
+    cron.schedule(
+        `*/${pollMinutes} * * * *`,
+        async () => {
+            if (!ticktick.isAuthenticated()) {
+                if (!tokenExpiredNotified) {
+                    tokenExpiredNotified = true;
+                    const chatId = store.getChatId();
+                    if (chatId) {
+                        try {
+                            await sendWithMarkdown(
+                                bot.api,
+                                chatId,
+                                '🔑 TickTick token has expired!\n\n' +
+                                    'The bot can no longer access your tasks. To reconnect:\n' +
+                                    `1. Visit: ${ticktick.getAuthUrl()}\n` +
+                                    '2. After authorizing, copy the new token from console\n' +
+                                    '3. Update TICKTICK_ACCESS_TOKEN in Render env vars'
+                            );
+                        } catch {
+                            // best effort
+                        }
+                    }
+                    console.error('🔑 TickTick token expired - sent notification to user.');
+                }
+                return;
+            }
+            tokenExpiredNotified = false;
+            const chatId = store.getChatId();
+            if (!chatId) return;
+            const workStyleMode = await store.getWorkStyleMode(chatId, {
+                notify: async (msg) => {
                     try {
-                        await sendWithMarkdown(bot.api, chatId,
-                            '🔑 TickTick token has expired!\n\n' +
-                            'The bot can no longer access your tasks. To reconnect:\n' +
-                            `1. Visit: ${ticktick.getAuthUrl()}\n` +
-                            '2. After authorizing, copy the new token from console\n' +
-                            '3. Update TICKTICK_ACCESS_TOKEN in Render env vars'
-                        );
-                    } catch {
+                        if (bot?.api) await sendWithMarkdown(bot.api, chatId, msg);
+                    } catch (_) {
                         // best effort
                     }
                 }
-                console.error('🔑 TickTick token expired - sent notification to user.');
-            }
-            return;
-        }
-        tokenExpiredNotified = false;
-        const chatId = store.getChatId();
-        if (!chatId) return;
-        const workStyleMode = await store.getWorkStyleMode(chatId, {
-            notify: async (msg) => {
+            });
+
+            // Retry deferred intents before polling for new tasks (R12)
+            if (store.getDeferredPipelineIntents().length > 0) {
                 try {
-                    if (bot?.api) await sendWithMarkdown(bot.api, chatId, msg);
-                } catch (_) {
-                    // best effort
-                }
-            },
-        });
-
-        // Retry deferred intents before polling for new tasks (R12)
-        if (store.getDeferredPipelineIntents().length > 0) {
-            try {
-                await retryDeferredIntents({ adapter, pipeline, bot, gemini });
-            } catch (err) {
-                console.error('[DeferredRetry] Poll-cycle retry error:', err?.name || 'Error');
-            }
-        }
-
-        console.log(`🔄 [${userTimeString()}] Polling for new tasks...`);
-
-        const MAX_PENDING_REVIEW = 5;
-        const pendingCount = store.getPendingCount();
-        const availableSlots = MAX_PENDING_REVIEW - pendingCount;
-        const queueHealth = store.getQueueHealthSnapshot();
-
-        if (availableSlots <= 0) {
-            console.log(`⏸️  Skipping AI analysis - ${pendingCount} tasks pending review (max ${MAX_PENDING_REVIEW}).`);
-            if (!queueHealth.isBlocked) {
-                await store.setQueueBlocked(true);
-                console.warn(`[QueueHealth] ${JSON.stringify({ eventType: 'queue.backlog.blocked', pendingCount, maxPending: MAX_PENDING_REVIEW, blockedSince: new Date().toISOString() })}`);
-            }
-            if (!pendingSuppressionSent) {
-                try {
-                    if (!shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.PENDING_SUPPRESSION)) {
-                        await sendWithMarkdown(bot.api, chatId, `Backlog exists (${pendingCount} tasks). Use /pending to review.`);
-                    }
-                    pendingSuppressionSent = true;
+                    await retryDeferredIntents({ adapter, pipeline, bot, gemini });
                 } catch (err) {
-                    console.error('Failed to send pending suppression notice:', err.message);
+                    console.error('[DeferredRetry] Poll-cycle retry error:', err?.name || 'Error');
                 }
             }
-        } else {
-            if (queueHealth.isBlocked) {
-                await store.setQueueBlocked(false);
-                console.log(`[QueueHealth] ${JSON.stringify({ eventType: 'queue.backlog.resumed', pendingCount })}`);
-            }
-            pendingSuppressionSent = false;
-        }
 
-        // Periodic pending nudge (once per hour)
-        if (pendingCount > 0 && workStyleMode !== store.MODE_FOCUS) {
-            const lastNudge = store.getLastPendingNudgeAt();
-            const oneHourAgo = Date.now() - 60 * 60 * 1000;
-            if (!lastNudge || Date.parse(lastNudge) < oneHourAgo) {
-                try {
-                    await sendWithMarkdown(bot.api, chatId,
-                        `You have ${pendingCount} task${pendingCount === 1 ? '' : 's'} awaiting review. Use /pending to catch up.`
+            console.log(`🔄 [${userTimeString()}] Polling for new tasks...`);
+
+            const MAX_PENDING_REVIEW = 5;
+            const pendingCount = store.getPendingCount();
+            const availableSlots = MAX_PENDING_REVIEW - pendingCount;
+            const queueHealth = store.getQueueHealthSnapshot();
+
+            if (availableSlots <= 0) {
+                console.log(
+                    `⏸️  Skipping AI analysis - ${pendingCount} tasks pending review (max ${MAX_PENDING_REVIEW}).`
+                );
+                if (!queueHealth.isBlocked) {
+                    await store.setQueueBlocked(true);
+                    console.warn(
+                        `[QueueHealth] ${JSON.stringify({ eventType: 'queue.backlog.blocked', pendingCount, maxPending: MAX_PENDING_REVIEW, blockedSince: new Date().toISOString() })}`
                     );
-                    await store.setLastPendingNudgeAt(new Date().toISOString());
-                } catch (err) {
-                    console.error('Failed to send pending nudge:', err.message);
+                }
+                if (!pendingSuppressionSent) {
+                    try {
+                        if (
+                            !shouldSuppressScheduledNotification(
+                                workStyleMode,
+                                SCHEDULER_NOTIFICATION_TYPES.PENDING_SUPPRESSION
+                            )
+                        ) {
+                            await sendWithMarkdown(
+                                bot.api,
+                                chatId,
+                                `Backlog exists (${pendingCount} tasks). Use /pending to review.`
+                            );
+                        }
+                        pendingSuppressionSent = true;
+                    } catch (err) {
+                        console.error('Failed to send pending suppression notice:', err.message);
+                    }
+                }
+            } else {
+                if (queueHealth.isBlocked) {
+                    await store.setQueueBlocked(false);
+                    console.log(
+                        `[QueueHealth] ${JSON.stringify({ eventType: 'queue.backlog.resumed', pendingCount })}`
+                    );
+                }
+                pendingSuppressionSent = false;
+            }
+
+            // Periodic pending nudge (once per hour)
+            if (pendingCount > 0 && workStyleMode !== store.MODE_FOCUS) {
+                const lastNudge = store.getLastPendingNudgeAt();
+                const oneHourAgo = Date.now() - 60 * 60 * 1000;
+                if (!lastNudge || Date.parse(lastNudge) < oneHourAgo) {
+                    try {
+                        await sendWithMarkdown(
+                            bot.api,
+                            chatId,
+                            `You have ${pendingCount} task${pendingCount === 1 ? '' : 's'} awaiting review. Use /pending to catch up.`
+                        );
+                        await store.setLastPendingNudgeAt(new Date().toISOString());
+                    } catch (err) {
+                        console.error('Failed to send pending nudge:', err.message);
+                    }
                 }
             }
-        }
 
-        if (!store.tryAcquireIntakeLock({ owner: 'scheduler:poll' })) {
-            console.log('⏸️  Skipping poll - intake lock held by an active operation.');
-            return;
-        }
+            if (!store.tryAcquireIntakeLock({ owner: 'scheduler:poll' })) {
+                console.log('⏸️  Skipping poll - intake lock held by an active operation.');
+                return;
+            }
 
-        try {
-            // Stale reconciliation always runs
-            let allTasks = [];
             try {
-                allTasks = await adapter.listActiveTasks(true);
-                await store.recordTickTickSync({ source: 'scheduler:poll', activeCount: allTasks.length });
-                const { removedPending, removedFailed } = await store.reconcileTaskState(allTasks);
-                if (removedPending > 0 || removedFailed > 0) {
-                    console.log(`🧹 Reconciled: removed ${removedPending} pending, ${removedFailed} failed (no longer active)`);
-                }
-
-                // State divergence detection
-                const localPending = store.getPendingCount();
-                const backendActive = allTasks.length;
-                const diff = Math.abs(localPending - backendActive);
-                const ratio = backendActive > 0 ? localPending / backendActive : (localPending > 0 ? Infinity : 1);
-                if (diff > 5 || ratio > 2 || (backendActive > 0 && ratio < 0.5 && localPending > 5)) {
-                    console.warn(`[StateDivergence] ${JSON.stringify({
-                        eventType: 'state.divergence.detected',
-                        localPending,
-                        backendActive,
-                        ratio: Number.isFinite(ratio) ? Number(ratio.toFixed(2)) : ratio,
-                    })}`);
-                }
-            } catch (err) {
-                console.error('Reconciliation error:', err.message);
+                // Stale reconciliation always runs
+                let allTasks = [];
                 try {
                     allTasks = await adapter.listActiveTasks(true);
                     await store.recordTickTickSync({ source: 'scheduler:poll', activeCount: allTasks.length });
-                } catch { /* leave empty */ }
-            }
-
-            if (availableSlots <= 0) {
-                return;
-            }
-
-            if (gemini.isQuotaExhausted()) {
-                console.log('⏸️  Skipping poll - Gemini quota cooldown active.');
-                return;
-            }
-
-            const projects = await adapter.listProjects();
-            const newTasks = allTasks.filter((t) => !store.isTaskKnown(t.id));
-
-            if (newTasks.length === 0) {
-                unscannedNotificationSent = false;
-                return;
-            }
-            console.log(`📬 Found ${newTasks.length} new task(s)`);
-
-// When auto-apply is OFF, just notify and skip pipeline processing
-// Do NOT mark tasks as processed — /scan needs to find them
-            if (!autoApplyLifeAdmin) {
-                if (!unscannedNotificationSent) {
-                    if (!shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY)) {
-                        await sendWithMarkdown(bot.api, chatId,
-                            `📬 ${newTasks.length} new task(s) found.\n\nAuto-apply is OFF. Run /scan to process them.`);
+                    const { removedPending, removedFailed } = await store.reconcileTaskState(allTasks);
+                    if (removedPending > 0 || removedFailed > 0) {
+                        console.log(
+                            `🧹 Reconciled: removed ${removedPending} pending, ${removedFailed} failed (no longer active)`
+                        );
                     }
-                    unscannedNotificationSent = true;
-                }
-                return;
-            }
 
-            const batch = newTasks.slice(0, availableSlots);
-            const autoApplied = [];
-            const batchId = `auto-${Date.now()}`;
-            let quotaHit = false;
-            let totalSkipped = 0;
-
-            for (const task of batch) {
-                try {
-                    const userMessage = task.title + (task.content ? `\n${task.content}` : '');
-                    // Auto-apply: pass createdTime as anchorDate for relative date anchoring,
-                    // and enable due date preservation for tasks that already have user-set due dates.
-                    const autoApplyOptions = {
-                        existingTask: task,
-                        entryPoint: 'scheduler:poll',
-                        mode: 'poll',
-                        availableProjects: projects,
-                        activeTasks: allTasks,
-                        blockedActionTypes: ['delete', 'complete'],
-                        applyMode: 'metadata-only',
-                    };
-                    if (task.createdTime) {
-                        autoApplyOptions.anchorDate = task.createdTime;
-                    }
-                    if (task.dueDate) {
-                        autoApplyOptions.preserveExistingDueDate = true;
-                    }
-                    const result = await processPipelineMessage(userMessage, autoApplyOptions);
-
-                    if (result.type === 'error') {
-                        if (result.failure?.class === 'quota') {
-                            throw new Error('QUOTA_EXHAUSTED');
-                        }
-                        const reason = getSafePipelineFailureReason(result);
-                        await store.markTaskFailed(task.id, reason);
-                        console.error(`  ❌ Scheduler poll task failed: taskId=${task.id} reason=${reason}`);
-                    } else if (result.type === 'task') {
-                        if (result.skippedActions?.length > 0) {
-                            totalSkipped += result.skippedActions.length;
-                            console.log(`  ⚠️ Skipped ${result.skippedActions.length} destructive action(s) in auto-apply`);
-                        }
-
-                        const appliedActions = result.actions.filter(a => {
-                            if (a.type === 'delete' || a.type === 'complete') return false;
-                            return true;
-                        });
-
-                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: true });
-                        for (const action of appliedActions) {
-                            const diffs = buildFieldDiff(task, action, { projects });
-                            autoApplied.push({
-                                title: action.title || task.title,
-                                schedule: action.dueDate ? action.dueDate.split('T')[0] : null,
-                                movedTo: action.projectId && action.projectId !== task.projectId
-                                    ? (projects.find(p => p.id === action.projectId)?.name || action.projectId)
-                                    : null,
-                                diffs,
-                            });
-                        }
-                        // Create undo entry per task with batchId for batch undo,
-                        // including per-field snapshots for granular revert.
-                        const lastAction = [...appliedActions].reverse().find(a => a.type !== 'drop');
-                        if (lastAction) {
-                            // Build per-field snapshots from raw values for granular undo
-                            // Must store raw TickTick field values, not display-formatted strings
-                            const fieldSnapshots = {};
-                            for (const action of appliedActions) {
-                                if (action.title != null && action.title !== task.title) {
-                                    fieldSnapshots.title = { from: task.title, to: action.title };
-                                }
-                                if (action.projectId != null && action.projectId !== task.projectId) {
-                                    fieldSnapshots.projectId = { from: task.projectId, to: action.projectId };
-                                }
-                                if (action.priority != null && action.priority !== task.priority) {
-                                    fieldSnapshots.priority = { from: task.priority, to: action.priority };
-                                }
-                                if (action.dueDate != null && action.dueDate !== task.dueDate) {
-                                    fieldSnapshots.dueDate = { from: task.dueDate, to: action.dueDate };
-                                }
-                                if (action.content != null && action.content !== task.content) {
-                                    fieldSnapshots.content = { from: task.content, to: action.content };
-                                }
-                                if (action.repeatFlag != null && action.repeatFlag !== task.repeatFlag) {
-                                    fieldSnapshots.repeatFlag = { from: task.repeatFlag, to: action.repeatFlag };
-                                }
-                            }
-                            const undoEntry = buildUndoEntry({
-                                source: task,
-                                action: 'auto-apply',
-                                applied: {
-                                    title: lastAction.title ?? null,
-                                    projectId: lastAction.projectId ?? null,
-                                    priority: lastAction.priority ?? null,
-                                    schedule: lastAction.dueDate ? lastAction.dueDate.split('T')[0] : null,
-                                },
-                                appliedTaskId: task.id,
-                            });
-                            await store.addUndoEntry({
-                                ...undoEntry,
-                                batchId,
-                                fieldSnapshots: Object.keys(fieldSnapshots).length > 0 ? fieldSnapshots : undefined,
-                            });
-                        }
-                    } else {
-                        await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                    // State divergence detection
+                    const localPending = store.getPendingCount();
+                    const backendActive = allTasks.length;
+                    const diff = Math.abs(localPending - backendActive);
+                    const ratio = backendActive > 0 ? localPending / backendActive : localPending > 0 ? Infinity : 1;
+                    if (diff > 5 || ratio > 2 || (backendActive > 0 && ratio < 0.5 && localPending > 5)) {
+                        console.warn(
+                            `[StateDivergence] ${JSON.stringify({
+                                eventType: 'state.divergence.detected',
+                                localPending,
+                                backendActive,
+                                ratio: Number.isFinite(ratio) ? Number(ratio.toFixed(2)) : ratio
+                            })}`
+                        );
                     }
                 } catch (err) {
-                    if (err.message === 'QUOTA_EXHAUSTED') {
-                        const resetMs = gemini.quotaResumeTime()
-                            ? gemini.quotaResumeTime().getTime() - Date.now()
-                            : 2 * 60 * 60 * 1000;
-                        for (const t of newTasks) {
-                            await store.markTaskFailed(t.id, 'quota_exhausted', resetMs);
-                        }
-                        console.log(`⏸️  Quota exhausted - parked ${newTasks.length} task(s) until quota resets.`);
-                        quotaHit = true;
-                        break;
+                    console.error('Reconciliation error:', err.message);
+                    try {
+                        allTasks = await adapter.listActiveTasks(true);
+                        await store.recordTickTickSync({ source: 'scheduler:poll', activeCount: allTasks.length });
+                    } catch {
+                        /* leave empty */
                     }
-
-                    const errorName = getSafeErrorName(err);
-                    await store.markTaskFailed(task.id, `error_${errorName}`);
-                    console.error(`  ❌ Scheduler poll task failed: taskId=${task.id} error=${errorName}`);
                 }
-                await new Promise((r) => setTimeout(r, 3000));
-            }
 
-            if (autoApplied.length > 0) {
-                const notification = buildAutoApplyNotification(autoApplied, {
-                    hasSkippedActions: totalSkipped > 0,
-                });
-                if (notification && !shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY)) {
-                    await sendWithMarkdown(bot.api, chatId, notification);
+                if (availableSlots <= 0) {
+                    return;
                 }
+
+                if (gemini.isQuotaExhausted()) {
+                    console.log('⏸️  Skipping poll - Gemini quota cooldown active.');
+                    return;
+                }
+
+                const projects = await adapter.listProjects();
+                const newTasks = allTasks.filter((t) => !store.isTaskKnown(t.id));
+
+                if (newTasks.length === 0) {
+                    unscannedNotificationSent = false;
+                    return;
+                }
+                console.log(`📬 Found ${newTasks.length} new task(s)`);
+
+                // When auto-apply is OFF, just notify and skip pipeline processing
+                // Do NOT mark tasks as processed — /scan needs to find them
+                if (!autoApplyLifeAdmin) {
+                    if (!unscannedNotificationSent) {
+                        if (
+                            !shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY)
+                        ) {
+                            await sendWithMarkdown(
+                                bot.api,
+                                chatId,
+                                `📬 ${newTasks.length} new task(s) found.\n\nAuto-apply is OFF. Run /scan to process them.`
+                            );
+                        }
+                        unscannedNotificationSent = true;
+                    }
+                    return;
+                }
+
+                const batch = newTasks.slice(0, availableSlots);
+                const autoApplied = [];
+                const batchId = `auto-${Date.now()}`;
+                let quotaHit = false;
+                let totalSkipped = 0;
+
+                for (const task of batch) {
+                    try {
+                        const userMessage = task.title + (task.content ? `\n${task.content}` : '');
+                        // Auto-apply: pass createdTime as anchorDate for relative date anchoring,
+                        // and enable due date preservation for tasks that already have user-set due dates.
+                        const autoApplyOptions = {
+                            existingTask: task,
+                            entryPoint: 'scheduler:poll',
+                            mode: 'poll',
+                            availableProjects: projects,
+                            activeTasks: allTasks,
+                            blockedActionTypes: ['delete', 'complete'],
+                            applyMode: 'metadata-only'
+                        };
+                        if (task.createdTime) {
+                            autoApplyOptions.anchorDate = task.createdTime;
+                        }
+                        if (task.dueDate) {
+                            autoApplyOptions.preserveExistingDueDate = true;
+                        }
+                        const result = await processPipelineMessage(userMessage, autoApplyOptions);
+
+                        if (result.type === 'error') {
+                            if (result.failure?.class === 'quota') {
+                                throw new Error('QUOTA_EXHAUSTED');
+                            }
+                            const reason = getSafePipelineFailureReason(result);
+                            await store.markTaskFailed(task.id, reason);
+                            console.error(`  ❌ Scheduler poll task failed: taskId=${task.id} reason=${reason}`);
+                        } else if (result.type === 'task') {
+                            if (result.skippedActions?.length > 0) {
+                                totalSkipped += result.skippedActions.length;
+                                console.log(
+                                    `  ⚠️ Skipped ${result.skippedActions.length} destructive action(s) in auto-apply`
+                                );
+                            }
+
+                            const appliedActions = result.actions.filter((a) => {
+                                if (a.type === 'delete' || a.type === 'complete') return false;
+                                return true;
+                            });
+
+                            await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: true });
+                            for (const action of appliedActions) {
+                                const diffs = buildFieldDiff(task, action, { projects });
+                                autoApplied.push({
+                                    title: action.title || task.title,
+                                    schedule: action.dueDate ? action.dueDate.split('T')[0] : null,
+                                    movedTo:
+                                        action.projectId && action.projectId !== task.projectId
+                                            ? projects.find((p) => p.id === action.projectId)?.name || action.projectId
+                                            : null,
+                                    diffs
+                                });
+                            }
+                            // Create undo entry per task with batchId for batch undo,
+                            // including per-field snapshots for granular revert.
+                            const lastAction = [...appliedActions].reverse().find((a) => a.type !== 'drop');
+                            if (lastAction) {
+                                // Build per-field snapshots from raw values for granular undo
+                                // Must store raw TickTick field values, not display-formatted strings
+                                const fieldSnapshots = {};
+                                for (const action of appliedActions) {
+                                    if (action.title != null && action.title !== task.title) {
+                                        fieldSnapshots.title = { from: task.title, to: action.title };
+                                    }
+                                    if (action.projectId != null && action.projectId !== task.projectId) {
+                                        fieldSnapshots.projectId = { from: task.projectId, to: action.projectId };
+                                    }
+                                    if (action.priority != null && action.priority !== task.priority) {
+                                        fieldSnapshots.priority = { from: task.priority, to: action.priority };
+                                    }
+                                    if (action.dueDate != null && action.dueDate !== task.dueDate) {
+                                        fieldSnapshots.dueDate = { from: task.dueDate, to: action.dueDate };
+                                    }
+                                    if (action.content != null && action.content !== task.content) {
+                                        fieldSnapshots.content = { from: task.content, to: action.content };
+                                    }
+                                    if (action.repeatFlag != null && action.repeatFlag !== task.repeatFlag) {
+                                        fieldSnapshots.repeatFlag = { from: task.repeatFlag, to: action.repeatFlag };
+                                    }
+                                }
+                                const undoEntry = buildUndoEntry({
+                                    source: task,
+                                    action: 'auto-apply',
+                                    applied: {
+                                        title: lastAction.title ?? null,
+                                        projectId: lastAction.projectId ?? null,
+                                        priority: lastAction.priority ?? null,
+                                        schedule: lastAction.dueDate ? lastAction.dueDate.split('T')[0] : null
+                                    },
+                                    appliedTaskId: task.id
+                                });
+                                await store.addUndoEntry({
+                                    ...undoEntry,
+                                    batchId,
+                                    fieldSnapshots: Object.keys(fieldSnapshots).length > 0 ? fieldSnapshots : undefined
+                                });
+                            }
+                        } else {
+                            await store.markTaskProcessed(task.id, { originalTitle: task.title, autoApplied: false });
+                        }
+                    } catch (err) {
+                        if (err.message === 'QUOTA_EXHAUSTED') {
+                            const resetMs = gemini.quotaResumeTime()
+                                ? gemini.quotaResumeTime().getTime() - Date.now()
+                                : 2 * 60 * 60 * 1000;
+                            for (const t of newTasks) {
+                                await store.markTaskFailed(t.id, 'quota_exhausted', resetMs);
+                            }
+                            console.log(`⏸️  Quota exhausted - parked ${newTasks.length} task(s) until quota resets.`);
+                            quotaHit = true;
+                            break;
+                        }
+
+                        const errorName = getSafeErrorName(err);
+                        await store.markTaskFailed(task.id, `error_${errorName}`);
+                        console.error(`  ❌ Scheduler poll task failed: taskId=${task.id} error=${errorName}`);
+                    }
+                    await new Promise((r) => setTimeout(r, 3000));
+                }
+
+                if (autoApplied.length > 0) {
+                    const notification = buildAutoApplyNotification(autoApplied, {
+                        hasSkippedActions: totalSkipped > 0
+                    });
+                    if (
+                        notification &&
+                        !shouldSuppressScheduledNotification(workStyleMode, SCHEDULER_NOTIFICATION_TYPES.AUTO_APPLY)
+                    ) {
+                        await sendWithMarkdown(bot.api, chatId, notification);
+                    }
+                }
+
+                if (quotaHit && !quotaNotificationSent) {
+                    quotaNotificationSent = true;
+                    const resumeTime = gemini.quotaResumeTime();
+                    const resumeStr = resumeTime
+                        ? resumeTime.toLocaleTimeString('en-US', {
+                              timeZone: 'America/Los_Angeles',
+                              hour: '2-digit',
+                              minute: '2-digit'
+                          }) + ' PT'
+                        : '~midnight PT';
+                    await sendWithMarkdown(
+                        bot.api,
+                        chatId,
+                        `⚠️ AI daily quota exhausted - ${newTasks.length} tasks parked.\n` +
+                            `Quota resets at ~${resumeStr}. Bot will auto-resume then.\n` +
+                            'Or run /scan manually after reset.'
+                    );
+                }
+            } catch (err) {
+                console.error('Poll error:', err.message);
+            } finally {
+                store.releaseIntakeLock();
             }
 
-            if (quotaHit && !quotaNotificationSent) {
-                quotaNotificationSent = true;
-                const resumeTime = gemini.quotaResumeTime();
-                const resumeStr = resumeTime
-                    ? resumeTime.toLocaleTimeString('en-US', {
-                        timeZone: 'America/Los_Angeles',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                    }) + ' PT'
-                    : '~midnight PT';
-                await sendWithMarkdown(bot.api, chatId,
-                    `⚠️ AI daily quota exhausted - ${newTasks.length} tasks parked.\n` +
-                    `Quota resets at ~${resumeStr}. Bot will auto-resume then.\n` +
-                    'Or run /scan manually after reset.'
-                );
+            if (quotaNotificationSent && !gemini.isQuotaExhausted()) {
+                quotaNotificationSent = false;
             }
-        } catch (err) {
-            console.error('Poll error:', err.message);
-        } finally {
-            store.releaseIntakeLock();
-        }
+        },
+        { timezone }
+    );
 
-        if (quotaNotificationSent && !gemini.isQuotaExhausted()) {
-            quotaNotificationSent = false;
-        }
-    }, { timezone });
+    cron.schedule(
+        `0 ${dailyHour} * * *`,
+        async () => {
+            await runDailyBriefingJob({ bot, ticktick, gemini, adapter, config: { graceWindowMinutes } });
+        },
+        { timezone }
+    );
 
-    cron.schedule(`0 ${dailyHour} * * *`, async () => {
-        await runDailyBriefingJob({ bot, ticktick, gemini, adapter, config: { graceWindowMinutes } });
-    }, { timezone });
-
-    cron.schedule(`0 20 * * ${weeklyDay}`, async () => {
-        await runWeeklyDigestJob({ bot, ticktick, gemini, adapter, config: { graceWindowMinutes } });
-    }, { timezone });
+    cron.schedule(
+        `0 20 * * ${weeklyDay}`,
+        async () => {
+            await runWeeklyDigestJob({ bot, ticktick, gemini, adapter, config: { graceWindowMinutes } });
+        },
+        { timezone }
+    );
 
     await store.pruneOldEntries(14);
     const initialPruned = await store.pruneFailedTasks();
     if (initialPruned > 0) console.log(`Boot maintenance: Pruned ${initialPruned} recovered failed tasks.`);
 
-    cron.schedule('0 0 * * *', async () => {
-        await store.pruneOldEntries(14);
-        const prunedCount = await store.pruneFailedTasks();
-        if (prunedCount > 0) console.log(`Daily maintenance: Pruned ${prunedCount} recovered failed tasks.`);
-    }, { timezone });
+    cron.schedule(
+        '0 0 * * *',
+        async () => {
+            await store.pruneOldEntries(14);
+            const prunedCount = await store.pruneFailedTasks();
+            if (prunedCount > 0) console.log(`Daily maintenance: Pruned ${prunedCount} recovered failed tasks.`);
+        },
+        { timezone }
+    );
 
     console.log('Scheduler running');
 }

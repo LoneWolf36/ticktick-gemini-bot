@@ -21,7 +21,7 @@ function makeStore(overrides = {}) {
         addFailedDeferredIntent: async (entry) => failed.push(structuredClone(entry)),
         getChatId: () => 'chat-1',
         addUndoEntry: overrides.addUndoEntry,
-        ...overrides,
+        ...overrides
     };
 }
 
@@ -30,8 +30,8 @@ function makeBot(messages) {
         api: {
             sendMessage: async (_chatId, text) => {
                 messages.push(text);
-            },
-        },
+            }
+        }
     };
 }
 
@@ -40,7 +40,9 @@ test('deferred retry success persists undo and redacts notification', async () =
     const undoEntries = [];
     const store = makeStore({
         deferred: [{ id: 'deferred-1', userMessage: 'Secret raw request title', retryCount: 0, userId: 'user-9' }],
-        addUndoEntry: async (entry) => { undoEntries.push(entry); },
+        addUndoEntry: async (entry) => {
+            undoEntries.push(entry);
+        }
     });
 
     const result = await retryDeferredIntents(
@@ -54,8 +56,12 @@ test('deferred retry success persists undo and redacts notification', async () =
                         {
                             status: 'succeeded',
                             action: { type: 'create', title: 'Hidden title' },
-                            rollbackStep: { type: 'delete_created', targetTaskId: 'task-1', payload: { snapshot: { title: 'Hidden title' } } },
-                        },
+                            rollbackStep: {
+                                type: 'delete_created',
+                                targetTaskId: 'task-1',
+                                payload: { snapshot: { title: 'Hidden title' } }
+                            }
+                        }
                     ],
                     operationReceipt: {
                         status: 'applied',
@@ -69,14 +75,14 @@ test('deferred retry success persists undo and redacts notification', async () =
                         fallbackUsed: false,
                         message: 'Applied',
                         traceId: 'trace-1',
-                        results: [{ status: 'succeeded' }],
-                    },
-                }),
+                        results: [{ status: 'succeeded' }]
+                    }
+                })
             },
             bot: makeBot(messages),
-            gemini: {},
+            gemini: {}
         },
-        { maxRetries: 1 },
+        { maxRetries: 1 }
     );
 
     assert.equal(result.retried, 1);
@@ -92,7 +98,9 @@ test('deferred retry success persists undo and redacts notification', async () =
 test('deferred retry terminal failure redacts DLQ and notification', async () => {
     const messages = [];
     const store = makeStore({
-        deferred: [{ id: 'deferred-2', userMessage: 'Sensitive user message', retryCount: 3, failure: { summary: 'boom' } }],
+        deferred: [
+            { id: 'deferred-2', userMessage: 'Sensitive user message', retryCount: 3, failure: { summary: 'boom' } }
+        ]
     });
 
     const result = await retryDeferredIntents(
@@ -101,9 +109,9 @@ test('deferred retry terminal failure redacts DLQ and notification', async () =>
             store,
             pipeline: { processMessageWithContext: async () => ({ type: 'info', message: 'nope' }) },
             bot: makeBot(messages),
-            gemini: {},
+            gemini: {}
         },
-        { maxRetries: 1 },
+        { maxRetries: 1 }
     );
 
     assert.equal(result.givenUp, 1);
@@ -114,7 +122,17 @@ test('deferred retry terminal failure redacts DLQ and notification', async () =>
     assert.ok(!JSON.stringify(store.failed[0]).includes('boom'));
     assert.ok(!('failure' in store.failed[0]));
     assert.ok(!('userMessage' in store.failed[0]));
-    assert.ok(['exhausted_retries', 'invalid_receipt', 'exception', 'invalid_entry', 'not_due', 'quota_exhausted', 'deferred_retry_failed'].includes(store.failed[0].reason));
+    assert.ok(
+        [
+            'exhausted_retries',
+            'invalid_receipt',
+            'exception',
+            'invalid_entry',
+            'not_due',
+            'quota_exhausted',
+            'deferred_retry_failed'
+        ].includes(store.failed[0].reason)
+    );
     assert.equal(messages.length, 1);
     assert.match(messages[0], /failed after retries/i);
     assert.ok(!messages[0].includes('Sensitive user message'));
@@ -123,7 +141,7 @@ test('deferred retry terminal failure redacts DLQ and notification', async () =>
 test('deferred retry invalid receipt backs off or DLQs without success notification', async () => {
     const messages = [];
     const store = makeStore({
-        deferred: [{ id: 'deferred-3', userMessage: 'Another sensitive request', retryCount: 1 }],
+        deferred: [{ id: 'deferred-3', userMessage: 'Another sensitive request', retryCount: 1 }]
     });
 
     const result = await retryDeferredIntents(
@@ -145,14 +163,14 @@ test('deferred retry invalid receipt backs off or DLQs without success notificat
                         applied: false,
                         fallbackUsed: false,
                         message: 'invalid',
-                        traceId: 'trace-2',
-                    },
-                }),
+                        traceId: 'trace-2'
+                    }
+                })
             },
             bot: makeBot(messages),
-            gemini: {},
+            gemini: {}
         },
-        { maxRetries: 1 },
+        { maxRetries: 1 }
     );
 
     assert.equal(result.retried, 0);
@@ -179,7 +197,7 @@ test('canonical receipt validator rejects sensitive fields and invalid applied r
         message: 'Applied',
         traceId: 'trace-1',
         userMessage: 'secret',
-        results: [],
+        results: []
     });
 
     assert.equal(invalid.valid, false);
@@ -190,23 +208,44 @@ test('canonical receipt validator rejects sensitive fields and invalid applied r
 test('deferred retry and undo persistence logs stay redacted', async () => {
     const originalError = console.error;
     const errors = [];
-    console.error = (...args) => { errors.push(args.join(' ')); };
+    console.error = (...args) => {
+        errors.push(args.join(' '));
+    };
 
     try {
         await retryDeferredIntents(
             {
                 adapter: { listActiveTasks: async () => [] },
                 store: makeStore({ deferred: [{ id: 'deferred-4', userMessage: 'Redacted request', retryCount: 0 }] }),
-                pipeline: { processMessageWithContext: async () => { throw new TypeError('secret boom'); } },
+                pipeline: {
+                    processMessageWithContext: async () => {
+                        throw new TypeError('secret boom');
+                    }
+                },
                 bot: makeBot([]),
-                gemini: {},
+                gemini: {}
             },
-            { maxRetries: 1 },
+            { maxRetries: 1 }
         );
 
         await persistPipelineUndoEntries({
-            result: { results: [{ status: 'succeeded', rollbackStep: { type: 'delete_created', targetTaskId: 'task-9', payload: { snapshot: { title: 'Hidden task' } } } }] },
-            store: { addUndoEntry: async () => { throw new RangeError('undo secret'); } },
+            result: {
+                results: [
+                    {
+                        status: 'succeeded',
+                        rollbackStep: {
+                            type: 'delete_created',
+                            targetTaskId: 'task-9',
+                            payload: { snapshot: { title: 'Hidden task' } }
+                        }
+                    }
+                ]
+            },
+            store: {
+                addUndoEntry: async () => {
+                    throw new RangeError('undo secret');
+                }
+            }
         });
     } finally {
         console.error = originalError;

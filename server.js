@@ -36,7 +36,7 @@ const {
     GEMINI_MODEL_ADVANCED,
     GEMINI_MODEL_FAST_FALLBACKS = 'gemini-3-flash-preview,gemini-2.5-flash-lite',
     GEMINI_MODEL_ADVANCED_FALLBACKS = 'gemini-2.5-flash,gemini-3-flash-preview,gemini-2.5-flash-lite',
-    DEFAULT_PROJECT_NAME = null,
+    DEFAULT_PROJECT_NAME = null
     // TICKTICK_ACCESS_TOKEN is loaded by dotenv and used by TickTickClient internally
     // (validated at first API call, not at startup — the OAuth flow sets it)
 } = process.env;
@@ -48,10 +48,14 @@ const REQUIRED_VARS = {
     TELEGRAM_BOT_TOKEN,
     TELEGRAM_CHAT_ID,
     GEMINI_MODEL_FAST,
-    GEMINI_MODEL_ADVANCED,
+    GEMINI_MODEL_ADVANCED
 };
 
-const parseModelList = (val) => val.split(',').map(s => s.trim()).filter(Boolean);
+const parseModelList = (val) =>
+    val
+        .split(',')
+        .map((s) => s.trim())
+        .filter(Boolean);
 
 // Startup validation: REQUIRED_VARS are checked first (hard failure if missing).
 // GEMINI_API_KEYS is validated next (hard failure if no keys available).
@@ -64,19 +68,21 @@ const missingVars = Object.entries(REQUIRED_VARS)
 
 if (missingVars.length > 0) {
     console.error(chalk.red('Missing required environment variables:'));
-    missingVars.forEach(v => console.error(chalk.red(`  - ${v}`)));
+    missingVars.forEach((v) => console.error(chalk.red(`  - ${v}`)));
     process.exit(1);
 }
 
 const ticktick = new TickTickClient({
     clientId: TICKTICK_CLIENT_ID,
     clientSecret: TICKTICK_CLIENT_SECRET,
-    redirectUri: TICKTICK_REDIRECT_URI,
+    redirectUri: TICKTICK_REDIRECT_URI
 });
 
 let geminiKeys = [];
 if (GEMINI_API_KEYS && GEMINI_API_KEYS.trim().length > 0) {
-    geminiKeys = GEMINI_API_KEYS.split(',').map(k => k.trim()).filter(Boolean);
+    geminiKeys = GEMINI_API_KEYS.split(',')
+        .map((k) => k.trim())
+        .filter(Boolean);
 } else if (GEMINI_API_KEY && GEMINI_API_KEY.trim().length > 0) {
     geminiKeys = [GEMINI_API_KEY.trim()];
 }
@@ -92,7 +98,7 @@ try {
         modelFast: GEMINI_MODEL_FAST,
         modelAdvanced: GEMINI_MODEL_ADVANCED,
         modelFastFallbacks: parseModelList(GEMINI_MODEL_FAST_FALLBACKS),
-        modelAdvancedFallbacks: parseModelList(GEMINI_MODEL_ADVANCED_FALLBACKS),
+        modelAdvancedFallbacks: parseModelList(GEMINI_MODEL_ADVANCED_FALLBACKS)
     });
 } catch (err) {
     console.error(chalk.red(err.message));
@@ -101,7 +107,7 @@ try {
 
 const botConfig = {
     autoApplyLifeAdmin: AUTO_APPLY_LIFE_ADMIN === 'true',
-    autoApplyMode: AUTO_APPLY_MODE,
+    autoApplyMode: AUTO_APPLY_MODE
 };
 
 // Initialize new pipeline context
@@ -115,7 +121,7 @@ const pipeline = createPipeline({
     adapter,
     observability,
     deferIntent: (entry) => store.appendDeferredPipelineIntent(entry),
-    defaultProjectName: DEFAULT_PROJECT_NAME,
+    defaultProjectName: DEFAULT_PROJECT_NAME
 });
 
 const bot = createBot(TELEGRAM_BOT_TOKEN, ticktick, gemini, adapter, pipeline, botConfig);
@@ -133,21 +139,22 @@ app.get('/health', async (req, res) => {
     for (const entry of recentLatencies) {
         if (!latencySummary[entry.stage]) latencySummary[entry.stage] = { count: 0, buckets: {} };
         latencySummary[entry.stage].count++;
-        latencySummary[entry.stage].buckets[entry.bucket] = (latencySummary[entry.stage].buckets[entry.bucket] || 0) + 1;
+        latencySummary[entry.stage].buckets[entry.bucket] =
+            (latencySummary[entry.stage].buckets[entry.bucket] || 0) + 1;
     }
 
     const report = {
         status: 'ok',
         ticktick: {
             authenticated: ticktick.isAuthenticated(),
-            activeTasks: activeTasks.length,
+            activeTasks: activeTasks.length
         },
         queue: queueHealth,
         workflow: operational.localWorkflow,
         cumulative: operational.cumulative,
         ai: aiHealth,
         latency: latencySummary,
-        uptimeSeconds: Math.floor(process.uptime()),
+        uptimeSeconds: Math.floor(process.uptime())
     };
 
     res.json(report);
@@ -174,7 +181,7 @@ app.get('/', async (req, res) => {
     res.json({
         app: 'TickTick AI Accountability Partner',
         ticktick: ticktick.isAuthenticated() ? 'connected' : 'not connected',
-        authUrl: ticktick.isAuthenticated() ? null : ticktick.getAuthUrl(),
+        authUrl: ticktick.isAuthenticated() ? null : ticktick.getAuthUrl()
     });
 });
 
@@ -214,7 +221,7 @@ const TELEGRAM_COMMANDS = [
     { command: 'forget', description: 'Reset behavioral memory' },
     { command: 'daily_close', description: 'End-of-day reflection' },
     { command: 'status', description: 'Show bot state and stats' },
-    { command: 'reset', description: 'Wipe bot state (requires CONFIRM)' },
+    { command: 'reset', description: 'Wipe bot state (requires CONFIRM)' }
 ];
 
 app.listen(parseInt(PORT), async () => {
@@ -249,7 +256,7 @@ app.listen(parseInt(PORT), async () => {
         weeklyDay: parseInt(WEEKLY_DIGEST_DAY),
         pollMinutes: parseInt(POLL_INTERVAL_MINUTES),
         timezone: userTimezone,
-        ...botConfig,
+        ...botConfig
     });
 
     console.log(chalk.dim(`\nServer: http://127.0.0.1:${PORT}`));

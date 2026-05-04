@@ -26,10 +26,13 @@ export const VALID_WORK_STYLE_MODES = [MODE_STANDARD, MODE_FOCUS, MODE_URGENT];
 export const DEFAULT_URGENT_EXPIRY_MS = 2 * 60 * 60 * 1000; // 2 hours
 export const FOCUS_MODE_EXPIRY_MS = 4 * 60 * 60 * 1000; // 4 hours
 export const DEFAULT_BEHAVIORAL_USER_ID = 'default';
-export const BEHAVIORAL_SIGNAL_RETENTION_DAYS = Math.max(1, Number.parseInt(process.env.BEHAVIORAL_SIGNAL_RETENTION_DAYS || '30', 10) || 30);
+export const BEHAVIORAL_SIGNAL_RETENTION_DAYS = Math.max(
+    1,
+    Number.parseInt(process.env.BEHAVIORAL_SIGNAL_RETENTION_DAYS || '30', 10) || 30
+);
 export const BEHAVIORAL_SIGNAL_ARCHIVE_DAYS = Math.max(
     BEHAVIORAL_SIGNAL_RETENTION_DAYS,
-    Number.parseInt(process.env.BEHAVIORAL_SIGNAL_ARCHIVE_DAYS || '90', 10) || 90,
+    Number.parseInt(process.env.BEHAVIORAL_SIGNAL_ARCHIVE_DAYS || '90', 10) || 90
 );
 
 function logWorkStyleTelemetry({ userId, previousMode, nextMode, expiresAt = null, reason = 'user_request' }) {
@@ -49,33 +52,35 @@ function logWorkStyleTelemetry({ userId, previousMode, nextMode, expiresAt = nul
         eventType = 'urgent_timer_reset';
     }
 
-    console.log(`[WorkStyleTelemetry] ${JSON.stringify({
-        telemetryScope: 'operational',
-        behavioralSignal: false,
-        eventType,
-        userId,
-        previousMode,
-        nextMode,
-        expiresAt,
-        reason,
-    })}`);
+    console.log(
+        `[WorkStyleTelemetry] ${JSON.stringify({
+            telemetryScope: 'operational',
+            behavioralSignal: false,
+            eventType,
+            userId,
+            previousMode,
+            nextMode,
+            expiresAt,
+            reason
+        })}`
+    );
 }
 
 const DEFAULT_STATE = {
     chatId: null,
-    workStyleModes: {},       // R1: { [userId]: { mode, expiresAt } }
-    pendingTasks: {},    // Analyzed + sent to Telegram, awaiting user review
+    workStyleModes: {}, // R1: { [userId]: { mode, expiresAt } }
+    pendingTasks: {}, // Analyzed + sent to Telegram, awaiting user review
     pendingMutationClarification: null, // Pending mutation clarification state for free-form handler
-    pendingMutationConfirmation: null,   // Pending destructive/non-exact mutation confirmation gate
+    pendingMutationConfirmation: null, // Pending destructive/non-exact mutation confirmation gate
     pendingChecklistClarification: null, // Pending checklist vs separate-tasks clarification
     deferredPipelineIntents: [], // Pending deferred pipeline intents for API-unavailable recovery
     failedDeferredIntents: [], // Dead-letter queue for intents that exhausted retries
     behavioralSignals: {}, // R2: { [userId]: BehavioralSignal[] }
-    processedTasks: {},  // User has clicked approve/skip/drop
-    failedTasks: {},     // AI analysis failed (rate limit) — parked to prevent re-polling
+    processedTasks: {}, // User has clicked approve/skip/drop
+    failedTasks: {}, // AI analysis failed (rate limit) — parked to prevent re-polling
     undoLog: [],
     queueHealth: {
-        blockedSince: null,
+        blockedSince: null
     },
     lastPendingNudgeAt: null,
     recentTaskContext: {}, // { [userId]: { taskId, title, projectId, source, updatedAt, expiresAt } }
@@ -86,14 +91,14 @@ const DEFAULT_STATE = {
         tasksDropped: 0,
         tasksAutoApplied: 0,
         lastDailyBriefing: null,
-        lastWeeklyDigest: null,
+        lastWeeklyDigest: null
     },
     tickTickSync: {
         lastTickTickSyncAt: null,
         lastTickTickActiveCount: null,
         lastSyncSource: null,
-        stateVersion: 0,
-    },
+        stateVersion: 0
+    }
 };
 
 // ─── Backend Selection ───────────────────────────────────────
@@ -108,7 +113,7 @@ if (process.env.REDIS_URL) {
         redis = new Redis(process.env.REDIS_URL, {
             maxRetriesPerRequest: 3,
             retryStrategy: (times) => Math.min(times * 500, 3000),
-            lazyConnect: true,
+            lazyConnect: true
         });
         await redis.connect();
         useRedis = true;
@@ -143,21 +148,20 @@ function normalizeTickTickSync(value) {
         return structuredClone(DEFAULT_STATE.tickTickSync);
     }
 
-    const stateVersion = Number.isInteger(value.stateVersion) && value.stateVersion >= 0
-        ? value.stateVersion
-        : 0;
+    const stateVersion = Number.isInteger(value.stateVersion) && value.stateVersion >= 0 ? value.stateVersion : 0;
 
     return {
-        lastTickTickSyncAt: typeof value.lastTickTickSyncAt === 'string' && value.lastTickTickSyncAt.trim()
-            ? value.lastTickTickSyncAt
-            : null,
-        lastTickTickActiveCount: Number.isInteger(value.lastTickTickActiveCount) && value.lastTickTickActiveCount >= 0
-            ? value.lastTickTickActiveCount
-            : null,
-        lastSyncSource: typeof value.lastSyncSource === 'string' && value.lastSyncSource.trim()
-            ? value.lastSyncSource
-            : null,
-        stateVersion,
+        lastTickTickSyncAt:
+            typeof value.lastTickTickSyncAt === 'string' && value.lastTickTickSyncAt.trim()
+                ? value.lastTickTickSyncAt
+                : null,
+        lastTickTickActiveCount:
+            Number.isInteger(value.lastTickTickActiveCount) && value.lastTickTickActiveCount >= 0
+                ? value.lastTickTickActiveCount
+                : null,
+        lastSyncSource:
+            typeof value.lastSyncSource === 'string' && value.lastSyncSource.trim() ? value.lastSyncSource : null,
+        stateVersion
     };
 }
 
@@ -176,13 +180,15 @@ async function loadFromRedis() {
                 pendingMutationClarification: rest.pendingMutationClarification || null,
                 pendingMutationConfirmation: rest.pendingMutationConfirmation || null,
                 pendingChecklistClarification: rest.pendingChecklistClarification || null,
-                deferredPipelineIntents: Array.isArray(rest.deferredPipelineIntents) ? rest.deferredPipelineIntents : [],
+                deferredPipelineIntents: Array.isArray(rest.deferredPipelineIntents)
+                    ? rest.deferredPipelineIntents
+                    : [],
                 failedDeferredIntents: Array.isArray(rest.failedDeferredIntents) ? rest.failedDeferredIntents : [],
                 behavioralSignals: normalizeBehavioralSignalsMap(rest.behavioralSignals),
                 processedTasks: rest.processedTasks || {},
                 undoLog: rest.undoLog || [],
                 recentTaskContext: rest.recentTaskContext || {},
-                tickTickSync: normalizeTickTickSync(rest.tickTickSync),
+                tickTickSync: normalizeTickTickSync(rest.tickTickSync)
             };
         }
     } catch (err) {
@@ -200,12 +206,14 @@ function _validateSerialization(data) {
 
 // Micro-validator: ensure the loaded object looks like our state schema
 function _isValidStateShape(data) {
-    return data
-        && typeof data === 'object'
-        && !Array.isArray(data)
-        && data.stats
-        && typeof data.pendingTasks === 'object'
-        && typeof data.processedTasks === 'object';
+    return (
+        data &&
+        typeof data === 'object' &&
+        !Array.isArray(data) &&
+        data.stats &&
+        typeof data.pendingTasks === 'object' &&
+        typeof data.processedTasks === 'object'
+    );
 }
 
 function _parseFile(filePath) {
@@ -257,7 +265,7 @@ function loadFromFile() {
             processedTasks: rest.processedTasks || {},
             undoLog: rest.undoLog || [],
             recentTaskContext: rest.recentTaskContext || {},
-            tickTickSync: normalizeTickTickSync(rest.tickTickSync),
+            tickTickSync: normalizeTickTickSync(rest.tickTickSync)
         };
     }
 
@@ -280,33 +288,38 @@ async function save() {
     } else {
         ensureDir();
         const snapshot = structuredClone(state);
-        fileSaveQueue = fileSaveQueue.catch(() => {}).then(() => {
-            try {
-                const jsonStr = _validateSerialization(snapshot);
-                const fd = fs.openSync(STORE_FILE_TMP, 'w');
-                fs.writeSync(fd, jsonStr);
-                fs.fsyncSync(fd);
-                fs.closeSync(fd);
-
+        fileSaveQueue = fileSaveQueue
+            .catch(() => {})
+            .then(() => {
                 try {
-                    if (fs.existsSync(STORE_FILE)) {
-                        const BACKUP_FILE = `${STORE_FILE}.bak`;
-                        fs.copyFileSync(STORE_FILE, BACKUP_FILE);
+                    const jsonStr = _validateSerialization(snapshot);
+                    const fd = fs.openSync(STORE_FILE_TMP, 'w');
+                    fs.writeSync(fd, jsonStr);
+                    fs.fsyncSync(fd);
+                    fs.closeSync(fd);
+
+                    try {
+                        if (fs.existsSync(STORE_FILE)) {
+                            const BACKUP_FILE = `${STORE_FILE}.bak`;
+                            fs.copyFileSync(STORE_FILE, BACKUP_FILE);
+                        }
+                    } catch (backupErr) {
+                        /* Best-effort backup */
                     }
-                } catch (backupErr) { /* Best-effort backup */ }
 
-                fs.renameSync(STORE_FILE_TMP, STORE_FILE);
+                    fs.renameSync(STORE_FILE_TMP, STORE_FILE);
 
-                try {
-                    const dirFd = fs.openSync(DATA_DIR, 'r');
-                    fs.fsyncSync(dirFd);
-                    fs.closeSync(dirFd);
-                } catch { /* Ignore directory sync failures */ }
-
-            } catch (err) {
-                console.error('⚠️  Local file save failed. Existing data preserved.', err.message);
-            }
-        });
+                    try {
+                        const dirFd = fs.openSync(DATA_DIR, 'r');
+                        fs.fsyncSync(dirFd);
+                        fs.closeSync(dirFd);
+                    } catch {
+                        /* Ignore directory sync failures */
+                    }
+                } catch (err) {
+                    console.error('⚠️  Local file save failed. Existing data preserved.', err.message);
+                }
+            });
         await fileSaveQueue;
     }
 }
@@ -337,7 +350,7 @@ export function tryAcquireIntakeLock({ owner = 'unknown', ttlMs = DEFAULT_INTAKE
     intakeLock = {
         owner,
         acquiredAt: now,
-        expiresAt: now + Math.max(1, ttlMs),
+        expiresAt: now + Math.max(1, ttlMs)
     };
     return true;
 }
@@ -368,7 +381,7 @@ export function getIntakeLockStatus({ now = Date.now() } = {}) {
         locked: true,
         owner: intakeLock.owner,
         acquiredAt: intakeLock.acquiredAt,
-        expiresAt: intakeLock.expiresAt,
+        expiresAt: intakeLock.expiresAt
     };
 }
 
@@ -415,7 +428,7 @@ function sanitizeBehavioralMetadataForStorage(signal) {
         planningSubtypeB: null,
         scopeChange: null,
         wordingOnlyEdit: null,
-        decompositionChange: null,
+        decompositionChange: null
     };
 
     if (signal?.type === 'planning_without_execution') {
@@ -436,11 +449,11 @@ function sanitizeBehavioralMetadataForStorage(signal) {
 }
 
 function getBehavioralRetentionBoundaryMs(nowMs = Date.now()) {
-    return nowMs - (BEHAVIORAL_SIGNAL_RETENTION_DAYS * 24 * 60 * 60 * 1000);
+    return nowMs - BEHAVIORAL_SIGNAL_RETENTION_DAYS * 24 * 60 * 60 * 1000;
 }
 
 function getBehavioralArchiveBoundaryMs(nowMs = Date.now()) {
-    return nowMs - (BEHAVIORAL_SIGNAL_ARCHIVE_DAYS * 24 * 60 * 60 * 1000);
+    return nowMs - BEHAVIORAL_SIGNAL_ARCHIVE_DAYS * 24 * 60 * 60 * 1000;
 }
 
 function isBehavioralSignalActive(signal, nowMs = Date.now()) {
@@ -453,7 +466,15 @@ function validateBehavioralSignal(signal) {
         throw new Error('Behavioral signal must be an object');
     }
 
-    const forbiddenTopLevelKeys = ['title', 'message', 'description', 'content', 'rawMessage', 'rawTaskTitle', 'taskId'];
+    const forbiddenTopLevelKeys = [
+        'title',
+        'message',
+        'description',
+        'content',
+        'rawMessage',
+        'rawTaskTitle',
+        'taskId'
+    ];
     for (const key of forbiddenTopLevelKeys) {
         if (signal[key] !== undefined) {
             throw new Error(`Behavioral signal must not include raw field: ${key}`);
@@ -508,12 +529,16 @@ function validateBehavioralSignal(signal) {
         subjectKey: signal.subjectKey ?? null,
         confidence: signal.confidence,
         metadata,
-        timestamp: signal.timestamp,
+        timestamp: signal.timestamp
     };
 }
 
 function ensureBehavioralSignalBucket() {
-    if (!state.behavioralSignals || typeof state.behavioralSignals !== 'object' || Array.isArray(state.behavioralSignals)) {
+    if (
+        !state.behavioralSignals ||
+        typeof state.behavioralSignals !== 'object' ||
+        Array.isArray(state.behavioralSignals)
+    ) {
         state.behavioralSignals = {};
     }
 }
@@ -557,7 +582,7 @@ function normalizeWorkStyleEntry(entry) {
 
     return {
         mode: VALID_WORK_STYLE_MODES.includes(entry.mode) ? entry.mode : MODE_STANDARD,
-        expiresAt: entry.expiresAt || null,
+        expiresAt: entry.expiresAt || null
     };
 }
 
@@ -651,7 +676,7 @@ export async function setWorkStyleMode(userId, mode, options = {}) {
                 previousMode: previousEntry.mode,
                 nextMode: entry.mode,
                 expiresAt: entry.expiresAt || null,
-                reason: options.reason || 'user_request',
+                reason: options.reason || 'user_request'
             });
             return entry;
         } catch (err) {
@@ -666,7 +691,7 @@ export async function setWorkStyleMode(userId, mode, options = {}) {
         previousMode: previousEntry.mode,
         nextMode: entry.mode,
         expiresAt: entry.expiresAt || null,
-        reason: options.reason || 'user_request',
+        reason: options.reason || 'user_request'
     });
     return entry;
 }
@@ -684,12 +709,9 @@ export async function appendBehavioralSignals(userId, signals = []) {
 
     const validatedSignals = signals.map((signal) => validateBehavioralSignal(signal));
     const existingSignals = Array.isArray(state.behavioralSignals[userId]) ? state.behavioralSignals[userId] : [];
-    state.behavioralSignals[userId] = [...existingSignals, ...validatedSignals]
-        .filter((signal) => matchesBehavioralSignalRange(
-            signal,
-            getBehavioralArchiveBoundaryMs(),
-            null,
-        ));
+    state.behavioralSignals[userId] = [...existingSignals, ...validatedSignals].filter((signal) =>
+        matchesBehavioralSignalRange(signal, getBehavioralRetentionBoundaryMs(), null)
+    );
 
     await save();
     return cloneSignals(validatedSignals);
@@ -704,7 +726,10 @@ export async function getBehavioralSignals(userId, { includeExpired = false } = 
     return cloneSignals(visibleSignals);
 }
 
-export async function queryBehavioralSignalsByTimeRange(userId, { from = null, to = null, includeExpired = false } = {}) {
+export async function queryBehavioralSignalsByTimeRange(
+    userId,
+    { from = null, to = null, includeExpired = false } = {}
+) {
     assertUserId(userId);
     const fromMs = normalizeTimeRangeBoundary(from, 'from');
     const toMs = normalizeTimeRangeBoundary(to, 'to');
@@ -798,7 +823,7 @@ export async function markTaskFailed(taskId, reason, retryAfterMs = 2 * 60 * 60 
     state.failedTasks[taskId] = {
         reason,
         failedAt: new Date().toISOString(),
-        retryAfter: new Date(Date.now() + retryAfterMs).toISOString(),
+        retryAfter: new Date(Date.now() + retryAfterMs).toISOString()
     };
     await save();
 }
@@ -811,7 +836,7 @@ export async function markTaskPending(taskId, data) {
     if (state.failedTasks?.[taskId]) delete state.failedTasks[taskId];
     state.pendingTasks[taskId] = {
         ...data,
-        sentAt: new Date().toISOString(),
+        sentAt: new Date().toISOString()
     };
     state.stats.tasksAnalyzed++;
     await save();
@@ -827,14 +852,13 @@ export async function resolveTask(taskId, status) {
     const pending = state.pendingTasks[taskId];
     if (!pending) return null;
 
-    const statusFlag = status === 'approve' ? { approved: true }
-        : status === 'skip' ? { skipped: true }
-            : { dropped: true };
+    const statusFlag =
+        status === 'approve' ? { approved: true } : status === 'skip' ? { skipped: true } : { dropped: true };
 
     state.processedTasks[taskId] = {
         ...pending,
         ...statusFlag,
-        reviewedAt: new Date().toISOString(),
+        reviewedAt: new Date().toISOString()
     };
     delete state.pendingTasks[taskId];
 
@@ -852,7 +876,9 @@ export async function resolveTask(taskId, status) {
  * @param {string} taskId - Task ID to approve
  * @returns {Promise<Object|null>} The processed task entry, or null if not pending
  */
-export async function approveTask(taskId) { return resolveTask(taskId, 'approve'); }
+export async function approveTask(taskId) {
+    return resolveTask(taskId, 'approve');
+}
 
 /**
  * Skip a pending task, marking it as processed without taking action.
@@ -860,7 +886,9 @@ export async function approveTask(taskId) { return resolveTask(taskId, 'approve'
  * @param {string} taskId - Task ID to skip
  * @returns {Promise<Object|null>} The processed task entry, or null if not pending
  */
-export async function skipTask(taskId) { return resolveTask(taskId, 'skip'); }
+export async function skipTask(taskId) {
+    return resolveTask(taskId, 'skip');
+}
 
 /**
  * Drop a pending task, marking it as processed and deprioritized.
@@ -868,12 +896,14 @@ export async function skipTask(taskId) { return resolveTask(taskId, 'skip'); }
  * @param {string} taskId - Task ID to drop
  * @returns {Promise<Object|null>} The processed task entry, or null if not pending
  */
-export async function dropTask(taskId) { return resolveTask(taskId, 'drop'); }
+export async function dropTask(taskId) {
+    return resolveTask(taskId, 'drop');
+}
 
 export async function markTaskProcessed(taskId, data) {
     state.processedTasks[taskId] = {
         ...data,
-        reviewedAt: new Date().toISOString(),
+        reviewedAt: new Date().toISOString()
     };
     delete state.pendingTasks[taskId];
     if (state.failedTasks?.[taskId]) delete state.failedTasks[taskId];
@@ -893,7 +923,7 @@ export async function markTaskStale(taskId, data = {}) {
         ...state.pendingTasks[taskId],
         ...data,
         stale: true,
-        reviewedAt: new Date().toISOString(),
+        reviewedAt: new Date().toISOString()
     };
     delete state.pendingTasks[taskId];
     await save();
@@ -930,7 +960,7 @@ export function getQueueHealthSnapshot() {
         blockedSinceMs,
         pendingCount,
         processedTodayCount,
-        failedCount,
+        failedCount
     };
 }
 
@@ -997,7 +1027,7 @@ export function getPendingMutationClarification() {
 export async function setPendingMutationClarification(data) {
     state.pendingMutationClarification = {
         ...data,
-        createdAt: data.createdAt || new Date().toISOString(),
+        createdAt: data.createdAt || new Date().toISOString()
     };
     await save();
 }
@@ -1020,7 +1050,7 @@ export function getPendingMutationConfirmation() {
 
     // TTL check — expire silently
     const createdAt = pending.createdAt ? new Date(pending.createdAt).getTime() : 0;
-    if (createdAt && (Date.now() - createdAt > MUTATION_CONFIRMATION_TTL_MS)) {
+    if (createdAt && Date.now() - createdAt > MUTATION_CONFIRMATION_TTL_MS) {
         console.log('[MutationConfirmation] Expired pending state cleared (TTL exceeded)');
         state.pendingMutationConfirmation = null;
         save().catch(() => {}); // Best-effort cleanup
@@ -1033,7 +1063,7 @@ export function getPendingMutationConfirmation() {
 export async function setPendingMutationConfirmation(data) {
     state.pendingMutationConfirmation = {
         ...data,
-        createdAt: data.createdAt || new Date().toISOString(),
+        createdAt: data.createdAt || new Date().toISOString()
     };
     await save();
     console.log('[MutationConfirmation] Pending state persisted');
@@ -1065,7 +1095,7 @@ export function getPendingTaskRefinement() {
 
     // TTL check — expire silently
     const createdAt = pending.createdAt ? new Date(pending.createdAt).getTime() : 0;
-    if (createdAt && (Date.now() - createdAt > TASK_REFINEMENT_TTL_MS)) {
+    if (createdAt && Date.now() - createdAt > TASK_REFINEMENT_TTL_MS) {
         console.log('[TaskRefinement] Expired pending state cleared (TTL exceeded)');
         state.pendingTaskRefinement = null;
         save().catch(() => {}); // Best-effort cleanup
@@ -1090,7 +1120,11 @@ export async function clearPendingTaskRefinement() {
 export async function setRecentTaskContext(userId, context) {
     assertUserId(userId);
     await load();
-    if (!state.recentTaskContext || typeof state.recentTaskContext !== 'object' || Array.isArray(state.recentTaskContext)) {
+    if (
+        !state.recentTaskContext ||
+        typeof state.recentTaskContext !== 'object' ||
+        Array.isArray(state.recentTaskContext)
+    ) {
         state.recentTaskContext = {};
     }
     state.recentTaskContext[userId] = {
@@ -1100,7 +1134,7 @@ export async function setRecentTaskContext(userId, context) {
         projectId: context.projectId ?? null,
         source: context.source || 'unknown',
         updatedAt: new Date().toISOString(),
-        expiresAt: new Date(Date.now() + RECENT_TASK_CONTEXT_TTL_MS).toISOString(),
+        expiresAt: new Date(Date.now() + RECENT_TASK_CONTEXT_TTL_MS).toISOString()
     };
     await save();
 }
@@ -1139,7 +1173,7 @@ export function getPendingChecklistClarification() {
 
     // TTL check — expire silently
     const createdAt = pending.createdAt ? new Date(pending.createdAt).getTime() : 0;
-    if (createdAt && (Date.now() - createdAt > CHECKLIST_CLARIFICATION_TTL_MS)) {
+    if (createdAt && Date.now() - createdAt > CHECKLIST_CLARIFICATION_TTL_MS) {
         console.log('[ChecklistClarification] Expired pending state cleared (TTL exceeded)');
         state.pendingChecklistClarification = null;
         save().catch(() => {}); // Best-effort cleanup
@@ -1164,7 +1198,7 @@ export function getPendingChecklistClarification() {
 export async function setPendingChecklistClarification(data) {
     state.pendingChecklistClarification = {
         ...data,
-        createdAt: data.createdAt || new Date().toISOString(),
+        createdAt: data.createdAt || new Date().toISOString()
     };
     await save();
     console.log('[ChecklistClarification] Pending state persisted');
@@ -1184,18 +1218,13 @@ export async function clearPendingChecklistClarification() {
 const DEFERRED_PIPELINE_INTENT_LIMIT = 200;
 
 export function getDeferredPipelineIntents() {
-    return Array.isArray(state.deferredPipelineIntents)
-        ? structuredClone(state.deferredPipelineIntents)
-        : [];
+    return Array.isArray(state.deferredPipelineIntents) ? structuredClone(state.deferredPipelineIntents) : [];
 }
 
 const MAX_DEFERRED_BACKOFF_MS = 15 * 60 * 1000; // 15 minutes
 
 export function computeNextAttemptAt(retryCount = 0) {
-    const delayMs = Math.min(
-        2 ** Math.max(0, retryCount) * 60 * 1000,
-        MAX_DEFERRED_BACKOFF_MS,
-    );
+    const delayMs = Math.min(2 ** Math.max(0, retryCount) * 60 * 1000, MAX_DEFERRED_BACKOFF_MS);
     return Date.now() + delayMs;
 }
 
@@ -1204,20 +1233,18 @@ export async function appendDeferredPipelineIntent(entry) {
         throw new Error('deferred pipeline intent entry must be an object');
     }
 
-    const id = typeof entry.id === 'string' && entry.id.trim()
-        ? entry.id.trim()
-        : `dpi_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
-    const retryCount = typeof entry.retryCount === 'number' && entry.retryCount >= 0
-        ? entry.retryCount
-        : 0;
+    const id =
+        typeof entry.id === 'string' && entry.id.trim()
+            ? entry.id.trim()
+            : `dpi_${Date.now()}_${Math.random().toString(36).slice(2, 10)}`;
+    const retryCount = typeof entry.retryCount === 'number' && entry.retryCount >= 0 ? entry.retryCount : 0;
     const record = {
         id,
         createdAt: entry.createdAt || new Date().toISOString(),
         failureType: entry.failureType || null,
         ...entry,
-        id,
         retryCount: Number.isFinite(entry.retryCount) ? entry.retryCount : retryCount,
-        nextAttemptAt: Number.isFinite(entry.nextAttemptAt) ? entry.nextAttemptAt : computeNextAttemptAt(retryCount),
+        nextAttemptAt: Number.isFinite(entry.nextAttemptAt) ? entry.nextAttemptAt : computeNextAttemptAt(retryCount)
     };
 
     const current = Array.isArray(state.deferredPipelineIntents) ? state.deferredPipelineIntents : [];
@@ -1259,7 +1286,7 @@ export async function addFailedDeferredIntent(item) {
     }
     const record = {
         ...item,
-        failedAt: item.failedAt || new Date().toISOString(),
+        failedAt: item.failedAt || new Date().toISOString()
     };
     const current = Array.isArray(state.failedDeferredIntents) ? state.failedDeferredIntents : [];
     state.failedDeferredIntents = [...current, record].slice(-FAILED_DEFERRED_INTENT_LIMIT);
@@ -1268,9 +1295,7 @@ export async function addFailedDeferredIntent(item) {
 }
 
 export function getFailedDeferredIntents() {
-    return Array.isArray(state.failedDeferredIntents)
-        ? structuredClone(state.failedDeferredIntents)
-        : [];
+    return Array.isArray(state.failedDeferredIntents) ? structuredClone(state.failedDeferredIntents) : [];
 }
 
 export async function clearFailedDeferredIntents() {
@@ -1302,7 +1327,7 @@ export async function removeLastUndoEntry() {
  */
 export function getUndoBatch(batchId) {
     if (!batchId) return [];
-    return state.undoLog.filter(e => e.batchId === batchId);
+    return state.undoLog.filter((e) => e.batchId === batchId);
 }
 
 /**
@@ -1311,7 +1336,7 @@ export function getUndoBatch(batchId) {
  * @returns {Array<Object>} Array of undo entries from the same batch
  */
 export function getLastAutoApplyBatch() {
-    const autoEntries = state.undoLog.filter(e => e.action === 'auto-apply');
+    const autoEntries = state.undoLog.filter((e) => e.action === 'auto-apply');
     if (autoEntries.length === 0) return [];
 
     // Find the most recent auto-apply entry to get its batchId
@@ -1319,7 +1344,7 @@ export function getLastAutoApplyBatch() {
 
     // If it has a batchId, return all entries with that batchId
     if (latest.batchId) {
-        return autoEntries.filter(e => e.batchId === latest.batchId);
+        return autoEntries.filter((e) => e.batchId === latest.batchId);
     }
 
     // Legacy: no batchId, return just the single entry
@@ -1334,9 +1359,7 @@ export function getLastAutoApplyBatch() {
  */
 export function getAutoApplyFieldSnapshot(batchId, taskId) {
     if (!batchId || !taskId) return null;
-    const entry = state.undoLog.find(e =>
-        e.batchId === batchId && e.appliedTaskId === taskId && e.fieldSnapshots
-    );
+    const entry = state.undoLog.find((e) => e.batchId === batchId && e.appliedTaskId === taskId && e.fieldSnapshots);
     return entry?.fieldSnapshots || null;
 }
 
@@ -1352,9 +1375,7 @@ export function getAutoApplyFieldSnapshot(batchId, taskId) {
  */
 export async function revertAutoApplyField(batchId, taskId, field) {
     if (!batchId || !taskId || !field) return null;
-    const entry = state.undoLog.find(e =>
-        e.batchId === batchId && e.appliedTaskId === taskId && e.fieldSnapshots
-    );
+    const entry = state.undoLog.find((e) => e.batchId === batchId && e.appliedTaskId === taskId && e.fieldSnapshots);
     if (!entry?.fieldSnapshots?.[field]) return null;
 
     const snapshot = entry.fieldSnapshots[field];
@@ -1373,7 +1394,7 @@ export async function revertAutoApplyField(batchId, taskId, field) {
  */
 export async function removeUndoEntries(entries) {
     const toRemove = new Set(entries);
-    state.undoLog = state.undoLog.filter(e => !toRemove.has(e));
+    state.undoLog = state.undoLog.filter((e) => !toRemove.has(e));
     await save();
 }
 
@@ -1387,7 +1408,7 @@ export function getOperationalSnapshot() {
     const clarificationCount = [
         state.pendingMutationClarification,
         state.pendingMutationConfirmation,
-        state.pendingChecklistClarification,
+        state.pendingChecklistClarification
     ].filter(Boolean).length;
 
     return {
@@ -1396,10 +1417,10 @@ export function getOperationalSnapshot() {
             failedParked: failedCount,
             deferredIntents: deferredCount,
             failedDeferred: failedDeferredCount,
-            clarifications: clarificationCount,
+            clarifications: clarificationCount
         },
         tickTickSync: normalizeTickTickSync(state.tickTickSync),
-        cumulative: { ...state.stats },
+        cumulative: { ...state.stats }
     };
 }
 
@@ -1415,15 +1436,16 @@ export async function recordTickTickSync({ source, activeCount }) {
         state.tickTickSync = structuredClone(DEFAULT_STATE.tickTickSync);
     }
 
-    const nextVersion = Number.isInteger(state.tickTickSync.stateVersion) && state.tickTickSync.stateVersion >= 0
-        ? state.tickTickSync.stateVersion + 1
-        : 1;
+    const nextVersion =
+        Number.isInteger(state.tickTickSync.stateVersion) && state.tickTickSync.stateVersion >= 0
+            ? state.tickTickSync.stateVersion + 1
+            : 1;
 
     state.tickTickSync = {
         lastTickTickSyncAt: new Date().toISOString(),
         lastTickTickActiveCount: Number.isInteger(activeCount) && activeCount >= 0 ? activeCount : null,
         lastSyncSource: typeof source === 'string' && source.trim() ? source.trim() : 'unknown',
-        stateVersion: nextVersion,
+        stateVersion: nextVersion
     };
 
     await save();
@@ -1467,7 +1489,11 @@ export function getProcessedCount() {
 // ─── Current Review Session ──────────────────────────────────
 
 export async function setCurrentReviewSession(chatId, session) {
-    if (!state.currentReviewSessions || typeof state.currentReviewSessions !== 'object' || Array.isArray(state.currentReviewSessions)) {
+    if (
+        !state.currentReviewSessions ||
+        typeof state.currentReviewSessions !== 'object' ||
+        Array.isArray(state.currentReviewSessions)
+    ) {
         state.currentReviewSessions = {};
     }
     state.currentReviewSessions[String(chatId)] = session;
@@ -1475,14 +1501,22 @@ export async function setCurrentReviewSession(chatId, session) {
 }
 
 export function getCurrentReviewSession(chatId) {
-    if (!state.currentReviewSessions || typeof state.currentReviewSessions !== 'object' || Array.isArray(state.currentReviewSessions)) {
+    if (
+        !state.currentReviewSessions ||
+        typeof state.currentReviewSessions !== 'object' ||
+        Array.isArray(state.currentReviewSessions)
+    ) {
         return null;
     }
     return state.currentReviewSessions[String(chatId)] || null;
 }
 
 export async function clearCurrentReviewSession(chatId) {
-    if (!state.currentReviewSessions || typeof state.currentReviewSessions !== 'object' || Array.isArray(state.currentReviewSessions)) {
+    if (
+        !state.currentReviewSessions ||
+        typeof state.currentReviewSessions !== 'object' ||
+        Array.isArray(state.currentReviewSessions)
+    ) {
         return;
     }
     if (String(chatId) in state.currentReviewSessions) {
@@ -1516,7 +1550,7 @@ export async function pruneOldEntries(days = 30) {
     }
 
     const beforeUndo = state.undoLog.length;
-    state.undoLog = state.undoLog.filter(e => new Date(e.timestamp || 0) >= cutoff);
+    state.undoLog = state.undoLog.filter((e) => new Date(e.timestamp || 0) >= cutoff);
     pruned += beforeUndo - state.undoLog.length;
 
     if (pruned > 0) {

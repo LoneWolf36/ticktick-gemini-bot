@@ -10,90 +10,100 @@ import { TickTickClient } from '../services/ticktick.js';
 import * as normalizer from '../services/normalizer.js';
 
 test('R6: checklist telemetry shows extracted->normalized->adapter mapping with metadata only', async () => {
-  const observed = [];
-  const adapterLogs = [];
-  const sensitiveMessage = 'Ultra secret checklist message';
-  const sensitiveChecklistTitle = 'Ultra Secret Checklist Item';
-  let createPayload = null;
+    const observed = [];
+    const adapterLogs = [];
+    const sensitiveMessage = 'Ultra secret checklist message';
+    const sensitiveChecklistTitle = 'Ultra Secret Checklist Item';
+    let createPayload = null;
 
-  const client = Object.create(TickTickClient.prototype);
-  client.getProjects = async () => [{ id: '507f191e810c19729de860ea', name: 'Inbox' }];
-  client.getAllTasksCached = async () => [];
-  client.createTask = async (payload) => {
-    createPayload = payload;
-    return { id: 'created-r6-task', ...payload };
-  };
+    const client = Object.create(TickTickClient.prototype);
+    client.getProjects = async () => [{ id: '507f191e810c19729de860ea', name: 'Inbox' }];
+    client.getAllTasksCached = async () => [];
+    client.createTask = async (payload) => {
+        createPayload = payload;
+        return { id: 'created-r6-task', ...payload };
+    };
 
-  const adapter = new TickTickAdapter(client);
-  adapter._observeSignals = () => {};
+    const adapter = new TickTickAdapter(client);
+    adapter._observeSignals = () => {};
 
-  const telemetry = createPipelineObservability({
-    eventSink: async (event, context) => {
-      observed.push({ event, context });
-    },
-    logger: null,
-  });
-
-  const pipeline = createPipeline({
-    intentExtractor: {
-      extractIntents: async () => ([
-        {
-          type: 'create',
-          title: 'Sensitive Parent Task',
-          projectHint: 'Career',
-          checklistItems: [
-            { title: `${sensitiveChecklistTitle} 1` },
-            { title: '' },
-            { title: `${sensitiveChecklistTitle} 2` },
-          ],
+    const telemetry = createPipelineObservability({
+        eventSink: async (event, context) => {
+            observed.push({ event, context });
         },
-      ]),
-    },
-    normalizer: {
-      normalizeActions: (intents, options) => normalizer.normalizeActions(intents, options),
-    },
-    adapter,
-    observability: telemetry,
-  });
-
-  const originalLog = console.log;
-  console.log = mock.fn((...args) => {
-    adapterLogs.push(args.join(' '));
-  });
-
-  let result;
-  try {
-    result = await pipeline.processMessage(sensitiveMessage, {
-      requestId: 'req-checklist-r6',
-      entryPoint: 'telegram',
-      mode: 'interactive',
+        logger: null
     });
-  } finally {
-    console.log = originalLog;
-  }
 
-  assert.equal(result.type, 'blocked');
-  assert.equal(createPayload, null);
+    const pipeline = createPipeline({
+        intentExtractor: {
+            extractIntents: async () => [
+                {
+                    type: 'create',
+                    title: 'Sensitive Parent Task',
+                    projectHint: 'Career',
+                    checklistItems: [
+                        { title: `${sensitiveChecklistTitle} 1` },
+                        { title: '' },
+                        { title: `${sensitiveChecklistTitle} 2` }
+                    ]
+                }
+            ]
+        },
+        normalizer: {
+            normalizeActions: (intents, options) => normalizer.normalizeActions(intents, options)
+        },
+        adapter,
+        observability: telemetry
+    });
 
-  const intentEvent = observed.find((entry) => entry.event.eventType === 'pipeline.intent.completed');
-  const normalizeEvent = observed.find((entry) => entry.event.eventType === 'pipeline.normalize.completed');
-  const executeEvent = observed.find((entry) => entry.event.eventType === 'pipeline.execute.succeeded');
+    const originalLog = console.log;
+    console.log = mock.fn((...args) => {
+        adapterLogs.push(args.join(' '));
+    });
 
-  assert.ok(intentEvent, 'intent event should exist');
-  assert.ok(normalizeEvent, 'normalize event should exist');
-  assert.equal(executeEvent, undefined, 'blocked checklist create should not execute');
+    let result;
+    try {
+        result = await pipeline.processMessage(sensitiveMessage, {
+            requestId: 'req-checklist-r6',
+            entryPoint: 'telegram',
+            mode: 'interactive'
+        });
+    } finally {
+        console.log = originalLog;
+    }
 
-  assert.deepEqual(intentEvent.event.metadata.checklistIntentShape, [{ intentIndex: 0, checklistItemCount: 3 }]);
-  assert.deepEqual(normalizeEvent.event.metadata.checklistActionShape, [{ actionIndex: 0, sourceIntentIndex: 0, checklistItemCount: 2 }]);
-  assert.equal(normalizeEvent.event.metadata.checklistActionShape[0].checklistItemCount, 2);
+    assert.equal(result.type, 'blocked');
+    assert.equal(createPayload, null);
 
-  const checklistMappingLog = adapterLogs.find((line) => line.includes('createTask.checklistMapping'));
-  assert.equal(checklistMappingLog, undefined, 'blocked checklist create should not emit adapter mapping log');
+    const intentEvent = observed.find((entry) => entry.event.eventType === 'pipeline.intent.completed');
+    const normalizeEvent = observed.find((entry) => entry.event.eventType === 'pipeline.normalize.completed');
+    const executeEvent = observed.find((entry) => entry.event.eventType === 'pipeline.execute.succeeded');
 
-  const observedJson = JSON.stringify(observed);
-  assert.equal(observedJson.includes(sensitiveMessage), false, 'telemetry should not include raw message content');
-  assert.equal(observedJson.includes(sensitiveChecklistTitle), false, 'telemetry should not include raw checklist item titles');
+    assert.ok(intentEvent, 'intent event should exist');
+    assert.ok(normalizeEvent, 'normalize event should exist');
+    assert.equal(executeEvent, undefined, 'blocked checklist create should not execute');
 
-  const adapterLogJson = adapterLogs.join('\n');
-  assert.equal(adapterLogJson.includes(sensitiveChecklistTitle), false, 'adapter logs should not include raw checklist item titles');
+    assert.deepEqual(intentEvent.event.metadata.checklistIntentShape, [{ intentIndex: 0, checklistItemCount: 3 }]);
+    assert.deepEqual(normalizeEvent.event.metadata.checklistActionShape, [
+        { actionIndex: 0, sourceIntentIndex: 0, checklistItemCount: 2 }
+    ]);
+    assert.equal(normalizeEvent.event.metadata.checklistActionShape[0].checklistItemCount, 2);
+
+    const checklistMappingLog = adapterLogs.find((line) => line.includes('createTask.checklistMapping'));
+    assert.equal(checklistMappingLog, undefined, 'blocked checklist create should not emit adapter mapping log');
+
+    const observedJson = JSON.stringify(observed);
+    assert.equal(observedJson.includes(sensitiveMessage), false, 'telemetry should not include raw message content');
+    assert.equal(
+        observedJson.includes(sensitiveChecklistTitle),
+        false,
+        'telemetry should not include raw checklist item titles'
+    );
+
+    const adapterLogJson = adapterLogs.join('\n');
+    assert.equal(
+        adapterLogJson.includes(sensitiveChecklistTitle),
+        false,
+        'adapter logs should not include raw checklist item titles'
+    );
 });

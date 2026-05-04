@@ -8,9 +8,15 @@ test('R2: canonical multi-create executes independent create actions', async () 
         intents: [
             { type: 'create', title: 'Book flight', confidence: 0.95, projectHint: 'Career' },
             { type: 'create', title: 'Pack bag', confidence: 0.95, projectHint: 'Career' },
-            { type: 'create', title: 'Call uber friday', dueDate: '2026-03-13', confidence: 0.95, projectHint: 'Career' },
+            {
+                type: 'create',
+                title: 'Call uber friday',
+                dueDate: '2026-03-13',
+                confidence: 0.95,
+                projectHint: 'Career'
+            }
         ],
-        now: '2026-03-10T10:00:00Z',
+        now: '2026-03-10T10:00:00Z'
     });
 
     const result = await processMessage('book flight, pack bag, and call uber friday');
@@ -35,9 +41,9 @@ test('R2: clear create executes while ambiguous create fragment requests clarifi
                 clarification: true,
                 clarificationQuestion,
                 confidence: 0.4,
-                projectHint: 'Career',
-            },
-        ],
+                projectHint: 'Career'
+            }
+        ]
     });
 
     const result = await processMessage('book flight and call uber friday');
@@ -46,7 +52,10 @@ test('R2: clear create executes while ambiguous create fragment requests clarifi
     assert.equal(adapterCalls.create.length, 1, 'only clear create should be executed');
     assert.match(adapterCalls.create[0].title, /book flight/i);
     assert.equal(result.confirmationText, `Created: Book flight\n\n${clarificationQuestion}`);
-    assert.ok(result.confirmationText.includes(clarificationQuestion), 'result should include focused clarification question');
+    assert.ok(
+        result.confirmationText.includes(clarificationQuestion),
+        'result should include focused clarification question'
+    );
     assert.equal(result.clarification?.reason, 'ambiguous_create_fragment');
 });
 
@@ -58,13 +67,10 @@ test('R2: checklist ambiguity flow still returns clarification without writes', 
                 title: 'Plan event',
                 confidence: 0.8,
                 projectHint: 'Career',
-                checklistItems: [
-                    { title: 'Book venue' },
-                    { title: 'Send invites' },
-                ],
+                checklistItems: [{ title: 'Book venue' }, { title: 'Send invites' }]
             },
-            { type: 'create', title: 'Buy decorations', confidence: 0.8, projectHint: 'Career' },
-        ],
+            { type: 'create', title: 'Buy decorations', confidence: 0.8, projectHint: 'Career' }
+        ]
     });
 
     const result = await processMessage('Plan event with venue and invites, also buy decorations');

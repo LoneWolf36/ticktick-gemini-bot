@@ -9,7 +9,7 @@ import {
     snapshotPrivacySafePipelineValue,
     sanitizePipelineContextForDiagnostics,
     updatePipelineContext,
-    validatePipelineContext,
+    validatePipelineContext
 } from './pipeline-context.js';
 import { createPipelineObservability } from './pipeline-observability.js';
 import { QuotaExhaustedError } from './intent-extraction.js';
@@ -28,7 +28,7 @@ const FAILURE_CLASSES = {
     VALIDATION: 'validation',
     ADAPTER: 'adapter',
     ROLLBACK: 'rollback',
-    UNEXPECTED: 'unexpected',
+    UNEXPECTED: 'unexpected'
 };
 
 /**
@@ -38,7 +38,7 @@ const FAILURE_CLASSES = {
 const FAILURE_CATEGORIES = {
     TRANSIENT: 'transient',
     PERMANENT: 'permanent',
-    PARTIAL: 'partial',
+    PARTIAL: 'partial'
 };
 
 /**
@@ -49,7 +49,7 @@ const ACTION_FAILURE_CLASSES = {
     NONE: 'none',
     VALIDATION: 'validation',
     ADAPTER: 'adapter',
-    ROLLBACK: 'rollback',
+    ROLLBACK: 'rollback'
 };
 
 /**
@@ -57,7 +57,7 @@ const ACTION_FAILURE_CLASSES = {
  * @type {Record<string, string>}
  */
 const NON_TASK_REASONS = {
-    EMPTY_INTENTS: 'empty_intents',
+    EMPTY_INTENTS: 'empty_intents'
 };
 
 /**
@@ -70,13 +70,11 @@ const USER_FAILURE_MESSAGES = {
     [FAILURE_CLASSES.VALIDATION]: '⚠️ I could not validate the task details. Please clarify and retry.',
     [FAILURE_CLASSES.ADAPTER]: '⚠️ Task updates failed. Please retry shortly.',
     [FAILURE_CLASSES.ROLLBACK]: '⚠️ Task updates partially failed. Please check your tasks.',
-    [FAILURE_CLASSES.UNEXPECTED]: '⚠️ An unexpected error occurred while processing your request.',
+    [FAILURE_CLASSES.UNEXPECTED]: '⚠️ An unexpected error occurred while processing your request.'
 };
 
 function getSafeErrorName(error) {
-    return typeof error?.name === 'string' && error.name.trim()
-        ? error.name.trim()
-        : 'Error';
+    return typeof error?.name === 'string' && error.name.trim() ? error.name.trim() : 'Error';
 }
 
 /**
@@ -97,10 +95,7 @@ function parseNonNegativeIntEnv(value, fallback) {
 function getPipelineRetryConfig() {
     const maxRetries = parseNonNegativeIntEnv(process.env.PIPELINE_TRANSIENT_MAX_RETRIES, 1);
     const baseDelayMs = parseNonNegativeIntEnv(process.env.PIPELINE_TRANSIENT_BASE_DELAY_MS, 250);
-    const maxDelayMs = Math.max(
-        baseDelayMs,
-        parseNonNegativeIntEnv(process.env.PIPELINE_TRANSIENT_MAX_DELAY_MS, 4000),
-    );
+    const maxDelayMs = Math.max(baseDelayMs, parseNonNegativeIntEnv(process.env.PIPELINE_TRANSIENT_MAX_DELAY_MS, 4000));
     return { maxRetries, baseDelayMs, maxDelayMs };
 }
 
@@ -124,16 +119,20 @@ function normalizeRetryDelayMs(retryAfterMs, retryAt) {
 const MUTATION_COMMAND_PATTERN = /^(make|set|mark|change|update|move|reschedule|schedule)\b/i;
 
 function isPriorityMutationMessage(message) {
-    return /\b(high|highest|low|lowest|medium|normal)\s+priority\b/i.test(message || '')
-        || /\bpriority\s+(to\s+)?(high|highest|low|lowest|medium|normal)\b/i.test(message || '');
+    return (
+        /\b(high|highest|low|lowest|medium|normal)\s+priority\b/i.test(message || '') ||
+        /\bpriority\s+(to\s+)?(high|highest|low|lowest|medium|normal)\b/i.test(message || '')
+    );
 }
 
 function hasMutationPayload(intent) {
-    return intent?.priority != null
-        || intent?.dueDate != null
-        || intent?.projectHint != null
-        || intent?.repeatHint != null
-        || intent?.repeatFlag != null;
+    return (
+        intent?.priority != null ||
+        intent?.dueDate != null ||
+        intent?.projectHint != null ||
+        intent?.repeatHint != null ||
+        intent?.repeatFlag != null
+    );
 }
 
 function repairMutationShapedCreateIntents(intents, userMessage) {
@@ -143,35 +142,40 @@ function repairMutationShapedCreateIntents(intents, userMessage) {
     if (!MUTATION_COMMAND_PATTERN.test(userMessage || '')) return intents;
     if (!hasMutationPayload(intent) && !isPriorityMutationMessage(userMessage)) return intents;
 
-    return [{
-        ...intent,
-        type: 'update',
-        targetQuery: intent.targetQuery || intent.title,
-        title: null,
-        confidence: Math.min(1, Math.max(intent.confidence ?? 0.75, 0.75)),
-        repairedFromType: 'create',
-        repairReason: 'mutation_shaped_create',
-    }];
+    return [
+        {
+            ...intent,
+            type: 'update',
+            targetQuery: intent.targetQuery || intent.title,
+            title: null,
+            confidence: Math.min(1, Math.max(intent.confidence ?? 0.75, 0.75)),
+            repairedFromType: 'create',
+            repairReason: 'mutation_shaped_create'
+        }
+    ];
 }
 
-function buildOperationReceipt(context, {
-    status,
-    scope,
-    command,
-    operationType,
-    nextAction,
-    changed,
-    dryRun,
-    applied,
-    fallbackUsed,
-    message,
-    errorClass = null,
-    destination = undefined,
-    confirmation = undefined,
-    succeeded = undefined,
-    failed = undefined,
-    rolledBack = undefined,
-}) {
+function buildOperationReceipt(
+    context,
+    {
+        status,
+        scope,
+        command,
+        operationType,
+        nextAction,
+        changed,
+        dryRun,
+        applied,
+        fallbackUsed,
+        message,
+        errorClass = null,
+        destination = undefined,
+        confirmation = undefined,
+        succeeded = undefined,
+        failed = undefined,
+        rolledBack = undefined
+    }
+) {
     const receipt = {
         status,
         scope,
@@ -190,7 +194,7 @@ function buildOperationReceipt(context, {
         ...(Number.isInteger(succeeded) ? { succeeded } : {}),
         ...(Number.isInteger(failed) ? { failed } : {}),
         ...(Number.isInteger(rolledBack) ? { rolledBack } : {}),
-        ...(applied ? { results: [{ status: 'succeeded' }] } : {}),
+        ...(applied ? { results: [{ status: 'succeeded' }] } : {})
     };
 
     return assertValidOperationReceipt(receipt);
@@ -216,22 +220,20 @@ function buildTerminalTelemetryMetadata(context, receipt, extra = {}) {
         rolledBack: Number.isInteger(receipt?.rolledBack) ? receipt.rolledBack : null,
         localQueueCount: Number.isInteger(extra.localQueueCount) ? extra.localQueueCount : null,
         deferredQueueCount: Number.isInteger(extra.deferredQueueCount) ? extra.deferredQueueCount : null,
-        fallbackUsed: receipt?.fallbackUsed ?? null,
+        fallbackUsed: receipt?.fallbackUsed ?? null
     };
 }
 
 async function emitTerminalOperationTelemetry(telemetry, context, receipt, extra = {}) {
     if (!telemetry?.emit || !receipt) return;
 
-    const terminalStatus = ['blocked', 'deferred', 'failed', 'busy'].includes(receipt.status)
-        ? 'failure'
-        : 'success';
+    const terminalStatus = ['blocked', 'deferred', 'failed', 'busy'].includes(receipt.status) ? 'failure' : 'success';
 
     await telemetry.emit(context, {
         eventType: 'pipeline.operation.terminal',
         step: 'result',
         status: terminalStatus,
-        metadata: buildTerminalTelemetryMetadata(context, receipt, extra),
+        metadata: buildTerminalTelemetryMetadata(context, receipt, extra)
     });
 }
 
@@ -253,16 +255,14 @@ function resolveReceiptDestinationForPendingMutation(action, context) {
 
     const availableProjects = Array.isArray(context?.availableProjects) ? context.availableProjects : [];
     if (action.projectId) {
-        const project = availableProjects.find(candidate => candidate?.id === action.projectId);
+        const project = availableProjects.find((candidate) => candidate?.id === action.projectId);
         return project?.id ? { confidence: 'configured', projectId: project.id } : undefined;
     }
 
     const projectHint = typeof action.projectHint === 'string' ? action.projectHint.trim().toLowerCase() : '';
     if (!projectHint) return undefined;
 
-    const project = availableProjects.find(candidate => (
-        candidate?.name?.trim().toLowerCase() === projectHint
-    ));
+    const project = availableProjects.find((candidate) => candidate?.name?.trim().toLowerCase() === projectHint);
 
     return project?.id ? { confidence: 'configured', projectId: project.id } : undefined;
 }
@@ -273,25 +273,25 @@ function resolveReceiptDestinationForCreate(action, context) {
     if (action.projectResolution?.confidence === 'ambiguous') {
         return {
             confidence: 'ambiguous',
-            choices: action.projectResolution.choices,
+            choices: action.projectResolution.choices
         };
     }
 
     if (action.projectId) {
         const availableProjects = Array.isArray(context?.availableProjects) ? context.availableProjects : [];
-        const project = availableProjects.find(candidate => candidate?.id === action.projectId);
-        return project?.id ? { confidence: action.projectResolution?.confidence || 'configured', projectId: project.id } : undefined;
+        const project = availableProjects.find((candidate) => candidate?.id === action.projectId);
+        return project?.id
+            ? { confidence: action.projectResolution?.confidence || 'configured', projectId: project.id }
+            : undefined;
     }
 
-    return action.projectResolution?.confidence === 'missing'
-        ? { confidence: 'missing' }
-        : undefined;
+    return action.projectResolution?.confidence === 'missing' ? { confidence: 'missing' } : undefined;
 }
 
 function inferOperationType(actions = []) {
-    const types = Array.isArray(actions) ? actions.map(action => action?.type).filter(Boolean) : [];
+    const types = Array.isArray(actions) ? actions.map((action) => action?.type).filter(Boolean) : [];
     const allowed = new Set(['create', 'update', 'complete', 'delete', 'review', 'scan', 'sync', 'none']);
-    const filtered = types.filter(type => allowed.has(type));
+    const filtered = types.filter((type) => allowed.has(type));
     if (filtered.length === 1) return filtered[0];
     if (filtered.length === 0) return 'none';
     const uniqueTypes = new Set(filtered);
@@ -357,7 +357,7 @@ function extractAdapterErrorMeta(errorOrMessage) {
         statusCode: errorOrMessage.statusCode || null,
         retryAfterMs: errorOrMessage.retryAfterMs,
         retryAt: errorOrMessage.retryAt,
-        isQuotaExhausted: errorOrMessage.isQuotaExhausted === true,
+        isQuotaExhausted: errorOrMessage.isQuotaExhausted === true
     };
 }
 
@@ -368,7 +368,12 @@ function extractAdapterErrorMeta(errorOrMessage) {
  */
 function classifyAdapterFailureCategory(errorOrMessage = '') {
     const meta = extractAdapterErrorMeta(errorOrMessage);
-    if (meta.code === 'PERMISSION_DENIED' || meta.code === 'AUTH_ERROR' || meta.code === 'NOT_FOUND' || meta.code === 'ALREADY_COMPLETED') {
+    if (
+        meta.code === 'PERMISSION_DENIED' ||
+        meta.code === 'AUTH_ERROR' ||
+        meta.code === 'NOT_FOUND' ||
+        meta.code === 'ALREADY_COMPLETED'
+    ) {
         return FAILURE_CATEGORIES.PERMANENT;
     }
     if (meta.code === 'NETWORK_ERROR' || meta.code === 'SERVER_ERROR') {
@@ -381,13 +386,23 @@ function classifyAdapterFailureCategory(errorOrMessage = '') {
         return FAILURE_CATEGORIES.TRANSIENT;
     }
 
-    const normalized = String(typeof errorOrMessage === 'string' ? errorOrMessage : errorOrMessage?.message || '').toLowerCase();
+    const normalized = String(
+        typeof errorOrMessage === 'string' ? errorOrMessage : errorOrMessage?.message || ''
+    ).toLowerCase();
 
-    if (/(timeout|timed out|rate limit|too many requests|\b429\b|temporar|econnreset|eai_again|network|\b502\b|\b503\b|\b504\b)/i.test(normalized)) {
+    if (
+        /(timeout|timed out|rate limit|too many requests|\b429\b|temporar|econnreset|eai_again|network|\b502\b|\b503\b|\b504\b)/i.test(
+            normalized
+        )
+    ) {
         return FAILURE_CATEGORIES.TRANSIENT;
     }
 
-    if (/(invalid|missing project|project .*not found|could not resolve project|permission denied|forbidden|already completed|unsupported|not found|requires)/i.test(normalized)) {
+    if (
+        /(invalid|missing project|project .*not found|could not resolve project|permission denied|forbidden|already completed|unsupported|not found|requires)/i.test(
+            normalized
+        )
+    ) {
         return FAILURE_CATEGORIES.PERMANENT;
     }
 
@@ -417,7 +432,10 @@ function deriveFailureCategory({ failureClass, failureCategory, details, rolledB
         case FAILURE_CLASSES.VALIDATION:
             return FAILURE_CATEGORIES.PERMANENT;
         case FAILURE_CLASSES.ADAPTER:
-            return details?.adapterFailureCategory || (retryable ? FAILURE_CATEGORIES.TRANSIENT : FAILURE_CATEGORIES.PERMANENT);
+            return (
+                details?.adapterFailureCategory ||
+                (retryable ? FAILURE_CATEGORIES.TRANSIENT : FAILURE_CATEGORIES.PERMANENT)
+            );
         case FAILURE_CLASSES.UNEXPECTED:
         default:
             return retryable ? FAILURE_CATEGORIES.TRANSIENT : FAILURE_CATEGORIES.PERMANENT;
@@ -437,16 +455,18 @@ function buildUserFailureMessage({ failureClass, failureCategory, details, rolle
     if (failureCategory === FAILURE_CATEGORIES.PARTIAL) {
         const successCount = Number.isInteger(details?.successCount) ? details.successCount : null;
         const failureCount = Number.isInteger(details?.failureCount) ? details.failureCount : null;
-        const summary = successCount !== null && failureCount !== null
-            ? `${successCount} succeeded, ${failureCount} failed.`
-            : 'Some tasks succeeded and some failed.';
+        const summary =
+            successCount !== null && failureCount !== null
+                ? `${successCount} succeeded, ${failureCount} failed.`
+                : 'Some tasks succeeded and some failed.';
         const succeededTitles = Array.isArray(details?.succeededTitles) ? details.succeededTitles.filter(Boolean) : [];
         const failedTitles = Array.isArray(details?.failedTitles) ? details.failedTitles.filter(Boolean) : [];
-        const succeededHint = succeededTitles.length > 0
-            ? (rolledBack
-                ? ` Rolled back: ${succeededTitles.slice(0, 2).join(', ')}.`
-                : ` Success: ${succeededTitles.slice(0, 2).join(', ')}.`)
-            : '';
+        const succeededHint =
+            succeededTitles.length > 0
+                ? rolledBack
+                    ? ` Rolled back: ${succeededTitles.slice(0, 2).join(', ')}.`
+                    : ` Success: ${succeededTitles.slice(0, 2).join(', ')}.`
+                : '';
         const failedHint = failedTitles.length > 0 ? ` Failed: ${failedTitles.slice(0, 2).join(', ')}.` : '';
 
         return rolledBack
@@ -468,7 +488,11 @@ function buildUserFailureMessage({ failureClass, failureCategory, details, rolle
 
     if (failureClass === FAILURE_CLASSES.ADAPTER && failureCategory === FAILURE_CATEGORIES.PERMANENT) {
         const adapterError = details?.adapterError || {};
-        if (adapterError.isQuotaExhausted || adapterError.code === 'RATE_LIMIT_QUOTA_EXHAUSTED' || adapterError.code === 'QUOTA_EXHAUSTED') {
+        if (
+            adapterError.isQuotaExhausted ||
+            adapterError.code === 'RATE_LIMIT_QUOTA_EXHAUSTED' ||
+            adapterError.code === 'QUOTA_EXHAUSTED'
+        ) {
             const eta = formatRetryEta(adapterError.retryAfterMs, adapterError.retryAt);
             return eta
                 ? `⚠️ TickTick quota is exhausted. Please retry in about ${eta}.`
@@ -508,22 +532,25 @@ function resolveDevMode(context) {
  * @param {Object} params - Failure parameters
  * @returns {Object} Pipeline result of type 'error'
  */
-function buildFailureResult(context, {
-    failureClass,
-    failureCategory = null,
-    stage,
-    summary,
-    error,
-    details,
-    userMessage,
-    developerMessage,
-    retryable = true,
-    rolledBack = false,
-    dryRun = false,
-    results = [],
-    intents = null,
-    normalizedActions = null,
-}) {
+function buildFailureResult(
+    context,
+    {
+        failureClass,
+        failureCategory = null,
+        stage,
+        summary,
+        error,
+        details,
+        userMessage,
+        developerMessage,
+        retryable = true,
+        rolledBack = false,
+        dryRun = false,
+        results = [],
+        intents = null,
+        normalizedActions = null
+    }
+) {
     const isDevMode = resolveDevMode(context);
     const diagnostics = [];
     const resolvedFailureCategory = deriveFailureCategory({
@@ -531,7 +558,7 @@ function buildFailureResult(context, {
         failureCategory,
         details,
         rolledBack,
-        retryable,
+        retryable
     });
 
     if (failureClass) diagnostics.push(`failure_class: ${failureClass}`);
@@ -576,20 +603,20 @@ function buildFailureResult(context, {
         }
     }
 
-    const confirmationText = userMessage || buildUserFailureMessage({
-        failureClass,
-        failureCategory: resolvedFailureCategory,
-        details,
-        rolledBack,
-    });
+    const confirmationText =
+        userMessage ||
+        buildUserFailureMessage({
+            failureClass,
+            failureCategory: resolvedFailureCategory,
+            details,
+            rolledBack
+        });
     const failureDeveloperMessage = developerMessage || summary || error?.message || null;
     const changed = didFailureChangeExternalState({ failureClass, details, rolledBack });
-    const receiptStatus = details?.deferredIntent ? 'deferred' : (dryRun ? 'blocked' : 'failed');
+    const receiptStatus = details?.deferredIntent ? 'deferred' : dryRun ? 'blocked' : 'failed';
     const succeeded = Number.isInteger(details?.successCount) ? details.successCount : undefined;
     const failed = Number.isInteger(details?.failureCount) ? details.failureCount : undefined;
-    const rolledBackCount = Number.isInteger(details?.rolledBackCount)
-        ? details.rolledBackCount
-        : undefined;
+    const rolledBackCount = Number.isInteger(details?.rolledBackCount) ? details.rolledBackCount : undefined;
 
     return {
         type: 'error',
@@ -599,18 +626,20 @@ function buildFailureResult(context, {
             scope: details?.deferredIntent ? 'deferred_queue' : 'system',
             command: resolveReceiptCommand(context),
             operationType: inferOperationType(normalizedActions || []),
-            nextAction: details?.deferredIntent ? 'wait' : (retryable ? 'retry' : 'none'),
+            nextAction: details?.deferredIntent ? 'wait' : retryable ? 'retry' : 'none',
             changed,
             dryRun,
             applied: false,
             fallbackUsed: !!details?.deferredIntent,
             message: details?.deferredIntent
                 ? 'Task intent saved for deferred retry.'
-                : (dryRun ? 'Task execution blocked.' : 'Task execution failed.'),
+                : dryRun
+                  ? 'Task execution blocked.'
+                  : 'Task execution failed.',
             errorClass: mapFailureClassToErrorClass(failureClass, details),
             ...(succeeded !== undefined ? { succeeded } : {}),
             ...(failed !== undefined ? { failed } : {}),
-            ...(rolledBackCount !== undefined ? { rolledBack: rolledBackCount } : {}),
+            ...(rolledBackCount !== undefined ? { rolledBack: rolledBackCount } : {})
         }),
         failure: {
             class: failureClass,
@@ -623,7 +652,7 @@ function buildFailureResult(context, {
             developerMessage: failureDeveloperMessage,
             requestId: context?.requestId || null,
             retryable,
-            rolledBack,
+            rolledBack
         },
         confirmationText,
         errors: isDevMode ? diagnostics : [],
@@ -635,25 +664,22 @@ function buildFailureResult(context, {
         checklistContext: context?.checklistContext || null,
         isDevMode,
         intents,
-        normalizedActions,
+        normalizedActions
     };
 }
 
 function attachPipelineContext(result, context) {
     return {
         ...result,
-        pipelineContext: context ? sanitizePipelineContextForDiagnostics(context) : null,
+        pipelineContext: context ? sanitizePipelineContextForDiagnostics(context) : null
     };
 }
 
-function finalizePipelineContext(context, requestStartedAt, {
-    resultType,
-    status,
-    summary = null,
-    failureClass = null,
-    rolledBack = false,
-    validationFailures,
-}) {
+function finalizePipelineContext(
+    context,
+    requestStartedAt,
+    { resultType, status, summary = null, failureClass = null, rolledBack = false, validationFailures }
+) {
     const completedAt = Date.now();
     return updatePipelineContext(context, (draft) => {
         if (validationFailures !== undefined) {
@@ -664,24 +690,25 @@ function finalizePipelineContext(context, requestStartedAt, {
             type: resultType,
             summary,
             failureClass,
-            rolledBack,
+            rolledBack
         };
         draft.lifecycle.timing.requestCompletedAt = new Date(completedAt).toISOString();
         draft.lifecycle.timing.totalDurationMs = completedAt - requestStartedAt;
         draft.lifecycle.timing.stages.result = {
             startedAt: new Date(completedAt).toISOString(),
             durationMs: 0,
-            status,
+            status
         };
     });
 }
 
 function buildNonTaskResult(context, reason, details = null) {
     const userMessage = (context?.userMessage || '').trim().toLowerCase();
-    const isGreeting = /^(hi|hey|hello|howdy|greetings|good\s*(morning|afternoon|evening|night)|how are you|what'?s up)\b/.test(userMessage);
-    const confirmationText = isGreeting
-        ? 'Hi. No task created.'
-        : 'Got it — no actionable tasks detected.';
+    const isGreeting =
+        /^(hi|hey|hello|howdy|greetings|good\s*(morning|afternoon|evening|night)|how are you|what'?s up)\b/.test(
+            userMessage
+        );
+    const confirmationText = isGreeting ? 'Hi. No task created.' : 'Got it — no actionable tasks detected.';
 
     return {
         type: 'non-task',
@@ -694,7 +721,7 @@ function buildNonTaskResult(context, reason, details = null) {
         entryPoint: context?.entryPoint || null,
         mode: context?.mode || null,
         workStyleMode: context?.workStyleMode || null,
-        checklistContext: context?.checklistContext || null,
+        checklistContext: context?.checklistContext || null
     };
 }
 
@@ -707,13 +734,13 @@ function buildClarificationResult(context, resolverResult) {
         confirmationText: clarificationPrompt,
         clarification: {
             candidates: resolverResult.candidates,
-            reason: resolverResult.reason,
+            reason: resolverResult.reason
         },
         requestId: context?.requestId || null,
         entryPoint: context?.entryPoint || null,
         mode: context?.mode || null,
         workStyleMode: context?.workStyleMode || null,
-        checklistContext: context?.checklistContext || null,
+        checklistContext: context?.checklistContext || null
     };
 }
 
@@ -724,13 +751,13 @@ function buildNotFoundResult(context, reason) {
         errors: [],
         confirmationText: `Couldn't find a matching task for that request.`,
         notFound: {
-            reason,
+            reason
         },
         requestId: context?.requestId || null,
         entryPoint: context?.entryPoint || null,
         mode: context?.mode || null,
         workStyleMode: context?.workStyleMode || null,
-        checklistContext: context?.checklistContext || null,
+        checklistContext: context?.checklistContext || null
     };
 }
 
@@ -741,25 +768,25 @@ function isUrgentWorkStyle(context) {
 function updateChecklistContext(context, metadata = {}) {
     if (!context || typeof context !== 'object') return context;
 
-    const existing = context.checklistContext && typeof context.checklistContext === 'object'
-        ? context.checklistContext
-        : {};
+    const existing =
+        context.checklistContext && typeof context.checklistContext === 'object' ? context.checklistContext : {};
 
     const next = {
-        hasChecklist: typeof metadata.hasChecklist === 'boolean'
-            ? metadata.hasChecklist
-            : (typeof existing.hasChecklist === 'boolean' ? existing.hasChecklist : null),
-        clarificationQuestion: typeof metadata.clarificationQuestion === 'string'
-            && metadata.clarificationQuestion.trim()
-            ? metadata.clarificationQuestion.trim()
-            : (typeof existing.clarificationQuestion === 'string' && existing.clarificationQuestion.trim()
-                ? existing.clarificationQuestion.trim()
-                : null),
+        hasChecklist:
+            typeof metadata.hasChecklist === 'boolean'
+                ? metadata.hasChecklist
+                : typeof existing.hasChecklist === 'boolean'
+                  ? existing.hasChecklist
+                  : null,
+        clarificationQuestion:
+            typeof metadata.clarificationQuestion === 'string' && metadata.clarificationQuestion.trim()
+                ? metadata.clarificationQuestion.trim()
+                : typeof existing.clarificationQuestion === 'string' && existing.clarificationQuestion.trim()
+                  ? existing.clarificationQuestion.trim()
+                  : null
     };
 
-    const resolvedChecklistContext = next.hasChecklist === null && next.clarificationQuestion === null
-        ? null
-        : next;
+    const resolvedChecklistContext = next.hasChecklist === null && next.clarificationQuestion === null ? null : next;
 
     return updatePipelineContext(context, (draft) => {
         draft.checklistContext = snapshotPipelineValue(resolvedChecklistContext);
@@ -779,7 +806,7 @@ function isQuotaFailure(error) {
 
 function isMalformedIntentPayload(intents) {
     if (!Array.isArray(intents)) return true;
-    return intents.some(intent => !intent || typeof intent !== 'object' || Array.isArray(intent));
+    return intents.some((intent) => !intent || typeof intent !== 'object' || Array.isArray(intent));
 }
 
 function isCreateClarificationIntent(intent) {
@@ -841,7 +868,7 @@ function createExecutionRecord(action, index) {
         result: null,
         errorMessage: null,
         failureClass: ACTION_FAILURE_CLASSES.NONE,
-        rollbackStep: null,
+        rollbackStep: null
     };
 }
 
@@ -855,7 +882,7 @@ function buildSnapshot(task) {
         priority: task.priority ?? null,
         dueDate: task.dueDate ?? null,
         repeatFlag: task.repeatFlag ?? null,
-        status: task.status ?? null,
+        status: task.status ?? null
     };
 }
 
@@ -866,7 +893,7 @@ function snapshotToTaskPayload(snapshot) {
         priority: snapshot?.priority ?? null,
         dueDate: snapshot?.dueDate ?? null,
         projectId: snapshot?.projectId ?? null,
-        repeatFlag: snapshot?.repeatFlag ?? null,
+        repeatFlag: snapshot?.repeatFlag ?? null
     };
 }
 
@@ -879,7 +906,7 @@ function buildRollbackStep(action, index, executionResult, snapshot) {
                 targetTaskId: executionResult.id,
                 targetProjectId: executionResult.projectId ?? action.projectId ?? null,
                 payload: {},
-                sourceActionIndex: index,
+                sourceActionIndex: index
             };
         case 'update':
             if (!snapshot?.id) return null;
@@ -890,9 +917,9 @@ function buildRollbackStep(action, index, executionResult, snapshot) {
                 payload: {
                     snapshot,
                     currentTaskId: executionResult?.id || action.taskId || snapshot.id,
-                    currentProjectId: executionResult?.projectId ?? action.projectId ?? snapshot.projectId ?? null,
+                    currentProjectId: executionResult?.projectId ?? action.projectId ?? snapshot.projectId ?? null
                 },
-                sourceActionIndex: index,
+                sourceActionIndex: index
             };
         case 'delete':
             if (!snapshot?.id) return null;
@@ -901,7 +928,7 @@ function buildRollbackStep(action, index, executionResult, snapshot) {
                 targetTaskId: snapshot.id,
                 targetProjectId: snapshot.projectId ?? null,
                 payload: { snapshot },
-                sourceActionIndex: index,
+                sourceActionIndex: index
             };
         case 'complete':
             if (!snapshot?.id) return null;
@@ -910,7 +937,7 @@ function buildRollbackStep(action, index, executionResult, snapshot) {
                 targetTaskId: snapshot.id,
                 targetProjectId: snapshot.projectId ?? null,
                 payload: { snapshot },
-                sourceActionIndex: index,
+                sourceActionIndex: index
             };
         default:
             return null;
@@ -943,9 +970,19 @@ async function executeAction(action, adapter, options = {}) {
         case 'update':
             return adapter.updateTask(action.taskId, action, options);
         case 'complete':
-            return adapter.completeTask(action.taskId, action.originalProjectId || action.projectId, action.userId, options);
+            return adapter.completeTask(
+                action.taskId,
+                action.originalProjectId || action.projectId,
+                action.userId,
+                options
+            );
         case 'delete':
-            return adapter.deleteTask(action.taskId, action.originalProjectId || action.projectId, action.userId, options);
+            return adapter.deleteTask(
+                action.taskId,
+                action.originalProjectId || action.projectId,
+                action.userId,
+                options
+            );
         default:
             throw new Error(`Unsupported action type: ${action.type}`);
     }
@@ -985,7 +1022,9 @@ async function executeRollbackStep(step, adapter) {
             return adapter.createTask(snapshotToTaskPayload(snapshot));
         }
         case 'uncomplete_task':
-            throw new Error('Rollback unsupported for complete actions: TickTick does not expose a reliable reopen path.');
+            throw new Error(
+                'Rollback unsupported for complete actions: TickTick does not expose a reliable reopen path.'
+            );
         default:
             throw new Error(`Unsupported rollback step: ${step?.type || 'unknown'}`);
     }
@@ -1004,18 +1043,11 @@ function buildExecutionFailure(action, message, attempt, adapterError = null) {
         statusCode: meta.statusCode || null,
         retryAfterMs: meta.retryAfterMs,
         retryAt: meta.retryAt,
-        isQuotaExhausted: meta.isQuotaExhausted,
+        isQuotaExhausted: meta.isQuotaExhausted
     };
 }
 
-function appendUnexecutedActionsAsFailures({
-    actions,
-    startIndex,
-    results,
-    errors,
-    failures,
-    failedActionLabels,
-}) {
+function appendUnexecutedActionsAsFailures({ actions, startIndex, results, errors, failures, failedActionLabels }) {
     for (let pendingIndex = startIndex; pendingIndex < actions.length; pendingIndex++) {
         const pendingAction = actions[pendingIndex];
         const pendingRecord = createExecutionRecord(pendingAction, pendingIndex);
@@ -1038,7 +1070,7 @@ function getActionLabel(action) {
 }
 
 function calculatePipelineBackoffMs(attempt, retryConfig) {
-    const base = retryConfig.baseDelayMs * (2 ** Math.max(0, attempt - 1));
+    const base = retryConfig.baseDelayMs * 2 ** Math.max(0, attempt - 1);
     return Math.min(base, retryConfig.maxDelayMs);
 }
 
@@ -1061,7 +1093,14 @@ async function sleep(ms) {
  *   - `processMessage(userMessage, options?)` → `{ type: 'task'|'preview'|'blocked'|'info'|'error', confirmationText, taskId?, diagnostics?, ... }`
  *   - `getTelemetry()` → the observability instance for this pipeline
  */
-export function createPipeline({ intentExtractor, normalizer, adapter, observability, deferIntent, defaultProjectName = null } = {}) {
+export function createPipeline({
+    intentExtractor,
+    normalizer,
+    adapter,
+    observability,
+    deferIntent,
+    defaultProjectName = null
+} = {}) {
     const contextBuilder = createPipelineContextBuilder({ adapter });
     const telemetry = observability || createPipelineObservability();
 
@@ -1112,9 +1151,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 category: terminalFailure.failureCategory,
                 stage: terminalFailure.stage || 'adapter',
                 summary: terminalFailure.summary || null,
-                adapterError: snapshotPipelineValue(terminalFailure.details?.adapterError || null),
+                adapterError: snapshotPipelineValue(terminalFailure.details?.adapterError || null)
             },
-            deferredAt: new Date().toISOString(),
+            deferredAt: new Date().toISOString()
         };
         try {
             return await deferIntent(payload);
@@ -1136,7 +1175,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             failureReason: 'ai_quota',
             retryCount: 0,
             nextAttemptAt: new Date(Date.now() + 60 * 1000).toISOString(),
-            deferredAt: new Date().toISOString(),
+            deferredAt: new Date().toISOString()
         };
         try {
             return await deferIntent(payload);
@@ -1153,15 +1192,16 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
         let requestStartedAt = Date.now();
 
         try {
-            context = resolveProvidedContext(userMessage, options)
-                || await contextBuilder.buildRequestContext(userMessage, options);
+            context =
+                resolveProvidedContext(userMessage, options) ||
+                (await contextBuilder.buildRequestContext(userMessage, options));
             requestStartedAt = Date.now();
             context = updatePipelineContext(context, (draft) => {
                 draft.lifecycle.timing.requestStartedAt = new Date(requestStartedAt).toISOString();
                 draft.lifecycle.timing.stages.request = {
                     startedAt: new Date(requestStartedAt).toISOString(),
                     durationMs: null,
-                    status: 'start',
+                    status: 'start'
                 };
             });
 
@@ -1170,11 +1210,13 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 step: 'request',
                 status: 'start',
                 metadata: {
-                    mode: context.mode,
-                },
+                    mode: context.mode
+                }
             });
 
-            console.log(`[Pipeline:${context.requestId}] Processing message (${context.userMessage?.length || 0} chars)`);
+            console.log(
+                `[Pipeline:${context.requestId}] Processing message (${context.userMessage?.length || 0} chars)`
+            );
 
             const intentStartedAt = Date.now();
             let intents;
@@ -1184,7 +1226,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     currentDate: context.currentDate,
                     availableProjects: context.availableProjectNames,
                     requestId: context.requestId,
-                    existingTask: context.existingTask,
+                    existingTask: context.existingTask
                 });
             } catch (error) {
                 const failureClass = isQuotaFailure(error) ? FAILURE_CLASSES.QUOTA : FAILURE_CLASSES.UNEXPECTED;
@@ -1192,12 +1234,12 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     draft.lifecycle.intent.status = 'failure';
                     draft.lifecycle.intent.failure = {
                         failureClass,
-                        errorName: getSafeErrorName(error),
+                        errorName: getSafeErrorName(error)
                     };
                     draft.lifecycle.timing.stages.intent = {
                         startedAt: new Date(intentStartedAt).toISOString(),
                         durationMs: Date.now() - intentStartedAt,
-                        status: 'failure',
+                        status: 'failure'
                     };
                 });
                 await telemetry.emit(context, {
@@ -1207,8 +1249,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     durationMs: Date.now() - intentStartedAt,
                     failureClass,
                     metadata: {
-                        errorName: getSafeErrorName(error),
-                    },
+                        errorName: getSafeErrorName(error)
+                    }
                 });
                 throw error;
             }
@@ -1220,12 +1262,12 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     draft.lifecycle.intent.intentOutput = snapshotPrivacySafePipelineValue(intents);
                     draft.lifecycle.intent.failure = {
                         failureClass: FAILURE_CLASSES.MALFORMED_INTENT,
-                        message: 'Malformed intent extraction output.',
+                        message: 'Malformed intent extraction output.'
                     };
                     draft.lifecycle.timing.stages.intent = {
                         startedAt: new Date(intentStartedAt).toISOString(),
                         durationMs: Date.now() - intentStartedAt,
-                        status: 'failure',
+                        status: 'failure'
                     };
                 });
                 const failureResult = buildFailureResult(context, {
@@ -1233,17 +1275,17 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     stage: 'intent',
                     summary: 'Malformed intent extraction output.',
                     details: {
-                        receivedType: Array.isArray(intents) ? 'array' : typeof intents,
+                        receivedType: Array.isArray(intents) ? 'array' : typeof intents
                     },
                     dryRun: isDryRun,
-                    retryable: true,
+                    retryable: true
                 });
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'error',
                     status: 'failure',
                     summary: 'Malformed intent extraction output.',
                     failureClass: FAILURE_CLASSES.MALFORMED_INTENT,
-                    rolledBack: false,
+                    rolledBack: false
                 });
 
                 await telemetry.emit(context, {
@@ -1253,8 +1295,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     durationMs: Date.now() - intentStartedAt,
                     failureClass: FAILURE_CLASSES.MALFORMED_INTENT,
                     metadata: {
-                        receivedType: Array.isArray(intents) ? 'array' : typeof intents,
-                    },
+                        receivedType: Array.isArray(intents) ? 'array' : typeof intents
+                    }
                 });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.failed',
@@ -1262,7 +1304,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     status: 'failure',
                     durationMs: Date.now() - requestStartedAt,
                     failureClass: FAILURE_CLASSES.MALFORMED_INTENT,
-                    rolledBack: false,
+                    rolledBack: false
                 });
                 return attachPipelineContext(failureResult, context);
             }
@@ -1274,7 +1316,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 draft.lifecycle.timing.stages.intent = {
                     startedAt: new Date(intentStartedAt).toISOString(),
                     durationMs: Date.now() - intentStartedAt,
-                    status: 'success',
+                    status: 'success'
                 };
             });
 
@@ -1286,15 +1328,20 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 durationMs: intentDurationMs,
                 metadata: {
                     intentCount: intents.length,
-                    checklistIntentCount: intents.filter(i => Array.isArray(i.checklistItems) && i.checklistItems.length > 0).length,
-                    totalExtractedChecklistItems: intents.reduce((sum, i) => sum + (Array.isArray(i.checklistItems) ? i.checklistItems.length : 0), 0),
+                    checklistIntentCount: intents.filter(
+                        (i) => Array.isArray(i.checklistItems) && i.checklistItems.length > 0
+                    ).length,
+                    totalExtractedChecklistItems: intents.reduce(
+                        (sum, i) => sum + (Array.isArray(i.checklistItems) ? i.checklistItems.length : 0),
+                        0
+                    ),
                     checklistIntentShape: intents
                         .map((intent, intentIndex) => ({
                             intentIndex,
-                            checklistItemCount: Array.isArray(intent?.checklistItems) ? intent.checklistItems.length : 0,
+                            checklistItemCount: Array.isArray(intent?.checklistItems) ? intent.checklistItems.length : 0
                         }))
-                        .filter((entry) => entry.checklistItemCount > 0),
-                },
+                        .filter((entry) => entry.checklistItemCount > 0)
+                }
             });
             if (typeof telemetry.emitLatencyHistogram === 'function') {
                 telemetry.emitLatencyHistogram({ stage: 'intent_extraction', durationMs: intentDurationMs });
@@ -1302,30 +1349,39 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
 
             if (intents.length === 0) {
                 const userMessageText = (userMessage || '').toLowerCase();
-                const hasActionVerb = /\b(add|create|move|complete|delete|schedule|priority|update|rename|done|finish)\b/.test(userMessageText);
-                const hasDateOrTime = /\b(today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|this week|am|pm|morning|afternoon|evening|\d{1,2}[:/]\d{2}|\d{4}-\d{2}-\d{2})\b/.test(userMessageText);
+                const hasActionVerb =
+                    /\b(add|create|move|complete|delete|schedule|priority|update|rename|done|finish)\b/.test(
+                        userMessageText
+                    );
+                const hasDateOrTime =
+                    /\b(today|tomorrow|yesterday|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next week|this week|am|pm|morning|afternoon|evening|\d{1,2}[:/]\d{2}|\d{4}-\d{2}-\d{2})\b/.test(
+                        userMessageText
+                    );
                 const looksTaskLike = hasActionVerb || hasDateOrTime;
 
                 if (looksTaskLike) {
-                    console.log(`[Pipeline:${context.requestId}] No intents extracted but message looks task-like. Returning clarification.`);
+                    console.log(
+                        `[Pipeline:${context.requestId}] No intents extracted but message looks task-like. Returning clarification.`
+                    );
                     const clarificationResult = {
                         type: 'clarification',
                         results: [],
                         errors: [],
-                        confirmationText: "I couldn't parse that clearly. Try rephrasing with a specific action like 'create task...' or 'move X to project Y'.",
+                        confirmationText:
+                            "I couldn't parse that clearly. Try rephrasing with a specific action like 'create task...' or 'move X to project Y'.",
                         clarification: {
-                            reason: 'empty_intents_task_like',
+                            reason: 'empty_intents_task_like'
                         },
                         requestId: context.requestId || null,
                         entryPoint: context.entryPoint || null,
                         mode: context.mode || null,
                         workStyleMode: context.workStyleMode || null,
-                        checklistContext: context.checklistContext || null,
+                        checklistContext: context.checklistContext || null
                     };
                     context = finalizePipelineContext(context, requestStartedAt, {
                         resultType: 'clarification',
                         status: 'success',
-                        summary: 'empty_intents_task_like',
+                        summary: 'empty_intents_task_like'
                     });
                     await telemetry.emit(context, {
                         eventType: 'pipeline.request.completed',
@@ -1334,8 +1390,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         durationMs: Date.now() - requestStartedAt,
                         metadata: {
                             type: 'clarification',
-                            reason: 'empty_intents_task_like',
-                        },
+                            reason: 'empty_intents_task_like'
+                        }
                     });
                     return attachPipelineContext(clarificationResult, context);
                 }
@@ -1344,7 +1400,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'non-task',
                     status: 'success',
-                    summary: NON_TASK_REASONS.EMPTY_INTENTS,
+                    summary: NON_TASK_REASONS.EMPTY_INTENTS
                 });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.completed',
@@ -1353,8 +1409,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     durationMs: Date.now() - requestStartedAt,
                     metadata: {
                         type: 'non-task',
-                        reason: NON_TASK_REASONS.EMPTY_INTENTS,
-                    },
+                        reason: NON_TASK_REASONS.EMPTY_INTENTS
+                    }
                 });
                 return attachPipelineContext(buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS), context);
             }
@@ -1362,20 +1418,21 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             intents = repairMutationShapedCreateIntents(intents, context.userMessage);
 
             let deferredCreateFragmentClarification = null;
-            const createClarificationIntents = intents.filter(intent => isCreateClarificationIntent(intent));
-            const isCreateOnlyMessage = intents.every(intent => intent?.type === 'create');
+            const createClarificationIntents = intents.filter((intent) => isCreateClarificationIntent(intent));
+            const isCreateOnlyMessage = intents.every((intent) => intent?.type === 'create');
 
             if (isCreateOnlyMessage && createClarificationIntents.length > 0) {
-                const executableCreateIntents = intents.filter(intent => !isCreateClarificationIntent(intent));
+                const executableCreateIntents = intents.filter((intent) => !isCreateClarificationIntent(intent));
                 const clarificationQuestion = pickCreateClarificationQuestion(createClarificationIntents, context);
                 const clarificationFragments = createClarificationIntents.map((intent) => ({
                     title: intent?.title || null,
-                    clarificationQuestion: typeof intent?.clarificationQuestion === 'string' ? intent.clarificationQuestion : null,
+                    clarificationQuestion:
+                        typeof intent?.clarificationQuestion === 'string' ? intent.clarificationQuestion : null
                 }));
 
                 deferredCreateFragmentClarification = {
                     question: clarificationQuestion,
-                    fragments: clarificationFragments,
+                    fragments: clarificationFragments
                 };
 
                 if (executableCreateIntents.length === 0) {
@@ -1386,19 +1443,19 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         confirmationText: clarificationQuestion,
                         clarification: {
                             reason: 'ambiguous_create_fragment',
-                            fragments: clarificationFragments,
+                            fragments: clarificationFragments
                         },
                         requestId: context.requestId || null,
                         entryPoint: context.entryPoint || null,
                         mode: context.mode || null,
                         workStyleMode: context.workStyleMode || null,
-                        checklistContext: context.checklistContext || null,
+                        checklistContext: context.checklistContext || null
                     };
 
                     context = finalizePipelineContext(context, requestStartedAt, {
                         resultType: 'clarification',
                         status: 'success',
-                        summary: 'ambiguous_create_fragment',
+                        summary: 'ambiguous_create_fragment'
                     });
 
                     await telemetry.emit(context, {
@@ -1408,8 +1465,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         durationMs: Date.now() - requestStartedAt,
                         metadata: {
                             type: 'clarification',
-                            reason: 'ambiguous_create_fragment',
-                        },
+                            reason: 'ambiguous_create_fragment'
+                        }
                     });
 
                     return attachPipelineContext(clarificationResult, context);
@@ -1419,8 +1476,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             }
 
             // Checklist/multi-task classification: detect ambiguous structure requests
-            const hasChecklist = intents.some(i => Array.isArray(i.checklistItems) && i.checklistItems.length > 0);
-            const hasMultipleCreates = intents.filter(i => i.type === 'create').length > 1;
+            const hasChecklist = intents.some((i) => Array.isArray(i.checklistItems) && i.checklistItems.length > 0);
+            const hasMultipleCreates = intents.filter((i) => i.type === 'create').length > 1;
             context = updateChecklistContext(context, { hasChecklist });
 
             if (hasChecklist && hasMultipleCreates) {
@@ -1430,8 +1487,10 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
 
                 if (userSkipped) {
                     // User chose "single task" — drop checklist intent, keep first create
-                    console.log(`[Pipeline:${context.requestId}] User skipped checklist clarification — creating single task only.`);
-                    const firstCreate = intents.find(i => i.type === 'create');
+                    console.log(
+                        `[Pipeline:${context.requestId}] User skipped checklist clarification — creating single task only.`
+                    );
+                    const firstCreate = intents.find((i) => i.type === 'create');
                     if (firstCreate) {
                         // Remove checklist items from the intent
                         delete firstCreate.checklistItems;
@@ -1439,7 +1498,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     // Continue processing with modified intents
                 } else if (userPreference === 'checklist') {
                     // User chose checklist mode — merging creates into single task.
-                    console.log(`[Pipeline:${context.requestId}] User chose checklist mode — merging creates into single task.`);
+                    console.log(
+                        `[Pipeline:${context.requestId}] User chose checklist mode — merging creates into single task.`
+                    );
                     const checklistItems = [];
                     let mergedProjectHint = null;
                     for (const intent of intents) {
@@ -1457,7 +1518,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     const mergedIntent = {
                         type: 'create',
                         title: checklistItems[0]?.title || 'Checklist',
-                        checklistItems,
+                        checklistItems
                     };
                     if (mergedProjectHint) {
                         mergedIntent.projectHint = mergedProjectHint;
@@ -1472,7 +1533,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     // Continue processing with modified intents
                 } else {
                     // No preference provided — ask for clarification
-                    console.warn(`[Pipeline:${context.requestId}] Ambiguous checklist/multi-task request — asking for clarification.`);
+                    console.warn(
+                        `[Pipeline:${context.requestId}] Ambiguous checklist/multi-task request — asking for clarification.`
+                    );
                     const clarificationQuestion = isUrgentWorkStyle(context)
                         ? 'Checklist or separate tasks?'
                         : 'I noticed your message could be one task with sub-steps, or several separate tasks. Which did you mean?';
@@ -1484,17 +1547,17 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         confirmationText: clarificationQuestion,
                         clarification: {
                             candidates: intents,
-                            reason: 'ambiguous_checklist_vs_multi_task',
+                            reason: 'ambiguous_checklist_vs_multi_task'
                         },
                         requestId: context.requestId || null,
                         entryPoint: context.entryPoint || null,
                         mode: context.mode || null,
-                        checklistContext: context.checklistContext || null,
+                        checklistContext: context.checklistContext || null
                     };
                     context = finalizePipelineContext(context, requestStartedAt, {
                         resultType: 'clarification',
                         status: 'success',
-                        summary: 'ambiguous_checklist_vs_multi_task',
+                        summary: 'ambiguous_checklist_vs_multi_task'
                     });
 
                     await telemetry.emit(context, {
@@ -1504,8 +1567,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         durationMs: Date.now() - requestStartedAt,
                         metadata: {
                             type: 'clarification',
-                            reason: 'ambiguous_checklist_vs_multi_task',
-                        },
+                            reason: 'ambiguous_checklist_vs_multi_task'
+                        }
                     });
                     return attachPipelineContext(clarificationResult, context);
                 }
@@ -1513,9 +1576,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
 
             // Mutation routing: detect mutation intents and resolve targets
             const mutationTypes = ['update', 'complete', 'delete'];
-            const hasMutation = intents.some(i => mutationTypes.includes(i.type));
-            const hasCreate = intents.some(i => i.type === 'create');
-            const mutationIntents = intents.filter(i => mutationTypes.includes(i.type));
+            const hasMutation = intents.some((i) => mutationTypes.includes(i.type));
+            const hasCreate = intents.some((i) => i.type === 'create');
+            const mutationIntents = intents.filter((i) => mutationTypes.includes(i.type));
 
             if (hasMutation && hasCreate) {
                 // Mixed create+mutation: out of scope for v1
@@ -1528,11 +1591,11 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     stage: 'mutation-routing',
                     summary: 'Mixed create+mutation request is out of scope.',
                     details: {
-                        intentTypes: intents.map(i => i.type),
+                        intentTypes: intents.map((i) => i.type)
                     },
                     userMessage: buildMutationBoundaryMessage('mixed_create_and_mutation', context),
                     dryRun: isDryRun,
-                    retryable: true,
+                    retryable: true
                 });
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'error',
@@ -1540,7 +1603,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     summary: 'Mixed create+mutation request is out of scope.',
                     failureClass: FAILURE_CLASSES.VALIDATION,
                     rolledBack: false,
-                    validationFailures: ['mixed_create_and_mutation'],
+                    validationFailures: ['mixed_create_and_mutation']
                 });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.failed',
@@ -1550,8 +1613,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     failureClass: FAILURE_CLASSES.VALIDATION,
                     rolledBack: false,
                     metadata: {
-                        reason: 'mixed_create_and_mutation',
-                    },
+                        reason: 'mixed_create_and_mutation'
+                    }
                 });
                 return attachPipelineContext(failureResult, context);
             }
@@ -1566,12 +1629,12 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     stage: 'mutation-routing',
                     summary: 'Batch mutation request is out of scope.',
                     details: {
-                        intentTypes: intents.map(i => i.type),
-                        targetQueryPresent: Boolean(mutationIntents[0]?.targetQuery),
+                        intentTypes: intents.map((i) => i.type),
+                        targetQueryPresent: Boolean(mutationIntents[0]?.targetQuery)
                     },
                     userMessage: buildMutationBoundaryMessage('batch_mutation_not_supported', context),
                     dryRun: isDryRun,
-                    retryable: true,
+                    retryable: true
                 });
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'error',
@@ -1579,7 +1642,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     summary: 'Batch mutation request is out of scope.',
                     failureClass: FAILURE_CLASSES.VALIDATION,
                     rolledBack: false,
-                    validationFailures: ['batch_mutation_not_supported'],
+                    validationFailures: ['batch_mutation_not_supported']
                 });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.failed',
@@ -1589,8 +1652,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     failureClass: FAILURE_CLASSES.VALIDATION,
                     rolledBack: false,
                     metadata: {
-                        reason: 'batch_mutation_not_supported',
-                    },
+                        reason: 'batch_mutation_not_supported'
+                    }
                 });
                 return attachPipelineContext(failureResult, context);
             }
@@ -1599,7 +1662,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             let resolvedTaskContent = null;
 
             if (hasMutation) {
-                const mutationIntent = intents.find(i => mutationTypes.includes(i.type));
+                const mutationIntent = intents.find((i) => mutationTypes.includes(i.type));
                 const targetQuery = mutationIntent?.targetQuery || null;
 
                 // Use active tasks from context (populated by pipeline-context builder)
@@ -1610,13 +1673,17 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     resolvedTask = {
                         id: mutationIntent.taskId,
                         projectId: mutationIntent.originalProjectId || mutationIntent.projectId || null,
-                        title: mutationIntent.title || null,
+                        title: mutationIntent.title || null
                     };
                     // Try to get content from active tasks
-                    resolvedTaskContent = activeTasks.find(t => t.id === resolvedTask.id)?.content ?? null;
+                    resolvedTaskContent = activeTasks.find((t) => t.id === resolvedTask.id)?.content ?? null;
                 } else if (targetQuery && !options.skipClarification) {
                     const resolveStartedAt = Date.now();
-                    const resolverResult = resolveTarget({ targetQuery, activeTasks, recentTask: context.existingTask });
+                    const resolverResult = resolveTarget({
+                        targetQuery,
+                        activeTasks,
+                        recentTask: context.existingTask
+                    });
 
                     await telemetry.emit(context, {
                         eventType: 'pipeline.resolve.completed',
@@ -1626,15 +1693,15 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         metadata: {
                             targetQueryLength: targetQuery.length,
                             resultStatus: resolverResult.status,
-                            candidateCount: resolverResult.candidates.length,
-                        },
+                            candidateCount: resolverResult.candidates.length
+                        }
                     });
 
                     if (resolverResult.status === 'clarification') {
                         context = finalizePipelineContext(context, requestStartedAt, {
                             resultType: 'clarification',
                             status: 'success',
-                            summary: resolverResult.reason,
+                            summary: resolverResult.reason
                         });
                         return attachPipelineContext(buildClarificationResult(context, resolverResult), context);
                     }
@@ -1643,7 +1710,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         context = finalizePipelineContext(context, requestStartedAt, {
                             resultType: 'not-found',
                             status: 'success',
-                            summary: resolverResult.reason,
+                            summary: resolverResult.reason
                         });
                         return attachPipelineContext(buildNotFoundResult(context, resolverResult.reason), context);
                     }
@@ -1652,9 +1719,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     resolvedTask = {
                         id: resolverResult.selected.taskId,
                         projectId: resolverResult.selected.projectId,
-                        title: resolverResult.selected.title,
+                        title: resolverResult.selected.title
                     };
-                    resolvedTaskContent = activeTasks.find(t => t.id === resolvedTask.id)?.content ?? null;
+                    resolvedTaskContent = activeTasks.find((t) => t.id === resolvedTask.id)?.content ?? null;
 
                     // ─── Destructive/Non-Exact Mutation Confirmation Gate ───
                     // When the resolver finds a match but it's not exact (prefix,
@@ -1668,18 +1735,18 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                             matchedTask: {
                                 taskId: resolverResult.selected.taskId,
                                 projectId: resolverResult.selected.projectId,
-                                title: targetTitle,
+                                title: targetTitle
                             },
                             matchConfidence: resolverResult.selected.matchConfidence,
                             matchType: resolverResult.selected.matchType,
                             score: resolverResult.selected.score,
-                            reason: resolverResult.reason,
+                            reason: resolverResult.reason
                         };
 
                         context = finalizePipelineContext(context, requestStartedAt, {
                             resultType: 'pending-confirmation',
                             status: 'success',
-                            summary: `non-exact_match_${resolverResult.selected.matchConfidence}`,
+                            summary: `non-exact_match_${resolverResult.selected.matchConfidence}`
                         });
 
                         await telemetry.emit(context, {
@@ -1691,64 +1758,70 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                                 matchConfidence: resolverResult.selected.matchConfidence,
                                 matchType: resolverResult.selected.matchType,
                                 score: resolverResult.selected.score,
-                                actionType: mutationIntent.type,
-                            },
+                                actionType: mutationIntent.type
+                            }
                         });
 
                         const receiptDestination = resolveReceiptDestinationForPendingMutation(mutationIntent, context);
-                        const shouldAttachOperationReceipt = !['create', 'update'].includes(mutationIntent.type) || !!receiptDestination;
+                        const shouldAttachOperationReceipt =
+                            !['create', 'update'].includes(mutationIntent.type) || !!receiptDestination;
                         const terminalReceipt = shouldAttachOperationReceipt
                             ? buildOperationReceipt(context, {
-                                status: 'pending_confirmation',
-                                scope: 'local_review_queue',
-                                command: resolveReceiptCommand(context),
-                                operationType: mutationIntent.type,
-                                nextAction: 'apply',
-                                changed: false,
-                                dryRun: false,
-                                applied: false,
-                                fallbackUsed: false,
-                                message: 'Confirmation required before mutation can be applied.',
-                                ...(receiptDestination ? { destination: receiptDestination } : {}),
-                                confirmation: {
-                                    target: { taskId: resolverResult.selected.taskId },
-                                    outcome: 'Confirm this task mutation before applying it.',
-                                },
-                            })
+                                  status: 'pending_confirmation',
+                                  scope: 'local_review_queue',
+                                  command: resolveReceiptCommand(context),
+                                  operationType: mutationIntent.type,
+                                  nextAction: 'apply',
+                                  changed: false,
+                                  dryRun: false,
+                                  applied: false,
+                                  fallbackUsed: false,
+                                  message: 'Confirmation required before mutation can be applied.',
+                                  ...(receiptDestination ? { destination: receiptDestination } : {}),
+                                  confirmation: {
+                                      target: { taskId: resolverResult.selected.taskId },
+                                      outcome: 'Confirm this task mutation before applying it.'
+                                  }
+                              })
                             : {
-                                status: 'pending_confirmation',
-                                scope: 'local_review_queue',
-                                command: resolveReceiptCommand(context),
-                                operationType: mutationIntent.type,
-                                nextAction: 'apply',
-                                changed: false,
-                                dryRun: false,
-                                applied: false,
-                                fallbackUsed: false,
-                                message: 'Confirmation required before mutation can be applied.',
-                                traceId: context?.requestId || 'unknown-trace',
-                                confirmation: {
-                                    target: { taskId: resolverResult.selected.taskId },
-                                    outcome: 'Confirm this task mutation before applying it.',
-                                },
-                            };
+                                  status: 'pending_confirmation',
+                                  scope: 'local_review_queue',
+                                  command: resolveReceiptCommand(context),
+                                  operationType: mutationIntent.type,
+                                  nextAction: 'apply',
+                                  changed: false,
+                                  dryRun: false,
+                                  applied: false,
+                                  fallbackUsed: false,
+                                  message: 'Confirmation required before mutation can be applied.',
+                                  traceId: context?.requestId || 'unknown-trace',
+                                  confirmation: {
+                                      target: { taskId: resolverResult.selected.taskId },
+                                      outcome: 'Confirm this task mutation before applying it.'
+                                  }
+                              };
                         await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
-                            actionCount: 1,
+                            actionCount: 1
                         });
 
-                        return attachPipelineContext({
-                            type: 'pending-confirmation',
-                            results: [],
-                            errors: [],
-                            confirmationText: buildMutationConfirmationMessage(pendingConfirmation, { workStyleMode: context.workStyleMode }),
-                            pendingConfirmation,
-                            ...(shouldAttachOperationReceipt ? { operationReceipt: terminalReceipt } : {}),
-                            requestId: context.requestId || null,
-                            entryPoint: context.entryPoint || null,
-                            mode: context.mode || null,
-                            workStyleMode: context.workStyleMode || null,
-                            checklistContext: context.checklistContext || null,
-                        }, context);
+                        return attachPipelineContext(
+                            {
+                                type: 'pending-confirmation',
+                                results: [],
+                                errors: [],
+                                confirmationText: buildMutationConfirmationMessage(pendingConfirmation, {
+                                    workStyleMode: context.workStyleMode
+                                }),
+                                pendingConfirmation,
+                                ...(shouldAttachOperationReceipt ? { operationReceipt: terminalReceipt } : {}),
+                                requestId: context.requestId || null,
+                                entryPoint: context.entryPoint || null,
+                                mode: context.mode || null,
+                                workStyleMode: context.workStyleMode || null,
+                                checklistContext: context.checklistContext || null
+                            },
+                            context
+                        );
                     }
 
                     // Enrich the mutation intent with resolved context
@@ -1760,13 +1833,15 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 } else if (targetQuery && options.skipClarification && context.existingTask?.id) {
                     // Clarification resume: user selected a candidate, skip re-resolution
                     resolvedTask = context.existingTask;
-                    resolvedTaskContent = activeTasks.find(t => t.id === resolvedTask.id)?.content ?? null;
+                    resolvedTaskContent = activeTasks.find((t) => t.id === resolvedTask.id)?.content ?? null;
                     mutationIntent.taskId = resolvedTask.id;
                     mutationIntent.resolvedTaskId = resolvedTask.id;
                     if (resolvedTask.projectId) {
                         mutationIntent.originalProjectId = resolvedTask.projectId;
                     }
-                    console.log(`[Pipeline:${context.requestId}] Clarification resume: using pre-resolved task id=${resolvedTask.id}`);
+                    console.log(
+                        `[Pipeline:${context.requestId}] Clarification resume: using pre-resolved task id=${resolvedTask.id}`
+                    );
                 } else {
                     // No targetQuery and no taskId — try to use existingTask from context
                     if (context.existingTask?.id) {
@@ -1777,22 +1852,30 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             }
 
             const defaultProjectMatches = defaultProjectName
-                ? context.availableProjects.filter(p => p?.name?.toLowerCase() === defaultProjectName?.toLowerCase())
+                ? context.availableProjects.filter((p) => p?.name?.toLowerCase() === defaultProjectName?.toLowerCase())
                 : [];
             let defaultProjectId = defaultProjectMatches.length === 1 ? defaultProjectMatches[0].id : null;
-            const defaultProjectResolution = defaultProjectMatches.length > 1
-                ? {
-                    confidence: 'ambiguous',
-                    choices: defaultProjectMatches.map(project => ({ projectId: project.id, projectName: project.name })),
-                }
-                : defaultProjectId
-                    ? { confidence: 'configured', projectId: defaultProjectId }
-                    : { confidence: 'missing' };
+            const defaultProjectResolution =
+                defaultProjectMatches.length > 1
+                    ? {
+                          confidence: 'ambiguous',
+                          choices: defaultProjectMatches.map((project) => ({
+                              projectId: project.id,
+                              projectName: project.name
+                          }))
+                      }
+                    : defaultProjectId
+                      ? { confidence: 'configured', projectId: defaultProjectId }
+                      : { confidence: 'missing' };
 
             if (defaultProjectName && defaultProjectResolution.confidence === 'missing') {
-                console.warn(`[Pipeline:${context.requestId}] Default project "${defaultProjectName}" not found. Blocking create actions without a resolved destination.`);
+                console.warn(
+                    `[Pipeline:${context.requestId}] Default project "${defaultProjectName}" not found. Blocking create actions without a resolved destination.`
+                );
             } else if (defaultProjectName && defaultProjectResolution.confidence === 'ambiguous') {
-                console.warn(`[Pipeline:${context.requestId}] Default project "${defaultProjectName}" is ambiguous. Blocking create actions without a unique destination.`);
+                console.warn(
+                    `[Pipeline:${context.requestId}] Default project "${defaultProjectName}" is ambiguous. Blocking create actions without a unique destination.`
+                );
             }
 
             const normOptions = {
@@ -1804,7 +1887,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 timezone: context.timezone,
                 currentDate: context.currentDate,
                 anchorDate: options.anchorDate || null,
-                preserveExistingDueDate: options.preserveExistingDueDate,
+                preserveExistingDueDate: options.preserveExistingDueDate
             };
 
             const normalizeStartedAt = Date.now();
@@ -1816,9 +1899,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             const normalizedActions = Array.isArray(normalizedBatch?.actions) ? normalizedBatch.actions : [];
             const batchValidation = normalizedBatch.batchError
                 ? { valid: false, reason: normalizedBatch.batchError }
-                : (hasValidateMutationBatch
-                    ? normalizer.validateMutationBatch(normalizedActions)
-                    : { valid: true, reason: null });
+                : hasValidateMutationBatch
+                  ? normalizer.validateMutationBatch(normalizedActions)
+                  : { valid: true, reason: null };
 
             if (!batchValidation.valid) {
                 const reason = batchValidation.reason || 'unsupported_batch';
@@ -1829,7 +1912,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     draft.lifecycle.timing.stages.normalize = {
                         startedAt: new Date(normalizeStartedAt).toISOString(),
                         durationMs: Date.now() - normalizeStartedAt,
-                        status: 'failure',
+                        status: 'failure'
                     };
                 });
                 const failureResult = buildFailureResult(context, {
@@ -1837,11 +1920,11 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     stage: 'normalize',
                     summary: `Unsupported action batch: ${reason}`,
                     details: {
-                        reason,
+                        reason
                     },
                     userMessage: buildMutationBoundaryMessage(reason, context),
                     dryRun: isDryRun,
-                    retryable: true,
+                    retryable: true
                 });
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'error',
@@ -1849,7 +1932,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     summary: `Unsupported action batch: ${reason}`,
                     failureClass: FAILURE_CLASSES.VALIDATION,
                     rolledBack: false,
-                    validationFailures: [reason],
+                    validationFailures: [reason]
                 });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.failed',
@@ -1859,29 +1942,33 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     failureClass: FAILURE_CLASSES.VALIDATION,
                     rolledBack: false,
                     metadata: {
-                        reason,
-                    },
+                        reason
+                    }
                 });
                 return attachPipelineContext(failureResult, context);
             }
 
-            const validActions = normalizedActions.filter(a => a.valid);
-            const invalidActions = normalizedActions.filter(a => !a.valid);
-            const blockedMutationDestinationActions = validActions.filter(action =>
-                ['update', 'complete', 'delete'].includes(action.type) &&
-                action.projectHint &&
-                (!action.projectResolution || ['missing', 'ambiguous'].includes(action.projectResolution.confidence)),
+            const validActions = normalizedActions.filter((a) => a.valid);
+            const invalidActions = normalizedActions.filter((a) => !a.valid);
+            const blockedMutationDestinationActions = validActions.filter(
+                (action) =>
+                    ['update', 'complete', 'delete'].includes(action.type) &&
+                    action.projectHint &&
+                    (!action.projectResolution ||
+                        ['missing', 'ambiguous'].includes(action.projectResolution.confidence))
             );
             context = updatePipelineContext(context, (draft) => {
                 draft.lifecycle.normalize.status = 'success';
                 draft.lifecycle.normalize.normalizedActions = snapshotPrivacySafePipelineValue(normalizedActions);
                 draft.lifecycle.normalize.validActions = snapshotPrivacySafePipelineValue(validActions);
                 draft.lifecycle.normalize.invalidActions = snapshotPrivacySafePipelineValue(invalidActions);
-                draft.lifecycle.validationFailures = snapshotPipelineValue(invalidActions.map(a => a.validationErrors).flat());
+                draft.lifecycle.validationFailures = snapshotPipelineValue(
+                    invalidActions.map((a) => a.validationErrors).flat()
+                );
                 draft.lifecycle.timing.stages.normalize = {
                     startedAt: new Date(normalizeStartedAt).toISOString(),
                     durationMs: Date.now() - normalizeStartedAt,
-                    status: 'success',
+                    status: 'success'
                 };
             });
 
@@ -1895,16 +1982,21 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     normalizedCount: normalizedActions.length,
                     validCount: validActions.length,
                     invalidCount: invalidActions.length,
-                    checklistActionCount: validActions.filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0).length,
-                    totalNormalizedChecklistItems: validActions.reduce((sum, a) => sum + (Array.isArray(a.checklistItems) ? a.checklistItems.length : 0), 0),
+                    checklistActionCount: validActions.filter(
+                        (a) => Array.isArray(a.checklistItems) && a.checklistItems.length > 0
+                    ).length,
+                    totalNormalizedChecklistItems: validActions.reduce(
+                        (sum, a) => sum + (Array.isArray(a.checklistItems) ? a.checklistItems.length : 0),
+                        0
+                    ),
                     checklistActionShape: validActions
                         .map((action, actionIndex) => ({
                             actionIndex,
                             sourceIntentIndex: Number.isInteger(action?._index) ? action._index : null,
-                            checklistItemCount: Array.isArray(action?.checklistItems) ? action.checklistItems.length : 0,
+                            checklistItemCount: Array.isArray(action?.checklistItems) ? action.checklistItems.length : 0
                         }))
-                        .filter((entry) => entry.checklistItemCount > 0),
-                },
+                        .filter((entry) => entry.checklistItemCount > 0)
+                }
             });
             if (typeof telemetry.emitLatencyHistogram === 'function') {
                 telemetry.emitLatencyHistogram({ stage: 'normalization', durationMs: normalizeDurationMs });
@@ -1913,7 +2005,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             if (invalidActions.length > 0) {
                 console.warn(
                     `[Pipeline:${context.requestId}] Filtered out ${invalidActions.length} invalid actions:`,
-                    invalidActions.map(a => a.validationErrors),
+                    invalidActions.map((a) => a.validationErrors)
                 );
             }
 
@@ -1923,10 +2015,10 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     stage: 'normalize',
                     summary: 'All intents failed validation.',
                     details: {
-                        validationErrors: invalidActions.map(a => a.validationErrors),
+                        validationErrors: invalidActions.map((a) => a.validationErrors)
                     },
                     dryRun: isDryRun,
-                    retryable: true,
+                    retryable: true
                 });
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'error',
@@ -1934,7 +2026,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     summary: 'All intents failed validation.',
                     failureClass: FAILURE_CLASSES.VALIDATION,
                     rolledBack: false,
-                    validationFailures: invalidActions.map(a => a.validationErrors).flat(),
+                    validationFailures: invalidActions.map((a) => a.validationErrors).flat()
                 });
 
                 await telemetry.emit(context, {
@@ -1943,7 +2035,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     status: 'failure',
                     durationMs: Date.now() - requestStartedAt,
                     failureClass: FAILURE_CLASSES.VALIDATION,
-                    rolledBack: false,
+                    rolledBack: false
                 });
                 return attachPipelineContext(failureResult, context);
             }
@@ -1952,7 +2044,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'non-task',
                     status: 'success',
-                    summary: 'no_valid_actions_after_normalization',
+                    summary: 'no_valid_actions_after_normalization'
                 });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.completed',
@@ -1962,23 +2054,27 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     metadata: {
                         type: 'non-task',
                         reason: NON_TASK_REASONS.EMPTY_INTENTS,
-                        note: 'No valid actions after normalization.',
-                    },
+                        note: 'No valid actions after normalization.'
+                    }
                 });
-                return attachPipelineContext(buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS, {
-                    note: 'No valid actions after normalization.',
-                }), context);
+                return attachPipelineContext(
+                    buildNonTaskResult(context, NON_TASK_REASONS.EMPTY_INTENTS, {
+                        note: 'No valid actions after normalization.'
+                    }),
+                    context
+                );
             }
 
             if (blockedMutationDestinationActions.length > 0) {
-                const confirmationText = 'Blocked — no safe TickTick destination found for mutation. Choose an exact project or remove the project hint, then retry.';
+                const confirmationText =
+                    'Blocked — no safe TickTick destination found for mutation. Choose an exact project or remove the project hint, then retry.';
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'blocked',
                     status: 'failure',
                     summary: 'missing_project_destination',
                     failureClass: FAILURE_CLASSES.VALIDATION,
                     rolledBack: false,
-                    validationFailures: ['missing_project_destination'],
+                    validationFailures: ['missing_project_destination']
                 });
                 const terminalReceipt = buildOperationReceipt(context, {
                     status: 'blocked',
@@ -1992,40 +2088,46 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     fallbackUsed: false,
                     message: confirmationText,
                     errorClass: 'validation',
-                    destination: { confidence: 'missing' },
+                    destination: { confidence: 'missing' }
                 });
                 await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
-                    actionCount: blockedMutationDestinationActions.length,
+                    actionCount: blockedMutationDestinationActions.length
                 });
 
-                return attachPipelineContext({
-                    type: 'blocked',
-                    status: 'blocked',
-                    results: [],
-                    errors: ['missing_project_destination'],
-                    confirmationText,
-                    operationReceipt: terminalReceipt,
-                    requestId: context.requestId,
-                    entryPoint: context.entryPoint,
-                    mode: context.mode,
-                    workStyleMode: context.workStyleMode || null,
-                    checklistContext: context.checklistContext || null,
-                    warnings: ['missing_project_destination'],
-                    dryRun: isDryRun,
-                    applied: false,
-                    changed: false,
-                }, context);
+                return attachPipelineContext(
+                    {
+                        type: 'blocked',
+                        status: 'blocked',
+                        results: [],
+                        errors: ['missing_project_destination'],
+                        confirmationText,
+                        operationReceipt: terminalReceipt,
+                        requestId: context.requestId,
+                        entryPoint: context.entryPoint,
+                        mode: context.mode,
+                        workStyleMode: context.workStyleMode || null,
+                        checklistContext: context.checklistContext || null,
+                        warnings: ['missing_project_destination'],
+                        dryRun: isDryRun,
+                        applied: false,
+                        changed: false
+                    },
+                    context
+                );
             }
 
-            const pendingCreateDestination = validActions.find(action => action.type === 'create' && action.projectResolution?.confidence === 'ambiguous');
+            const pendingCreateDestination = validActions.find(
+                (action) => action.type === 'create' && action.projectResolution?.confidence === 'ambiguous'
+            );
             if (pendingCreateDestination) {
                 const destination = resolveReceiptDestinationForCreate(pendingCreateDestination, context);
-                const confirmationText = 'Blocked — ambiguous project destination. Choose an exact project name or restore a unique default project, then retry.';
+                const confirmationText =
+                    'Blocked — ambiguous project destination. Choose an exact project name or restore a unique default project, then retry.';
 
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'blocked',
                     status: 'failure',
-                    summary: 'ambiguous_project_destination',
+                    summary: 'ambiguous_project_destination'
                 });
 
                 const terminalReceipt = buildOperationReceipt(context, {
@@ -2040,41 +2142,50 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     fallbackUsed: false,
                     message: confirmationText,
                     errorClass: 'validation',
-                    destination: destination || { confidence: 'ambiguous', choices: pendingCreateDestination.projectResolution?.choices || [] },
+                    destination: destination || {
+                        confidence: 'ambiguous',
+                        choices: pendingCreateDestination.projectResolution?.choices || []
+                    }
                 });
                 await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
-                    actionCount: 1,
+                    actionCount: 1
                 });
 
-                return attachPipelineContext({
-                    type: 'blocked',
-                    status: 'blocked',
-                    results: [],
-                    errors: ['ambiguous_project_destination'],
-                    confirmationText,
-                    operationReceipt: terminalReceipt,
-                    requestId: context.requestId,
-                    entryPoint: context.entryPoint,
-                    mode: context.mode,
-                    workStyleMode: context.workStyleMode || null,
-                    checklistContext: context.checklistContext || null,
-                    warnings: ['ambiguous_project_destination'],
-                    dryRun: isDryRun,
-                    applied: false,
-                    changed: false,
-                }, context);
+                return attachPipelineContext(
+                    {
+                        type: 'blocked',
+                        status: 'blocked',
+                        results: [],
+                        errors: ['ambiguous_project_destination'],
+                        confirmationText,
+                        operationReceipt: terminalReceipt,
+                        requestId: context.requestId,
+                        entryPoint: context.entryPoint,
+                        mode: context.mode,
+                        workStyleMode: context.workStyleMode || null,
+                        checklistContext: context.checklistContext || null,
+                        warnings: ['ambiguous_project_destination'],
+                        dryRun: isDryRun,
+                        applied: false,
+                        changed: false
+                    },
+                    context
+                );
             }
 
-            const createActionsMissingDestination = validActions.filter(action => action.type === 'create' && !action.projectId);
+            const createActionsMissingDestination = validActions.filter(
+                (action) => action.type === 'create' && !action.projectId
+            );
             if (createActionsMissingDestination.length > 0) {
-                const confirmationText = 'Blocked — no safe TickTick destination found. Choose a project or restore an Inbox/default project, then retry.';
+                const confirmationText =
+                    'Blocked — no safe TickTick destination found. Choose a project or restore an Inbox/default project, then retry.';
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'blocked',
                     status: 'failure',
                     summary: 'missing_project_destination',
                     failureClass: FAILURE_CLASSES.VALIDATION,
                     rolledBack: false,
-                    validationFailures: ['missing_project_destination'],
+                    validationFailures: ['missing_project_destination']
                 });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.failed',
@@ -2087,8 +2198,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         reason: 'missing_project_destination',
                         type: 'blocked',
                         actionCount: createActionsMissingDestination.length,
-                        dryRun: isDryRun,
-                    },
+                        dryRun: isDryRun
+                    }
                 });
                 const terminalReceipt = buildOperationReceipt(context, {
                     status: 'blocked',
@@ -2102,29 +2213,32 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     fallbackUsed: false,
                     message: confirmationText,
                     errorClass: 'validation',
-                    destination: { confidence: 'missing' },
+                    destination: { confidence: 'missing' }
                 });
                 await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
-                    actionCount: createActionsMissingDestination.length,
+                    actionCount: createActionsMissingDestination.length
                 });
 
-                return attachPipelineContext({
-                    type: 'blocked',
-                    status: 'blocked',
-                    results: [],
-                    errors: ['missing_project_destination'],
-                    confirmationText,
-                    operationReceipt: terminalReceipt,
-                    requestId: context.requestId,
-                    entryPoint: context.entryPoint,
-                    mode: context.mode,
-                    workStyleMode: context.workStyleMode || null,
-                    checklistContext: context.checklistContext || null,
-                    warnings: invalidActions.map(a => a.validationErrors).flat(),
-                    dryRun: isDryRun,
-                    applied: false,
-                    changed: false,
-                }, context);
+                return attachPipelineContext(
+                    {
+                        type: 'blocked',
+                        status: 'blocked',
+                        results: [],
+                        errors: ['missing_project_destination'],
+                        confirmationText,
+                        operationReceipt: terminalReceipt,
+                        requestId: context.requestId,
+                        entryPoint: context.entryPoint,
+                        mode: context.mode,
+                        workStyleMode: context.workStyleMode || null,
+                        checklistContext: context.checklistContext || null,
+                        warnings: invalidActions.map((a) => a.validationErrors).flat(),
+                        dryRun: isDryRun,
+                        applied: false,
+                        changed: false
+                    },
+                    context
+                );
             }
 
             if (isDryRun) {
@@ -2132,7 +2246,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'preview',
                     status: 'success',
-                    summary: 'dry_run',
+                    summary: 'dry_run'
                 });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.completed',
@@ -2143,8 +2257,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         type: 'preview',
                         actionCount: validActions.length,
                         dryRun: true,
-                        changed: false,
-                    },
+                        changed: false
+                    }
                 });
                 const terminalReceipt = buildOperationReceipt(context, {
                     status: 'preview',
@@ -2156,37 +2270,43 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     dryRun: true,
                     applied: false,
                     fallbackUsed: false,
-                    message: dryRunConfirmationText,
+                    message: dryRunConfirmationText
                 });
                 await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
-                    actionCount: validActions.length,
+                    actionCount: validActions.length
                 });
 
-                return attachPipelineContext({
-                    type: 'preview',
-                    status: 'preview',
-                    actions: validActions,
-                    results: [],
-                    errors: [],
-                    confirmationText: dryRunConfirmationText,
-                    operationReceipt: terminalReceipt,
-                    requestId: context.requestId,
-                    entryPoint: context.entryPoint,
-                    mode: context.mode,
-                    workStyleMode: context.workStyleMode || null,
-                    checklistContext: context.checklistContext || null,
-                    warnings: invalidActions.map(a => a.validationErrors).flat(),
-                    checklistMetadata: validActions
-                        .filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0)
-                        .map(a => ({ actionIndex: a._index ?? null, checklistItemCount: a.checklistItems.length })),
-                    dryRun: true,
-                    applied: false,
-                    changed: false,
-                }, context);
+                return attachPipelineContext(
+                    {
+                        type: 'preview',
+                        status: 'preview',
+                        actions: validActions,
+                        results: [],
+                        errors: [],
+                        confirmationText: dryRunConfirmationText,
+                        operationReceipt: terminalReceipt,
+                        requestId: context.requestId,
+                        entryPoint: context.entryPoint,
+                        mode: context.mode,
+                        workStyleMode: context.workStyleMode || null,
+                        checklistContext: context.checklistContext || null,
+                        warnings: invalidActions.map((a) => a.validationErrors).flat(),
+                        checklistMetadata: validActions
+                            .filter((a) => Array.isArray(a.checklistItems) && a.checklistItems.length > 0)
+                            .map((a) => ({
+                                actionIndex: a._index ?? null,
+                                checklistItemCount: a.checklistItems.length
+                            })),
+                        dryRun: true,
+                        applied: false,
+                        changed: false
+                    },
+                    context
+                );
             }
 
             const skippedActions = [];
-            const executableActions = validActions.filter(a => {
+            const executableActions = validActions.filter((a) => {
                 if (blockedActionTypes.has(a.type)) {
                     skippedActions.push(a);
                     return false;
@@ -2212,11 +2332,13 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 draft.lifecycle.execute.requests = snapshotPrivacySafePipelineValue(executionResult.executionRequests);
                 draft.lifecycle.execute.results = snapshotPrivacySafePipelineValue(executionResult.executionResults);
                 draft.lifecycle.execute.failures = snapshotPrivacySafePipelineValue(executionResult.failures);
-                draft.lifecycle.execute.rollbackFailures = snapshotPrivacySafePipelineValue(executionResult.rollbackFailures);
+                draft.lifecycle.execute.rollbackFailures = snapshotPrivacySafePipelineValue(
+                    executionResult.rollbackFailures
+                );
                 draft.lifecycle.timing.stages.execute = {
                     startedAt: new Date(executionResult.executeStartedAt).toISOString(),
                     durationMs: executionResult.durationMs,
-                    status: executionResult.terminalFailure ? 'failure' : 'success',
+                    status: executionResult.terminalFailure ? 'failure' : 'success'
                 };
             });
             if (typeof telemetry.emitLatencyHistogram === 'function') {
@@ -2228,15 +2350,16 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     context,
                     intents,
                     normalizedActions: validActions,
-                    terminalFailure: executionResult.terminalFailure,
+                    terminalFailure: executionResult.terminalFailure
                 });
 
                 if (deferredIntent) {
                     executionResult.terminalFailure.details = {
                         ...(executionResult.terminalFailure.details || {}),
-                        deferredIntent,
+                        deferredIntent
                     };
-                    executionResult.terminalFailure.userMessage = '⚠️ TickTick API is unavailable right now. Parsed intent was saved for retry.';
+                    executionResult.terminalFailure.userMessage =
+                        '⚠️ TickTick API is unavailable right now. Parsed intent was saved for retry.';
                 }
 
                 const terminalReceipt = {
@@ -2249,20 +2372,18 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     dryRun: isDryRun,
                     applied: false,
                     fallbackUsed: !!deferredIntent,
-                    message: deferredIntent
-                        ? 'Parsed intent was saved for retry.'
-                        : 'Task updates failed.',
+                    message: deferredIntent ? 'Parsed intent was saved for retry.' : 'Task updates failed.',
                     errorClass: mapTerminalFailureClassToErrorClass(
                         executionResult.terminalFailure.failureClass,
-                        executionResult.terminalFailure,
+                        executionResult.terminalFailure
                     ),
                     failed: Number.isInteger(executionResult.terminalFailure.failureCount)
                         ? executionResult.terminalFailure.failureCount
                         : null,
-                    rolledBack: !!executionResult.terminalFailure.rolledBack,
+                    rolledBack: !!executionResult.terminalFailure.rolledBack
                 };
                 await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
-                    actionCount: validActions.length,
+                    actionCount: validActions.length
                 });
 
                 context = finalizePipelineContext(context, requestStartedAt, {
@@ -2271,7 +2392,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     summary: executionResult.terminalFailure.summary,
                     failureClass: executionResult.terminalFailure.failureClass,
                     rolledBack: executionResult.terminalFailure.rolledBack,
-                    validationFailures: context.lifecycle.validationFailures,
+                    validationFailures: context.lifecycle.validationFailures
                 });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.failed',
@@ -2282,80 +2403,87 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     rolledBack: executionResult.terminalFailure.rolledBack,
                     metadata: {
                         actionIndex: executionResult.terminalFailure.actionIndex,
-                        attempts: executionResult.terminalFailure.attempts,
-                    },
+                        attempts: executionResult.terminalFailure.attempts
+                    }
                 });
 
-                return attachPipelineContext(buildFailureResult(context, {
-                    failureClass: executionResult.terminalFailure.failureClass,
-                    stage: executionResult.terminalFailure.stage,
-                    summary: executionResult.terminalFailure.summary,
-                    userMessage: executionResult.terminalFailure.userMessage,
-                    developerMessage: executionResult.terminalFailure.developerMessage,
-                    details: {
-                        ...(executionResult.terminalFailure.details || {}),
-                        failures: executionResult.failures,
-                        rollbackFailures: executionResult.rollbackFailures,
-                        successCount: executionResult.terminalFailure.successCount,
-                        failureCount: executionResult.terminalFailure.failureCount,
-                        partialFailure: executionResult.terminalFailure.failureCategory === FAILURE_CATEGORIES.PARTIAL,
-                    },
-                    retryable: executionResult.terminalFailure.retryable,
-                    rolledBack: executionResult.terminalFailure.rolledBack,
-                    dryRun: isDryRun,
-                    results: executionResult.results,
-                    intents,
-                    normalizedActions: validActions,
-                }), context);
+                return attachPipelineContext(
+                    buildFailureResult(context, {
+                        failureClass: executionResult.terminalFailure.failureClass,
+                        stage: executionResult.terminalFailure.stage,
+                        summary: executionResult.terminalFailure.summary,
+                        userMessage: executionResult.terminalFailure.userMessage,
+                        developerMessage: executionResult.terminalFailure.developerMessage,
+                        details: {
+                            ...(executionResult.terminalFailure.details || {}),
+                            failures: executionResult.failures,
+                            rollbackFailures: executionResult.rollbackFailures,
+                            successCount: executionResult.terminalFailure.successCount,
+                            failureCount: executionResult.terminalFailure.failureCount,
+                            partialFailure:
+                                executionResult.terminalFailure.failureCategory === FAILURE_CATEGORIES.PARTIAL
+                        },
+                        retryable: executionResult.terminalFailure.retryable,
+                        rolledBack: executionResult.terminalFailure.rolledBack,
+                        dryRun: isDryRun,
+                        results: executionResult.results,
+                        intents,
+                        normalizedActions: validActions
+                    }),
+                    context
+                );
             }
 
-            const allErrors = [
-                ...invalidActions.map(a => a.validationErrors.join(', ')),
-                ...executionResult.errors,
-            ];
+            const allErrors = [...invalidActions.map((a) => a.validationErrors.join(', ')), ...executionResult.errors];
 
             const successCount = Number.isInteger(executionResult.successCount)
                 ? executionResult.successCount
-                : executionResult.results.filter(r => r.status === 'succeeded').length;
+                : executionResult.results.filter((r) => r.status === 'succeeded').length;
 
             const baseConfirmationText = _buildConfirmation(executionResult.results, executionResult.errors, context);
             const confirmationText = deferredCreateFragmentClarification
                 ? `${baseConfirmationText}\n\n${deferredCreateFragmentClarification.question}`
                 : baseConfirmationText;
-            const terminalReceipt = buildOperationReceipt(context, successCount > 0 ? {
-                status: 'applied',
-                scope: 'ticktick_live',
-                command: resolveReceiptCommand(context),
-                operationType: inferOperationType(validActions),
-                nextAction: 'none',
-                changed: true,
-                dryRun: false,
-                applied: true,
-                fallbackUsed: false,
-                message: `Applied ${successCount} task action${successCount === 1 ? '' : 's'}.`,
-                succeeded: successCount,
-            } : {
-                status: skippedActions.length > 0 ? 'blocked' : 'failed',
-                scope: 'system',
-                command: resolveReceiptCommand(context),
-                operationType: inferOperationType(validActions),
-                nextAction: skippedActions.length > 0 ? 'retry' : 'none',
-                changed: false,
-                dryRun: false,
-                applied: false,
-                fallbackUsed: false,
-                message: skippedActions.length > 0
-                    ? 'No executable actions were available.'
-                    : 'No task actions were applied.',
-            });
+            const terminalReceipt = buildOperationReceipt(
+                context,
+                successCount > 0
+                    ? {
+                          status: 'applied',
+                          scope: 'ticktick_live',
+                          command: resolveReceiptCommand(context),
+                          operationType: inferOperationType(validActions),
+                          nextAction: 'none',
+                          changed: true,
+                          dryRun: false,
+                          applied: true,
+                          fallbackUsed: false,
+                          message: `Applied ${successCount} task action${successCount === 1 ? '' : 's'}.`,
+                          succeeded: successCount
+                      }
+                    : {
+                          status: skippedActions.length > 0 ? 'blocked' : 'failed',
+                          scope: 'system',
+                          command: resolveReceiptCommand(context),
+                          operationType: inferOperationType(validActions),
+                          nextAction: skippedActions.length > 0 ? 'retry' : 'none',
+                          changed: false,
+                          dryRun: false,
+                          applied: false,
+                          fallbackUsed: false,
+                          message:
+                              skippedActions.length > 0
+                                  ? 'No executable actions were available.'
+                                  : 'No task actions were applied.'
+                      }
+            );
             await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
-                actionCount: validActions.length,
+                actionCount: validActions.length
             });
             context = finalizePipelineContext(context, requestStartedAt, {
                 resultType: 'task',
                 status: 'success',
                 summary: 'task_execution_completed',
-                validationFailures: context.lifecycle.validationFailures,
+                validationFailures: context.lifecycle.validationFailures
             });
 
             await telemetry.emit(context, {
@@ -2366,34 +2494,41 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 metadata: {
                     type: 'task',
                     actionCount: validActions.length,
-                    checklistActionCount: validActions.filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0).length,
-                },
+                    checklistActionCount: validActions.filter(
+                        (a) => Array.isArray(a.checklistItems) && a.checklistItems.length > 0
+                    ).length
+                }
             });
 
-            return attachPipelineContext({
-                type: 'task',
-                actions: validActions,
-                results: executionResult.results,
-                errors: allErrors,
-                skippedActions,
-                confirmationText,
-                operationReceipt: terminalReceipt,
-                requestId: context.requestId,
-                entryPoint: context.entryPoint,
-                mode: context.mode,
-                workStyleMode: context.workStyleMode || null,
-                checklistContext: context.checklistContext || null,
-                warnings: invalidActions.map(a => a.validationErrors).flat(),
-                checklistMetadata: validActions
-                    .filter(a => Array.isArray(a.checklistItems) && a.checklistItems.length > 0)
-                    .map(a => ({ actionIndex: a._index ?? null, checklistItemCount: a.checklistItems.length })),
-                ...(deferredCreateFragmentClarification ? {
-                    clarification: {
-                        reason: 'ambiguous_create_fragment',
-                        fragments: deferredCreateFragmentClarification.fragments,
-                    },
-                } : {}),
-            }, context);
+            return attachPipelineContext(
+                {
+                    type: 'task',
+                    actions: validActions,
+                    results: executionResult.results,
+                    errors: allErrors,
+                    skippedActions,
+                    confirmationText,
+                    operationReceipt: terminalReceipt,
+                    requestId: context.requestId,
+                    entryPoint: context.entryPoint,
+                    mode: context.mode,
+                    workStyleMode: context.workStyleMode || null,
+                    checklistContext: context.checklistContext || null,
+                    warnings: invalidActions.map((a) => a.validationErrors).flat(),
+                    checklistMetadata: validActions
+                        .filter((a) => Array.isArray(a.checklistItems) && a.checklistItems.length > 0)
+                        .map((a) => ({ actionIndex: a._index ?? null, checklistItemCount: a.checklistItems.length })),
+                    ...(deferredCreateFragmentClarification
+                        ? {
+                              clarification: {
+                                  reason: 'ambiguous_create_fragment',
+                                  fragments: deferredCreateFragmentClarification.fragments
+                              }
+                          }
+                        : {})
+                },
+                context
+            );
         } catch (error) {
             let failureClass = FAILURE_CLASSES.UNEXPECTED;
             let stage = 'pipeline';
@@ -2428,24 +2563,28 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
 
             if (context) {
                 const terminalReceipt = buildOperationReceipt(context, {
-                    status: deferredAiQuotaIntent ? 'deferred' : (isDryRun ? 'blocked' : 'failed'),
+                    status: deferredAiQuotaIntent ? 'deferred' : isDryRun ? 'blocked' : 'failed',
                     scope: deferredAiQuotaIntent ? 'deferred_queue' : 'system',
                     command: resolveReceiptCommand(context),
                     operationType: 'none',
-                    nextAction: deferredAiQuotaIntent ? 'wait' : (isDryRun ? 'retry' : (failureClass === FAILURE_CLASSES.QUOTA ? 'wait' : 'retry')),
+                    nextAction: deferredAiQuotaIntent
+                        ? 'wait'
+                        : isDryRun
+                          ? 'retry'
+                          : failureClass === FAILURE_CLASSES.QUOTA
+                            ? 'wait'
+                            : 'retry',
                     changed: !!deferredAiQuotaIntent,
                     dryRun: isDryRun,
                     applied: false,
                     fallbackUsed: !!deferredAiQuotaIntent,
-                    message: deferredAiQuotaIntent
-                        ? 'Parsed intent was saved for retry.'
-                        : 'Task processing failed.',
-                    errorClass: mapFailureClassToErrorClass(failureClass, { deferredIntent: deferredAiQuotaIntent }),
+                    message: deferredAiQuotaIntent ? 'Parsed intent was saved for retry.' : 'Task processing failed.',
+                    errorClass: mapFailureClassToErrorClass(failureClass, { deferredIntent: deferredAiQuotaIntent })
                 });
                 await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
                     actionCount: Number.isInteger(context?.lifecycle?.normalizedActions?.length)
                         ? context.lifecycle.normalizedActions.length
-                        : null,
+                        : null
                 });
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'error',
@@ -2453,7 +2592,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     summary,
                     failureClass,
                     rolledBack: false,
-                    validationFailures: context.lifecycle.validationFailures,
+                    validationFailures: context.lifecycle.validationFailures
                 });
                 await telemetry.emit(context, {
                     eventType: 'pipeline.request.failed',
@@ -2464,23 +2603,26 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     rolledBack: false,
                     metadata: {
                         errorName: getSafeErrorName(error),
-                        deferredAiQuota: !!deferredAiQuotaIntent,
-                    },
+                        deferredAiQuota: !!deferredAiQuotaIntent
+                    }
                 });
             }
 
-            return attachPipelineContext(buildFailureResult(context, {
-                failureClass,
-                stage,
-                summary,
-                error,
-                userMessage: deferredAiQuotaIntent
-                    ? 'AI temporarily unavailable. I\'ll retry this in a few minutes.'
-                    : undefined,
-                details: deferredAiQuotaIntent ? { deferredIntent: deferredAiQuotaIntent } : undefined,
-                dryRun: isDryRun,
-                retryable: failureClass !== FAILURE_CLASSES.MALFORMED_INTENT,
-            }), context);
+            return attachPipelineContext(
+                buildFailureResult(context, {
+                    failureClass,
+                    stage,
+                    summary,
+                    error,
+                    userMessage: deferredAiQuotaIntent
+                        ? "AI temporarily unavailable. I'll retry this in a few minutes."
+                        : undefined,
+                    details: deferredAiQuotaIntent ? { deferredIntent: deferredAiQuotaIntent } : undefined,
+                    dryRun: isDryRun,
+                    retryable: failureClass !== FAILURE_CLASSES.MALFORMED_INTENT
+                }),
+                context
+            );
         }
     }
 
@@ -2506,24 +2648,28 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
 
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                 record.attempts = attempt;
-                executionRequests.push(snapshotPipelineValue({
-                    phase: 'execute',
-                    actionIndex: index,
-                    attempt,
-                    action,
-                }));
+                executionRequests.push(
+                    snapshotPipelineValue({
+                        phase: 'execute',
+                        actionIndex: index,
+                        attempt,
+                        action
+                    })
+                );
 
                 try {
                     const preWriteSnapshot = await capturePreWriteSnapshot(action, adapter);
                     const result = await executeAction(action, adapter, { verifyAfterWrite: true });
-                    executionResults.push(snapshotPipelineValue({
-                        phase: 'execute',
-                        actionIndex: index,
-                        attempt,
-                        status: 'success',
-                        actionType: action.type,
-                        result,
-                    }));
+                    executionResults.push(
+                        snapshotPipelineValue({
+                            phase: 'execute',
+                            actionIndex: index,
+                            attempt,
+                            status: 'success',
+                            actionType: action.type,
+                            result
+                        })
+                    );
                     record.result = result;
                     record.rollbackStep = buildRollbackStep(action, index, result, preWriteSnapshot);
                     record.status = 'succeeded';
@@ -2532,7 +2678,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     successfulRecords.push(record);
                     succeededActionLabels.push(getActionLabel(action));
 
-                    console.log(`[Pipeline:${context.requestId}] ✅ ${action.type.toUpperCase()} successful: taskId=${result?.id || action.taskId || 'n/a'}`);
+                    console.log(
+                        `[Pipeline:${context.requestId}] ✅ ${action.type.toUpperCase()} successful: taskId=${result?.id || action.taskId || 'n/a'}`
+                    );
                     await telemetry.emit(context, {
                         eventType: 'pipeline.execute.succeeded',
                         step: 'execute',
@@ -2542,39 +2690,50 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         rolledBack: false,
                         metadata: {
                             actionIndex: index,
-                            checklistItemCount: Array.isArray(action.checklistItems) ? action.checklistItems.length : null,
-                            adapterChecklistPayloadCount: Array.isArray(action.checklistItems)
+                            checklistItemCount: Array.isArray(action.checklistItems)
                                 ? action.checklistItems.length
                                 : null,
-                        },
+                            adapterChecklistPayloadCount: Array.isArray(action.checklistItems)
+                                ? action.checklistItems.length
+                                : null
+                        }
                     });
                     break;
                 } catch (err) {
                     const message = err?.message || 'Unknown adapter failure';
                     const adapterError = extractAdapterErrorMeta(err);
                     const adapterFailureCategory = classifyAdapterFailureCategory(err || message);
-                    const isAdapterRateLimited = adapterError.statusCode === 429
-                        || adapterError.code === 'RATE_LIMITED'
-                        || adapterError.code === 'RATE_LIMIT_QUOTA_EXHAUSTED';
-                    executionResults.push(snapshotPipelineValue({
-                        phase: 'execute',
-                        actionIndex: index,
-                        attempt,
-                        status: 'failure',
-                        actionType: action.type,
-                        errorMessage: message,
-                        errorCode: adapterError.code || null,
-                        statusCode: adapterError.statusCode || null,
-                        retryAfterMs: adapterError.retryAfterMs,
-                        retryAt: adapterError.retryAt,
-                        isQuotaExhausted: adapterError.isQuotaExhausted,
-                        willRetry: adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT && attempt < maxAttempts && !isAdapterRateLimited,
-                        failureCategory: adapterFailureCategory,
-                    }));
+                    const isAdapterRateLimited =
+                        adapterError.statusCode === 429 ||
+                        adapterError.code === 'RATE_LIMITED' ||
+                        adapterError.code === 'RATE_LIMIT_QUOTA_EXHAUSTED';
+                    executionResults.push(
+                        snapshotPipelineValue({
+                            phase: 'execute',
+                            actionIndex: index,
+                            attempt,
+                            status: 'failure',
+                            actionType: action.type,
+                            errorMessage: message,
+                            errorCode: adapterError.code || null,
+                            statusCode: adapterError.statusCode || null,
+                            retryAfterMs: adapterError.retryAfterMs,
+                            retryAt: adapterError.retryAt,
+                            isQuotaExhausted: adapterError.isQuotaExhausted,
+                            willRetry:
+                                adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT &&
+                                attempt < maxAttempts &&
+                                !isAdapterRateLimited,
+                            failureCategory: adapterFailureCategory
+                        })
+                    );
                     record.errorMessage = message;
                     record.failureClass = ACTION_FAILURE_CLASSES.ADAPTER;
 
-                    console.error(`[Pipeline:${context.requestId}] ❌ API Failure during ${action.type} (attempt ${attempt}):`, message);
+                    console.error(
+                        `[Pipeline:${context.requestId}] ❌ API Failure during ${action.type} (attempt ${attempt}):`,
+                        message
+                    );
                     await telemetry.emit(context, {
                         eventType: 'pipeline.execute.failed',
                         step: 'execute',
@@ -2585,17 +2744,24 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         rolledBack: false,
                         metadata: {
                             actionIndex: index,
-                            willRetry: adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT && attempt < maxAttempts && !isAdapterRateLimited,
+                            willRetry:
+                                adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT &&
+                                attempt < maxAttempts &&
+                                !isAdapterRateLimited,
                             failureCategory: adapterFailureCategory,
                             errorCode: adapterError.code || null,
                             statusCode: adapterError.statusCode || null,
                             retryAfterMs: adapterError.retryAfterMs,
                             retryAt: adapterError.retryAt,
-                            isQuotaExhausted: adapterError.isQuotaExhausted,
-                        },
+                            isQuotaExhausted: adapterError.isQuotaExhausted
+                        }
                     });
 
-                    if (adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT && attempt < maxAttempts && !isAdapterRateLimited) {
+                    if (
+                        adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT &&
+                        attempt < maxAttempts &&
+                        !isAdapterRateLimited
+                    ) {
                         await sleep(calculatePipelineBackoffMs(attempt, retryConfig));
                         continue;
                     }
@@ -2612,7 +2778,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         results,
                         errors,
                         failures,
-                        failedActionLabels,
+                        failedActionLabels
                     });
 
                     if (successfulRecords.length === 0) {
@@ -2640,9 +2806,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                                         failureCount: failures.length,
                                         adapterError,
                                         succeededTitles: succeededActionLabels,
-                                        failedTitles: failedActionLabels,
+                                        failedTitles: failedActionLabels
                                     },
-                                    rolledBack: false,
+                                    rolledBack: false
                                 }),
                                 developerMessage: `Action ${index} (${action.type}) failed after ${attempt} attempt(s): ${message}`,
                                 retryable: adapterFailureCategory === FAILURE_CATEGORIES.TRANSIENT,
@@ -2654,9 +2820,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                                 details: {
                                     adapterError,
                                     succeededTitles: succeededActionLabels,
-                                    failedTitles: failedActionLabels,
-                                },
-                            },
+                                    failedTitles: failedActionLabels
+                                }
+                            }
                         };
                     }
 
@@ -2667,7 +2833,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                         telemetry,
                         rollbackFailures,
                         executionRequests,
-                        executionResults,
+                        executionResults
                     );
 
                     if (rollbackResult.allSucceeded) {
@@ -2686,7 +2852,8 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                                 failureClass: FAILURE_CLASSES.ADAPTER,
                                 failureCategory: FAILURE_CATEGORIES.PARTIAL,
                                 stage: 'adapter',
-                                summary: 'Task execution failed after retry. Earlier successful writes were rolled back.',
+                                summary:
+                                    'Task execution failed after retry. Earlier successful writes were rolled back.',
                                 userMessage: buildUserFailureMessage({
                                     failureClass: FAILURE_CLASSES.ADAPTER,
                                     failureCategory: FAILURE_CATEGORIES.PARTIAL,
@@ -2695,9 +2862,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                                         successCount: rollbackResult.recordsInOriginalOrder.length,
                                         failureCount: failures.length,
                                         succeededTitles: succeededActionLabels,
-                                        failedTitles: failedActionLabels,
+                                        failedTitles: failedActionLabels
                                     },
-                                    rolledBack: true,
+                                    rolledBack: true
                                 }),
                                 developerMessage: `Action ${index} (${action.type}) failed after ${attempt} attempt(s). Rollback succeeded for ${rollbackResult.recordsInOriginalOrder.length} earlier action(s).`,
                                 retryable: true,
@@ -2710,10 +2877,10 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                                     succeededTitles: succeededActionLabels,
                                     failedTitles: failedActionLabels,
                                     rolledBackCount: rollbackResult.recordsInOriginalOrder.filter(
-                                        (record) => record?.status === 'rolled_back',
-                                    ).length,
-                                },
-                            },
+                                        (record) => record?.status === 'rolled_back'
+                                    ).length
+                                }
+                            }
                         };
                     }
 
@@ -2742,9 +2909,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                                     failureCount: failures.length,
                                     succeededTitles: succeededActionLabels,
                                     failedTitles: failedActionLabels,
-                                    rolledBackCount: rollbackResult.recordsInOriginalOrder.length,
+                                    rolledBackCount: rollbackResult.recordsInOriginalOrder.length
                                 },
-                                rolledBack: false,
+                                rolledBack: false
                             }),
                             developerMessage: `Action ${index} (${action.type}) failed after ${attempt} attempt(s). Rollback failed for ${rollbackFailures.length} earlier action(s).`,
                             retryable: false,
@@ -2757,10 +2924,10 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                                 succeededTitles: succeededActionLabels,
                                 failedTitles: failedActionLabels,
                                 rolledBackCount: rollbackResult.recordsInOriginalOrder.filter(
-                                    (record) => record?.status === 'rolled_back',
-                                ).length,
-                            },
-                        },
+                                    (record) => record?.status === 'rolled_back'
+                                ).length
+                            }
+                        }
                     };
                 }
             }
@@ -2779,9 +2946,9 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
             errors,
             failures,
             rollbackFailures,
-            successCount: results.filter(r => r.status === 'succeeded').length,
+            successCount: results.filter((r) => r.status === 'succeeded').length,
             failureCount: 0,
-            terminalFailure: null,
+            terminalFailure: null
         };
     }
 
@@ -2792,7 +2959,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
         telemetry,
         rollbackFailures,
         executionRequests,
-        executionResults,
+        executionResults
     ) {
         const recordsInOriginalOrder = [...successfulRecords].sort((left, right) => left.index - right.index);
         const recordsInRollbackOrder = [...recordsInOriginalOrder].reverse();
@@ -2807,7 +2974,7 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 rollbackFailures.push({
                     actionIndex: record.index,
                     rollbackType: null,
-                    message: record.errorMessage,
+                    message: record.errorMessage
                 });
 
                 await telemetry.emit(context, {
@@ -2820,27 +2987,31 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     rolledBack: false,
                     metadata: {
                         actionIndex: record.index,
-                        rollbackType: null,
-                    },
+                        rollbackType: null
+                    }
                 });
                 continue;
             }
 
             try {
-                executionRequests.push(snapshotPipelineValue({
-                    phase: 'rollback',
-                    actionIndex: record.index,
-                    attempt: 1,
-                    rollbackStep,
-                }));
+                executionRequests.push(
+                    snapshotPipelineValue({
+                        phase: 'rollback',
+                        actionIndex: record.index,
+                        attempt: 1,
+                        rollbackStep
+                    })
+                );
                 await executeRollbackStep(rollbackStep, adapter);
-                executionResults.push(snapshotPipelineValue({
-                    phase: 'rollback',
-                    actionIndex: record.index,
-                    attempt: 1,
-                    status: 'success',
-                    rollbackType: rollbackStep.type,
-                }));
+                executionResults.push(
+                    snapshotPipelineValue({
+                        phase: 'rollback',
+                        actionIndex: record.index,
+                        attempt: 1,
+                        status: 'success',
+                        rollbackType: rollbackStep.type
+                    })
+                );
                 record.status = 'rolled_back';
                 record.failureClass = ACTION_FAILURE_CLASSES.NONE;
                 record.errorMessage = null;
@@ -2854,25 +3025,27 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     rolledBack: true,
                     metadata: {
                         actionIndex: record.index,
-                        rollbackType: rollbackStep.type,
-                    },
+                        rollbackType: rollbackStep.type
+                    }
                 });
             } catch (error) {
-                executionResults.push(snapshotPipelineValue({
-                    phase: 'rollback',
-                    actionIndex: record.index,
-                    attempt: 1,
-                    status: 'failure',
-                    rollbackType: rollbackStep.type,
-                    errorMessage: error.message,
-                }));
+                executionResults.push(
+                    snapshotPipelineValue({
+                        phase: 'rollback',
+                        actionIndex: record.index,
+                        attempt: 1,
+                        status: 'failure',
+                        rollbackType: rollbackStep.type,
+                        errorMessage: error.message
+                    })
+                );
                 record.status = 'rollback_failed';
                 record.failureClass = ACTION_FAILURE_CLASSES.ROLLBACK;
                 record.errorMessage = error.message;
                 rollbackFailures.push({
                     actionIndex: record.index,
                     rollbackType: rollbackStep.type,
-                    message: error.message,
+                    message: error.message
                 });
 
                 await telemetry.emit(context, {
@@ -2886,21 +3059,21 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     metadata: {
                         actionIndex: record.index,
                         rollbackType: rollbackStep.type,
-                        message: error.message,
-                    },
+                        message: error.message
+                    }
                 });
             }
         }
 
         return {
             recordsInOriginalOrder,
-            allSucceeded: rollbackFailures.length === 0,
+            allSucceeded: rollbackFailures.length === 0
         };
     }
 
     function _buildConfirmation(results, errors, context = null) {
-        const successful = results.filter(r => r.status === 'succeeded');
-        const failed = results.filter(r => r.status === 'failed' || r.status === 'rollback_failed');
+        const successful = results.filter((r) => r.status === 'succeeded');
+        const failed = results.filter((r) => r.status === 'failed' || r.status === 'rollback_failed');
         const urgentMode = isUrgentWorkStyle(context);
 
         if (successful.length === 0 && failed.length > 0) {
@@ -2909,10 +3082,10 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
 
         let text = '';
 
-        const created = successful.filter(r => r.action.type === 'create');
-        const updated = successful.filter(r => r.action.type === 'update');
-        const completed = successful.filter(r => r.action.type === 'complete');
-        const deleted = successful.filter(r => r.action.type === 'delete');
+        const created = successful.filter((r) => r.action.type === 'create');
+        const updated = successful.filter((r) => r.action.type === 'update');
+        const completed = successful.filter((r) => r.action.type === 'complete');
+        const deleted = successful.filter((r) => r.action.type === 'delete');
 
         if (successful.length === 1 && created.length === 1) {
             const checklistCount = Array.isArray(created[0].action.checklistItems)
@@ -2924,10 +3097,14 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                 : `Created: ${created[0].action.title}${checklistSuffix}`;
         } else {
             const parts = [];
-            if (created.length > 0) parts.push(urgentMode ? `Created ${created.length}` : `Created ${created.length} tasks`);
-            if (updated.length > 0) parts.push(urgentMode ? `Updated ${updated.length}` : `Updated ${updated.length} task(s)`);
-            if (completed.length > 0) parts.push(urgentMode ? `Completed ${completed.length}` : `Completed ${completed.length} task(s)`);
-            if (deleted.length > 0) parts.push(urgentMode ? `Deleted ${deleted.length}` : `Deleted ${deleted.length} task(s)`);
+            if (created.length > 0)
+                parts.push(urgentMode ? `Created ${created.length}` : `Created ${created.length} tasks`);
+            if (updated.length > 0)
+                parts.push(urgentMode ? `Updated ${updated.length}` : `Updated ${updated.length} task(s)`);
+            if (completed.length > 0)
+                parts.push(urgentMode ? `Completed ${completed.length}` : `Completed ${completed.length} task(s)`);
+            if (deleted.length > 0)
+                parts.push(urgentMode ? `Deleted ${deleted.length}` : `Deleted ${deleted.length} task(s)`);
 
             text = urgentMode ? `Done. ${parts.join(', ')}` : `${parts.join(', ')}`;
         }
@@ -2958,6 +3135,6 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
     return {
         processMessage,
         processMessageWithContext,
-        createRequestContext: (userMessage, options = {}) => contextBuilder.buildRequestContext(userMessage, options),
+        createRequestContext: (userMessage, options = {}) => contextBuilder.buildRequestContext(userMessage, options)
     };
 }

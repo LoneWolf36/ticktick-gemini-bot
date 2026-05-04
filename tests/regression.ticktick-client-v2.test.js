@@ -57,7 +57,9 @@ function createFakeClient() {
     };
 
     client.getApiCalls = () => apiCalls;
-    client.clearApiCalls = () => { apiCalls.length = 0; };
+    client.clearApiCalls = () => {
+        apiCalls.length = 0;
+    };
 
     return client;
 }
@@ -70,7 +72,7 @@ test('TickTickClient updateTask POST body includes id and projectId for normal u
     await client.updateTask('task-abc', {
         projectId: 'proj-xyz',
         title: 'Updated title',
-        priority: 3,
+        priority: 3
     });
 
     const calls = client.getApiCalls();
@@ -85,10 +87,9 @@ test('TickTickClient updateTask POST body includes id and projectId for normal u
 test('TickTickClient updateTask throws if projectId missing for normal update', async () => {
     const client = createFakeClient();
 
-    await assert.rejects(
-        () => client.updateTask('task-abc', { title: 'No project' }),
-        { message: /requires projectId/ },
-    );
+    await assert.rejects(() => client.updateTask('task-abc', { title: 'No project' }), {
+        message: /requires projectId/
+    });
 
     assert.equal(client.getApiCalls().length, 0, 'no API call should be made');
 });
@@ -99,7 +100,7 @@ test('TickTickClient updateTask strips originalProjectId from normal update payl
     await client.updateTask('task-abc', {
         projectId: 'proj-xyz',
         originalProjectId: 'proj-xyz', // same project — not a move
-        title: 'Same project update',
+        title: 'Same project update'
     });
 
     const calls = client.getApiCalls();
@@ -117,7 +118,7 @@ test('TickTickClient updateTask uses /task/move for project move and does NOT ca
     const result = await client.updateTask('task-move-1', {
         projectId: 'proj-target',
         originalProjectId: 'proj-source',
-        title: 'Moved task',
+        title: 'Moved task'
     });
 
     const calls = client.getApiCalls();
@@ -132,15 +133,17 @@ test('TickTickClient updateTask uses /task/move for project move and does NOT ca
 
     // Second call: move task via official endpoint
     assert.equal(calls[1].endpoint, '/task/move');
-    assert.deepEqual(calls[1].data, [{
-        fromProjectId: 'proj-source',
-        toProjectId: 'proj-target',
-        taskId: 'task-move-1',
-    }]);
+    assert.deepEqual(calls[1].data, [
+        {
+            fromProjectId: 'proj-source',
+            toProjectId: 'proj-target',
+            taskId: 'task-move-1'
+        }
+    ]);
 
     // Verify NO create or delete calls
-    const createCalls = calls.filter(c => c.endpoint === '/task' && c.method === 'POST');
-    const deleteCalls = calls.filter(c => c.endpoint.startsWith('/project/') && c.method === 'DELETE');
+    const createCalls = calls.filter((c) => c.endpoint === '/task' && c.method === 'POST');
+    const deleteCalls = calls.filter((c) => c.endpoint.startsWith('/project/') && c.method === 'DELETE');
     assert.equal(createCalls.length, 0, 'should NOT call create task');
     assert.equal(deleteCalls.length, 0, 'should NOT call delete task');
 
@@ -155,17 +158,19 @@ test('TickTickClient updateTask pure project move skips redundant field update',
 
     const result = await client.updateTask('task-pure-move', {
         projectId: 'proj-target',
-        originalProjectId: 'proj-source',
+        originalProjectId: 'proj-source'
     });
 
     const calls = client.getApiCalls();
     assert.equal(calls.length, 1, 'pure move should make exactly one API call');
     assert.equal(calls[0].endpoint, '/task/move');
-    assert.deepEqual(calls[0].data, [{
-        fromProjectId: 'proj-source',
-        toProjectId: 'proj-target',
-        taskId: 'task-pure-move',
-    }]);
+    assert.deepEqual(calls[0].data, [
+        {
+            fromProjectId: 'proj-source',
+            toProjectId: 'proj-target',
+            taskId: 'task-pure-move'
+        }
+    ]);
     assert.equal(result.id, 'task-pure-move');
     assert.equal(result.projectId, 'proj-target');
 });
@@ -175,21 +180,23 @@ test('TickTickClient updateTask move fails closed when source projectId missing'
 
     // Scenario: projectId is empty, not a legitimate move, and no valid projectId for normal update
     await assert.rejects(
-        () => client.updateTask('task-abc', {
-            projectId: '',
-            originalProjectId: 'proj-source',
-        }),
-        { message: /toProjectId is required|requires projectId/ },
+        () =>
+            client.updateTask('task-abc', {
+                projectId: '',
+                originalProjectId: 'proj-source'
+            }),
+        { message: /toProjectId is required|requires projectId/ }
     );
 
     // Scenario: originalProjectId is whitespace-only but non-empty (enters move path, fails validation)
     await assert.rejects(
-        () => client.updateTask('task-abc', {
-            projectId: 'proj-target',
-            originalProjectId: '   ',
-            title: 'test',
-        }),
-        { message: /fromProjectId is required/ },
+        () =>
+            client.updateTask('task-abc', {
+                projectId: 'proj-target',
+                originalProjectId: '   ',
+                title: 'test'
+            }),
+        { message: /fromProjectId is required/ }
     );
 });
 
@@ -197,22 +204,25 @@ test('TickTickClient getAllTasks attempts /task/filter on first call', async () 
     const client = createFakeClient();
     client._setResponse('/task/filter', [
         { id: 't1', title: 'Active task 1', projectId: 'proj-1', status: 0 },
-        { id: 't2', title: 'Active task 2', projectId: 'proj-2', status: 0 },
+        { id: 't2', title: 'Active task 2', projectId: 'proj-2', status: 0 }
     ]);
     client._setResponse('/project', [
         { id: 'proj-1', name: 'Inbox' },
-        { id: 'proj-2', name: 'Career' },
+        { id: 'proj-2', name: 'Career' }
     ]);
 
     const tasks = await client.getAllTasks();
 
     const calls = client.getApiCalls();
-    assert.ok(calls.some(c => c.endpoint === '/task/filter'), 'should call /task/filter');
+    assert.ok(
+        calls.some((c) => c.endpoint === '/task/filter'),
+        'should call /task/filter'
+    );
 
     // Should have project names normalized
-    const t1 = tasks.find(t => t.id === 't1');
+    const t1 = tasks.find((t) => t.id === 't1');
     assert.equal(t1.projectName, 'Inbox');
-    const t2 = tasks.find(t => t.id === 't2');
+    const t2 = tasks.find((t) => t.id === 't2');
     assert.equal(t2.projectName, 'Career');
 
     assert.equal(tasks.length, 2);
@@ -230,9 +240,7 @@ test('TickTickClient getAllTasks falls back to project loop when /task/filter fa
         return null;
     };
     client.getProjectWithTasks = async () => ({
-        tasks: [
-            { id: 'ft1', title: 'Fallback task', status: 0 },
-        ],
+        tasks: [{ id: 'ft1', title: 'Fallback task', status: 0 }]
     });
     client._invalidateCache = () => {};
 
@@ -268,14 +276,12 @@ test('TickTickClient getAllTasks filter failure warning includes reason', async 
 
 test('TickTickClient listCompletedTasks hits /task/completed endpoint', async () => {
     const client = createFakeClient();
-    client._setResponse('/task/completed', [
-        { id: 'ct1', title: 'Done task', projectId: 'proj-1', status: 2 },
-    ]);
+    client._setResponse('/task/completed', [{ id: 'ct1', title: 'Done task', projectId: 'proj-1', status: 2 }]);
 
     const completed = await client.listCompletedTasks({
         projectIds: ['proj-1'],
         startDate: '2026-01-01T00:00:00.000+0000',
-        endDate: '2026-04-30T23:59:59.000+0000',
+        endDate: '2026-04-30T23:59:59.000+0000'
     });
 
     const calls = client.getApiCalls();
@@ -289,29 +295,21 @@ test('TickTickClient listCompletedTasks hits /task/completed endpoint', async ()
 
 test('TickTickClient moveTasks hits /task/move endpoint', async () => {
     const client = createFakeClient();
-    client._setResponse('/task/move', [
-        { id: 'task-1', etag: 'e1' },
-    ]);
+    client._setResponse('/task/move', [{ id: 'task-1', etag: 'e1' }]);
 
-    const result = await client.moveTasks([
-        { fromProjectId: 'proj-a', toProjectId: 'proj-b', taskId: 'task-1' },
-    ]);
+    const result = await client.moveTasks([{ fromProjectId: 'proj-a', toProjectId: 'proj-b', taskId: 'task-1' }]);
 
     const calls = client.getApiCalls();
     assert.equal(calls.length, 1);
     assert.equal(calls[0].endpoint, '/task/move');
-    assert.deepEqual(calls[0].data, [
-        { fromProjectId: 'proj-a', toProjectId: 'proj-b', taskId: 'task-1' },
-    ]);
+    assert.deepEqual(calls[0].data, [{ fromProjectId: 'proj-a', toProjectId: 'proj-b', taskId: 'task-1' }]);
     assert.equal(result.length, 1);
     assert.equal(result[0].id, 'task-1');
 });
 
 test('TickTickClient filterTasks hits /task/filter endpoint', async () => {
     const client = createFakeClient();
-    client._setResponse('/task/filter', [
-        { id: 'ft1', title: 'Filtered task', projectId: 'proj-1', status: 0 },
-    ]);
+    client._setResponse('/task/filter', [{ id: 'ft1', title: 'Filtered task', projectId: 'proj-1', status: 0 }]);
 
     const result = await client.filterTasks({ status: [0] });
 
@@ -324,14 +322,12 @@ test('TickTickClient filterTasks hits /task/filter endpoint', async () => {
 
 test('TickTickAdapter listCompletedTasks delegates to client and classifies errors', async () => {
     const client = createFakeClient();
-    client._setResponse('/task/completed', [
-        { id: 'ct-1', title: 'Completed task', projectId: 'proj-1', status: 2 },
-    ]);
+    client._setResponse('/task/completed', [{ id: 'ct-1', title: 'Completed task', projectId: 'proj-1', status: 2 }]);
 
     const adapter = new TickTickAdapter(client);
 
     const result = await adapter.listCompletedTasks({
-        projectIds: ['proj-1'],
+        projectIds: ['proj-1']
     });
 
     assert.equal(result.length, 1);
@@ -339,7 +335,9 @@ test('TickTickAdapter listCompletedTasks delegates to client and classifies erro
 
     // Test error classification
     const errorClient = createFakeClient();
-    errorClient._post = async () => { throw new Error('Network error'); };
+    errorClient._post = async () => {
+        throw new Error('Network error');
+    };
     const errorAdapter = new TickTickAdapter(errorClient);
 
     await assert.rejects(
@@ -348,7 +346,7 @@ test('TickTickAdapter listCompletedTasks delegates to client and classifies erro
             assert.equal(err.code, 'NETWORK_ERROR');
             assert.equal(err.operation, 'listCompletedTasks');
             return true;
-        },
+        }
     );
 });
 
@@ -360,7 +358,7 @@ test('TickTickClient updateTask preserves original task id on move result', asyn
     const result = await client.updateTask('task-preserve', {
         projectId: 'proj-target',
         originalProjectId: 'proj-source',
-        title: 'Preserved',
+        title: 'Preserved'
     });
 
     assert.equal(result.id, 'task-preserve', 'original task id must be preserved');
@@ -373,33 +371,33 @@ test('TickTickClient updateTask move requires all three fields', async () => {
 
     // Empty source (whitespace-only)
     await assert.rejects(
-        () => client.updateTask('task-abc', {
-            projectId: 'proj-target',
-            originalProjectId: '   ',
-            title: 'test',
-        }),
-        /fromProjectId is required/,
+        () =>
+            client.updateTask('task-abc', {
+                projectId: 'proj-target',
+                originalProjectId: '   ',
+                title: 'test'
+            }),
+        /fromProjectId is required/
     );
 
     // Empty target (whitespace-only)
     await assert.rejects(
-        () => client.updateTask('task-abc', {
-            projectId: '   ',
-            originalProjectId: 'proj-source',
-            title: 'test',
-        }),
-        /toProjectId is required/,
+        () =>
+            client.updateTask('task-abc', {
+                projectId: '   ',
+                originalProjectId: 'proj-source',
+                title: 'test'
+            }),
+        /toProjectId is required/
     );
 });
 
 test('inbox-like task from filter appears in active task list and can be matched by resolveTarget', async () => {
     const client = createFakeClient();
     client._setResponse('/task/filter', [
-        { id: 'filter-inbox-1', title: 'Buy milk from filter', projectId: 'proj-inbox', status: 0 },
+        { id: 'filter-inbox-1', title: 'Buy milk from filter', projectId: 'proj-inbox', status: 0 }
     ]);
-    client._setResponse('/project', [
-        { id: 'proj-inbox', name: 'Inbox' },
-    ]);
+    client._setResponse('/project', [{ id: 'proj-inbox', name: 'Inbox' }]);
 
     const tasks = await client.getAllTasks();
 
@@ -408,7 +406,7 @@ test('inbox-like task from filter appears in active task list and can be matched
     assert.equal(tasks[0].projectName, 'Inbox');
 
     // Verify the task shape matches what existing adapter.listActiveTasks returns
-    const mapped = tasks.map(t => ({
+    const mapped = tasks.map((t) => ({
         id: t.id,
         title: t.title || '',
         projectId: t.projectId ?? null,
@@ -416,7 +414,7 @@ test('inbox-like task from filter appears in active task list and can be matched
         priority: t.priority ?? null,
         dueDate: t.dueDate ?? null,
         content: t.content ?? null,
-        status: t.status ?? 0,
+        status: t.status ?? 0
     }));
 
     assert.equal(mapped[0].id, 'filter-inbox-1');

@@ -25,7 +25,7 @@ test('R11 adapter returns typed permission, not-found, completion, and network f
         (error) => {
             assert.equal(error.code, 'PERMISSION_DENIED');
             return true;
-        },
+        }
     );
 
     client.completeTask = async () => {
@@ -39,7 +39,7 @@ test('R11 adapter returns typed permission, not-found, completion, and network f
         (error) => {
             assert.equal(error.code, 'NOT_FOUND');
             return true;
-        },
+        }
     );
 
     client.completeTask = async () => {
@@ -53,7 +53,7 @@ test('R11 adapter returns typed permission, not-found, completion, and network f
         (error) => {
             assert.equal(error.code, 'ALREADY_COMPLETED');
             return true;
-        },
+        }
     );
 
     client.completeTask = async () => {
@@ -67,7 +67,7 @@ test('R11 adapter returns typed permission, not-found, completion, and network f
         (error) => {
             assert.equal(error.code, 'NETWORK_ERROR');
             return true;
-        },
+        }
     );
 });
 
@@ -90,15 +90,16 @@ test('R5 single-task transient failures retry with exponential backoff', async (
     let attempts = 0;
     const pipeline = createPipeline({
         intentExtractor: {
-            extractIntents: async () => [{ type: 'create', title: 'Retry task' }],
+            extractIntents: async () => [{ type: 'create', title: 'Retry task' }]
         },
         normalizer: {
-            normalizeActions: (intents) => intents.map((intent) => ({
-                ...intent,
-                projectId: 'inbox',
-                valid: true,
-                validationErrors: [],
-            })),
+            normalizeActions: (intents) =>
+                intents.map((intent) => ({
+                    ...intent,
+                    projectId: 'inbox',
+                    valid: true,
+                    validationErrors: []
+                }))
         },
         adapter: {
             listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
@@ -111,16 +112,16 @@ test('R5 single-task transient failures retry with exponential backoff', async (
                     throw err;
                 }
                 return { id: 'created-retry', projectId: 'inbox' };
-            },
+            }
         },
-        observability: createPipelineObservability({ logger: null }),
+        observability: createPipelineObservability({ logger: null })
     });
 
     try {
         const result = await pipeline.processMessage('create retry task', {
             requestId: 'req-r5-retry',
             entryPoint: 'telegram',
-            mode: 'interactive',
+            mode: 'interactive'
         });
 
         assert.equal(result.type, 'task');
@@ -142,14 +143,14 @@ test('R5 single-task transient failures retry with exponential backoff', async (
 test('R5 partial failures surface succeeded and failed actions without silent drops', async () => {
     const pipeline = createPipeline({
         intentExtractor: {
-            extractIntents: async () => [{ type: 'create' }, { type: 'create' }, { type: 'create' }],
+            extractIntents: async () => [{ type: 'create' }, { type: 'create' }, { type: 'create' }]
         },
         normalizer: {
-            normalizeActions: () => ([
+            normalizeActions: () => [
                 { type: 'create', title: 'Task A', projectId: 'inbox', valid: true, validationErrors: [] },
                 { type: 'create', title: 'Task B', projectId: 'inbox', valid: true, validationErrors: [] },
-                { type: 'create', title: 'Task C', projectId: 'inbox', valid: true, validationErrors: [] },
-            ]),
+                { type: 'create', title: 'Task C', projectId: 'inbox', valid: true, validationErrors: [] }
+            ]
         },
         adapter: {
             listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
@@ -160,15 +161,15 @@ test('R5 partial failures surface succeeded and failed actions without silent dr
                 err.code = 'NOT_FOUND';
                 throw err;
             },
-            deleteTask: async () => ({ deleted: true }),
+            deleteTask: async () => ({ deleted: true })
         },
-        observability: createPipelineObservability({ logger: null }),
+        observability: createPipelineObservability({ logger: null })
     });
 
     const result = await pipeline.processMessage('create three tasks', {
         requestId: 'req-r5-partial',
         entryPoint: 'telegram',
-        mode: 'interactive',
+        mode: 'interactive'
     });
 
     assert.equal(result.type, 'error');
@@ -199,13 +200,13 @@ test('R5 partial failures surface succeeded and failed actions without silent dr
 test('R5 rollback failure receipt stays count-based and truthful', async () => {
     const pipeline = createPipeline({
         intentExtractor: {
-            extractIntents: async () => [{ type: 'create' }, { type: 'create' }],
+            extractIntents: async () => [{ type: 'create' }, { type: 'create' }]
         },
         normalizer: {
-            normalizeActions: () => ([
+            normalizeActions: () => [
                 { type: 'create', title: 'Alpha task', projectId: 'inbox', valid: true, validationErrors: [] },
-                { type: 'create', title: 'Beta task', projectId: 'inbox', valid: true, validationErrors: [] },
-            ]),
+                { type: 'create', title: 'Beta task', projectId: 'inbox', valid: true, validationErrors: [] }
+            ]
         },
         adapter: {
             listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
@@ -220,15 +221,15 @@ test('R5 rollback failure receipt stays count-based and truthful', async () => {
                 const err = new Error('rollback failed');
                 err.code = 'NETWORK_ERROR';
                 throw err;
-            },
+            }
         },
-        observability: createPipelineObservability({ logger: null }),
+        observability: createPipelineObservability({ logger: null })
     });
 
     const result = await pipeline.processMessage('create rollback tasks', {
         requestId: 'req-r5-rollback',
         entryPoint: 'telegram',
-        mode: 'interactive',
+        mode: 'interactive'
     });
 
     assert.equal(result.type, 'error');
@@ -247,12 +248,12 @@ test('R11 pipeline surfaces typed adapter failures without leaking API internals
     async function runScenario(adapterError) {
         const pipeline = createPipeline({
             intentExtractor: {
-                extractIntents: async () => [{ type: 'update', taskId: 'task-1', originalProjectId: 'proj-1' }],
+                extractIntents: async () => [{ type: 'update', taskId: 'task-1', originalProjectId: 'proj-1' }]
             },
             normalizer: {
-                normalizeActions: () => ([
-                    { type: 'update', taskId: 'task-1', originalProjectId: 'proj-1', valid: true, validationErrors: [] },
-                ]),
+                normalizeActions: () => [
+                    { type: 'update', taskId: 'task-1', originalProjectId: 'proj-1', valid: true, validationErrors: [] }
+                ]
             },
             adapter: {
                 listProjects: async () => [{ id: 'proj-1', name: 'Inbox' }],
@@ -265,17 +266,19 @@ test('R11 pipeline surfaces typed adapter failures without leaking API internals
                     priority: null,
                     dueDate: null,
                     repeatFlag: null,
-                    status: 0,
+                    status: 0
                 }),
-                updateTask: async () => { throw adapterError; },
+                updateTask: async () => {
+                    throw adapterError;
+                }
             },
-            observability: createPipelineObservability({ logger: null }),
+            observability: createPipelineObservability({ logger: null })
         });
 
         return pipeline.processMessage('update it', {
             requestId: `req-r11-${adapterError.code || adapterError.statusCode || 'typed'}`,
             entryPoint: 'telegram',
-            mode: 'interactive',
+            mode: 'interactive'
         });
     }
 
@@ -306,23 +309,25 @@ test('AI hard quota failure defers intent for retry', async () => {
     const deferred = [];
     const pipeline = createPipeline({
         intentExtractor: {
-            extractIntents: async () => { throw new AIHardQuotaError('quota exhausted'); },
+            extractIntents: async () => {
+                throw new AIHardQuotaError('quota exhausted');
+            }
         },
         normalizer: { normalizeActions: () => [] },
         adapter: {
             listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
-            listActiveTasks: async () => [],
+            listActiveTasks: async () => []
         },
         deferIntent: (entry) => {
             deferred.push(entry);
             return Promise.resolve({ id: 'dpi-1' });
-        },
+        }
     });
 
     const result = await pipeline.processMessage('create test task', {
         requestId: 'req-ai-quota',
         entryPoint: 'telegram',
-        mode: 'interactive',
+        mode: 'interactive'
     });
 
     assert.equal(result.type, 'error');
@@ -337,23 +342,25 @@ test('AI service unavailable failure defers intent for retry', async () => {
     const deferred = [];
     const pipeline = createPipeline({
         intentExtractor: {
-            extractIntents: async () => { throw new AIServiceUnavailableError('service unavailable'); },
+            extractIntents: async () => {
+                throw new AIServiceUnavailableError('service unavailable');
+            }
         },
         normalizer: { normalizeActions: () => [] },
         adapter: {
             listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
-            listActiveTasks: async () => [],
+            listActiveTasks: async () => []
         },
         deferIntent: (entry) => {
             deferred.push(entry);
             return Promise.resolve({ id: 'dpi-2' });
-        },
+        }
     });
 
     const result = await pipeline.processMessage('complete test task', {
         requestId: 'req-ai-svc',
         entryPoint: 'telegram',
-        mode: 'interactive',
+        mode: 'interactive'
     });
 
     assert.equal(result.type, 'error');
@@ -367,23 +374,25 @@ test('AI invalid key error does NOT defer intent', async () => {
     const deferred = [];
     const pipeline = createPipeline({
         intentExtractor: {
-            extractIntents: async () => { throw new AIInvalidKeyError('invalid key'); },
+            extractIntents: async () => {
+                throw new AIInvalidKeyError('invalid key');
+            }
         },
         normalizer: { normalizeActions: () => [] },
         adapter: {
             listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
-            listActiveTasks: async () => [],
+            listActiveTasks: async () => []
         },
         deferIntent: (entry) => {
             deferred.push(entry);
             return Promise.resolve({ id: 'dpi-3' });
-        },
+        }
     });
 
     const result = await pipeline.processMessage('create invalid key task', {
         requestId: 'req-ai-key',
         entryPoint: 'telegram',
-        mode: 'interactive',
+        mode: 'interactive'
     });
 
     assert.equal(result.type, 'error');
@@ -403,22 +412,25 @@ test('deferred ai_quota retry respects nextAttemptAt backoff', async () => {
         userMessage: 'backoff task',
         failureType: 'ai_quota',
         retryCount: 1,
-        nextAttemptAt: future,
+        nextAttemptAt: future
     };
     await store.appendDeferredPipelineIntent(entry);
 
     const pipeline = {
-        processMessage: async () => ({ type: 'task', actions: [{ title: 'backoff task' }] }),
+        processMessage: async () => ({ type: 'task', actions: [{ title: 'backoff task' }] })
     };
 
     const result = await retryDeferredIntents({
         adapter: { listActiveTasks: async () => [] },
         pipeline,
-        gemini: { isQuotaExhausted: () => false },
+        gemini: { isQuotaExhausted: () => false }
     });
 
     const remaining = store.getDeferredPipelineIntents();
-    assert.ok(remaining.some((e) => e.id === 'dpi-backoff-1'), 'entry should still be in store');
+    assert.ok(
+        remaining.some((e) => e.id === 'dpi-backoff-1'),
+        'entry should still be in store'
+    );
     assert.equal(result.retried, 0, 'should not retry before nextAttemptAt');
 
     // Cleanup
@@ -435,22 +447,25 @@ test('deferred ai_quota retry skips when gemini quota exhausted', async () => {
         id: 'dpi-quota-1',
         userMessage: 'quota task',
         failureType: 'ai_quota',
-        retryCount: 0,
+        retryCount: 0
     };
     await store.appendDeferredPipelineIntent(entry);
 
     const pipeline = {
-        processMessage: async () => ({ type: 'task', actions: [{ title: 'quota task' }] }),
+        processMessage: async () => ({ type: 'task', actions: [{ title: 'quota task' }] })
     };
 
     const result = await retryDeferredIntents({
         adapter: { listActiveTasks: async () => [] },
         pipeline,
-        gemini: { isQuotaExhausted: () => true },
+        gemini: { isQuotaExhausted: () => true }
     });
 
     const remaining = store.getDeferredPipelineIntents();
-    assert.ok(remaining.some((e) => e.id === 'dpi-quota-1'), 'entry should still be in store');
+    assert.ok(
+        remaining.some((e) => e.id === 'dpi-quota-1'),
+        'entry should still be in store'
+    );
     assert.equal(result.retried, 0, 'should not retry while quota exhausted');
 
     // Cleanup

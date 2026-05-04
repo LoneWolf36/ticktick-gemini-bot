@@ -18,9 +18,7 @@ function toTimestamp(entry = {}) {
  */
 export function deriveInterventionProfile(processedHistory = [], { generatedAtIso = null, lookbackDays = 7 } = {}) {
     const generatedAt = new Date(generatedAtIso || new Date().toISOString()).getTime();
-    const cutoff = Number.isFinite(generatedAt)
-        ? generatedAt - (lookbackDays * 24 * 60 * 60 * 1000)
-        : 0;
+    const cutoff = Number.isFinite(generatedAt) ? generatedAt - lookbackDays * 24 * 60 * 60 * 1000 : 0;
 
     const recentEntries = toArray(processedHistory)
         .filter((entry) => entry && typeof entry === 'object')
@@ -48,10 +46,10 @@ export function deriveInterventionProfile(processedHistory = [], { generatedAtIs
         engagementPattern: shouldBackOff
             ? 'backoff'
             : repeatedIgnoredGuidance
-                ? 'direct_callout'
-                : approvedCount > ignoredGuidanceCount
-                    ? 'engaged'
-                    : 'silent',
+              ? 'direct_callout'
+              : approvedCount > ignoredGuidanceCount
+                ? 'engaged'
+                : 'silent'
     };
 }
 
@@ -69,20 +67,22 @@ export function buildEngagementPatternNotice(profile = {}, { workStyleMode = 'st
     if (profile.shouldBackOff === true) {
         return {
             code: 'engagement_pattern',
-            message: workStyleMode === 'urgent'
-                ? 'Recent suggestions were ignored repeatedly. Cut scope and pick one restart step instead of pushing harder.'
-                : 'Recent suggestions were skipped or dropped repeatedly. Keep the next step smaller or pause instead of escalating.',
+            message:
+                workStyleMode === 'urgent'
+                    ? 'Recent suggestions were ignored repeatedly. Cut scope and pick one restart step instead of pushing harder.'
+                    : 'Recent suggestions were skipped or dropped repeatedly. Keep the next step smaller or pause instead of escalating.',
             severity: 'info',
-            evidence_source: 'processed_history',
+            evidence_source: 'processed_history'
         };
     }
 
     return {
         code: 'engagement_pattern',
-        message: workStyleMode === 'urgent'
-            ? 'Recent suggestions were skipped repeatedly. Give one direct next step, then stop.'
-            : 'A few suggested tasks were skipped or dropped repeatedly. Name the friction once, then keep the next step smaller.',
+        message:
+            workStyleMode === 'urgent'
+                ? 'Recent suggestions were skipped repeatedly. Give one direct next step, then stop.'
+                : 'A few suggested tasks were skipped or dropped repeatedly. Name the friction once, then keep the next step smaller.',
         severity: 'info',
-        evidence_source: 'processed_history',
+        evidence_source: 'processed_history'
     };
 }

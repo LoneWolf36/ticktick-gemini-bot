@@ -13,7 +13,7 @@ const R1_INTENT_ACTION_FIELDS = Object.freeze([
     'dueDate',
     'repeatHint',
     'splitStrategy',
-    'confidence',
+    'confidence'
 ]);
 
 const URGENT_MODE_ON_PATTERNS = [
@@ -22,14 +22,14 @@ const URGENT_MODE_ON_PATTERNS = [
     /\burgent mode\s+(?:on|enabled|active)\b/i,
     /\bgo urgent\b/i,
     /\b(?:i'?m|i am)\s+in\s+a\s+rush\b/i,
-    /\bneed\s+urgent\s+mode\b/i,
+    /\bneed\s+urgent\s+mode\b/i
 ];
 
 const URGENT_MODE_OFF_PATTERNS = [
     /\b(?:turn|switch|set)\s+(?:off|out of)\s+urgent mode\b/i,
     /\b(?:disable|deactivate|stop)\s+urgent mode\b/i,
     /\burgent mode\s+(?:off|disabled|inactive)\b/i,
-    /\b(?:back to|switch to|use)\s+(?:normal|standard) mode\b/i,
+    /\b(?:back to|switch to|use)\s+(?:normal|standard) mode\b/i
 ];
 
 const FOCUS_MODE_PATTERNS = [
@@ -38,7 +38,7 @@ const FOCUS_MODE_PATTERNS = [
     /\bfocus mode\s+(?:on|enabled|active)\b/i,
     /\bfocus time\b/i,
     /\btime to focus\b/i,
-    /\bdeep work mode\b/i,
+    /\bdeep work mode\b/i
 ];
 
 const STANDARD_MODE_PATTERNS = [
@@ -46,14 +46,10 @@ const STANDARD_MODE_PATTERNS = [
     /\b(?:enable|activate|start)\s+(?:normal|standard) mode\b/i,
     /\b(?:normal|standard) mode\s+(?:on|enabled|active)\b/i,
     /\bback to normal\b/i,
-    /\bback to standard\b/i,
+    /\bback to standard\b/i
 ];
 
-const MODE_QUERY_PATTERNS = [
-    /^what mode am i in\??$/i,
-    /^current mode\??$/i,
-    /^mode\??$/i,
-];
+const MODE_QUERY_PATTERNS = [/^what mode am i in\??$/i, /^current mode\??$/i, /^mode\??$/i];
 
 const CAREFUL_PLANNING_PATTERNS = [
     /\blet'?s\s+plan\s+carefully\b/i,
@@ -61,7 +57,7 @@ const CAREFUL_PLANNING_PATTERNS = [
     /\bcarefully\b/i,
     /\bslow\s+down\b/i,
     /\bthink\s+it\s+through\b/i,
-    /\bstep\s+by\s+step\b/i,
+    /\bstep\s+by\s+step\b/i
 ];
 
 /**
@@ -86,7 +82,7 @@ export function detectWorkStyleModeIntent(userMessage = '') {
         return {
             type: 'clarify_work_style_mode',
             mode: MODE_STANDARD,
-            reason: 'mixed_signal',
+            reason: 'mixed_signal'
         };
     }
 
@@ -162,7 +158,7 @@ export function validateChecklistItems(items) {
         validItems.push({
             title: item.title.trim(),
             ...(item.status ? { status: item.status } : {}),
-            ...(item.sortOrder !== undefined && item.sortOrder !== null ? { sortOrder: item.sortOrder } : {}),
+            ...(item.sortOrder !== undefined && item.sortOrder !== null ? { sortOrder: item.sortOrder } : {})
         });
     }
 
@@ -170,14 +166,16 @@ export function validateChecklistItems(items) {
     const cappedItems = wasCapped ? validItems.slice(0, MAX_CHECKLIST_ITEMS) : validItems;
 
     if (wasCapped) {
-        errors.push(`checklistItems capped at ${MAX_CHECKLIST_ITEMS}; ${validItems.length - MAX_CHECKLIST_ITEMS} items dropped`);
+        errors.push(
+            `checklistItems capped at ${MAX_CHECKLIST_ITEMS}; ${validItems.length - MAX_CHECKLIST_ITEMS} items dropped`
+        );
     }
 
     return {
         valid: cappedItems.length > 0,
         items: cappedItems,
         errors,
-        wasCapped,
+        wasCapped
     };
 }
 
@@ -226,7 +224,10 @@ export function validateIntentAction(action, index, { requireR1Fields = false, a
         }
     } else if (isMutation) {
         // Mutation actions MUST have targetQuery, unless allowEmptyTargetQuery is true
-        if (!allowEmptyTargetQuery && (!action.targetQuery || typeof action.targetQuery !== 'string' || action.targetQuery.trim().length === 0)) {
+        if (
+            !allowEmptyTargetQuery &&
+            (!action.targetQuery || typeof action.targetQuery !== 'string' || action.targetQuery.trim().length === 0)
+        ) {
             errors.push(`Action ${index}: Mutation action requires a non-empty targetQuery`);
         }
         // Title is optional for mutations (only present when renaming)
@@ -293,7 +294,7 @@ export function validateIntentAction(action, index, { requireR1Fields = false, a
  * System prompt for Gemini-based intent extraction.
  * This prompt was preserved from the original framework instruction text.
  */
- const INTENT_EXTRACTION_PROMPT = `Extract structured task/intent actions from the user's message.
+const INTENT_EXTRACTION_PROMPT = `Extract structured task/intent actions from the user's message.
  
  Return ONLY a valid JSON array. No extra text.
  
@@ -582,7 +583,7 @@ export function validateIntentAction(action, index, { requireR1Fields = false, a
  []
  `;
 
- const COMPACT_INTENT_EXTRACTION_PROMPT = `Extract structured task actions from the user's message.
+const COMPACT_INTENT_EXTRACTION_PROMPT = `Extract structured task actions from the user's message.
  
  Return ONLY a JSON array. No extra text.
  
@@ -649,15 +650,39 @@ const intentActionSchema = {
             items: {
                 type: SchemaType.OBJECT,
                 properties: {
-                    type: { type: SchemaType.STRING, enum: ['create', 'update', 'complete', 'delete'], description: 'Action type' },
-                    targetQuery: { type: SchemaType.STRING, nullable: true, description: 'Target task reference for mutations' },
+                    type: {
+                        type: SchemaType.STRING,
+                        enum: ['create', 'update', 'complete', 'delete'],
+                        description: 'Action type'
+                    },
+                    targetQuery: {
+                        type: SchemaType.STRING,
+                        nullable: true,
+                        description: 'Target task reference for mutations'
+                    },
                     title: { type: SchemaType.STRING, nullable: true, description: 'Short, verb-led task title' },
                     content: { type: SchemaType.STRING, nullable: true, description: 'Additional context or notes' },
-                    priority: { type: SchemaType.INTEGER, nullable: true, description: 'Priority: 0 (none), 1 (low), 3 (medium), 5 (high)' },
+                    priority: {
+                        type: SchemaType.INTEGER,
+                        nullable: true,
+                        description: 'Priority: 0 (none), 1 (low), 3 (medium), 5 (high)'
+                    },
                     projectHint: { type: SchemaType.STRING, nullable: true, description: 'Project name hint' },
-                    dueDate: { type: SchemaType.STRING, nullable: true, description: 'Due date in natural language or ISO format' },
-                    repeatHint: { type: SchemaType.STRING, nullable: true, description: 'Recurrence pattern, preserving bounded duration phrases when present' },
-                    splitStrategy: { type: SchemaType.STRING, nullable: true, description: 'How to split: multi-task, multi-day, or null' },
+                    dueDate: {
+                        type: SchemaType.STRING,
+                        nullable: true,
+                        description: 'Due date in natural language or ISO format'
+                    },
+                    repeatHint: {
+                        type: SchemaType.STRING,
+                        nullable: true,
+                        description: 'Recurrence pattern, preserving bounded duration phrases when present'
+                    },
+                    splitStrategy: {
+                        type: SchemaType.STRING,
+                        nullable: true,
+                        description: 'How to split: multi-task, multi-day, or null'
+                    },
                     confidence: { type: SchemaType.NUMBER, description: 'Confidence score 0.0 to 1.0' },
                     checklistItems: {
                         type: SchemaType.ARRAY,
@@ -666,20 +691,46 @@ const intentActionSchema = {
                             type: SchemaType.OBJECT,
                             properties: {
                                 title: { type: SchemaType.STRING, description: 'Checklist item title' },
-                                status: { type: SchemaType.STRING, description: 'Item status: completed or incomplete', nullable: true },
-                                sortOrder: { type: SchemaType.NUMBER, description: 'Display order', nullable: true },
+                                status: {
+                                    type: SchemaType.STRING,
+                                    description: 'Item status: completed or incomplete',
+                                    nullable: true
+                                },
+                                sortOrder: { type: SchemaType.NUMBER, description: 'Display order', nullable: true }
                             },
-                            required: ['title'],
-                        },
+                            required: ['title']
+                        }
                     },
-                    clarification: { type: SchemaType.BOOLEAN, nullable: true, description: 'True when intent is ambiguous' },
-                    clarificationQuestion: { type: SchemaType.STRING, nullable: true, description: 'Question to ask user' },
+                    clarification: {
+                        type: SchemaType.BOOLEAN,
+                        nullable: true,
+                        description: 'True when intent is ambiguous'
+                    },
+                    clarificationQuestion: {
+                        type: SchemaType.STRING,
+                        nullable: true,
+                        description: 'Question to ask user'
+                    }
                 },
-                required: ['type', 'targetQuery', 'title', 'content', 'priority', 'projectHint', 'dueDate', 'repeatHint', 'splitStrategy', 'checklistItems', 'clarification', 'clarificationQuestion', 'confidence'],
-            },
-        },
+                required: [
+                    'type',
+                    'targetQuery',
+                    'title',
+                    'content',
+                    'priority',
+                    'projectHint',
+                    'dueDate',
+                    'repeatHint',
+                    'splitStrategy',
+                    'checklistItems',
+                    'clarification',
+                    'clarificationQuestion',
+                    'confidence'
+                ]
+            }
+        }
     },
-    required: ['actions'],
+    required: ['actions']
 };
 
 // ─── Intent Extraction via Gemini ─────────────────────────────────────
@@ -696,7 +747,11 @@ const intentActionSchema = {
  * @throws {QuotaExhaustedError} When all API keys are exhausted
  * @throws {Error} When generation fails or validation fails
  */
-async function extractIntentsWithGemini(gemini, userMessage, { currentDate, availableProjects, requestId, existingTask } = {}) {
+async function extractIntentsWithGemini(
+    gemini,
+    userMessage,
+    { currentDate, availableProjects, requestId, existingTask } = {}
+) {
     const projects = Array.isArray(availableProjects) ? availableProjects : [];
 
     // Build context for the prompt
@@ -712,8 +767,8 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
     }
     if (projectPolicy?.projects?.length > 0) {
         const aliasLines = projectPolicy.projects
-            .filter(p => p.aliases?.length > 0)
-            .map(p => `- "${p.aliases.join('", "')}" → ${p.match}`);
+            .filter((p) => p.aliases?.length > 0)
+            .map((p) => `- "${p.aliases.join('", "')}" → ${p.match}`);
         if (aliasLines.length > 0) {
             contextSection += `Project aliases (use these to infer the correct project from the user's message):\n${aliasLines.join('\n')}\n`;
         }
@@ -728,7 +783,10 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
     let promptCharCount = fullPrompt.length;
     let promptLineCount = fullPrompt.split('\n').length;
     if (promptCharCount > 7000 || promptLineCount > 80) {
-        const looksTaskLike = /\b(add|create|move|rename|delete|done|complete|schedule|tomorrow|today|next week|call|buy|finish|start|plan|review|send|write|email|meeting)\b/i.test(userMessage);
+        const looksTaskLike =
+            /\b(add|create|move|rename|delete|done|complete|schedule|tomorrow|today|next week|call|buy|finish|start|plan|review|send|write|email|meeting)\b/i.test(
+                userMessage
+            );
         if (looksTaskLike) {
             workingMessage = truncateMessageForExtraction(userMessage, 4000);
             const newPrompt = contextSection
@@ -739,21 +797,23 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
         }
     }
     if (promptCharCount > 7000 || promptLineCount > 80) {
-        return [{
-            type: 'create',
-            targetQuery: null,
-            title: 'Parse large message',
-            content: null,
-            priority: null,
-            projectHint: null,
-            dueDate: null,
-            repeatHint: null,
-            splitStrategy: null,
-            checklistItems: null,
-            clarification: true,
-            clarificationQuestion: 'Message too long. Please split into smaller parts.',
-            confidence: 0.3,
-        }];
+        return [
+            {
+                type: 'create',
+                targetQuery: null,
+                title: 'Parse large message',
+                content: null,
+                priority: null,
+                projectHint: null,
+                dueDate: null,
+                repeatHint: null,
+                splitStrategy: null,
+                checklistItems: null,
+                clarification: true,
+                clarificationQuestion: 'Message too long. Please split into smaller parts.',
+                confidence: 0.3
+            }
+        ];
     }
 
     const finalPrompt = contextSection
@@ -767,14 +827,17 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
             config: {
                 systemInstruction: INTENT_EXTRACTION_PROMPT,
                 responseMimeType: 'application/json',
-                responseSchema: intentActionSchema,
-            },
+                responseSchema: intentActionSchema
+            }
         });
     };
 
     let response;
     try {
-        response = await gemini._executeWithFailover(finalPrompt, apiCallFn, { modelTier: 'fast', interactiveWritePath: true });
+        response = await gemini._executeWithFailover(finalPrompt, apiCallFn, {
+            modelTier: 'fast',
+            interactiveWritePath: true
+        });
     } catch (err) {
         // Preserve typed AI errors from _executeWithFailover so pipeline
         // can surface distinct user messages for quota vs unavailable vs invalid key.
@@ -787,7 +850,8 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
             throw new QuotaExhaustedError('All API keys exhausted');
         }
         // Check for daily quota errors that would cause _executeWithFailover to exhaust all models
-        const isDailyQuota = errMsg.includes('per day') || errMsg.includes('perday') || errMsg.includes('quota exceeded');
+        const isDailyQuota =
+            errMsg.includes('per day') || errMsg.includes('perday') || errMsg.includes('quota exceeded');
         const isRateLimit = err?.status === 429 || errMsg.includes('RESOURCE_EXHAUSTED') || errMsg.includes('429');
         if (isDailyQuota || (isRateLimit && errMsg.includes('quota'))) {
             throw new QuotaExhaustedError('All API keys exhausted');
@@ -797,7 +861,10 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
 
     const raw = response.text.trim();
     // Strip markdown code fences if present (e.g., ```json ... ```)
-    const jsonStr = raw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?\s*```$/i, '').trim();
+    const jsonStr = raw
+        .replace(/^```(?:json)?\s*\n?/i, '')
+        .replace(/\n?\s*```$/i, '')
+        .trim();
     let parsed;
     try {
         parsed = JSON.parse(jsonStr);
@@ -812,7 +879,9 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
 
     // Retry once with compact prompt for long/complex messages that return empty
     if (actions.length === 0 && (userMessage.length > 1500 || userMessage.split('\n').length > 15)) {
-        console.log(`[IntentExtraction:${requestId}] Empty intents for long message (${userMessage.length} chars, ${userMessage.split('\n').length} lines). Retrying with compact prompt.`);
+        console.log(
+            `[IntentExtraction:${requestId}] Empty intents for long message (${userMessage.length} chars, ${userMessage.split('\n').length} lines). Retrying with compact prompt.`
+        );
         const compactApiCallFn = async (ai, prompt, model) => {
             return ai.models.generateContent({
                 model,
@@ -820,14 +889,20 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
                 config: {
                     systemInstruction: COMPACT_INTENT_EXTRACTION_PROMPT,
                     responseMimeType: 'application/json',
-                    responseSchema: intentActionSchema,
-                },
+                    responseSchema: intentActionSchema
+                }
             });
         };
         try {
-            const retryResponse = await gemini._executeWithFailover(finalPrompt, compactApiCallFn, { modelTier: 'fast', interactiveWritePath: true });
+            const retryResponse = await gemini._executeWithFailover(finalPrompt, compactApiCallFn, {
+                modelTier: 'fast',
+                interactiveWritePath: true
+            });
             const retryRaw = retryResponse.text.trim();
-            const retryJsonStr = retryRaw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?\s*```$/i, '').trim();
+            const retryJsonStr = retryRaw
+                .replace(/^```(?:json)?\s*\n?/i, '')
+                .replace(/\n?\s*```$/i, '')
+                .trim();
             let retryParsed;
             try {
                 retryParsed = JSON.parse(retryJsonStr);
@@ -847,7 +922,7 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
     // Runtime validation (defense in depth)
     const validationErrors = [];
     for (let i = 0; i < actions.length; i++) {
-        const validation = validateIntentAction(actions[i], i, { 
+        const validation = validateIntentAction(actions[i], i, {
             requireR1Fields: true,
             allowEmptyTargetQuery: !!existingTask
         });
@@ -857,21 +932,25 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
     }
 
     if (validationErrors.length > 0) {
-        console.warn(`[IntentExtraction:${requestId}] Intent validation failed, falling back to clarification: ${validationErrors.join('; ')}`);
-        return [{
-            type: 'create',
-            clarification: true,
-            clarificationQuestion: `I wasn't quite sure what you meant or which task to update. Could you clarify?`,
-            confidence: 0.3,
-            title: 'Ambiguous Request',
-            targetQuery: null,
-            content: null,
-            priority: null,
-            projectHint: null,
-            dueDate: null,
-            repeatHint: null,
-            splitStrategy: null
-        }];
+        console.warn(
+            `[IntentExtraction:${requestId}] Intent validation failed, falling back to clarification: ${validationErrors.join('; ')}`
+        );
+        return [
+            {
+                type: 'create',
+                clarification: true,
+                clarificationQuestion: `I wasn't quite sure what you meant or which task to update. Could you clarify?`,
+                confidence: 0.3,
+                title: 'Ambiguous Request',
+                targetQuery: null,
+                content: null,
+                priority: null,
+                projectHint: null,
+                dueDate: null,
+                repeatHint: null,
+                splitStrategy: null
+            }
+        ];
     }
 
     return actions;
@@ -888,7 +967,10 @@ function truncateMessageForExtraction(text, maxChars = 4000) {
     if (text.length <= maxChars) return text;
 
     // Heuristic: messages that look task-like (have verbs, deadlines, or task cues)
-    const looksTaskLike = /\b(add|create|move|rename|delete|done|complete|schedule|tomorrow|today|next week|call|buy|finish|start|plan|review|send|write|email|meeting)\b/i.test(text);
+    const looksTaskLike =
+        /\b(add|create|move|rename|delete|done|complete|schedule|tomorrow|today|next week|call|buy|finish|start|plan|review|send|write|email|meeting)\b/i.test(
+            text
+        );
     if (!looksTaskLike) return text;
 
     // Step 1: Remove example blocks (lines starting with "Example:" or fenced blocks)
@@ -921,9 +1003,7 @@ function truncateMessageForExtraction(text, maxChars = 4000) {
 export function createIntentExtractor(gemini) {
     // Validate gemini interface - use duck typing for testing flexibility
     if (!gemini || typeof gemini !== 'object') {
-        throw new Error(
-            `createIntentExtractor requires a GeminiAnalyzer instance. Got: ${typeof gemini}`
-        );
+        throw new Error(`createIntentExtractor requires a GeminiAnalyzer instance. Got: ${typeof gemini}`);
     }
 
     if (typeof gemini._executeWithFailover !== 'function') {
@@ -933,6 +1013,6 @@ export function createIntentExtractor(gemini) {
     }
 
     return {
-        extractIntents: (userMessage, options) => extractIntentsWithGemini(gemini, userMessage, options),
+        extractIntents: (userMessage, options) => extractIntentsWithGemini(gemini, userMessage, options)
     };
 }

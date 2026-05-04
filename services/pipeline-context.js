@@ -14,7 +14,7 @@ const REQUIRED_FIELDS = [
     'currentDate',
     'timezone',
     'availableProjects',
-    'existingTask',
+    'existingTask'
 ];
 
 /** @type {string} */
@@ -67,7 +67,7 @@ const PRIVACY_REDACTION_KEYS = new Set([
     'originalTitle',
     'originalContent',
     'targetQuery',
-    'existingTaskContent',
+    'existingTaskContent'
 ]);
 
 /**
@@ -151,47 +151,47 @@ function createLifecycleState(baseContext) {
                 mode: baseContext.mode,
                 workStyleMode: baseContext.workStyleMode,
                 currentDate: baseContext.currentDate,
-                timezone: baseContext.timezone,
+                timezone: baseContext.timezone
             },
             userMessageLength: baseContext.userMessage?.length || 0,
             availableProjects: snapshotPrivacySafePipelineValue(baseContext.availableProjects),
             availableProjectNames: snapshotPrivacySafePipelineValue(baseContext.availableProjectNames),
             existingTask: snapshotPrivacySafePipelineValue(baseContext.existingTask),
             activeTasks: snapshotPrivacySafePipelineValue(baseContext.activeTasks),
-            checklistContext: snapshotPrivacySafePipelineValue(baseContext.checklistContext),
+            checklistContext: snapshotPrivacySafePipelineValue(baseContext.checklistContext)
         },
         intent: {
             status: 'pending',
             intentOutput: null,
-            failure: null,
+            failure: null
         },
         normalize: {
             status: 'pending',
             normalizedActions: [],
             validActions: [],
-            invalidActions: [],
+            invalidActions: []
         },
         execute: {
             status: 'pending',
             requests: [],
             results: [],
             failures: [],
-            rollbackFailures: [],
+            rollbackFailures: []
         },
         validationFailures: [],
         timing: {
             requestStartedAt: null,
             requestCompletedAt: null,
             totalDurationMs: null,
-            stages: {},
+            stages: {}
         },
         result: {
             status: 'pending',
             type: null,
             summary: null,
             failureClass: null,
-            rolledBack: false,
-        },
+            rolledBack: false
+        }
     };
 }
 
@@ -204,10 +204,10 @@ function normalizeChecklistContext(value) {
     if (!value || typeof value !== 'object' || Array.isArray(value)) return null;
 
     const hasChecklist = typeof value.hasChecklist === 'boolean' ? value.hasChecklist : null;
-    const clarificationQuestion = typeof value.clarificationQuestion === 'string'
-        && value.clarificationQuestion.trim()
-        ? value.clarificationQuestion.trim()
-        : null;
+    const clarificationQuestion =
+        typeof value.clarificationQuestion === 'string' && value.clarificationQuestion.trim()
+            ? value.clarificationQuestion.trim()
+            : null;
 
     if (hasChecklist === null && clarificationQuestion === null) {
         return null;
@@ -215,7 +215,7 @@ function normalizeChecklistContext(value) {
 
     return {
         hasChecklist,
-        clarificationQuestion,
+        clarificationQuestion
     };
 }
 
@@ -241,10 +241,10 @@ function formatCurrentDate(date, timezone) {
         timeZone: timezone,
         year: 'numeric',
         month: '2-digit',
-        day: '2-digit',
+        day: '2-digit'
     }).formatToParts(date);
 
-    const get = (type) => parts.find(p => p.type === type)?.value;
+    const get = (type) => parts.find((p) => p.type === type)?.value;
     return `${get('year')}-${get('month')}-${get('day')}`;
 }
 
@@ -273,9 +273,7 @@ function normalizeProjects(projects) {
  * @returns {string[]} Array of project names
  */
 function deriveProjectNames(projects) {
-    return projects
-        .map((project) => project?.name)
-        .filter((name) => typeof name === 'string' && name.trim());
+    return projects.map((project) => project?.name).filter((name) => typeof name === 'string' && name.trim());
 }
 
 /**
@@ -333,12 +331,18 @@ export function validatePipelineContext(context) {
         if (typeof checklistContext !== 'object' || Array.isArray(checklistContext)) {
             errors.push('checklistContext must be an object or null');
         } else {
-            if ('hasChecklist' in checklistContext && checklistContext.hasChecklist !== null && typeof checklistContext.hasChecklist !== 'boolean') {
+            if (
+                'hasChecklist' in checklistContext &&
+                checklistContext.hasChecklist !== null &&
+                typeof checklistContext.hasChecklist !== 'boolean'
+            ) {
                 errors.push('checklistContext.hasChecklist must be a boolean or null');
             }
-            if ('clarificationQuestion' in checklistContext
-                && checklistContext.clarificationQuestion !== null
-                && typeof checklistContext.clarificationQuestion !== 'string') {
+            if (
+                'clarificationQuestion' in checklistContext &&
+                checklistContext.clarificationQuestion !== null &&
+                typeof checklistContext.clarificationQuestion !== 'string'
+            ) {
                 errors.push('checklistContext.clarificationQuestion must be a string or null');
             }
         }
@@ -352,25 +356,49 @@ export function validatePipelineContext(context) {
         if (!context.lifecycle || typeof context.lifecycle !== 'object' || Array.isArray(context.lifecycle)) {
             errors.push('lifecycle must be an object');
         } else {
-            if (!context.lifecycle.request || typeof context.lifecycle.request !== 'object' || Array.isArray(context.lifecycle.request)) {
+            if (
+                !context.lifecycle.request ||
+                typeof context.lifecycle.request !== 'object' ||
+                Array.isArray(context.lifecycle.request)
+            ) {
                 errors.push('lifecycle.request must be an object');
             }
-            if (!context.lifecycle.intent || typeof context.lifecycle.intent !== 'object' || Array.isArray(context.lifecycle.intent)) {
+            if (
+                !context.lifecycle.intent ||
+                typeof context.lifecycle.intent !== 'object' ||
+                Array.isArray(context.lifecycle.intent)
+            ) {
                 errors.push('lifecycle.intent must be an object');
             }
-            if (!context.lifecycle.normalize || typeof context.lifecycle.normalize !== 'object' || Array.isArray(context.lifecycle.normalize)) {
+            if (
+                !context.lifecycle.normalize ||
+                typeof context.lifecycle.normalize !== 'object' ||
+                Array.isArray(context.lifecycle.normalize)
+            ) {
                 errors.push('lifecycle.normalize must be an object');
             }
-            if (!context.lifecycle.execute || typeof context.lifecycle.execute !== 'object' || Array.isArray(context.lifecycle.execute)) {
+            if (
+                !context.lifecycle.execute ||
+                typeof context.lifecycle.execute !== 'object' ||
+                Array.isArray(context.lifecycle.execute)
+            ) {
                 errors.push('lifecycle.execute must be an object');
             }
             if (!Array.isArray(context.lifecycle?.validationFailures)) {
                 errors.push('lifecycle.validationFailures must be an array');
             }
-            if (!context.lifecycle.timing || typeof context.lifecycle.timing !== 'object' || Array.isArray(context.lifecycle.timing)) {
+            if (
+                !context.lifecycle.timing ||
+                typeof context.lifecycle.timing !== 'object' ||
+                Array.isArray(context.lifecycle.timing)
+            ) {
                 errors.push('lifecycle.timing must be an object');
             }
-            if (!context.lifecycle.result || typeof context.lifecycle.result !== 'object' || Array.isArray(context.lifecycle.result)) {
+            if (
+                !context.lifecycle.result ||
+                typeof context.lifecycle.result !== 'object' ||
+                Array.isArray(context.lifecycle.result)
+            ) {
                 errors.push('lifecycle.result must be an object');
             }
         }
@@ -392,7 +420,7 @@ export function createPipelineContextBuilder({
     adapter,
     timezone = getUserTimezone(),
     now = () => new Date(),
-    requestIdFactory = () => crypto.randomUUID(),
+    requestIdFactory = () => crypto.randomUUID()
 } = {}) {
     if (!adapter) {
         throw new Error('Pipeline context builder requires a TickTick adapter');
@@ -415,23 +443,24 @@ export function createPipelineContextBuilder({
             : formatCurrentDate(resolvedNow, timezone);
         const providedProjects = Array.isArray(options.availableProjects)
             ? options.availableProjects
-            : (Array.isArray(options.projects) ? options.projects : null);
-        const availableProjects = normalizeProjects(providedProjects ?? await adapter.listProjects());
-        const providedActiveTasks = Array.isArray(options.activeTasks)
-            ? options.activeTasks
-            : null;
-        const activeTasks = providedActiveTasks ?? await adapter.listActiveTasks();
+            : Array.isArray(options.projects)
+              ? options.projects
+              : null;
+        const availableProjects = normalizeProjects(providedProjects ?? (await adapter.listProjects()));
+        const providedActiveTasks = Array.isArray(options.activeTasks) ? options.activeTasks : null;
+        const activeTasks = providedActiveTasks ?? (await adapter.listActiveTasks());
         const checklistContext = normalizeChecklistContext(
             options.checklistContext ?? {
                 hasChecklist: options.hasChecklist,
-                clarificationQuestion: options.clarificationQuestion,
+                clarificationQuestion: options.clarificationQuestion
             }
         );
 
         const requestId = options.requestId || requestIdFactory();
-        const workStyleMode = typeof options.workStyleMode === 'string' && options.workStyleMode.trim()
-            ? options.workStyleMode.trim().toLowerCase()
-            : DEFAULT_WORK_STYLE_MODE;
+        const workStyleMode =
+            typeof options.workStyleMode === 'string' && options.workStyleMode.trim()
+                ? options.workStyleMode.trim().toLowerCase()
+                : DEFAULT_WORK_STYLE_MODE;
 
         const context = {
             requestId,
@@ -446,18 +475,16 @@ export function createPipelineContextBuilder({
             availableProjectNames: snapshotPipelineValue(deriveProjectNames(availableProjects)),
             existingTask: snapshotPipelineValue(options.existingTask || null),
             activeTasks: snapshotPipelineValue(activeTasks),
-            checklistContext: snapshotPipelineValue(checklistContext),
+            checklistContext: snapshotPipelineValue(checklistContext)
         };
 
         context.lifecycle = createLifecycleState(context);
 
-        const strict = options.strictContext ?? (process.env.NODE_ENV !== 'production');
+        const strict = options.strictContext ?? process.env.NODE_ENV !== 'production';
         const validation = validatePipelineContext(context);
         if (!validation.ok) {
             const summary = 'Invalid pipeline request context';
-            const message = strict
-                ? `${summary}: ${validation.errors.join('; ')}`
-                : summary;
+            const message = strict ? `${summary}: ${validation.errors.join('; ')}` : summary;
             const error = new Error(message);
             error.code = 'PIPELINE_CONTEXT_INVALID';
             error.details = validation;

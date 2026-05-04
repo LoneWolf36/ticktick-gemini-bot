@@ -9,9 +9,18 @@ const TOKEN_FILE = path.join(__dirname, '..', 'token.json');
 const API_BASE = 'https://api.ticktick.com/open/v1';
 const OAUTH_BASE = 'https://ticktick.com/oauth';
 
-const RATE_LIMIT_MAX_RETRIES = Math.max(0, Number.parseInt(process.env.TICKTICK_RATE_LIMIT_MAX_RETRIES || '3', 10) || 3);
-const RATE_LIMIT_BASE_DELAY_MS = Math.max(100, Number.parseInt(process.env.TICKTICK_RATE_LIMIT_BASE_DELAY_MS || '1000', 10) || 1000);
-const RATE_LIMIT_MAX_DELAY_MS = Math.max(RATE_LIMIT_BASE_DELAY_MS, Number.parseInt(process.env.TICKTICK_RATE_LIMIT_MAX_DELAY_MS || '30000', 10) || 30000);
+const RATE_LIMIT_MAX_RETRIES = Math.max(
+    0,
+    Number.parseInt(process.env.TICKTICK_RATE_LIMIT_MAX_RETRIES || '3', 10) || 3
+);
+const RATE_LIMIT_BASE_DELAY_MS = Math.max(
+    100,
+    Number.parseInt(process.env.TICKTICK_RATE_LIMIT_BASE_DELAY_MS || '1000', 10) || 1000
+);
+const RATE_LIMIT_MAX_DELAY_MS = Math.max(
+    RATE_LIMIT_BASE_DELAY_MS,
+    Number.parseInt(process.env.TICKTICK_RATE_LIMIT_MAX_DELAY_MS || '30000', 10) || 30000
+);
 
 /**
  * Entry point for TickTick API client.
@@ -47,7 +56,7 @@ export class TickTickClient {
             scope: 'tasks:read tasks:write',
             state: 'ticktick-gemini',
             redirect_uri: this.redirectUri,
-            response_type: 'code',
+            response_type: 'code'
         });
         return `${OAUTH_BASE}/authorize?${params.toString()}`;
     }
@@ -64,13 +73,13 @@ export class TickTickClient {
             new URLSearchParams({
                 code,
                 grant_type: 'authorization_code',
-                redirect_uri: this.redirectUri,
+                redirect_uri: this.redirectUri
             }).toString(),
             {
                 headers: {
                     'Content-Type': 'application/x-www-form-urlencoded',
-                    Authorization: `Basic ${credentials}`,
-                },
+                    Authorization: `Basic ${credentials}`
+                }
             }
         );
         this.accessToken = resp.data.access_token;
@@ -200,7 +209,7 @@ export class TickTickClient {
 
             // 1. Update field changes while task is still in source project.
             // Pure moves should not make a redundant no-op update call.
-            const updateFieldKeys = Object.keys(payload).filter(key => key !== 'projectId');
+            const updateFieldKeys = Object.keys(payload).filter((key) => key !== 'projectId');
             let updateResult = null;
             if (updateFieldKeys.length > 0) {
                 const fieldUpdate = { ...payload, id: taskId, projectId: originalProjectId };
@@ -208,15 +217,23 @@ export class TickTickClient {
             }
 
             // 2. Move task to target project via official endpoint
-            await this.moveTasks([{
-                fromProjectId: originalProjectId,
-                toProjectId: targetProjectId,
-                taskId,
-            }]);
+            await this.moveTasks([
+                {
+                    fromProjectId: originalProjectId,
+                    toProjectId: targetProjectId,
+                    taskId
+                }
+            ]);
 
             // Return useful result preserving original task id.
             // updateResult may contain stale projectId (source), so ensure target wins.
-            return { id: taskId, projectId: targetProjectId, ...payload, ...(updateResult || {}), projectId: targetProjectId };
+            return {
+                id: taskId,
+                projectId: targetProjectId,
+                ...payload,
+                ...(updateResult || {}),
+                projectId: targetProjectId
+            };
         }
 
         // Normal in-place update: must include id and projectId in body
@@ -266,7 +283,7 @@ export class TickTickClient {
      * @returns {Promise<Array<Object>>} List of all active tasks
      */
     async getAllTasksCached(ttlMs = 60000) {
-        if (this._tasksCache && (Date.now() - this._cacheTime) < ttlMs) {
+        if (this._tasksCache && Date.now() - this._cacheTime < ttlMs) {
             return this._tasksCache;
         }
         this._tasksCache = await this.getAllTasks();
@@ -286,7 +303,7 @@ export class TickTickClient {
             // Normalize project names from cached/listed projects
             const projects = await this.getProjects();
             this._cachedProjects = projects;
-            const projectMap = new Map(projects.map(p => [p.id, p.name]));
+            const projectMap = new Map(projects.map((p) => [p.id, p.name]));
             for (const task of filterResult) {
                 task.projectId = task.projectId || null;
                 task.projectName = projectMap.get(task.projectId) || null;
@@ -309,7 +326,7 @@ export class TickTickClient {
                 const data = await this.getProjectWithTasks(project.id);
                 if (data.tasks && data.tasks.length > 0) {
                     // Filter out completed/abandoned tasks (status 0 = active)
-                    const activeTasks = data.tasks.filter(t => t.status === 0 || t.status === undefined);
+                    const activeTasks = data.tasks.filter((t) => t.status === 0 || t.status === undefined);
                     for (const task of activeTasks) {
                         task.projectId = project.id;
                         task.projectName = project.name;
@@ -346,7 +363,9 @@ export class TickTickClient {
      * @returns {Promise<any>} Response data
      * @private
      */
-    async _get(endpoint) { return this._requestWithRetry('GET', endpoint); }
+    async _get(endpoint) {
+        return this._requestWithRetry('GET', endpoint);
+    }
 
     /**
      * Helper for POST requests.
@@ -355,7 +374,9 @@ export class TickTickClient {
      * @returns {Promise<any>} Response data
      * @private
      */
-    async _post(endpoint, data = {}) { return this._requestWithRetry('POST', endpoint, data); }
+    async _post(endpoint, data = {}) {
+        return this._requestWithRetry('POST', endpoint, data);
+    }
 
     /**
      * Refreshes the access token using the refresh token.
@@ -375,14 +396,14 @@ export class TickTickClient {
                 `${OAUTH_BASE}/token`,
                 new URLSearchParams({
                     refresh_token: this.refreshToken,
-                    grant_type: 'refresh_token',
+                    grant_type: 'refresh_token'
                 }).toString(),
                 {
                     headers: {
                         'Content-Type': 'application/x-www-form-urlencoded',
-                        Authorization: `Basic ${credentials}`,
+                        Authorization: `Basic ${credentials}`
                     },
-                    timeout: 15000,
+                    timeout: 15000
                 }
             );
             this.accessToken = resp.data.access_token;
@@ -422,7 +443,7 @@ export class TickTickClient {
                 method,
                 url: `${API_BASE}${endpoint}`,
                 headers: { Authorization: `Bearer ${this.accessToken}` },
-                timeout: 15000,
+                timeout: 15000
             };
             if (data) {
                 config.data = data;
@@ -511,7 +532,7 @@ export class TickTickClient {
      * @private
      */
     _calculateExponentialBackoffMs(attempt) {
-        const exp = RATE_LIMIT_BASE_DELAY_MS * (2 ** Math.max(0, attempt - 1));
+        const exp = RATE_LIMIT_BASE_DELAY_MS * 2 ** Math.max(0, attempt - 1);
         return Math.min(exp, RATE_LIMIT_MAX_DELAY_MS);
     }
 
@@ -532,7 +553,7 @@ export class TickTickClient {
 
         return {
             retryAfterMs,
-            retryAt,
+            retryAt
         };
     }
 
@@ -638,6 +659,8 @@ export class TickTickClient {
                 this.accessToken = data.access_token;
                 this.refreshToken = data.refresh_token || null;
             }
-        } catch { /* no token yet */ }
+        } catch {
+            /* no token yet */
+        }
     }
 }

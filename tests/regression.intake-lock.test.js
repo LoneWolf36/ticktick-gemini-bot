@@ -1,11 +1,7 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import {
-    getIntakeLockStatus,
-    releaseIntakeLock,
-    tryAcquireIntakeLock,
-} from '../services/store.js';
+import { getIntakeLockStatus, releaseIntakeLock, tryAcquireIntakeLock } from '../services/store.js';
 
 test('intake lock exposes owner metadata and blocks concurrent acquisition', () => {
     releaseIntakeLock();
@@ -15,7 +11,7 @@ test('intake lock exposes owner metadata and blocks concurrent acquisition', () 
         locked: true,
         owner: 'test:first',
         acquiredAt: 1000,
-        expiresAt: 2000,
+        expiresAt: 2000
     });
 
     assert.equal(tryAcquireIntakeLock({ owner: 'test:second', ttlMs: 1000, now: 1500 }), false);

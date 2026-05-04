@@ -46,7 +46,9 @@ export async function answerCallbackQueryBestEffort(ctx, options = {}) {
     } catch (err) {
         const msg = String(err?.message || '').toLowerCase();
         if (msg.includes('query is too old') || msg.includes('too old') || msg.includes('query id is invalid')) {
-            console.warn(`[TelegramCallback] ${JSON.stringify({ eventType: 'telegram.callback.timeout', callbackId: ctx?.callbackQuery?.id, elapsedMs })}`);
+            console.warn(
+                `[TelegramCallback] ${JSON.stringify({ eventType: 'telegram.callback.timeout', callbackId: ctx?.callbackQuery?.id, elapsedMs })}`
+            );
             return null;
         }
         throw err;
@@ -106,10 +108,10 @@ export function mergeNotices(baseNotices = [], modelNotices = []) {
  * @type {Object<string, number>}
  */
 export const PRIORITY_MAP = {
-    'core_goal': 5,         // 🔴 High (red)
-    'important': 3,         // 🟡 Medium (yellow)
-    'life-admin': 1,        // 🔵 Low (blue)
-    'consider-dropping': 0, // None
+    core_goal: 5, // 🔴 High (red)
+    important: 3, // 🟡 Medium (yellow)
+    'life-admin': 1, // 🔵 Low (blue)
+    'consider-dropping': 0 // None
 };
 
 /**
@@ -126,7 +128,7 @@ export const PRIORITY_LABEL = {
     5: 'Core Goal',
     3: 'Important',
     1: 'Life Admin',
-    0: 'Optional',
+    0: 'Optional'
 };
 
 // ─── Access Control (single source of truth) ────────────────
@@ -135,9 +137,7 @@ export const PRIORITY_LABEL = {
  * The authorized Telegram chat ID from environment variables.
  * @type {number|null}
  */
-export const AUTHORIZED_CHAT_ID = process.env.TELEGRAM_CHAT_ID
-    ? parseInt(process.env.TELEGRAM_CHAT_ID)
-    : null;
+export const AUTHORIZED_CHAT_ID = process.env.TELEGRAM_CHAT_ID ? parseInt(process.env.TELEGRAM_CHAT_ID) : null;
 
 /**
  * Checks if a Telegram context originates from the authorized chat.
@@ -187,7 +187,7 @@ export function buildUndoEntry({ source, action, applied = {}, appliedTaskId = n
         appliedPriority: applied.priority ?? null,
         appliedProject: applied.project ?? null,
         appliedProjectId: applied.projectId ?? null,
-        appliedSchedule: applied.schedule ?? null,
+        appliedSchedule: applied.schedule ?? null
     };
 }
 
@@ -237,7 +237,7 @@ function dateLabelFor(value) {
         timeZone: USER_TZ,
         weekday: 'short',
         day: 'numeric',
-        month: 'short',
+        month: 'short'
     });
 }
 
@@ -248,7 +248,7 @@ const WEEKDAY_LABELS = {
     TH: 'Thu',
     FR: 'Fri',
     SA: 'Sat',
-    SU: 'Sun',
+    SU: 'Sun'
 };
 
 function normalizeRepeatLabel(value) {
@@ -295,7 +295,7 @@ function pushDiff(diffs, field, label, oldValue, newValue, emoji) {
         label,
         oldValue: truncateDiffValue(oldValue),
         newValue: truncateDiffValue(newValue),
-        emoji,
+        emoji
     });
 }
 
@@ -312,7 +312,12 @@ export function buildFieldDiff(snapshot = {}, action = {}, { projects = [] } = {
     const change = action || {};
     const diffs = [];
 
-    if (Object.prototype.hasOwnProperty.call(change, 'title') && typeof change.title === 'string' && change.title.trim() && normalizeComparableValue(source.title) !== normalizeComparableValue(change.title)) {
+    if (
+        Object.prototype.hasOwnProperty.call(change, 'title') &&
+        typeof change.title === 'string' &&
+        change.title.trim() &&
+        normalizeComparableValue(source.title) !== normalizeComparableValue(change.title)
+    ) {
         pushDiff(diffs, 'title', 'Title', source.title, change.title, '');
     }
 
@@ -325,12 +330,22 @@ export function buildFieldDiff(snapshot = {}, action = {}, { projects = [] } = {
             'Project',
             projectNameFor(oldProjectId, projects, source.projectName || source.originalProjectName || null),
             projectNameFor(newProjectId, projects, change.projectName || change.appliedProject || null),
-            '📁',
+            '📁'
         );
     }
 
-    if (change.priority !== undefined && normalizeComparableValue(source.priority) !== normalizeComparableValue(change.priority)) {
-        pushDiff(diffs, 'priority', 'Priority', priorityLabelFor(source.priority), priorityLabelFor(change.priority), priorityEmojiFor(change.priority));
+    if (
+        change.priority !== undefined &&
+        normalizeComparableValue(source.priority) !== normalizeComparableValue(change.priority)
+    ) {
+        pushDiff(
+            diffs,
+            'priority',
+            'Priority',
+            priorityLabelFor(source.priority),
+            priorityLabelFor(change.priority),
+            priorityEmojiFor(change.priority)
+        );
     }
 
     const oldDue = source.dueDate || source.schedule || source.originalSchedule || null;
@@ -339,12 +354,25 @@ export function buildFieldDiff(snapshot = {}, action = {}, { projects = [] } = {
         pushDiff(diffs, 'due', 'Due', dateLabelFor(oldDue), dateLabelFor(newDue), '📅');
     }
 
-    if (change.content !== undefined && normalizeComparableValue(source.content) !== normalizeComparableValue(change.content)) {
+    if (
+        change.content !== undefined &&
+        normalizeComparableValue(source.content) !== normalizeComparableValue(change.content)
+    ) {
         pushDiff(diffs, 'content', 'Content', source.content || 'None', change.content || 'None', '📝');
     }
 
-    if (change.repeatFlag !== undefined && normalizeComparableValue(source.repeatFlag) !== normalizeComparableValue(change.repeatFlag)) {
-        pushDiff(diffs, 'repeat', 'Repeat', normalizeRepeatLabel(source.repeatFlag), normalizeRepeatLabel(change.repeatFlag), '🔄');
+    if (
+        change.repeatFlag !== undefined &&
+        normalizeComparableValue(source.repeatFlag) !== normalizeComparableValue(change.repeatFlag)
+    ) {
+        pushDiff(
+            diffs,
+            'repeat',
+            'Repeat',
+            normalizeRepeatLabel(source.repeatFlag),
+            normalizeRepeatLabel(change.repeatFlag),
+            '🔄'
+        );
     }
 
     return diffs;
@@ -387,21 +415,21 @@ export const USER_TZ = getUserTimezone();
 export function userNow() {
     const parts = new Intl.DateTimeFormat('en-CA', {
         timeZone: USER_TZ,
-        year: 'numeric', month: '2-digit', day: '2-digit',
-        hour: '2-digit', minute: '2-digit', hour12: false,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit',
+        hour: '2-digit',
+        minute: '2-digit',
+        hour12: false
     }).formatToParts(new Date());
 
-    const get = (type) => parts.find(p => p.type === type)?.value;
+    const get = (type) => parts.find((p) => p.type === type)?.value;
     return {
         year: parseInt(get('year')),
         month: parseInt(get('month')) - 1, // 0-indexed
         day: parseInt(get('day')),
         hour: parseInt(get('hour')),
-        dayOfWeek: new Date(
-            parseInt(get('year')),
-            parseInt(get('month')) - 1,
-            parseInt(get('day'))
-        ).getDay(),
+        dayOfWeek: new Date(parseInt(get('year')), parseInt(get('month')) - 1, parseInt(get('day'))).getDay()
     };
 }
 
@@ -409,7 +437,10 @@ export function userNow() {
 export function userTodayFormatted() {
     return new Date().toLocaleDateString('en-IE', {
         timeZone: USER_TZ,
-        weekday: 'long', year: 'numeric', month: 'long', day: 'numeric',
+        weekday: 'long',
+        year: 'numeric',
+        month: 'long',
+        day: 'numeric'
     });
 }
 
@@ -435,10 +466,10 @@ function atTimeISO(year, month, day, hour = 23, minute = 59) {
     const targetDate = new Date(year, month, day, hour, minute, 0);
     const formatter = new Intl.DateTimeFormat('en-CA', {
         timeZone: USER_TZ,
-        timeZoneName: 'shortOffset',
+        timeZoneName: 'shortOffset'
     });
     const parts = formatter.formatToParts(targetDate);
-    const offsetStr = parts.find(p => p.type === 'timeZoneName')?.value || 'GMT';
+    const offsetStr = parts.find((p) => p.type === 'timeZoneName')?.value || 'GMT';
     const match = offsetStr.match(/GMT([+-]?\d+)?/);
     const offsetHours = match?.[1] ? parseInt(match[1]) : 0;
     const sign = offsetHours >= 0 ? '+' : '-';
@@ -474,9 +505,12 @@ export function parseDateStringToTickTickISO(dateStr, options = {}) {
     const slotMode = options.slotMode || 'end-of-day';
     if (slotMode === 'priority') {
         const priorityLabel = options.priorityLabel || 'important';
-        const slot = priorityLabel === 'core_goal' ? { hour: 9, minute: 30 }
-            : priorityLabel === 'important' ? { hour: 13, minute: 0 }
-                : { hour: 17, minute: 30 };
+        const slot =
+            priorityLabel === 'core_goal'
+                ? { hour: 9, minute: 30 }
+                : priorityLabel === 'important'
+                  ? { hour: 13, minute: 0 }
+                  : { hour: 17, minute: 30 };
         return atTimeISO(year, month, day, slot.hour, slot.minute);
     }
 
@@ -497,7 +531,7 @@ export function containsSensitiveContent(text = '') {
     const probes = [
         /password|passcode|otp|pin|secret|api\s*key|token|credential/i,
         /\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b/,
-        /[A-Za-z0-9_!@#$%^&*()\-+=]{10,}/,
+        /[A-Za-z0-9_!@#$%^&*()\-+=]{10,}/
     ];
     return probes.some((re) => re.test(text));
 }
@@ -517,9 +551,12 @@ export function scheduleToDateTime(bucket, { priorityLabel = 'important' } = {})
         return { year: d.getFullYear(), month: d.getMonth(), day: d.getDate() };
     };
 
-    const slot = priorityLabel === 'core_goal' ? { hour: 9, minute: 30 }
-        : priorityLabel === 'important' ? { hour: 13, minute: 0 }
-            : { hour: 17, minute: 30 };
+    const slot =
+        priorityLabel === 'core_goal'
+            ? { hour: 9, minute: 30 }
+            : priorityLabel === 'important'
+              ? { hour: 13, minute: 0 }
+              : { hour: 17, minute: 30 };
 
     switch (bucket) {
         case 'today':
@@ -555,11 +592,11 @@ export function scheduleToDate(bucket, options = {}) {
 
 function scheduleLabel(bucket) {
     const labels = {
-        'today': 'Today',
-        'tomorrow': 'Tomorrow',
+        today: 'Today',
+        tomorrow: 'Tomorrow',
         'this-week': 'This week',
         'next-week': 'Next week',
-        'someday': 'Someday (no rush)',
+        someday: 'Someday (no rush)'
     };
     return labels[bucket] || null;
 }
@@ -590,7 +627,10 @@ export function buildTickTickUpdate(data, options = {}) {
     }
 
     if (data.suggestedSchedule && data.suggestedSchedule !== 'someday' && data.suggestedSchedule !== 'null') {
-        if (typeof data.suggestedSchedule === 'string' && (data.suggestedSchedule.includes('T') || data.suggestedSchedule.includes('-'))) {
+        if (
+            typeof data.suggestedSchedule === 'string' &&
+            (data.suggestedSchedule.includes('T') || data.suggestedSchedule.includes('-'))
+        ) {
             update.dueDate = data.suggestedSchedule;
         } else {
             const dueDate = scheduleToDateTime(data.suggestedSchedule, { priorityLabel });
@@ -758,12 +798,16 @@ export function buildImprovedContent(analysis) {
     if (analysis.description) content += `📝 ${analysis.description}\n\n`;
     if (analysis.sub_steps?.length > 0) {
         content += `📋 Action Steps:\n`;
-        analysis.sub_steps.forEach((s, i) => { content += `${i + 1}. ${s}\n`; });
+        analysis.sub_steps.forEach((s, i) => {
+            content += `${i + 1}. ${s}\n`;
+        });
         content += '\n';
     }
     if (analysis.resources?.length > 0) {
         content += `🔗 Context & Resources:\n`;
-        analysis.resources.forEach((r) => { content += `- ${r}\n`; });
+        analysis.resources.forEach((r) => {
+            content += `- ${r}\n`;
+        });
         content += '\n';
     }
     if (analysis.success_criteria) content += `🎯 Done when: ${analysis.success_criteria}\n\n`;
@@ -781,8 +825,8 @@ export function buildImprovedContent(analysis) {
 export function buildPendingData(task, analysis, projects = []) {
     let suggestedProjectId = null;
     if (analysis.suggested_project) {
-        const match = projects.find(p =>
-            p.name.trim().toLowerCase() === analysis.suggested_project.trim().toLowerCase()
+        const match = projects.find(
+            (p) => p.name.trim().toLowerCase() === analysis.suggested_project.trim().toLowerCase()
         );
         suggestedProjectId = match?.id || null;
     }
@@ -808,7 +852,7 @@ export function buildPendingData(task, analysis, projects = []) {
         subSteps: analysis.sub_steps,
         resources: analysis.resources,
         successCriteria: analysis.success_criteria,
-        callout: analysis.callout,
+        callout: analysis.callout
     };
 }
 
@@ -820,9 +864,7 @@ export function buildPendingData(task, analysis, projects = []) {
  * @returns {Object} Structured pending task record
  */
 export function buildPendingDataFromAction(task, action, projects = []) {
-    const project = action.projectId
-        ? projects.find(p => p.id === action.projectId)
-        : null;
+    const project = action.projectId ? projects.find((p) => p.id === action.projectId) : null;
 
     return {
         taskId: action.taskId,
@@ -851,7 +893,7 @@ export function buildPendingDataFromAction(task, action, projects = []) {
         subSteps: null,
         resources: null,
         successCriteria: null,
-        callout: null,
+        callout: null
     };
 }
 
@@ -873,7 +915,7 @@ export function pendingToAnalysis(data) {
         success_criteria: data.successCriteria,
         callout: data.callout,
         suggested_project: data.suggestedProject,
-        suggested_schedule: data.suggestedSchedule,
+        suggested_schedule: data.suggestedSchedule
     };
 }
 
@@ -895,9 +937,7 @@ export function buildAutoApplyNotification(results, { hasSkippedActions = false 
     const shown = results.slice(0, MAX_VISIBLE);
 
     const skipped = hasSkippedActions ? ' ⚠️ Skipped destructive action(s)' : '';
-    const lines = [
-        `**${total} task(s) organized while you were away${skipped}:**`,
-    ];
+    const lines = [`**${total} task(s) organized while you were away${skipped}:**`];
 
     for (const r of shown) {
         if (r.diffs && r.diffs.length > 0) {
@@ -929,7 +969,7 @@ export function buildAutoApplyNotification(results, { hasSkippedActions = false 
  * @returns {Promise<void>}
  */
 export function sleep(ms) {
-    return new Promise(r => setTimeout(r, ms));
+    return new Promise((r) => setTimeout(r, ms));
 }
 
 /**
@@ -950,10 +990,7 @@ export function truncateMessage(text, limit = 3800) {
  */
 export function escapeHTML(str) {
     if (!str) return '';
-    return str
-        .replace(/&/g, '&amp;')
-        .replace(/</g, '&lt;')
-        .replace(/>/g, '&gt;');
+    return str.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;');
 }
 
 /**
@@ -1052,7 +1089,7 @@ export function filterProcessedThisWeek(processedTasks, fallbackKeys = []) {
     const oneWeekAgo = new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
     const thisWeek = {};
     for (const [id, data] of Object.entries(processedTasks)) {
-        const base = data.reviewedAt ?? fallbackKeys.map(k => data?.[k]).find(Boolean);
+        const base = data.reviewedAt ?? fallbackKeys.map((k) => data?.[k]).find(Boolean);
         if (base && new Date(base) > oneWeekAgo) {
             thisWeek[id] = data;
         }
@@ -1068,9 +1105,12 @@ export function filterProcessedThisWeek(processedTasks, fallbackKeys = []) {
 export function buildQuotaExhaustedMessage(gemini) {
     const resumeTime = gemini.quotaResumeTime();
     if (resumeTime) {
-        const resumeStr = resumeTime.toLocaleTimeString('en-US', {
-            timeZone: 'America/Los_Angeles', hour: '2-digit', minute: '2-digit'
-        }) + ' PT';
+        const resumeStr =
+            resumeTime.toLocaleTimeString('en-US', {
+                timeZone: 'America/Los_Angeles',
+                hour: '2-digit',
+                minute: '2-digit'
+            }) + ' PT';
         return `⚠️ **AI quota exhausted.** Try again around ${resumeStr}, or run non-AI commands like /pending and /status in the meantime.`;
     }
     return `⚠️ **AI quota exhausted.** Try again in ~2 hours or after midnight PT. Non-AI commands still work.`;
@@ -1102,9 +1142,9 @@ export function formatProcessedTask(task) {
  * @type {Object<string, string>}
  */
 export const MUTATION_TYPE_LABELS = {
-    'delete': 'Delete',
-    'complete': 'Complete',
-    'update': 'Update',
+    delete: 'Delete',
+    complete: 'Complete',
+    update: 'Update'
 };
 
 // ─── Mutation Confirmation Gate ────────────────────────────
@@ -1197,13 +1237,17 @@ export function buildMutationCandidateKeyboard(candidates, { intentSummary = nul
     const keyboard = new InlineKeyboard();
     const titleCounts = new Map();
     candidates.forEach((candidate) => {
-        const key = String(candidate?.title || '').trim().toLowerCase();
+        const key = String(candidate?.title || '')
+            .trim()
+            .toLowerCase();
         titleCounts.set(key, (titleCounts.get(key) || 0) + 1);
     });
     candidates.slice(0, 6).forEach((candidate, idx) => {
         const id = candidateId(candidate);
         if (!id) return;
-        const key = String(candidate?.title || '').trim().toLowerCase();
+        const key = String(candidate?.title || '')
+            .trim()
+            .toLowerCase();
         const label = buildCandidateLabel(candidate, titleCounts.get(key) || 0);
         const callbackData = `mut:pick:${id}`;
         if (idx % 1 === 0) keyboard.text(label, callbackData).row();
@@ -1223,7 +1267,12 @@ export function buildMutationCandidateKeyboard(candidates, { intentSummary = nul
  * @param {string} [options.workStyleMode='standard'] - Current work-style mode
  * @returns {string} Formatted message
  */
-export function buildMutationClarificationMessage(reason, candidates, intentSummary, { workStyleMode = 'standard' } = {}) {
+export function buildMutationClarificationMessage(
+    reason,
+    candidates,
+    intentSummary,
+    { workStyleMode = 'standard' } = {}
+) {
     const lines = [];
     const urgentMode = workStyleMode === 'urgent';
     lines.push(urgentMode ? `**Which task?**` : `**Which task did you mean?**`);
@@ -1249,11 +1298,9 @@ export function validateChecklistItem(item) {
     return {
         title: rawTitle.trim(),
         status: typeof item.status === 'number' ? item.status : 0,
-        sortOrder: typeof item.sortOrder === 'number' ? item.sortOrder : 0,
+        sortOrder: typeof item.sortOrder === 'number' ? item.sortOrder : 0
     };
 }
-
-
 
 // ─── Undo Entry from RollbackStep ────────────────────────────
 
@@ -1274,7 +1321,7 @@ export function buildUndoEntryFromRollbackStep(rollbackStep, action) {
         originalTitle: action?.title || rollbackStep.targetTaskId || 'Task',
         originalContent: action?.content || '',
         timestamp: new Date().toISOString(),
-        targetProjectId: rollbackStep.targetProjectId || null,
+        targetProjectId: rollbackStep.targetProjectId || null
     };
 
     if (rollbackStep.payload?.snapshot) {
@@ -1353,7 +1400,7 @@ export function buildFreeformReceipt(result, { projects = [] } = {}) {
     }
 
     if (skippedActions.length > 0) {
-        const labels = skippedActions.map(a => a.type).join(', ');
+        const labels = skippedActions.map((a) => a.type).join(', ');
         lines.push(`⚠️ **Skipped:** ${labels} (blocked in this mode)`);
     }
 
@@ -1385,7 +1432,14 @@ export function isFollowUpMessage(text = '', recentTaskTitle = null) {
 export async function retryWithBackoff(fn, { maxRetries = 2, baseDelayMs = 1000, isRetryable = null } = {}) {
     const defaultIsRetryable = (err) => {
         const msg = err?.message || '';
-        return msg.includes('timeout') || msg.includes('ETIMEDOUT') || msg.includes('ECONNRESET') || msg.includes('rate limit') || msg.includes('429') || msg.includes('Too Many Requests');
+        return (
+            msg.includes('timeout') ||
+            msg.includes('ETIMEDOUT') ||
+            msg.includes('ECONNRESET') ||
+            msg.includes('rate limit') ||
+            msg.includes('429') ||
+            msg.includes('Too Many Requests')
+        );
     };
     const shouldRetry = isRetryable || defaultIsRetryable;
 
@@ -1399,7 +1453,7 @@ export async function retryWithBackoff(fn, { maxRetries = 2, baseDelayMs = 1000,
                 throw err;
             }
             const delay = baseDelayMs * Math.pow(2, attempt);
-            await new Promise(r => setTimeout(r, delay));
+            await new Promise((r) => setTimeout(r, delay));
         }
     }
     throw lastError;

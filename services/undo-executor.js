@@ -19,9 +19,10 @@
 export function formatPipelineFailure(result, { compact = false } = {}) {
     if (!result) return '⚠️ Pipeline failed.';
     const diagnosticsEnabled = result.isDevMode === true;
-    const diagnostics = diagnosticsEnabled && Array.isArray(result.diagnostics) && result.diagnostics.length > 0
-        ? `\n\n${result.diagnostics.join('\n')}`
-        : '';
+    const diagnostics =
+        diagnosticsEnabled && Array.isArray(result.diagnostics) && result.diagnostics.length > 0
+            ? `\n\n${result.diagnostics.join('\n')}`
+            : '';
     const message = `${result.confirmationText || '⚠️ Pipeline failed.'}${diagnostics}`;
     return compact ? message.replace(/\n+/g, ' | ') : message;
 }
@@ -45,7 +46,7 @@ export async function executeUndoEntry(entry, adapter) {
             projectId: entry.originalProjectId,
             title: entry.originalTitle,
             content: entry.originalContent,
-            priority: entry.originalPriority,
+            priority: entry.originalPriority
         });
         return { reverted: [entry.originalTitle || entry.taskId] };
     }
@@ -72,7 +73,7 @@ export async function executeUndoEntry(entry, adapter) {
                 title: snapshot.title || '',
                 content: snapshot.content || null,
                 priority: snapshot.priority ?? null,
-                dueDate: snapshot.dueDate || null,
+                dueDate: snapshot.dueDate || null
             });
             return { reverted: [snapshot.title || entry.taskId] };
         }
@@ -88,7 +89,7 @@ export async function executeUndoEntry(entry, adapter) {
                 content: snapshot.content || null,
                 priority: snapshot.priority ?? null,
                 dueDate: snapshot.dueDate || null,
-                projectId: snapshot.projectId || entry.targetProjectId,
+                projectId: snapshot.projectId || entry.targetProjectId
             });
             return { reverted: [snapshot.title || entry.taskId] };
         }

@@ -3,10 +3,17 @@
 import { InlineKeyboard } from 'grammy';
 import * as store from '../services/store.js';
 import {
-    buildTickTickUpdate, isAuthorized, buildUndoEntry,
+    buildTickTickUpdate,
+    isAuthorized,
+    buildUndoEntry,
     PRIORITY_LABEL,
-    editWithMarkdown, truncateMessage, buildTaskCard, pendingToAnalysis,
-    replyWithMarkdown, sleep, answerCallbackQueryBestEffort,
+    editWithMarkdown,
+    truncateMessage,
+    buildTaskCard,
+    pendingToAnalysis,
+    replyWithMarkdown,
+    sleep,
+    answerCallbackQueryBestEffort
 } from '../services/shared-utils.js';
 import { buildFreeformPipelineResultReceipt } from './pipeline-result-receipts.js';
 import { executeUndoBatch } from '../services/undo-executor.js';
@@ -28,7 +35,7 @@ function getReviewSnapshot(data) {
         content: data?.originalContent ?? null,
         priority: data?.originalPriority ?? null,
         projectId: data?.originalProjectId ?? data?.projectId ?? null,
-        dueDate: data?.originalDueDate ?? data?.dueDate ?? null,
+        dueDate: data?.originalDueDate ?? data?.dueDate ?? null
     };
 }
 
@@ -54,16 +61,18 @@ function normalizeReviewTask(task, fallbackProjectId = null) {
         content: canonicalizeBlankContent(task?.content),
         priority: task?.priority ?? null,
         projectId: task?.projectId ?? fallbackProjectId ?? null,
-        dueDate: canonicalizeDueDate(task?.dueDate),
+        dueDate: canonicalizeDueDate(task?.dueDate)
     };
 }
 
 function reviewSnapshotDiffers(expected, actual) {
-    return expected.title !== actual.title
-        || canonicalizeBlankContent(expected.content) !== actual.content
-        || expected.priority !== actual.priority
-        || expected.projectId !== actual.projectId
-        || canonicalizeDueDate(expected.dueDate) !== actual.dueDate;
+    return (
+        expected.title !== actual.title ||
+        canonicalizeBlankContent(expected.content) !== actual.content ||
+        expected.priority !== actual.priority ||
+        expected.projectId !== actual.projectId ||
+        canonicalizeDueDate(expected.dueDate) !== actual.dueDate
+    );
 }
 
 async function parkStalePending(taskId, data, reason) {
@@ -129,11 +138,7 @@ export function taskReviewKeyboard(taskId, actionType = 'update') {
             .text('Stop', 'review:stop');
     }
     if (actionType === 'delete') {
-        return new InlineKeyboard()
-            .text('Delete', `a:${id}`)
-            .text('Skip', `s:${id}`)
-            .row()
-            .text('Stop', 'review:stop');
+        return new InlineKeyboard().text('Delete', `a:${id}`).text('Skip', `s:${id}`).row().text('Stop', 'review:stop');
     }
     return new InlineKeyboard()
         .text('Apply', `a:${id}`)
@@ -172,7 +177,12 @@ async function advanceReviewCard(ctx, prefix = '') {
             await editWithMarkdown(ctx, text);
         } catch (err) {
             const msg = String(err?.message || '').toLowerCase();
-            if (msg.includes('message is not modified') || msg.includes('message to edit not found') || msg.includes('message_id_invalid') || msg.includes('too old')) {
+            if (
+                msg.includes('message is not modified') ||
+                msg.includes('message to edit not found') ||
+                msg.includes('message_id_invalid') ||
+                msg.includes('too old')
+            ) {
                 await ctx.reply(text);
             } else {
                 throw err;
@@ -190,7 +200,12 @@ async function advanceReviewCard(ctx, prefix = '') {
             await editWithMarkdown(ctx, text);
         } catch (err) {
             const msg = String(err?.message || '').toLowerCase();
-            if (msg.includes('message is not modified') || msg.includes('message to edit not found') || msg.includes('message_id_invalid') || msg.includes('too old')) {
+            if (
+                msg.includes('message is not modified') ||
+                msg.includes('message to edit not found') ||
+                msg.includes('message_id_invalid') ||
+                msg.includes('too old')
+            ) {
                 await ctx.reply(text);
             } else {
                 throw err;
@@ -201,26 +216,32 @@ async function advanceReviewCard(ctx, prefix = '') {
 
     const [taskId, data] = next;
     const analysis = pendingToAnalysis(data);
-    const card = buildTaskCard({
-        title: data.originalTitle,
-        projectName: data.projectName,
-        priority: data.originalPriority,
-        content: data.originalContent,
-        dueDate: data.originalDueDate,
-    }, analysis);
+    const card = buildTaskCard(
+        {
+            title: data.originalTitle,
+            projectName: data.projectName,
+            priority: data.originalPriority,
+            content: data.originalContent,
+            dueDate: data.originalDueDate
+        },
+        analysis
+    );
     const sessionTotal = Number.isFinite(Number(session?.totalTasks)) ? Number(session.totalTasks) : 0;
     const liveTotal = reviewed + remaining;
     const totalTasks = sessionTotal > 0 ? Math.max(sessionTotal, liveTotal) : liveTotal;
-    const progressLine = totalTasks > 0
-        ? `Task ${reviewed + 1} of ${totalTasks} · ${remaining} remaining\n\n`
-        : '';
+    const progressLine = totalTasks > 0 ? `Task ${reviewed + 1} of ${totalTasks} · ${remaining} remaining\n\n` : '';
     const baseText = `${progressLine}${card}\n\n⏳ ${remaining} remaining`;
     const text = prefix ? `${prefix}\n\n${baseText}` : baseText;
     try {
         await editWithMarkdown(ctx, text, { reply_markup: taskReviewKeyboard(taskId, data.actionType) });
     } catch (err) {
         const msg = String(err?.message || '').toLowerCase();
-        if (msg.includes('message is not modified') || msg.includes('message to edit not found') || msg.includes('message_id_invalid') || msg.includes('too old')) {
+        if (
+            msg.includes('message is not modified') ||
+            msg.includes('message to edit not found') ||
+            msg.includes('message_id_invalid') ||
+            msg.includes('too old')
+        ) {
             console.warn(`[ReviewFlow] Edit failed, sending new message: ${msg}`);
             await replyWithMarkdown(ctx, text, { reply_markup: taskReviewKeyboard(taskId, data.actionType) });
         } else {
@@ -247,32 +268,32 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
     // ─── Refine: Request user input for specific task tweaks ──
     bot.callbackQuery(/^r:(.+)$/, async (ctx) => {
         if (!isAuthorized(ctx)) {
-             await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
-             return;
+            await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
+            return;
         }
         const taskId = ctx.match[1];
         const data = store.getPendingTasks()[taskId];
 
         if (!data) {
-             await safeAnswerCallbackQuery(ctx, { text: '⚠️ Task not pending' });
-             return;
+            await safeAnswerCallbackQuery(ctx, { text: '⚠️ Task not pending' });
+            return;
         }
 
-        await safeAnswerCallbackQuery(ctx, );
+        await safeAnswerCallbackQuery(ctx);
         const sent = await ctx.reply(`What would you like to change about "${data.originalTitle}"?`, {
             reply_markup: { force_reply: true, selective: true },
-            parse_mode: 'Markdown',
+            parse_mode: 'Markdown'
         });
         await store.setPendingTaskRefinement({
             taskId,
             mode: 'force_reply',
             forceReplyMessageId: sent.message_id,
             chatId: ctx.chat?.id,
-            userId: ctx.from?.id,
+            userId: ctx.from?.id
         });
         const cancelKeyboard = new InlineKeyboard().text('❌ Cancel', 'rcancel');
         await ctx.reply('Or tap Cancel to discard:', {
-            reply_markup: cancelKeyboard,
+            reply_markup: cancelKeyboard
         });
 
         // Store as recently discussed
@@ -283,7 +304,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                 title: data.originalTitle,
                 content: data.originalContent || undefined,
                 projectId: data.projectId || data.originalProjectId,
-                source: 'review:refine',
+                source: 'review:refine'
             });
         }
     });
@@ -293,7 +314,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
             await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
             return;
         }
-        await safeAnswerCallbackQuery(ctx, );
+        await safeAnswerCallbackQuery(ctx);
         await store.clearPendingTaskRefinement();
         await ctx.editMessageText('Refinement cancelled.');
     });
@@ -336,22 +357,38 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
             if (actionType === 'complete') {
                 const projectId = data.projectId || data.originalProjectId;
                 await adapter.completeTask(taskId, projectId);
-                await store.addUndoEntry(buildUndoEntry({
-                    source: { id: taskId, title: data.originalTitle, content: data.originalContent, priority: data.originalPriority, projectId: data.originalProjectId },
-                    action: 'complete',
-                    applied: {},
-                    appliedTaskId: taskId,
-                }));
+                await store.addUndoEntry(
+                    buildUndoEntry({
+                        source: {
+                            id: taskId,
+                            title: data.originalTitle,
+                            content: data.originalContent,
+                            priority: data.originalPriority,
+                            projectId: data.originalProjectId
+                        },
+                        action: 'complete',
+                        applied: {},
+                        appliedTaskId: taskId
+                    })
+                );
                 await store.approveTask(taskId);
             } else if (actionType === 'delete') {
                 const projectId = data.projectId || data.originalProjectId;
                 await adapter.deleteTask(taskId, projectId);
-                await store.addUndoEntry(buildUndoEntry({
-                    source: { id: taskId, title: data.originalTitle, content: data.originalContent, priority: data.originalPriority, projectId: data.originalProjectId },
-                    action: 'delete',
-                    applied: {},
-                    appliedTaskId: taskId,
-                }));
+                await store.addUndoEntry(
+                    buildUndoEntry({
+                        source: {
+                            id: taskId,
+                            title: data.originalTitle,
+                            content: data.originalContent,
+                            priority: data.originalPriority,
+                            projectId: data.originalProjectId
+                        },
+                        action: 'delete',
+                        applied: {},
+                        appliedTaskId: taskId
+                    })
+                );
                 await store.approveTask(taskId);
             } else {
                 const oldTitle = data.originalTitle;
@@ -365,8 +402,10 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                     const changedFields = [];
                     if (data.improvedContent) changedFields.push('content');
                     if (data.suggestedSchedule) changedFields.push('due date');
-                    if (data.suggestedPriority !== undefined && data.suggestedPriority !== data.originalPriority) changedFields.push('priority');
-                    if (data.suggestedProjectId && data.suggestedProjectId !== data.originalProjectId) changedFields.push('project');
+                    if (data.suggestedPriority !== undefined && data.suggestedPriority !== data.originalPriority)
+                        changedFields.push('priority');
+                    if (data.suggestedProjectId && data.suggestedProjectId !== data.originalProjectId)
+                        changedFields.push('project');
                     if (changedFields.length > 0) {
                         diffText = `Updated "${oldTitle}": ${changedFields.join(', ')} changed`;
                     } else {
@@ -374,20 +413,26 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                     }
                 }
 
-                await store.addUndoEntry(buildUndoEntry({
-                    source: data,
-                    action: 'approve',
-                    appliedTaskId: updatedTask.id,
-                    applied: {
-                        title: data.improvedTitle ?? null,
-                        priority: PRIORITY_LABEL[data.suggestedPriority] ?? null,
-                        project: (data.suggestedProjectId && data.suggestedProjectId !== data.projectId)
-                            ? data.suggestedProject : null,
-                        projectId: (data.suggestedProjectId && data.suggestedProjectId !== data.projectId)
-                            ? data.suggestedProjectId : null,
-                        schedule: data.suggestedSchedule ?? null,
-                    }
-                }));
+                await store.addUndoEntry(
+                    buildUndoEntry({
+                        source: data,
+                        action: 'approve',
+                        appliedTaskId: updatedTask.id,
+                        applied: {
+                            title: data.improvedTitle ?? null,
+                            priority: PRIORITY_LABEL[data.suggestedPriority] ?? null,
+                            project:
+                                data.suggestedProjectId && data.suggestedProjectId !== data.projectId
+                                    ? data.suggestedProject
+                                    : null,
+                            projectId:
+                                data.suggestedProjectId && data.suggestedProjectId !== data.projectId
+                                    ? data.suggestedProjectId
+                                    : null,
+                            schedule: data.suggestedSchedule ?? null
+                        }
+                    })
+                );
 
                 await store.approveTask(taskId);
             }
@@ -398,14 +443,19 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                     title: data.improvedTitle || data.originalTitle,
                     content: data.improvedContent || data.originalContent || undefined,
                     projectId: data.suggestedProjectId || data.projectId || data.originalProjectId,
-                    source: 'review:approve',
+                    source: 'review:approve'
                 });
             }
             await safeAnswerCallbackQuery(ctx, { text: 'Applied.' });
             await advanceReviewCard(ctx, diffText);
         } catch (err) {
             const message = err.message?.toLowerCase() || '';
-            const isMissing = message.includes('not found') || message.includes('404') || message.includes('missing') || message.includes('completed') || message.includes('deleted');
+            const isMissing =
+                message.includes('not found') ||
+                message.includes('404') ||
+                message.includes('missing') ||
+                message.includes('completed') ||
+                message.includes('deleted');
             if (isMissing) {
                 await store.approveTask(taskId);
                 const userId = ctx.from?.id;
@@ -415,7 +465,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                         title: data?.originalTitle || 'Unknown task',
                         content: data?.originalContent || undefined,
                         projectId: data?.projectId || data?.originalProjectId,
-                        source: 'review:approve',
+                        source: 'review:approve'
                     });
                 }
                 await advanceReviewCard(ctx);
@@ -457,7 +507,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                     title: skippedData.originalTitle,
                     content: skippedData.originalContent || undefined,
                     projectId: skippedData.projectId || skippedData.originalProjectId,
-                    source: 'review:skip',
+                    source: 'review:skip'
                 });
             }
             await advanceReviewCard(ctx);
@@ -502,7 +552,12 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
             await advanceReviewCard(ctx);
         } catch (err) {
             const message = err.message?.toLowerCase() || '';
-            const isNotFound = message.includes('not found') || message.includes('404') || message.includes('already deleted') || message.includes('missing') || message.includes('completed');
+            const isNotFound =
+                message.includes('not found') ||
+                message.includes('404') ||
+                message.includes('already deleted') ||
+                message.includes('missing') ||
+                message.includes('completed');
             if (isNotFound) {
                 await store.dropTask(taskId);
                 await advanceReviewCard(ctx);
@@ -532,7 +587,12 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
             await editWithMarkdown(ctx, '⏹ **Review stopped.**');
         } catch (err) {
             const msg = String(err?.message || '').toLowerCase();
-            if (msg.includes('message is not modified') || msg.includes('message to edit not found') || msg.includes('message_id_invalid') || msg.includes('too old')) {
+            if (
+                msg.includes('message is not modified') ||
+                msg.includes('message to edit not found') ||
+                msg.includes('message_id_invalid') ||
+                msg.includes('too old')
+            ) {
                 await ctx.reply('⏹ **Review stopped.**');
             } else {
                 throw err;
@@ -573,14 +633,14 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
 
         // Expired state check
         const createdAt = pending.createdAt ? new Date(pending.createdAt).getTime() : 0;
-        if (createdAt && (Date.now() - createdAt > MUTATION_CLARIFICATION_TTL_MS)) {
+        if (createdAt && Date.now() - createdAt > MUTATION_CLARIFICATION_TTL_MS) {
             await store.clearPendingMutationClarification();
             await editWithMarkdown(ctx, '⏰ **Clarification expired.** Rephrase your request.');
             return;
         }
 
         // Validate candidate exists in stored list
-        const candidate = pending.candidates.find(c => c.id === selectedTaskId);
+        const candidate = pending.candidates.find((c) => c.id === selectedTaskId);
         if (!candidate) {
             await editWithMarkdown(ctx, '⚠️ Candidate not found.');
             return;
@@ -596,7 +656,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
             const availableProjects = await adapter.listProjects();
 
             // Find the full task object from TickTick cache
-            const resolvedTask = allTasks.find(t => t.id === selectedTaskId);
+            const resolvedTask = allTasks.find((t) => t.id === selectedTaskId);
             if (!resolvedTask) {
                 await editWithMarkdown(ctx, `⚠️ **"${candidate.title}"** not found in TickTick. Try again.`);
                 return;
@@ -609,7 +669,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                 entryPoint: pending.entryPoint || 'telegram:clarification-resume',
                 mode: pending.mode || 'interactive',
                 availableProjects,
-                skipClarification: true, // Don't re-ask for the same ambiguity
+                skipClarification: true // Don't re-ask for the same ambiguity
             });
 
             if (result.type === 'task') {
@@ -617,7 +677,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                     result,
                     store: storeApi,
                     userId,
-                    projects: availableProjects,
+                    projects: availableProjects
                 });
                 await editWithMarkdown(ctx, truncateMessage(receipt, 4000), replyExtra);
                 const recentUserId = ctx.from?.id;
@@ -627,16 +687,20 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                         title: resolvedTask.title,
                         content: resolvedTask.content || undefined,
                         projectId: resolvedTask.projectId,
-                        source: 'mutation:pick',
+                        source: 'mutation:pick'
                     });
                 }
             } else if (result.type === 'error') {
-                const diag = result.isDevMode === true && result.diagnostics?.length > 0
-                    ? `\n\n${result.diagnostics.slice(0, 3).join('\n')}`
-                    : '';
+                const diag =
+                    result.isDevMode === true && result.diagnostics?.length > 0
+                        ? `\n\n${result.diagnostics.slice(0, 3).join('\n')}`
+                        : '';
                 await editWithMarkdown(ctx, `❌ ${result.confirmationText}${diag}`);
             } else {
-                await editWithMarkdown(ctx, `**"${candidate.title}"** selected. ${result.confirmationText || 'Proceeding.'}`);
+                await editWithMarkdown(
+                    ctx,
+                    `**"${candidate.title}"** selected. ${result.confirmationText || 'Proceeding.'}`
+                );
             }
         } catch (err) {
             console.error('Mutation clarification resume error:', err.message);
@@ -660,7 +724,10 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
 
         // Fail-closed: no pending state
         if (!pending) {
-            await editWithMarkdown(ctx, '⚠️ **Nothing to confirm.** The request may have expired or was already handled.');
+            await editWithMarkdown(
+                ctx,
+                '⚠️ **Nothing to confirm.** The request may have expired or was already handled.'
+            );
             return;
         }
 
@@ -676,7 +743,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
 
         // TTL check already done by getPendingMutationConfirmation, but double-check
         const createdAt = pending.createdAt ? new Date(pending.createdAt).getTime() : 0;
-        if (createdAt && (Date.now() - createdAt > store.MUTATION_CONFIRMATION_TTL_MS)) {
+        if (createdAt && Date.now() - createdAt > store.MUTATION_CONFIRMATION_TTL_MS) {
             await store.clearPendingMutationConfirmation();
             await editWithMarkdown(ctx, '⏰ **Confirmation expired.** Please rephrase your request.');
             return;
@@ -699,7 +766,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
             const availableProjects = await adapter.listProjects();
 
             // Find the full task object from TickTick cache
-            const resolvedTask = allTasks.find(t => t.id === pending.matchedTask.taskId);
+            const resolvedTask = allTasks.find((t) => t.id === pending.matchedTask.taskId);
             if (!resolvedTask) {
                 await editWithMarkdown(ctx, `⚠️ **"${pending.matchedTask.title}"** not found in TickTick. Try again.`);
                 return;
@@ -712,7 +779,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                 workStyleMode: pending.workStyleMode || null,
                 availableProjects,
                 skipClarification: true,
-                skipMutationConfirmation: true,
+                skipMutationConfirmation: true
             });
 
             if (result.type === 'task') {
@@ -720,7 +787,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                     result,
                     store: storeApi,
                     userId,
-                    projects: availableProjects,
+                    projects: availableProjects
                 });
                 await editWithMarkdown(ctx, truncateMessage(receipt, 4000), replyExtra);
                 const recentUserId = ctx.from?.id;
@@ -730,16 +797,20 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                         title: resolvedTask.title,
                         content: resolvedTask.content || undefined,
                         projectId: resolvedTask.projectId,
-                        source: 'mutation:confirm',
+                        source: 'mutation:confirm'
                     });
                 }
             } else if (result.type === 'error') {
-                const diag = result.isDevMode === true && result.diagnostics?.length > 0
-                    ? `\n\n${result.diagnostics.slice(0, 3).join('\n')}`
-                    : '';
+                const diag =
+                    result.isDevMode === true && result.diagnostics?.length > 0
+                        ? `\n\n${result.diagnostics.slice(0, 3).join('\n')}`
+                        : '';
                 await editWithMarkdown(ctx, `❌ ${result.confirmationText}${diag}`);
             } else {
-                await editWithMarkdown(ctx, `**"${pending.matchedTask.title}"** confirmed. ${result.confirmationText || 'Done.'}`);
+                await editWithMarkdown(
+                    ctx,
+                    `**"${pending.matchedTask.title}"** confirmed. ${result.confirmationText || 'Done.'}`
+                );
             }
         } catch (err) {
             console.error('Mutation confirmation resume error:', err.message);
@@ -753,12 +824,15 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
             await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
             return;
         }
-        await safeAnswerCallbackQuery(ctx, );
+        await safeAnswerCallbackQuery(ctx);
         const pending = store.getPendingMutationConfirmation();
 
         // Missing/expired state: no pending confirmation to cancel
         if (!pending) {
-            await editWithMarkdown(ctx, '⚠️ **Nothing to cancel.** The confirmation request has expired or was already handled.');
+            await editWithMarkdown(
+                ctx,
+                '⚠️ **Nothing to cancel.** The confirmation request has expired or was already handled.'
+            );
             return;
         }
 
@@ -784,7 +858,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
             await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
             return;
         }
-        await safeAnswerCallbackQuery(ctx, );
+        await safeAnswerCallbackQuery(ctx);
         const pending = store.getPendingMutationClarification();
 
         // Cross-chat/user rejection for cancel too
@@ -834,7 +908,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
         const pipelineOptions = {
             entryPoint: 'telegram:checklist-clarification-button',
             mode: 'interactive',
-            availableProjects: await adapter.listProjects(),
+            availableProjects: await adapter.listProjects()
         };
 
         if (skipChecklist) {
@@ -851,27 +925,29 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                     result,
                     store: storeApi,
                     userId: ctx.from?.id,
-                    projects: pipelineOptions.availableProjects,
+                    projects: pipelineOptions.availableProjects
                 });
                 await editWithMarkdown(ctx, truncateMessage(text, 4000), replyExtra);
                 const checklistUserId = ctx.from?.id;
                 const action = result.actions?.[0];
                 if (checklistUserId && action) {
-                    const taskId = action.type === 'create'
-                        ? (result.results?.[0]?.result?.id || 'unknown')
-                        : (action.taskId || 'unknown');
+                    const taskId =
+                        action.type === 'create'
+                            ? result.results?.[0]?.result?.id || 'unknown'
+                            : action.taskId || 'unknown';
                     await store.setRecentTaskContext(checklistUserId, {
                         taskId,
                         title: action.title || 'Task',
                         content: action.content || undefined,
                         projectId: action.projectId,
-                        source: 'checklist:create',
+                        source: 'checklist:create'
                     });
                 }
             } else if (result.type === 'error') {
-                const diag = result.isDevMode === true && result.diagnostics?.length > 0
-                    ? `\n\n${result.diagnostics.slice(0, 3).join('\n')}`
-                    : '';
+                const diag =
+                    result.isDevMode === true && result.diagnostics?.length > 0
+                        ? `\n\n${result.diagnostics.slice(0, 3).join('\n')}`
+                        : '';
                 await editWithMarkdown(ctx, `❌ ${result.confirmationText}${diag}`);
             } else {
                 await editWithMarkdown(ctx, `${successPrefix} ${result.confirmationText || 'Proceeding.'}`);
@@ -887,7 +963,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
         console.log('[ChecklistClarification] Button: checklist selected');
         await _handleChecklistClarification(ctx, {
             preference: 'checklist',
-            successPrefix: 'Checklist mode.',
+            successPrefix: 'Checklist mode.'
         });
     });
 
@@ -896,7 +972,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
         console.log('[ChecklistClarification] Button: separate selected');
         await _handleChecklistClarification(ctx, {
             preference: 'separate',
-            successPrefix: 'Separate tasks.',
+            successPrefix: 'Separate tasks.'
         });
     });
 
@@ -905,7 +981,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
         console.log('[ChecklistClarification] Button: skip selected');
         await _handleChecklistClarification(ctx, {
             skipChecklist: true,
-            successPrefix: 'Single task.',
+            successPrefix: 'Single task.'
         });
     });
 
@@ -947,9 +1023,10 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                 await store.removeUndoEntries(successful);
             }
 
-            const msg = reverted.length > 0
-                ? `↩️ **Reverted ${reverted.length} change(s):**\n${reverted.map(t => `• "${t}"`).join('\n')}`
-                : '↩️ **Nothing was reverted.**';
+            const msg =
+                reverted.length > 0
+                    ? `↩️ **Reverted ${reverted.length} change(s):**\n${reverted.map((t) => `• "${t}"`).join('\n')}`
+                    : '↩️ **Nothing was reverted.**';
 
             // Edit the original receipt message, removing the inline keyboard.
             // Fallback to reply if the message is too old to edit.
@@ -957,7 +1034,12 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
                 await editWithMarkdown(ctx, msg, { reply_markup: new InlineKeyboard() });
             } catch (err) {
                 const errMsg = String(err?.message || '').toLowerCase();
-                if (errMsg.includes('message is not modified') || errMsg.includes('message to edit not found') || errMsg.includes('message_id_invalid') || errMsg.includes('too old')) {
+                if (
+                    errMsg.includes('message is not modified') ||
+                    errMsg.includes('message to edit not found') ||
+                    errMsg.includes('message_id_invalid') ||
+                    errMsg.includes('too old')
+                ) {
                     await replyWithMarkdown(ctx, msg);
                 } else {
                     throw err;
@@ -986,67 +1068,84 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
 
         const [, action, batchId, taskId, field] = ctx.match;
 
+        // Map display field names to TickTick field names for snapshot lookup
+        const fieldMapping = {
+            title: 'title',
+            project: 'projectId',
+            priority: 'priority',
+            due: 'dueDate',
+            content: 'content',
+            repeat: 'repeatFlag'
+        };
+        const tickTickField = fieldMapping[field] || field;
+
         if (action === 'keep') {
             await safeAnswerCallbackQuery(ctx, { text: '✅ Kept as applied' });
             // Remove the field snapshot so it won't appear again
             const snapshot = store.getAutoApplyFieldSnapshot(batchId, taskId);
-            if (snapshot?.[field]) {
-                await store.revertAutoApplyField(batchId, taskId, field);
+            if (snapshot?.[tickTickField]) {
+                await store.revertAutoApplyField(batchId, taskId, tickTickField);
             }
             try {
-                await editWithMarkdown(ctx, `✅ **Kept** "${field}" change for this task.`, { reply_markup: new InlineKeyboard() });
-            } catch { /* best-effort */ }
+                await editWithMarkdown(ctx, `✅ **Kept** "${field}" change for this task.`, {
+                    reply_markup: new InlineKeyboard()
+                });
+            } catch {
+                /* best-effort */
+            }
             return;
         }
 
         if (action === 'revert') {
             await safeAnswerCallbackQuery(ctx, { text: '↩️ Reverting...' });
             const snapshot = store.getAutoApplyFieldSnapshot(batchId, taskId);
-            if (!snapshot?.[field]) {
+            if (!snapshot?.[tickTickField]) {
                 await safeAnswerCallbackQuery(ctx, { text: '⚠️ Field already reverted' });
                 try {
-                    await editWithMarkdown(ctx, `⚠️ "${field}" was already reverted.`, { reply_markup: new InlineKeyboard() });
-                } catch { /* best-effort */ }
+                    await editWithMarkdown(ctx, `⚠️ "${field}" was already reverted.`, {
+                        reply_markup: new InlineKeyboard()
+                    });
+                } catch {
+                    /* best-effort */
+                }
                 return;
             }
 
             try {
                 // Revert the field: restore the original value
-                const reverted = await store.revertAutoApplyField(batchId, taskId, field);
+                const reverted = await store.revertAutoApplyField(batchId, taskId, tickTickField);
                 if (!reverted) {
                     throw new Error('No snapshot data for field');
                 }
 
                 // Build and execute the revert update
                 const updatePayload = { id: taskId };
-                // Map display field names back to TickTick fields
-                const fieldMapping = {
-                    title: 'title',
-                    project: 'projectId',
-                    priority: 'priority',
-                    due: 'dueDate',
-                    content: 'content',
-                    repeat: 'repeatFlag',
-                };
-                const tickTickField = fieldMapping[field];
-                if (tickTickField) {
+                if (reverted.from !== undefined) {
                     updatePayload[tickTickField] = reverted.from;
                 }
 
                 // Update the task in TickTick via adapter
-                const taskEntry = store.getUndoBatch(batchId).find(e => e.appliedTaskId === taskId);
+                const taskEntry = store.getUndoBatch(batchId).find((e) => e.appliedTaskId === taskId);
                 const projectId = taskEntry?.source?.projectId || null;
                 await adapter.updateTask(taskId, { ...updatePayload, originalProjectId: projectId });
 
                 await safeAnswerCallbackQuery(ctx, { text: `↩️ ${field} reverted` });
                 try {
-                    await editWithMarkdown(ctx, `↩️ **Reverted** "${field}" to original value.`, { reply_markup: new InlineKeyboard() });
-                } catch { /* best-effort */ }
+                    await editWithMarkdown(ctx, `↩️ **Reverted** "${field}" to original value.`, {
+                        reply_markup: new InlineKeyboard()
+                    });
+                } catch {
+                    /* best-effort */
+                }
             } catch (err) {
                 console.error('[AutoApply:Revert] Error:', err.message);
                 try {
-                    await editWithMarkdown(ctx, `⚠️ Failed to revert "${field}". Task may have changed in TickTick.`, { reply_markup: new InlineKeyboard() });
-                } catch { /* best-effort */ }
+                    await editWithMarkdown(ctx, `⚠️ Failed to revert "${field}". Task may have changed in TickTick.`, {
+                        reply_markup: new InlineKeyboard()
+                    });
+                } catch {
+                    /* best-effort */
+                }
             }
             return;
         }

@@ -1,51 +1,12 @@
-const STATUSES = Object.freeze([
-    'preview',
-    'applied',
-    'pending_confirmation',
-    'blocked',
-    'deferred',
-    'failed',
-    'busy',
-]);
+const STATUSES = Object.freeze(['preview', 'applied', 'pending_confirmation', 'blocked', 'deferred', 'failed', 'busy']);
 
-const SCOPES = Object.freeze([
-    'ticktick_live',
-    'local_review_queue',
-    'preview',
-    'deferred_queue',
-    'system',
-]);
+const SCOPES = Object.freeze(['ticktick_live', 'local_review_queue', 'preview', 'deferred_queue', 'system']);
 
-const COMMANDS = Object.freeze([
-    'scan',
-    'pending',
-    'status',
-    'review',
-    'freeform',
-    'scheduler',
-    'callback',
-]);
+const COMMANDS = Object.freeze(['scan', 'pending', 'status', 'review', 'freeform', 'scheduler', 'callback']);
 
-const OPERATION_TYPES = Object.freeze([
-    'create',
-    'update',
-    'complete',
-    'delete',
-    'review',
-    'scan',
-    'sync',
-    'none',
-]);
+const OPERATION_TYPES = Object.freeze(['create', 'update', 'complete', 'delete', 'review', 'scan', 'sync', 'none']);
 
-const NEXT_ACTIONS = Object.freeze([
-    'apply',
-    'edit',
-    'skip',
-    'retry',
-    'wait',
-    'resync',
-    'none',
-]);
+const NEXT_ACTIONS = Object.freeze(['apply', 'edit', 'skip', 'retry', 'wait', 'resync', 'none']);
 
 const ERROR_CLASSES = Object.freeze([
     'validation',
@@ -55,15 +16,10 @@ const ERROR_CLASSES = Object.freeze([
     'routing',
     'stale_preview',
     'lock',
-    'unknown',
+    'unknown'
 ]);
 
-const DESTINATION_CONFIDENCE = Object.freeze([
-    'exact',
-    'configured',
-    'ambiguous',
-    'missing',
-]);
+const DESTINATION_CONFIDENCE = Object.freeze(['exact', 'configured', 'ambiguous', 'missing']);
 
 const NON_APPLIED_STATUSES = new Set(['preview', 'pending_confirmation', 'blocked', 'deferred', 'failed', 'busy']);
 const SAFE_WAIT_ACTIONS = new Set(['retry', 'wait', 'resync', 'none']);
@@ -81,7 +37,7 @@ const RAW_PRIVATE_FIELD_NAMES = new Set([
     'userMessage',
     'rawText',
     'checklistItems',
-    'checklistText',
+    'checklistText'
 ]);
 
 /**
@@ -96,7 +52,7 @@ export const OPERATION_RECEIPT_VALUES = Object.freeze({
     operationTypes: OPERATION_TYPES,
     nextActions: NEXT_ACTIONS,
     errorClasses: ERROR_CLASSES,
-    destinationConfidence: DESTINATION_CONFIDENCE,
+    destinationConfidence: DESTINATION_CONFIDENCE
 });
 
 /**
@@ -108,9 +64,10 @@ export const OPERATION_RECEIPT_VALUES = Object.freeze({
  * @returns {string}
  */
 export function formatBusyLockMessage(lockStatus = {}, label = 'operation') {
-    const owner = typeof lockStatus.owner === 'string' && lockStatus.owner.trim().length > 0
-        ? lockStatus.owner.trim()
-        : 'another operation';
+    const owner =
+        typeof lockStatus.owner === 'string' && lockStatus.owner.trim().length > 0
+            ? lockStatus.owner.trim()
+            : 'another operation';
     const acquiredAt = Number.isFinite(lockStatus.acquiredAt)
         ? ` since ${new Date(lockStatus.acquiredAt).toISOString()}`
         : '';
@@ -241,11 +198,18 @@ function validateStateInvariants(receipt, errors) {
         errors.push(`${receipt.status} status cannot be applied`);
     }
 
-    if (['blocked', 'deferred', 'failed', 'busy'].includes(receipt.status) && !SAFE_WAIT_ACTIONS.has(receipt.nextAction)) {
+    if (
+        ['blocked', 'deferred', 'failed', 'busy'].includes(receipt.status) &&
+        !SAFE_WAIT_ACTIONS.has(receipt.nextAction)
+    ) {
         errors.push(`${receipt.status} status requires retry, wait, resync, or none nextAction`);
     }
 
-    if (receipt.status === 'applied' && receipt.destination && !['exact', 'configured'].includes(receipt.destination.confidence)) {
+    if (
+        receipt.status === 'applied' &&
+        receipt.destination &&
+        !['exact', 'configured'].includes(receipt.destination.confidence)
+    ) {
         errors.push('applied receipts require exact or configured destination confidence');
     }
 
@@ -257,7 +221,11 @@ function validateStateInvariants(receipt, errors) {
         if (!receipt.confirmation || typeof receipt.confirmation !== 'object' || Array.isArray(receipt.confirmation)) {
             errors.push('pending_confirmation receipts require confirmation details');
         } else {
-            if (!receipt.confirmation.target || typeof receipt.confirmation.target !== 'object' || Array.isArray(receipt.confirmation.target)) {
+            if (
+                !receipt.confirmation.target ||
+                typeof receipt.confirmation.target !== 'object' ||
+                Array.isArray(receipt.confirmation.target)
+            ) {
                 errors.push('pending_confirmation receipts require confirmation.target');
             } else if (!hasSafeIdentifier(receipt.confirmation.target, SAFE_TARGET_IDENTIFIER_KEYS)) {
                 errors.push('pending_confirmation confirmation.target requires a safe identifier');
@@ -297,11 +265,9 @@ function validatePendingConfirmationDestination(destination, errors) {
 }
 
 function hasSafeIdentifier(value, allowedKeys) {
-    return Object.entries(value).some(([key, nestedValue]) => (
-        allowedKeys.has(key)
-        && typeof nestedValue === 'string'
-        && nestedValue.trim().length > 0
-    ));
+    return Object.entries(value).some(
+        ([key, nestedValue]) => allowedKeys.has(key) && typeof nestedValue === 'string' && nestedValue.trim().length > 0
+    );
 }
 
 function hasDestinationReference(destination) {
@@ -309,13 +275,16 @@ function hasDestinationReference(destination) {
 }
 
 function hasDestinationChoice(destination) {
-    return Array.isArray(destination.choices)
-        && destination.choices.some((choice) => (
-            choice
-            && typeof choice === 'object'
-            && !Array.isArray(choice)
-            && hasSafeIdentifier(choice, new Set(['projectId', 'projectName']))
-        ));
+    return (
+        Array.isArray(destination.choices) &&
+        destination.choices.some(
+            (choice) =>
+                choice &&
+                typeof choice === 'object' &&
+                !Array.isArray(choice) &&
+                hasSafeIdentifier(choice, new Set(['projectId', 'projectName']))
+        )
+    );
 }
 
 function validatePrivateFieldSafety(value, errors, path = '') {

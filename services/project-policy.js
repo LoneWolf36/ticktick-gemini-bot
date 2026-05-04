@@ -19,7 +19,7 @@ function normalizePolicy(raw) {
     }
     return {
         projects: Array.isArray(raw.projects) ? raw.projects : [],
-        categories: raw.categories || {},
+        categories: raw.categories || {}
     };
 }
 
@@ -31,7 +31,7 @@ function normalizeKeywords(raw) {
         urgent: Array.isArray(raw.urgent) ? raw.urgent : [],
         stopWords: Array.isArray(raw.stopWords) ? raw.stopWords : [],
         followupPronouns: Array.isArray(raw.followupPronouns) ? raw.followupPronouns : [],
-        followupTimeShifts: Array.isArray(raw.followupTimeShifts) ? raw.followupTimeShifts : [],
+        followupTimeShifts: Array.isArray(raw.followupTimeShifts) ? raw.followupTimeShifts : []
     };
 }
 
@@ -59,7 +59,7 @@ function normalizeScoring(raw) {
         capacityProtectionScore: 120,
         blockerRemovalScore: 115,
         highUrgencyHours: 24,
-        mediumUrgencyHours: 72,
+        mediumUrgencyHours: 72
     };
     return { ...defaults, ...raw };
 }
@@ -78,7 +78,7 @@ if (_policy) {
         if (normName) {
             _projectByNormalizedName.set(normName, p);
         }
-        for (const alias of (p.aliases || [])) {
+        for (const alias of p.aliases || []) {
             const normAlias = normalizeText(alias);
             if (normAlias) {
                 _projectByAlias.set(normAlias, p);
@@ -129,7 +129,7 @@ export function resolveProjectCategoryFromPolicy(projectName, policy) {
     for (const p of normalizedPolicy.projects) {
         const normName = normalizeText(p.match || '');
         if (normName) projectByName.set(normName, p);
-        for (const alias of (p.aliases || [])) {
+        for (const alias of p.aliases || []) {
             const normAlias = normalizeText(alias);
             if (normAlias) projectByAlias.set(normAlias, p);
         }
@@ -140,7 +140,8 @@ export function resolveProjectCategoryFromPolicy(projectName, policy) {
     if (byName) {
         return {
             category: byName.category,
-            config: normalizedPolicy.categories[byName.category] || normalizedPolicy.categories.uncategorized || { priorityCap: 3, defaultPriority: 1 },
+            config: normalizedPolicy.categories[byName.category] ||
+                normalizedPolicy.categories.uncategorized || { priorityCap: 3, defaultPriority: 1 }
         };
     }
 
@@ -148,7 +149,8 @@ export function resolveProjectCategoryFromPolicy(projectName, policy) {
     if (byAlias) {
         return {
             category: byAlias.category,
-            config: normalizedPolicy.categories[byAlias.category] || normalizedPolicy.categories.uncategorized || { priorityCap: 3, defaultPriority: 1 },
+            config: normalizedPolicy.categories[byAlias.category] ||
+                normalizedPolicy.categories.uncategorized || { priorityCap: 3, defaultPriority: 1 }
         };
     }
 
@@ -171,7 +173,7 @@ export function getCategoryConfig(category) {
  */
 export function getConfiguredProjectNames() {
     if (!_policy) return [];
-    return _policy.projects.map(p => p.match);
+    return _policy.projects.map((p) => p.match);
 }
 
 /**

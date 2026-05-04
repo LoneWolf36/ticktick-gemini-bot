@@ -6,12 +6,7 @@
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
-import {
-    coerceDate,
-    getZonedDateParts,
-    getTimezoneOffsetMinutes,
-    formatTickTickISO,
-} from '../services/date-utils.js';
+import { coerceDate, getZonedDateParts, getTimezoneOffsetMinutes, formatTickTickISO } from '../services/date-utils.js';
 
 // ============================================================
 // coerceDate

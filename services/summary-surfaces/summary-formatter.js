@@ -2,7 +2,7 @@ import {
     appendUrgentModeReminder,
     formatBriefingHeader,
     parseTelegramMarkdownToHTML,
-    truncateMessage,
+    truncateMessage
 } from '../shared-utils.js';
 
 const EMPTY_LABEL = 'None';
@@ -26,18 +26,14 @@ function normalizeListItem(value) {
 }
 
 function renderList(items = [], emptyLabel = EMPTY_LABEL) {
-    const normalized = (Array.isArray(items) ? items : [])
-        .map((item) => normalizeListItem(item))
-        .filter(Boolean);
+    const normalized = (Array.isArray(items) ? items : []).map((item) => normalizeListItem(item)).filter(Boolean);
 
     if (normalized.length === 0) return `- ${emptyLabel}`;
     return normalized.map((line) => `- ${line}`).join('\n');
 }
 
 function renderNumberedList(items = [], emptyLabel = EMPTY_LABEL) {
-    const normalized = (Array.isArray(items) ? items : [])
-        .map((item) => normalizeListItem(item))
-        .filter(Boolean);
+    const normalized = (Array.isArray(items) ? items : []).map((item) => normalizeListItem(item)).filter(Boolean);
     if (normalized.length === 0) return `1. ${emptyLabel}`;
     return normalized.map((item, index) => `${index + 1}. ${item}`).join('\n');
 }
@@ -59,13 +55,12 @@ function formatNotices(notices = []) {
 
 function formatBriefing(summary = {}, context = {}) {
     const urgentMode = context.workStyleMode === 'urgent' || context.urgentMode === true;
-    const priorities = (Array.isArray(summary.priorities) ? summary.priorities : [])
-        .map((item) => {
-            const title = normalizeInline(item?.title) || 'Untitled task';
-            const rationale = normalizeInline(item?.rationale_text);
-            if (urgentMode) return `**${title}**`;
-            return rationale ? `**${title}**\n> ${rationale}` : `**${title}**`;
-        });
+    const priorities = (Array.isArray(summary.priorities) ? summary.priorities : []).map((item) => {
+        const title = normalizeInline(item?.title) || 'Untitled task';
+        const rationale = normalizeInline(item?.rationale_text);
+        if (urgentMode) return `**${title}**`;
+        return rationale ? `**${title}**\n> ${rationale}` : `**${title}**`;
+    });
 
     const focus = normalizeInline(summary.focus) || EMPTY_LABEL;
     const startNow = normalizeInline(summary.start_now) || EMPTY_LABEL;
@@ -116,18 +111,26 @@ function formatWeekly(summary = {}, context = {}) {
     const sections = [];
 
     if (urgentMode) {
-        sections.push(`**Progress**:\n${renderList((Array.isArray(summary.progress) ? summary.progress : []).slice(0, 2))}`);
+        sections.push(
+            `**Progress**:\n${renderList((Array.isArray(summary.progress) ? summary.progress : []).slice(0, 2))}`
+        );
         if (Array.isArray(summary.next_focus) && summary.next_focus.length > 0) {
             sections.push(`**Next focus**:\n${renderNumberedList(summary.next_focus.slice(0, 2))}`);
         }
-        sections.push(`**Watchouts**:\n${watchouts.length > 0 ? watchouts.map((item) => `- ${item}`).join('\n') : '- None'}`);
+        sections.push(
+            `**Watchouts**:\n${watchouts.length > 0 ? watchouts.map((item) => `- ${item}`).join('\n') : '- None'}`
+        );
     } else {
         sections.push(`**Progress**:\n${renderList(summary.progress)}`);
-        sections.push(`**Carry forward**:\n${carryForward.length > 0 ? carryForward.map((item) => `- ${item}`).join('\n') : '- None'}`);
+        sections.push(
+            `**Carry forward**:\n${carryForward.length > 0 ? carryForward.map((item) => `- ${item}`).join('\n') : '- None'}`
+        );
         if (Array.isArray(summary.next_focus) && summary.next_focus.length > 0) {
             sections.push(`**Next focus**:\n${renderNumberedList(summary.next_focus)}`);
         }
-        sections.push(`**Watchouts**:\n${watchouts.length > 0 ? watchouts.map((item) => `- ${item}`).join('\n') : '- None'}`);
+        sections.push(
+            `**Watchouts**:\n${watchouts.length > 0 ? watchouts.map((item) => `- ${item}`).join('\n') : '- None'}`
+        );
         sections.push(`**Notes**:\n${formatNotices(summary.notices)}`);
     }
 
@@ -139,26 +142,27 @@ function formatDailyClose(summary = {}, context = {}) {
     const resetCue = normalizeInline(summary.reset_cue) || EMPTY_LABEL;
 
     if (context.workStyleMode === 'urgent') {
-        return [
-            `**Reflection**: ${reflection}`,
-            `**Reset cue**: ${resetCue}`,
-        ].join('\n\n').trim();
+        return [`**Reflection**: ${reflection}`, `**Reset cue**: ${resetCue}`].join('\n\n').trim();
     }
 
     if (context.workStyleMode === 'focus') {
         return [
             `**Stats**:\n${renderList((Array.isArray(summary.stats) ? summary.stats : []).slice(0, 2))}`,
             `**Reflection**: ${reflection}`,
-            `**Reset cue**: ${resetCue}`,
-        ].join('\n\n').trim();
+            `**Reset cue**: ${resetCue}`
+        ]
+            .join('\n\n')
+            .trim();
     }
 
     return [
         `**Stats**:\n${renderList(summary.stats)}`,
         `**Reflection**: ${reflection}`,
         `**Reset cue**: ${resetCue}`,
-        `**Notes**:\n${formatNotices(summary.notices)}`,
-    ].join('\n\n').trim();
+        `**Notes**:\n${formatNotices(summary.notices)}`
+    ]
+        .join('\n\n')
+        .trim();
 }
 
 function isTelegramSafe(text = '') {
@@ -195,7 +199,7 @@ function buildRenderResult({ kind, body, context = {} }) {
         tonePreserved: true,
         urgentReminderApplied,
         truncated: truncated !== withReminder,
-        formatterVersion: SUMMARY_FORMATTER_VERSION,
+        formatterVersion: SUMMARY_FORMATTER_VERSION
     };
 }
 

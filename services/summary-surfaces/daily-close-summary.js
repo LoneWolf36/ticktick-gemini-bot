@@ -4,14 +4,19 @@ import { buildReflectionRecomputeContext, buildReflectionRecomputeNotice } from 
 import { toArray, toString, asActiveTasks, asProcessedHistory, mergeNotices } from '../shared-utils.js';
 
 const REFLECTION_TEMPLATES = {
-    BACKOFF_STANDARD: 'Several suggested tasks stayed open repeatedly. Keep tomorrow smaller or pause instead of escalating.',
-    BACKOFF_URGENT: 'Several suggested tasks stayed open repeatedly. Cut scope and choose one restart step instead of pushing harder.',
-    DIRECT_CALLOUT: 'A few suggested tasks stayed open repeatedly. Name the friction once and choose one smaller restart step.',
+    BACKOFF_STANDARD:
+        'Several suggested tasks stayed open repeatedly. Keep tomorrow smaller or pause instead of escalating.',
+    BACKOFF_URGENT:
+        'Several suggested tasks stayed open repeatedly. Cut scope and choose one restart step instead of pushing harder.',
+    DIRECT_CALLOUT:
+        'A few suggested tasks stayed open repeatedly. Name the friction once and choose one smaller restart step.',
     NO_ACTIVITY: '',
     MEANINGFUL_PROGRESS: 'You moved meaningful work today. Keep the close-out factual and light.',
-    IMPORTANT_WORK_OPEN: 'Important work stayed open today. Name the blocker plainly and choose the first restart step.',
+    IMPORTANT_WORK_OPEN:
+        'Important work stayed open today. Name the blocker plainly and choose the first restart step.',
     MIXED_DAY: 'Today was mixed: some progress landed, and some work stayed open. Close on one concrete restart step.',
-    LIGHT_EVIDENCE: 'The day was light on hard evidence. Keep the reflection brief and reset around one concrete next step.',
+    LIGHT_EVIDENCE:
+        'The day was light on hard evidence. Keep the reflection brief and reset around one concrete next step.'
 };
 
 function toDayKey(value, timezone = 'UTC') {
@@ -22,7 +27,7 @@ function toDayKey(value, timezone = 'UTC') {
         timeZone: timezone,
         year: 'numeric',
         month: '2-digit',
-        day: '2-digit',
+        day: '2-digit'
     }).format(parsed);
 }
 
@@ -37,13 +42,15 @@ function filterEntriesForDay(processedHistory = [], { generatedAtIso, timezone }
 }
 
 function getMostRecentProcessedEntry(processedHistory = []) {
-    return processedHistory
-        .map((entry) => ({
-            entry,
-            at: new Date(entry.reviewedAt || entry.processedAt || entry.sentAt || 0).getTime(),
-        }))
-        .filter((item) => Number.isFinite(item.at) && item.at > 0)
-        .sort((a, b) => b.at - a.at)[0]?.entry || null;
+    return (
+        processedHistory
+            .map((entry) => ({
+                entry,
+                at: new Date(entry.reviewedAt || entry.processedAt || entry.sentAt || 0).getTime()
+            }))
+            .filter((item) => Number.isFinite(item.at) && item.at > 0)
+            .sort((a, b) => b.at - a.at)[0]?.entry || null
+    );
 }
 
 function buildStats({ todayHistory = [], activeTasks = [] } = {}) {
@@ -55,11 +62,17 @@ function buildStats({ todayHistory = [], activeTasks = [] } = {}) {
         `Completed: \`${approvedCount}\``,
         `Skipped: \`${skippedCount}\``,
         `Dropped: \`${droppedCount}\``,
-        `Still open: \`${activeTasks.length}\``,
+        `Still open: \`${activeTasks.length}\``
     ];
 }
 
-function buildReflection({ todayHistory = [], activeTasks = [], interventionProfile = null, context = {}, recomputeContext = null } = {}) {
+function buildReflection({
+    todayHistory = [],
+    activeTasks = [],
+    interventionProfile = null,
+    context = {},
+    recomputeContext = null
+} = {}) {
     const approvedCount = todayHistory.filter((entry) => entry.approved === true).length;
     const skippedCount = todayHistory.filter((entry) => entry.skipped === true).length;
     const droppedCount = todayHistory.filter((entry) => entry.dropped === true).length;
@@ -112,10 +125,16 @@ function buildResetCue({ activeTasks = [], rankingResult = null, todayHistory = 
     return `Tomorrow’s restart: begin with “${targetTask.title || 'Untitled task'}” and finish the first executable step.`;
 }
 
-function buildNotices({ processedHistory = [], behavioralPatterns = [], todayHistory = [], context = {}, recomputeContext = null } = {}) {
+function buildNotices({
+    processedHistory = [],
+    behavioralPatterns = [],
+    todayHistory = [],
+    context = {},
+    recomputeContext = null
+} = {}) {
     const notices = [];
     const interventionProfile = deriveInterventionProfile(processedHistory, {
-        generatedAtIso: context.generatedAtIso,
+        generatedAtIso: context.generatedAtIso
     });
 
     if (todayHistory.length <= 1) {
@@ -123,7 +142,7 @@ function buildNotices({ processedHistory = [], behavioralPatterns = [], todayHis
             code: 'sparse_day',
             message: 'The day has thin evidence, so this reflection stays minimal.',
             severity: 'info',
-            evidence_source: 'processed_history',
+            evidence_source: 'processed_history'
         });
     }
 
@@ -139,19 +158,19 @@ function buildNotices({ processedHistory = [], behavioralPatterns = [], todayHis
             code: 'irregular_use',
             message: 'Recent interaction has been uneven, so this close-out avoids over-reading the gap.',
             severity: 'info',
-            evidence_source: 'processed_history',
+            evidence_source: 'processed_history'
         });
     }
 
     const engagementNotice = buildEngagementPatternNotice(interventionProfile, {
-        workStyleMode: context.workStyleMode,
+        workStyleMode: context.workStyleMode
     });
     if (engagementNotice) {
         notices.push(engagementNotice);
     }
 
     const behavioralNotice = buildBehavioralPatternNotice(behavioralPatterns, {
-        nowIso: context.generatedAtIso,
+        nowIso: context.generatedAtIso
     });
     if (behavioralNotice) {
         notices.push(behavioralNotice);
@@ -167,19 +186,19 @@ function buildNotices({ processedHistory = [], behavioralPatterns = [], todayHis
 
 function normalizeModelSummary(summary = {}) {
     return {
-        stats: toArray(summary.stats).map((item) => toString(item)).filter(Boolean),
+        stats: toArray(summary.stats)
+            .map((item) => toString(item))
+            .filter(Boolean),
         reflection: toString(summary.reflection, ''),
         reset_cue: toString(summary.reset_cue, ''),
         notices: toArray(summary.notices).map((notice) => ({
             code: toString(notice?.code, ''),
             message: toString(notice?.message, ''),
             severity: toString(notice?.severity, ''),
-            evidence_source: toString(notice?.evidence_source, ''),
-        })),
+            evidence_source: toString(notice?.evidence_source, '')
+        }))
     };
 }
-
-
 
 /**
  * Compose the individual sections of a daily close (reflection) summary.
@@ -199,7 +218,7 @@ export function composeDailyCloseSummarySections({
     behavioralPatterns = [],
     processedHistory = [],
     rankingResult = null,
-    modelSummary = null,
+    modelSummary = null
 } = {}) {
     const normalizedActiveTasks = asActiveTasks(activeTasks);
     const normalizedProcessedHistory = asProcessedHistory(processedHistory);
@@ -208,37 +227,41 @@ export function composeDailyCloseSummarySections({
         behavioralPatterns,
         processedHistory: normalizedProcessedHistory,
         historyAvailable: true,
-        context,
+        context
     });
     const todayHistory = filterEntriesForDay(normalizedProcessedHistory, context);
     const interventionProfile = deriveInterventionProfile(normalizedProcessedHistory, {
-        generatedAtIso: context.generatedAtIso,
+        generatedAtIso: context.generatedAtIso
     });
     const model = normalizeModelSummary(modelSummary || {});
 
     return {
         stats: model.stats.length > 0 ? model.stats : buildStats({ todayHistory, activeTasks: normalizedActiveTasks }),
-        reflection: model.reflection || buildReflection({
-            todayHistory,
-            activeTasks: normalizedActiveTasks,
-            interventionProfile,
-            context,
-            recomputeContext,
-        }),
-        reset_cue: model.reset_cue || buildResetCue({
-            activeTasks: normalizedActiveTasks,
-            rankingResult,
-            todayHistory,
-        }),
+        reflection:
+            model.reflection ||
+            buildReflection({
+                todayHistory,
+                activeTasks: normalizedActiveTasks,
+                interventionProfile,
+                context,
+                recomputeContext
+            }),
+        reset_cue:
+            model.reset_cue ||
+            buildResetCue({
+                activeTasks: normalizedActiveTasks,
+                rankingResult,
+                todayHistory
+            }),
         notices: mergeNotices(
             buildNotices({
                 processedHistory: normalizedProcessedHistory,
                 behavioralPatterns: toArray(behavioralPatterns),
                 todayHistory,
                 context,
-                recomputeContext,
+                recomputeContext
             }),
-            model.notices,
-        ),
+            model.notices
+        )
     };
 }

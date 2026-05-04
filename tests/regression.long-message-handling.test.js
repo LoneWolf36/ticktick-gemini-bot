@@ -15,7 +15,7 @@ function createMockGeminiAnalyzerForLongMessage() {
         async _executeWithFailover(prompt, apiCallFn) {
             const response = await apiCallFn(null, prompt, 'gemini-2.5-flash');
             return response;
-        },
+        }
     };
 }
 
@@ -46,10 +46,10 @@ describe('R13: Extremely Long Message Handling', () => {
                             checklistItems: null,
                             clarification: null,
                             clarificationQuestion: null,
-                            confidence: 0.9,
-                        },
-                    ],
-                }),
+                            confidence: 0.9
+                        }
+                    ]
+                })
             };
         };
 
@@ -57,7 +57,7 @@ describe('R13: Extremely Long Message Handling', () => {
         const actions = await intentExtractor.extractIntents(longMessage, {
             currentDate: '2026-04-24',
             availableProjects: ['Inbox'],
-            requestId: 'r13-long-message',
+            requestId: 'r13-long-message'
         });
 
         assert.equal(actions.length, 1);
@@ -74,7 +74,7 @@ describe('R13: Extremely Long Message Handling', () => {
             type: 'create',
             title: longTitle,
             content: longContent,
-            confidence: 0.9,
+            confidence: 0.9
         });
 
         assert.ok(normalized.title.length <= 80);

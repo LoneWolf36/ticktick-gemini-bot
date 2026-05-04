@@ -94,11 +94,7 @@ function levenshteinDistance(a, b) {
     for (let i = 1; i <= m; i++) {
         for (let j = 1; j <= n; j++) {
             const cost = a[i - 1] === b[j - 1] ? 0 : 1;
-            dp[i][j] = Math.min(
-                dp[i - 1][j] + 1,
-                dp[i][j - 1] + 1,
-                dp[i - 1][j - 1] + cost,
-            );
+            dp[i][j] = Math.min(dp[i - 1][j] + 1, dp[i][j - 1] + 1, dp[i - 1][j - 1] + cost);
         }
     }
     return dp[m][n];
@@ -155,7 +151,7 @@ function scoreTask(task, normalizedQuery, originalQuery) {
 
     const addConfidence = (candidate) => ({
         ...candidate,
-        matchConfidence: matchTypeToConfidence(candidate.matchType),
+        matchConfidence: matchTypeToConfidence(candidate.matchType)
     });
 
     // Exact match
@@ -165,7 +161,7 @@ function scoreTask(task, normalizedQuery, originalQuery) {
             projectId: task.projectId ?? null,
             title: task.title,
             score: EXACT_SCORE,
-            matchType: 'exact',
+            matchType: 'exact'
         });
     }
 
@@ -176,7 +172,7 @@ function scoreTask(task, normalizedQuery, originalQuery) {
             projectId: task.projectId ?? null,
             title: task.title,
             score: PREFIX_SCORE,
-            matchType: 'prefix',
+            matchType: 'prefix'
         });
     }
 
@@ -187,16 +183,16 @@ function scoreTask(task, normalizedQuery, originalQuery) {
             projectId: task.projectId ?? null,
             title: task.title,
             score: CONTAINS_SCORE,
-            matchType: 'contains',
+            matchType: 'contains'
         });
     }
 
     // Token-overlap match: e.g. "ai coder task" -> "Watch AI Coding Videos on Udemy"
-    const queryTokens = normalizedQuery.split(/\s+/).filter(t => t.length >= 2);
-    const titleTokens = normalizedTitle.split(/\s+/).filter(t => t.length >= 2);
+    const queryTokens = normalizedQuery.split(/\s+/).filter((t) => t.length >= 2);
+    const titleTokens = normalizedTitle.split(/\s+/).filter((t) => t.length >= 2);
     if (queryTokens.length > 0 && titleTokens.length > 0) {
-        const matchedTokens = queryTokens.filter(qt =>
-            titleTokens.some(tt => {
+        const matchedTokens = queryTokens.filter((qt) =>
+            titleTokens.some((tt) => {
                 if (tt === qt || tt.includes(qt) || qt.includes(tt)) return true;
                 if (tt.length >= 3 && qt.length >= 3 && tt.slice(0, 3) === qt.slice(0, 3)) return true;
                 return fuzzyScore(qt, tt) >= 0.55;
@@ -204,7 +200,7 @@ function scoreTask(task, normalizedQuery, originalQuery) {
         );
         const overlapRatio = matchedTokens.length / queryTokens.length;
         // Require at least half the tokens to match for 3+ token queries, higher bar for short queries
-        const minOverlap = queryTokens.length >= 3 ? 0.50 : 0.60;
+        const minOverlap = queryTokens.length >= 3 ? 0.5 : 0.6;
         if (overlapRatio >= minOverlap) {
             const scaledScore = Math.round(FUZZY_SCORE_MIN + overlapRatio * (FUZZY_SCORE_MAX - FUZZY_SCORE_MIN));
             return addConfidence({
@@ -212,7 +208,7 @@ function scoreTask(task, normalizedQuery, originalQuery) {
                 projectId: task.projectId ?? null,
                 title: task.title,
                 score: Math.min(scaledScore, FUZZY_SCORE_MAX),
-                matchType: 'token_overlap',
+                matchType: 'token_overlap'
             });
         }
     }
@@ -220,15 +216,15 @@ function scoreTask(task, normalizedQuery, originalQuery) {
     // Conservative fuzzy match: only for close typos
     const fuzzy = fuzzyScore(normalizedTitle, normalizedQuery);
     // Require at least 70% similarity AND the strings must share significant overlap
-    if (fuzzy >= 0.70) {
+    if (fuzzy >= 0.7) {
         // Scale score between FUZZY_SCORE_MIN and FUZZY_SCORE_MAX
-        const scaledScore = Math.round(FUZZY_SCORE_MIN + (fuzzy - 0.70) / 0.30 * (FUZZY_SCORE_MAX - FUZZY_SCORE_MIN));
+        const scaledScore = Math.round(FUZZY_SCORE_MIN + ((fuzzy - 0.7) / 0.3) * (FUZZY_SCORE_MAX - FUZZY_SCORE_MIN));
         return addConfidence({
             taskId: task.id,
             projectId: task.projectId ?? null,
             title: task.title,
             score: Math.min(scaledScore, FUZZY_SCORE_MAX),
-            matchType: 'fuzzy',
+            matchType: 'fuzzy'
         });
     }
 
@@ -265,7 +261,7 @@ export function resolveTarget({ targetQuery, activeTasks, recentTask = null }) {
             status: 'not_found',
             selected: null,
             candidates: [],
-            reason: 'empty_query',
+            reason: 'empty_query'
         };
     }
 
@@ -274,7 +270,7 @@ export function resolveTarget({ targetQuery, activeTasks, recentTask = null }) {
             status: 'not_found',
             selected: null,
             candidates: [],
-            reason: 'no_active_tasks',
+            reason: 'no_active_tasks'
         };
     }
 
@@ -285,7 +281,12 @@ export function resolveTarget({ targetQuery, activeTasks, recentTask = null }) {
 
     if (isPronounMatch || isGenericMatch) {
         // Bind pronoun/generic reference to recently discussed task when available
-        if (recentTask && typeof recentTask.id === 'string' && typeof recentTask.title === 'string' && recentTask.title.trim()) {
+        if (
+            recentTask &&
+            typeof recentTask.id === 'string' &&
+            typeof recentTask.title === 'string' &&
+            recentTask.title.trim()
+        ) {
             return {
                 status: 'resolved',
                 selected: {
@@ -294,15 +295,17 @@ export function resolveTarget({ targetQuery, activeTasks, recentTask = null }) {
                     title: recentTask.title,
                     score: 100,
                     matchType: 'coreference',
-                    matchConfidence: 'high',
+                    matchConfidence: 'high'
                 },
                 candidates: [],
-                reason: null,
+                reason: null
             };
         }
 
         const candidates = activeTasks
-            .filter((task) => task && typeof task.id === 'string' && typeof task.title === 'string' && task.title.trim())
+            .filter(
+                (task) => task && typeof task.id === 'string' && typeof task.title === 'string' && task.title.trim()
+            )
             .slice(0, 5)
             .map((task) => ({
                 taskId: task.id,
@@ -310,14 +313,14 @@ export function resolveTarget({ targetQuery, activeTasks, recentTask = null }) {
                 title: task.title,
                 score: 0,
                 matchType: 'underspecified',
-                matchConfidence: 'low',
+                matchConfidence: 'low'
             }));
 
         return {
             status: 'clarification',
             selected: null,
             candidates,
-            reason: isPronounMatch ? 'underspecified_pronoun' : 'underspecified_reference',
+            reason: isPronounMatch ? 'underspecified_pronoun' : 'underspecified_reference'
         };
     }
 
@@ -344,7 +347,7 @@ export function resolveTarget({ targetQuery, activeTasks, recentTask = null }) {
             status: 'not_found',
             selected: null,
             candidates: [],
-            reason: 'no_matching_tasks',
+            reason: 'no_matching_tasks'
         };
     }
 
@@ -353,20 +356,20 @@ export function resolveTarget({ targetQuery, activeTasks, recentTask = null }) {
     // Exact match wins immediately
     if (top.matchType === 'exact') {
         // Check if there's another exact match (near-duplicate titles)
-        const otherExact = candidates.filter(c => c.matchType === 'exact' && c.taskId !== top.taskId);
+        const otherExact = candidates.filter((c) => c.matchType === 'exact' && c.taskId !== top.taskId);
         if (otherExact.length > 0) {
             return {
                 status: 'clarification',
                 selected: null,
                 candidates: [top, ...otherExact],
-                reason: 'multiple_exact_matches',
+                reason: 'multiple_exact_matches'
             };
         }
         return {
             status: 'resolved',
             selected: top,
             candidates: [top],
-            reason: null,
+            reason: null
         };
     }
 
@@ -378,14 +381,14 @@ export function resolveTarget({ targetQuery, activeTasks, recentTask = null }) {
                 status: 'resolved',
                 selected: top,
                 candidates: [top],
-                reason: null,
+                reason: null
             };
         }
         return {
             status: 'not_found',
             selected: null,
             candidates: [],
-            reason: 'score_below_threshold',
+            reason: 'score_below_threshold'
         };
     }
 
@@ -399,17 +402,17 @@ export function resolveTarget({ targetQuery, activeTasks, recentTask = null }) {
             status: 'resolved',
             selected: top,
             candidates: [top],
-            reason: null,
+            reason: null
         };
     }
 
     // Close rivals: return clarification with top candidates
-    const clarificationCandidates = candidates.filter(c => c.score >= FUZZY_SCORE_MIN).slice(0, 5);
+    const clarificationCandidates = candidates.filter((c) => c.score >= FUZZY_SCORE_MIN).slice(0, 5);
     return {
         status: 'clarification',
         selected: null,
         candidates: clarificationCandidates,
-        reason: 'ambiguous_target',
+        reason: 'ambiguous_target'
     };
 }
 
@@ -425,7 +428,5 @@ export function buildClarificationPrompt(result, { workStyleMode = 'standard' } 
     }
 
     const options = result.candidates.map((c, i) => `${i + 1}. ${c.title}`).join('\n');
-    return workStyleMode === 'urgent'
-        ? `Which task?\n${options}`
-        : `Which task did you mean?\n${options}`;
+    return workStyleMode === 'urgent' ? `Which task?\n${options}` : `Which task did you mean?\n${options}`;
 }

@@ -84,7 +84,11 @@ export const PROJECT_POLICY = {
     projects: [
         // Strategic — needle-movers, goal-aligned work
         // IMPORTANT: use your EXACT TickTick project names (including emojis) in `match`
-        { match: 'Career & Job Search', category: 'strategic', aliases: ['career', 'job', 'interview', 'cv', 'resume'] },
+        {
+            match: 'Career & Job Search',
+            category: 'strategic',
+            aliases: ['career', 'job', 'interview', 'cv', 'resume']
+        },
         { match: 'Studies', category: 'strategic', aliases: ['study', 'course', 'exam', 'degree', 'certification'] },
         { match: 'Coaching Business', category: 'strategic', aliases: ['coaching', 'client', 'business'] },
         { match: 'Growth & Learning', category: 'strategic', aliases: ['learn', 'skill', 'growth'] },
@@ -95,14 +99,14 @@ export const PROJECT_POLICY = {
 
         // Routine — recurring, lifestyle, low leverage
         { match: 'Routines & Tracking', category: 'routine', aliases: ['routine', 'habit', 'track', 'log'] },
-        { match: 'Health & Life', category: 'routine', aliases: ['health', 'therapy', 'doctor', 'gym', 'exercise'] },
+        { match: 'Health & Life', category: 'routine', aliases: ['health', 'therapy', 'doctor', 'gym', 'exercise'] }
     ],
     categories: {
         strategic: { priorityCap: 5, defaultPriority: 3 },
         admin: { priorityCap: 3, defaultPriority: 1 },
         routine: { priorityCap: 1, defaultPriority: 1 },
-        uncategorized: { priorityCap: 3, defaultPriority: 1 },
-    },
+        uncategorized: { priorityCap: 3, defaultPriority: 1 }
+    }
 };
 
 /**
@@ -112,12 +116,45 @@ export const PROJECT_POLICY = {
 export const KEYWORDS = {
     urgent: ['today', 'urgent', 'asap', 'tomorrow', 'tonight', 'now', 'deadline'],
     stopWords: [
-        'a', 'an', 'and', 'avoid', 'current', 'for', 'from', 'goal', 'goals', 'growth',
-        'land', 'notes', 'now', 'of', 'order', 'priority', 'protect', 'role', 'senior',
-        'stabilize', 'the', 'to', 'urgent', 'with', 'your',
+        'a',
+        'an',
+        'and',
+        'avoid',
+        'current',
+        'for',
+        'from',
+        'goal',
+        'goals',
+        'growth',
+        'land',
+        'notes',
+        'now',
+        'of',
+        'order',
+        'priority',
+        'protect',
+        'role',
+        'senior',
+        'stabilize',
+        'the',
+        'to',
+        'urgent',
+        'with',
+        'your'
     ],
     followupPronouns: ['it', 'this', 'that', 'them', 'its'],
-    followupTimeShifts: ['tomorrow', 'next week', 'instead', 'postpone', 'reschedule', 'move to', 'change to', 'later', 'earlier', 'rename'],
+    followupTimeShifts: [
+        'tomorrow',
+        'next week',
+        'instead',
+        'postpone',
+        'reschedule',
+        'move to',
+        'change to',
+        'later',
+        'earlier',
+        'rename'
+    ]
 };
 
 /**
@@ -125,7 +162,8 @@ export const KEYWORDS = {
  * Used to distinguish "plan" (vague) from "apply for" (action).
  * Pipe-delimited string for regex construction.
  */
-export const VERB_LIST = 'add|analyze|apply|approve|arrange|assemble|assess|assign|assist|attach|authorize|block|book|build|buy|call|cancel|capture|celebrate|check|claim|clean|coach|collect|communicate|complete|compose|configure|confirm|consolidate|construct|contribute|convert|create|customize|debug|decide|define|delegate|delete|destroy|develop|discard|discover|discuss|distribute|do|document|download|draft|draw|edit|educate|email|emit|encourage|engage|enhance|ensure|enter|establish|evaluate|examine|execute|exercise|explain|explore|facilitate|fetch|file|finalize|finish|fix|follow|force|format|generate|get|give|go|govern|group|guide|have|identify|implement|import|improve|increase|inform|initiate|inspect|install|integrate|interact|investigate|join|keep|launch|lead|learn|limit|locate|log|make|manage|measure|meet|merge|modify|monitor|navigate|negotiate|notify|offer|operate|optimize|organize|outline|pack|participate|pay|perform|persuade|plan|prepare|present|preserve|prioritize|process|produce|practice|publish|purchase|read|receive|record|reduce|refactor|register|reject|release|remove|rename|renew|repair|reply|report|request|resolve|review|rewrite|scaffold|schedule|search|secure|segment|send|set|setup|share|sign|sort|split|start|stop|store|streamline|study|submit|subscribe|suggest|support|take|talk|test|track|train|transfer|transform|translate|update|upload|utilize|verify|visit|wait|walk|warn|watch|write';
+export const VERB_LIST =
+    'add|analyze|apply|approve|arrange|assemble|assess|assign|assist|attach|authorize|block|book|build|buy|call|cancel|capture|celebrate|check|claim|clean|coach|collect|communicate|complete|compose|configure|confirm|consolidate|construct|contribute|convert|create|customize|debug|decide|define|delegate|delete|destroy|develop|discard|discover|discuss|distribute|do|document|download|draft|draw|edit|educate|email|emit|encourage|engage|enhance|ensure|enter|establish|evaluate|examine|execute|exercise|explain|explore|facilitate|fetch|file|finalize|finish|fix|follow|force|format|generate|get|give|go|govern|group|guide|have|identify|implement|import|improve|increase|inform|initiate|inspect|install|integrate|interact|investigate|join|keep|launch|lead|learn|limit|locate|log|make|manage|measure|meet|merge|modify|monitor|navigate|negotiate|notify|offer|operate|optimize|organize|outline|pack|participate|pay|perform|persuade|plan|prepare|present|preserve|prioritize|process|produce|practice|publish|purchase|read|receive|record|reduce|refactor|register|reject|release|remove|rename|renew|repair|reply|report|request|resolve|review|rewrite|scaffold|schedule|search|secure|segment|send|set|setup|share|sign|sort|split|start|stop|store|streamline|study|submit|subscribe|suggest|support|take|talk|test|track|train|transfer|transform|translate|update|upload|utilize|verify|visit|wait|walk|warn|watch|write';
 
 /**
  * SCORING weights and thresholds used by the priority engine.
@@ -160,5 +198,5 @@ export const SCORING = {
     capacityProtectionScore: 120,
     blockerRemovalScore: 115,
     highUrgencyHours: 24,
-    mediumUrgencyHours: 72,
+    mediumUrgencyHours: 72
 };

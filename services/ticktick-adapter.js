@@ -20,7 +20,8 @@ const VALID_PRIORITIES = [0, 1, 3, 5]; // TickTick valid priority values
  * Regex for detecting action verbs at the start of a task title.
  * @type {RegExp}
  */
-const ACTION_VERB_REGEX = /^(call|email|pay|book|write|draft|review|ship|send|apply|buy|clean|fix|prepare|schedule|plan|submit|update|organize|finish|confirm|get|set|message|follow|protect)\b/i;
+const ACTION_VERB_REGEX =
+    /^(call|email|pay|book|write|draft|review|ship|send|apply|buy|clean|fix|prepare|schedule|plan|submit|update|organize|finish|confirm|get|set|message|follow|protect)\b/i;
 
 /**
  * Separator used when merging task content.
@@ -41,7 +42,7 @@ const ERROR_CODES = {
     RATE_LIMITED: 'RATE_LIMITED',
     SERVER_ERROR: 'SERVER_ERROR',
     AUTH_ERROR: 'AUTH_ERROR',
-    API_ERROR: 'API_ERROR',
+    API_ERROR: 'API_ERROR'
 };
 
 /**
@@ -54,7 +55,7 @@ const NETWORK_ERROR_CODES = new Set([
     'ECONNABORTED',
     'ENOTFOUND',
     'EAI_AGAIN',
-    'ECONNREFUSED',
+    'ECONNREFUSED'
 ]);
 
 /**
@@ -72,7 +73,7 @@ const TYPED_ERROR_CODES = new Set(Object.values(ERROR_CODES));
  */
 function areEquivalentDueDates(expected, actual) {
     if (expected === actual) return true;
-    if ((expected == null) && (actual == null)) return true;
+    if (expected == null && actual == null) return true;
     if (!expected || !actual) return false;
     const expectedTime = Date.parse(expected);
     const actualTime = Date.parse(actual);
@@ -88,7 +89,10 @@ const VALID_REPEAT_UNTIL_DATE = /^\d{8}$/;
 const VALID_REPEAT_UNTIL_UTC = /^(\d{8})T(\d{6})Z$/;
 
 function normalizeByDayValue(value) {
-    const days = value.split(',').map((day) => day.trim().toUpperCase()).filter(Boolean);
+    const days = value
+        .split(',')
+        .map((day) => day.trim().toUpperCase())
+        .filter(Boolean);
     if (days.length === 0) return null;
     const normalizedDays = [];
     for (const day of days) {
@@ -149,8 +153,10 @@ function normalizeRepeatRuleParts(value) {
 }
 
 function areEquivalentRepeatFlags(expected, actual) {
-    const expectedIsEmpty = expected === null || expected === undefined || (typeof expected === 'string' && expected.trim() === '');
-    const actualIsEmpty = actual === null || actual === undefined || (typeof actual === 'string' && actual.trim() === '');
+    const expectedIsEmpty =
+        expected === null || expected === undefined || (typeof expected === 'string' && expected.trim() === '');
+    const actualIsEmpty =
+        actual === null || actual === undefined || (typeof actual === 'string' && actual.trim() === '');
     if (expectedIsEmpty || actualIsEmpty) {
         return expectedIsEmpty && actualIsEmpty;
     }
@@ -170,7 +176,7 @@ function getTimezoneDateParts(timeZone, date = new Date()) {
         year: String(parts.year),
         month: String(parts.month + 1).padStart(2, '0'),
         day: String(parts.day).padStart(2, '0'),
-        weekday: weekdayMap[parts.weekday],
+        weekday: weekdayMap[parts.weekday]
     };
 }
 
@@ -195,7 +201,15 @@ function parseRepeatUntilValue(value) {
     const second = Number.parseInt(value.slice(13, 15), 10);
     if (month < 1 || month > 12 || day < 1 || day > 31 || hour > 23 || minute > 59 || second > 59) return null;
     const dt = new Date(Date.UTC(year, month - 1, day, hour, minute, second));
-    if (dt.getUTCFullYear() !== year || dt.getUTCMonth() !== month - 1 || dt.getUTCDate() !== day || dt.getUTCHours() !== hour || dt.getUTCMinutes() !== minute || dt.getUTCSeconds() !== second) return null;
+    if (
+        dt.getUTCFullYear() !== year ||
+        dt.getUTCMonth() !== month - 1 ||
+        dt.getUTCDate() !== day ||
+        dt.getUTCHours() !== hour ||
+        dt.getUTCMinutes() !== minute ||
+        dt.getUTCSeconds() !== second
+    )
+        return null;
     return value;
 }
 
@@ -228,7 +242,8 @@ function getNextWeekdayDate(timeZone, targetWeekday, baseDate = new Date()) {
 
 function getNextByDayAnchorDate(timeZone, byDayValue, baseDate = new Date()) {
     const weekdayLookup = { MO: 'Mon', TU: 'Tue', WE: 'Wed', TH: 'Thu', FR: 'Fri', SA: 'Sat', SU: 'Sun' };
-    const candidates = byDayValue.split(',')
+    const candidates = byDayValue
+        .split(',')
         .map((day) => weekdayLookup[day.slice(-2)])
         .filter(Boolean)
         .map((weekday) => getNextWeekdayDate(timeZone, weekday, baseDate))
@@ -242,10 +257,12 @@ function inferRepeatAnchorFromRule(repeatFlag, timeZone = USER_TZ) {
     const normalized = normalizeRepeatRuleParts(repeatFlag);
     if (!normalized) return null;
 
-    const parts = Object.fromEntries(normalized.split(';').map((segment) => {
-        const index = segment.indexOf('=');
-        return [segment.slice(0, index), segment.slice(index + 1)];
-    }));
+    const parts = Object.fromEntries(
+        normalized.split(';').map((segment) => {
+            const index = segment.indexOf('=');
+            return [segment.slice(0, index), segment.slice(index + 1)];
+        })
+    );
     const freq = parts.FREQ;
     const today = new Date();
 
@@ -285,7 +302,7 @@ function buildErrorText(error) {
 /**
  * TickTick Adapter - Narrow interface for all TickTick REST API interactions.
  * Wraps TickTickClient with validation, error classification, and structured logging.
- * 
+ *
  * @example
  * const adapter = new TickTickAdapter(new TickTickClient(credentials));
  * await adapter.createTask({ title: 'My Task', projectId: 'abc123...' });
@@ -328,22 +345,28 @@ export class TickTickAdapter {
      * @private
      */
     _observeSignals(eventType, eventMetadata) {
-        Promise.resolve().then(async () => {
-            const { userId = DEFAULT_BEHAVIORAL_USER_ID, ...safeEventMetadata } = eventMetadata || {};
-            const event = {
-                eventType,
-                timestamp: new Date().toISOString(),
-                ...safeEventMetadata,
-            };
-            const signals = classifyTaskEvent(event);
-            if (signals.length > 0) {
-                await appendBehavioralSignals(String(userId), signals);
-                this._log('behavioralSignals', { userId, signals: signals.length, types: signals.map(s => s.type) });
-            }
-        }).catch((error) => {
-            // NEVER block the mutation — log and continue
-            this._log('behavioralSignals', `FAILED (non-blocking): ${error.message}`, true);
-        });
+        Promise.resolve()
+            .then(async () => {
+                const { userId = DEFAULT_BEHAVIORAL_USER_ID, ...safeEventMetadata } = eventMetadata || {};
+                const event = {
+                    eventType,
+                    timestamp: new Date().toISOString(),
+                    ...safeEventMetadata
+                };
+                const signals = classifyTaskEvent(event);
+                if (signals.length > 0) {
+                    await appendBehavioralSignals(String(userId), signals);
+                    this._log('behavioralSignals', {
+                        userId,
+                        signals: signals.length,
+                        types: signals.map((s) => s.type)
+                    });
+                }
+            })
+            .catch((error) => {
+                // NEVER block the mutation — log and continue
+                this._log('behavioralSignals', `FAILED (non-blocking): ${error.message}`, true);
+            });
     }
 
     /**
@@ -380,14 +403,22 @@ export class TickTickAdapter {
         if (status === 401) return ERROR_CODES.AUTH_ERROR;
         if (status === 404) return ERROR_CODES.NOT_FOUND;
 
-        if (/(already\s+completed|already\s+done|task\s+is\s+completed|cannot\s+complete\s+completed|completed\s+already)/i.test(normalizedMessage)) {
+        if (
+            /(already\s+completed|already\s+done|task\s+is\s+completed|cannot\s+complete\s+completed|completed\s+already)/i.test(
+                normalizedMessage
+            )
+        ) {
             return ERROR_CODES.ALREADY_COMPLETED;
         }
 
         if (status === 429) return ERROR_CODES.RATE_LIMITED;
         if (status >= 500) return ERROR_CODES.SERVER_ERROR;
         if (NETWORK_ERROR_CODES.has(error.code)) return ERROR_CODES.NETWORK_ERROR;
-        if (/(network\s+error|timed\s+out|timeout|socket\s+hang\s+up|connection\s+(reset|refused|closed))/i.test(normalizedMessage)) {
+        if (
+            /(network\s+error|timed\s+out|timeout|socket\s+hang\s+up|connection\s+(reset|refused|closed))/i.test(
+                normalizedMessage
+            )
+        ) {
             return ERROR_CODES.NETWORK_ERROR;
         }
         return ERROR_CODES.API_ERROR;
@@ -494,7 +525,11 @@ export class TickTickAdapter {
         }
 
         if (droppedCount > 0) {
-            this._log('mapChecklistItems', `DROPPED { dropped: ${droppedCount}, kept: ${validItems.length}, reason: "malformed items" }`, true);
+            this._log(
+                'mapChecklistItems',
+                `DROPPED { dropped: ${droppedCount}, kept: ${validItems.length}, reason: "malformed items" }`,
+                true
+            );
         }
 
         return validItems;
@@ -518,11 +553,12 @@ export class TickTickAdapter {
             titleWordCount,
             titleCharacterCount,
             hasActionVerb: ACTION_VERB_REGEX.test(title),
-            smallTaskCandidate: titleWordCount > 0 && titleWordCount <= 4 && contentLength <= 80 && checklistCountAfter <= 1,
+            smallTaskCandidate:
+                titleWordCount > 0 && titleWordCount <= 4 && contentLength <= 80 && checklistCountAfter <= 1,
             checklistCountAfter,
             descriptionLengthAfter: contentLength,
             planningComplexityScore: checklistCountAfter + (contentLength >= 200 ? 3 : 0),
-            planningSubtypeA: checklistCountAfter >= 6 || contentLength >= 200,
+            planningSubtypeA: checklistCountAfter >= 6 || contentLength >= 200
         };
     }
 
@@ -562,7 +598,7 @@ export class TickTickAdapter {
         this._log('listProjects', { forceRefresh });
         try {
             const now = Date.now();
-            if (!forceRefresh && this._projectCache && (now - this._projectCacheTs < PROJECT_CACHE_TTL_MS)) {
+            if (!forceRefresh && this._projectCache && now - this._projectCacheTs < PROJECT_CACHE_TTL_MS) {
                 const elapsed = Date.now() - start;
                 this._log('listProjects', `SUCCESS { cached: true, ${elapsed}ms }`);
                 return this._projectCache;
@@ -578,7 +614,11 @@ export class TickTickAdapter {
         } catch (error) {
             const elapsed = Date.now() - start;
             const classified = this._classifyError(error, 'listProjects');
-            this._log('listProjects', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            this._log(
+                'listProjects',
+                `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`,
+                true
+            );
             throw classified;
         }
     }
@@ -602,7 +642,10 @@ export class TickTickAdapter {
             if (!nameHint || typeof nameHint !== 'string' || nameHint.trim().length === 0) {
                 const defaultProject = this._getSafeDefaultProject(projects, this._defaultProjectId);
                 const elapsed = Date.now() - start;
-                this._log('findProjectByName', `SUCCESS { match: ${JSON.stringify(defaultProject ? { id: defaultProject.id, name: defaultProject.name } : null)}, reason: "empty_hint", ${elapsed}ms }`);
+                this._log(
+                    'findProjectByName',
+                    `SUCCESS { match: ${JSON.stringify(defaultProject ? { id: defaultProject.id, name: defaultProject.name } : null)}, reason: "empty_hint", ${elapsed}ms }`
+                );
                 return defaultProject;
             }
 
@@ -612,7 +655,10 @@ export class TickTickAdapter {
             if (exactIdMatches.length === 1) {
                 const match = exactIdMatches[0];
                 const elapsed = Date.now() - start;
-                this._log('findProjectByName', `SUCCESS { match: ${JSON.stringify({ id: match.id, name: match.name })}, reason: "exact_id", ${elapsed}ms }`);
+                this._log(
+                    'findProjectByName',
+                    `SUCCESS { match: ${JSON.stringify({ id: match.id, name: match.name })}, reason: "exact_id", ${elapsed}ms }`
+                );
                 return { id: match.id, name: match.name };
             }
 
@@ -629,18 +675,25 @@ export class TickTickAdapter {
             if (exactNameMatches.length === 1) {
                 const match = exactNameMatches[0];
                 const elapsed = Date.now() - start;
-                this._log('findProjectByName', `SUCCESS { match: ${JSON.stringify({ id: match.id, name: match.name })}, reason: "exact_name", ${elapsed}ms }`);
+                this._log(
+                    'findProjectByName',
+                    `SUCCESS { match: ${JSON.stringify({ id: match.id, name: match.name })}, reason: "exact_name", ${elapsed}ms }`
+                );
                 return { id: match.id, name: match.name };
             }
 
             const reason = exactNameMatches.length > 1 ? 'ambiguous_exact_name' : 'unresolved';
-            this._log('findProjectByName', {
-                warning: 'project_resolution_unresolved',
-                reason,
-                nameHint,
-                exactIdMatches: exactIdMatches.map((p) => ({ id: p.id, name: p.name })),
-                exactNameMatches: exactNameMatches.map((p) => ({ id: p.id, name: p.name })),
-            }, true);
+            this._log(
+                'findProjectByName',
+                {
+                    warning: 'project_resolution_unresolved',
+                    reason,
+                    nameHint,
+                    exactIdMatches: exactIdMatches.map((p) => ({ id: p.id, name: p.name })),
+                    exactNameMatches: exactNameMatches.map((p) => ({ id: p.id, name: p.name }))
+                },
+                true
+            );
 
             const elapsed = Date.now() - start;
             this._log('findProjectByName', `SUCCESS { match: null, reason: ${JSON.stringify(reason)}, ${elapsed}ms }`);
@@ -648,7 +701,11 @@ export class TickTickAdapter {
         } catch (error) {
             const elapsed = Date.now() - start;
             const classified = this._classifyError(error, 'findProjectByName');
-            this._log('findProjectByName', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            this._log(
+                'findProjectByName',
+                `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`,
+                true
+            );
             throw classified;
         }
     }
@@ -718,14 +775,14 @@ export class TickTickAdapter {
         }
 
         if (newContent.startsWith(`${oldContent}${CONTENT_MERGE_SEPARATOR}`)) {
-            const appended = newContent.slice((`${oldContent}${CONTENT_MERGE_SEPARATOR}`).length).trim();
+            const appended = newContent.slice(`${oldContent}${CONTENT_MERGE_SEPARATOR}`.length).trim();
             if (!appended || oldContent.includes(appended)) {
                 return { shouldUpdate: false, content: oldContent, strategy: 'preserve_premerged_duplicate' };
             }
             return {
                 shouldUpdate: true,
                 content: `${oldContent}${CONTENT_MERGE_SEPARATOR}${appended}`,
-                strategy: 'merge_premerged_append',
+                strategy: 'merge_premerged_append'
             };
         }
 
@@ -738,14 +795,14 @@ export class TickTickAdapter {
             return {
                 shouldUpdate: true,
                 content: `${oldContent}${CONTENT_MERGE_SEPARATOR}${appended}`,
-                strategy: 'merge_premerged_contains_append',
+                strategy: 'merge_premerged_contains_append'
             };
         }
 
         return {
             shouldUpdate: true,
             content: `${oldContent}${CONTENT_MERGE_SEPARATOR}${newContent}`,
-            strategy: 'merge_append',
+            strategy: 'merge_append'
         };
     }
 
@@ -767,7 +824,10 @@ export class TickTickAdapter {
             if (expectedPayload.content !== undefined && task.content !== expectedPayload.content) {
                 mismatches.push('content mismatch');
             }
-            if (expectedPayload.dueDate !== undefined && !areEquivalentDueDates(expectedPayload.dueDate, task.dueDate)) {
+            if (
+                expectedPayload.dueDate !== undefined &&
+                !areEquivalentDueDates(expectedPayload.dueDate, task.dueDate)
+            ) {
                 mismatches.push(`dueDate: expected "${expectedPayload.dueDate}", got "${task.dueDate}"`);
             }
             if (expectedPayload.priority !== undefined && task.priority !== expectedPayload.priority) {
@@ -776,10 +836,16 @@ export class TickTickAdapter {
             if (expectedPayload.projectId !== undefined && task.projectId !== expectedPayload.projectId) {
                 mismatches.push(`projectId: expected ${expectedPayload.projectId}, got ${task.projectId}`);
             }
-            if (expectedPayload.repeatFlag !== undefined && !areEquivalentRepeatFlags(expectedPayload.repeatFlag, task.repeatFlag)) {
+            if (
+                expectedPayload.repeatFlag !== undefined &&
+                !areEquivalentRepeatFlags(expectedPayload.repeatFlag, task.repeatFlag)
+            ) {
                 mismatches.push('repeatFlag mismatch');
             }
-            if (expectedPayload.startDate !== undefined && !areEquivalentDueDates(expectedPayload.startDate, task.startDate)) {
+            if (
+                expectedPayload.startDate !== undefined &&
+                !areEquivalentDueDates(expectedPayload.startDate, task.startDate)
+            ) {
                 mismatches.push(`startDate: expected "${expectedPayload.startDate}", got "${task.startDate}"`);
             }
             if (expectedPayload.isAllDay !== undefined && task.isAllDay !== expectedPayload.isAllDay) {
@@ -892,7 +958,11 @@ export class TickTickAdapter {
      */
     async createTask(normalizedAction) {
         const start = Date.now();
-        this._log('createTask', { title: normalizedAction?.title, projectId: normalizedAction?.projectId, hasChecklist: Array.isArray(normalizedAction?.checklistItems) ? normalizedAction.checklistItems.length : 0 });
+        this._log('createTask', {
+            title: normalizedAction?.title,
+            projectId: normalizedAction?.projectId,
+            hasChecklist: Array.isArray(normalizedAction?.checklistItems) ? normalizedAction.checklistItems.length : 0
+        });
         try {
             // Validate fields before sending to API
             const validatedTitle = this._validateTitle(normalizedAction.title);
@@ -902,11 +972,13 @@ export class TickTickAdapter {
 
             const taskData = {};
             if (validatedTitle !== null) taskData.title = validatedTitle;
-            if (normalizedAction.content !== undefined && normalizedAction.content !== null) taskData.content = normalizedAction.content;
+            if (normalizedAction.content !== undefined && normalizedAction.content !== null)
+                taskData.content = normalizedAction.content;
             if (validatedDueDate !== null) taskData.dueDate = validatedDueDate;
             if (validatedPriority !== null) taskData.priority = validatedPriority;
             if (validatedProjectId !== null) taskData.projectId = validatedProjectId;
-            if (normalizedAction.repeatFlag !== undefined && normalizedAction.repeatFlag !== null) taskData.repeatFlag = normalizedAction.repeatFlag;
+            if (normalizedAction.repeatFlag !== undefined && normalizedAction.repeatFlag !== null)
+                taskData.repeatFlag = normalizedAction.repeatFlag;
 
             // Propagate isAllDay and timeZone for scheduling context
             if (normalizedAction.isAllDay !== undefined) taskData.isAllDay = normalizedAction.isAllDay;
@@ -919,7 +991,9 @@ export class TickTickAdapter {
             }
 
             // Map checklist items to TickTick items payload
-            const checklistInputCount = Array.isArray(normalizedAction.checklistItems) ? normalizedAction.checklistItems.length : 0;
+            const checklistInputCount = Array.isArray(normalizedAction.checklistItems)
+                ? normalizedAction.checklistItems.length
+                : 0;
             const mappedItems = this._mapChecklistItems(normalizedAction.checklistItems);
             const checklistPayloadCount = Array.isArray(mappedItems) ? mappedItems.length : 0;
             const checklistDroppedCount = Math.max(0, checklistInputCount - checklistPayloadCount);
@@ -927,7 +1001,7 @@ export class TickTickAdapter {
                 hasChecklistInput: checklistInputCount > 0,
                 checklistInputCount,
                 checklistPayloadCount,
-                checklistDroppedCount,
+                checklistDroppedCount
             });
 
             if (mappedItems) {
@@ -944,7 +1018,7 @@ export class TickTickAdapter {
                 taskId: createdTask.id,
                 category: normalizedAction.category || null,
                 projectId: validatedProjectId,
-                ...this._deriveBehavioralCreateMetadata(normalizedAction, mappedItems),
+                ...this._deriveBehavioralCreateMetadata(normalizedAction, mappedItems)
             });
 
             this._log('createTask', `SUCCESS { id: "${createdTask.id}", ${elapsed}ms }`);
@@ -952,11 +1026,19 @@ export class TickTickAdapter {
         } catch (error) {
             const elapsed = Date.now() - start;
             if (error.code === ERROR_CODES.VALIDATION) {
-                this._log('createTask', `FAILED { error: "${error.message}", code: "${error.code}", ${elapsed}ms }`, true);
+                this._log(
+                    'createTask',
+                    `FAILED { error: "${error.message}", code: "${error.code}", ${elapsed}ms }`,
+                    true
+                );
                 throw error;
             }
             const classified = this._classifyError(error, 'createTask');
-            this._log('createTask', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            this._log(
+                'createTask',
+                `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`,
+                true
+            );
             throw classified;
         }
     }
@@ -966,7 +1048,7 @@ export class TickTickAdapter {
      * @param {Array<Object>} normalizedActions - Array of normalized action objects
      * @returns {Promise<{created: Array<Object>, failed: Array<{action: Object, error: string, code: string}>}>} Batch results
      * @throws {Error} Classified error with code if batch processing fails catastrophically
-     * 
+     *
      * @example
      * const results = await adapter.createTasksBatch([
      *   { title: 'Task 1', projectId: '...' },
@@ -994,7 +1076,11 @@ export class TickTickAdapter {
                 results.created.push(createdTask);
             } catch (error) {
                 // Per-item failure logging with action details
-                this._log('createTasksBatch', `FAILED item ${i + 1}/${normalizedActions.length} { title: "${action?.title}", error: "${error.message}", code: "${error.code || 'UNKNOWN'}" }`, true);
+                this._log(
+                    'createTasksBatch',
+                    `FAILED item ${i + 1}/${normalizedActions.length} { title: "${action?.title}", error: "${error.message}", code: "${error.code || 'UNKNOWN'}" }`,
+                    true
+                );
                 results.failed.push({
                     action,
                     error: error.message,
@@ -1004,7 +1090,10 @@ export class TickTickAdapter {
         }
 
         const elapsed = Date.now() - start;
-        this._log('createTasksBatch', `SUCCESS { created: ${results.created.length}, failed: ${results.failed.length}, ${elapsed}ms }`);
+        this._log(
+            'createTasksBatch',
+            `SUCCESS { created: ${results.created.length}, failed: ${results.failed.length}, ${elapsed}ms }`
+        );
         return results;
     }
 
@@ -1014,7 +1103,7 @@ export class TickTickAdapter {
      * @param {string} projectId - 24-char hex project ID (required for API lookup)
      * @returns {Promise<Object>} Task snapshot with id, projectId, title, content, priority, dueDate, repeatFlag, status
      * @throws {Error} Classified error with code if API call fails or validation fails
-     * 
+     *
      * @example
      * const snapshot = await adapter.getTaskSnapshot('task123...', 'proj456...');
      * // Later: await adapter.restoreTask('task123...', snapshot);
@@ -1035,7 +1124,7 @@ export class TickTickAdapter {
                 priority: task.priority ?? null,
                 dueDate: task.dueDate ?? null,
                 repeatFlag: task.repeatFlag ?? null,
-                status: task.status ?? null,
+                status: task.status ?? null
             };
 
             const elapsed = Date.now() - start;
@@ -1044,7 +1133,11 @@ export class TickTickAdapter {
         } catch (error) {
             const elapsed = Date.now() - start;
             const classified = this._classifyError(error, 'getTaskSnapshot');
-            this._log('getTaskSnapshot', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            this._log(
+                'getTaskSnapshot',
+                `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`,
+                true
+            );
             throw classified;
         }
     }
@@ -1080,9 +1173,11 @@ export class TickTickAdapter {
         this._log('updateTask', { taskId, projectId });
         try {
             this._validateProjectId(taskId, 'updateTask (taskId)');
-            
+
             if (!projectId) {
-                const err = new Error('updateTask requires a projectId either in normalizedAction.originalProjectId or normalizedAction.projectId to fetch the existing task');
+                const err = new Error(
+                    'updateTask requires a projectId either in normalizedAction.originalProjectId or normalizedAction.projectId to fetch the existing task'
+                );
                 err.code = 'VALIDATION_ERROR';
                 throw err;
             }
@@ -1091,8 +1186,10 @@ export class TickTickAdapter {
             const existingTask = await this._client.getTask(projectId, taskId);
             const sourceProjectId = normalizedAction.originalProjectId || existingTask.projectId || projectId;
             const targetProjectId = normalizedAction.projectId ?? sourceProjectId;
-            const hasRepeatUpdate = Object.prototype.hasOwnProperty.call(normalizedAction, 'repeatFlag') && normalizedAction.repeatFlag !== undefined;
-            const wantsRepeat = hasRepeatUpdate && !([null, ''].includes(normalizedAction.repeatFlag));
+            const hasRepeatUpdate =
+                Object.prototype.hasOwnProperty.call(normalizedAction, 'repeatFlag') &&
+                normalizedAction.repeatFlag !== undefined;
+            const wantsRepeat = hasRepeatUpdate && ![null, ''].includes(normalizedAction.repeatFlag);
 
             if (hasRepeatUpdate && wantsRepeat) {
                 const normalizedRepeat = normalizeRepeatRuleParts(normalizedAction.repeatFlag);
@@ -1101,7 +1198,12 @@ export class TickTickAdapter {
                     err.code = 'VALIDATION_ERROR';
                     throw err;
                 }
-                const inferredAnchor = normalizedAction.dueDate || normalizedAction.startDate || existingTask.dueDate || existingTask.startDate || inferRepeatAnchorFromRule(normalizedAction.repeatFlag, USER_TZ);
+                const inferredAnchor =
+                    normalizedAction.dueDate ||
+                    normalizedAction.startDate ||
+                    existingTask.dueDate ||
+                    existingTask.startDate ||
+                    inferRepeatAnchorFromRule(normalizedAction.repeatFlag, USER_TZ);
                 if (!inferredAnchor) {
                     const err = new Error('repeatFlag update requires a dueDate or startDate anchor');
                     err.code = 'VALIDATION_ERROR';
@@ -1111,7 +1213,9 @@ export class TickTickAdapter {
 
             const updatePayload = {};
 
-            const payloadTitle = hasNonEmptyString(normalizedAction.title) ? normalizedAction.title.trim() : existingTask.title;
+            const payloadTitle = hasNonEmptyString(normalizedAction.title)
+                ? normalizedAction.title.trim()
+                : existingTask.title;
             const payloadContent = Object.prototype.hasOwnProperty.call(normalizedAction, 'content')
                 ? normalizedAction.content
                 : existingTask.content;
@@ -1144,11 +1248,17 @@ export class TickTickAdapter {
                 : existingTask.items;
 
             if (hasRepeatUpdate && wantsRepeat) {
-                const anchor = normalizedAction.dueDate || normalizedAction.startDate || existingTask.dueDate || existingTask.startDate || inferRepeatAnchorFromRule(normalizedAction.repeatFlag, USER_TZ);
+                const anchor =
+                    normalizedAction.dueDate ||
+                    normalizedAction.startDate ||
+                    existingTask.dueDate ||
+                    existingTask.startDate ||
+                    inferRepeatAnchorFromRule(normalizedAction.repeatFlag, USER_TZ);
                 updatePayload.id = existingTask.id || taskId;
                 updatePayload.projectId = targetProjectId;
                 updatePayload.title = payloadTitle;
-                if (typeof payloadContent === 'string' && payloadContent.trim().length > 0) updatePayload.content = payloadContent;
+                if (typeof payloadContent === 'string' && payloadContent.trim().length > 0)
+                    updatePayload.content = payloadContent;
                 if (payloadDesc !== undefined) updatePayload.desc = payloadDesc;
                 updatePayload.isAllDay = payloadIsAllDay ?? true;
                 updatePayload.startDate = payloadStartDate || anchor;
@@ -1163,18 +1273,20 @@ export class TickTickAdapter {
                 if (hasNonEmptyString(normalizedAction.title)) updatePayload.title = normalizedAction.title.trim();
                 if (normalizedAction.dueDate !== undefined) updatePayload.dueDate = normalizedAction.dueDate;
                 if (normalizedAction.priority !== undefined) updatePayload.priority = normalizedAction.priority;
-                if (targetProjectId !== undefined && targetProjectId !== null) updatePayload.projectId = targetProjectId;
+                if (targetProjectId !== undefined && targetProjectId !== null)
+                    updatePayload.projectId = targetProjectId;
                 if (normalizedAction.repeatFlag !== undefined) updatePayload.repeatFlag = normalizedAction.repeatFlag;
             }
 
             // Handle content merge with adapter-owned single merge path
             if (Object.prototype.hasOwnProperty.call(normalizedAction, 'content') && !hasRepeatUpdate) {
-                const isTitleChange = normalizedAction.title !== undefined && normalizedAction.title !== existingTask.title;
-                const effectiveMergeContent = isTitleChange ? false : (normalizedAction.mergeContent !== false);
+                const isTitleChange =
+                    normalizedAction.title !== undefined && normalizedAction.title !== existingTask.title;
+                const effectiveMergeContent = isTitleChange ? false : normalizedAction.mergeContent !== false;
                 const contentMerge = this._mergeTaskContent(
                     existingTask.content,
                     normalizedAction.content,
-                    effectiveMergeContent,
+                    effectiveMergeContent
                 );
                 if (contentMerge.shouldUpdate) {
                     updatePayload.content = contentMerge.content;
@@ -1184,7 +1296,7 @@ export class TickTickAdapter {
                     strategy: contentMerge.strategy,
                     mergeContent: effectiveMergeContent,
                     updated: contentMerge.shouldUpdate,
-                    isTitleChange,
+                    isTitleChange
                 });
             }
 
@@ -1205,7 +1317,7 @@ export class TickTickAdapter {
                 const verifyResult = await this._verifyUpdate(
                     updatedTask?.id || taskId,
                     updatedTask?.projectId || targetProjectId,
-                    updatePayload,
+                    updatePayload
                 );
                 updatedTask.verified = verifyResult.verified;
                 updatedTask.verificationNote = verifyResult.verificationNote;
@@ -1214,7 +1326,7 @@ export class TickTickAdapter {
                     expectedDueDate: updatePayload.dueDate,
                     expectedIsAllDay: updatePayload.isAllDay,
                     expectedTimeZone: updatePayload.timeZone,
-                    expectedRepeatFlag: updatePayload.repeatFlag,
+                    expectedRepeatFlag: updatePayload.repeatFlag
                 };
             }
 
@@ -1229,17 +1341,26 @@ export class TickTickAdapter {
                 checklistCountBefore: normalizedAction._checklistCountBefore,
                 checklistCountAfter: normalizedAction._checklistCountAfter,
                 descriptionLengthBefore: normalizedAction._descriptionLengthBefore,
-                descriptionLengthAfter: normalizedAction.content ? normalizedAction.content.length : normalizedAction._descriptionLengthBefore,
+                descriptionLengthAfter: normalizedAction.content
+                    ? normalizedAction.content.length
+                    : normalizedAction._descriptionLengthBefore,
                 subtaskCountBefore: normalizedAction._subtaskCountBefore,
-                subtaskCountAfter: normalizedAction._subtaskCountAfter,
+                subtaskCountAfter: normalizedAction._subtaskCountAfter
             });
 
-            this._log('updateTask', `SUCCESS { id: "${updatedTask.id}", changedProject: ${!!updatePayload.originalProjectId}, ${elapsed}ms }`);
+            this._log(
+                'updateTask',
+                `SUCCESS { id: "${updatedTask.id}", changedProject: ${!!updatePayload.originalProjectId}, ${elapsed}ms }`
+            );
             return updatedTask;
         } catch (error) {
             const elapsed = Date.now() - start;
             const classified = this._classifyError(error, 'updateTask');
-            this._log('updateTask', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            this._log(
+                'updateTask',
+                `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`,
+                true
+            );
             throw classified;
         }
     }
@@ -1262,7 +1383,7 @@ export class TickTickAdapter {
         this._log('restoreTask', { taskId, snapshotTaskId: snapshot?.id, projectId: snapshot?.projectId ?? null });
         try {
             this._validateProjectId(taskId, 'restoreTask (taskId)');
-            
+
             if (!snapshot || typeof snapshot !== 'object') {
                 const err = new Error('restoreTask requires a snapshot object');
                 err.code = 'VALIDATION_ERROR';
@@ -1275,7 +1396,7 @@ export class TickTickAdapter {
                 dueDate: snapshot.dueDate ?? null,
                 priority: snapshot.priority ?? null,
                 projectId: snapshot.projectId ?? null,
-                repeatFlag: snapshot.repeatFlag ?? null,
+                repeatFlag: snapshot.repeatFlag ?? null
             };
 
             const restoredTask = await this._client.updateTask(taskId, payload);
@@ -1285,7 +1406,11 @@ export class TickTickAdapter {
         } catch (error) {
             const elapsed = Date.now() - start;
             const classified = this._classifyError(error, 'restoreTask');
-            this._log('restoreTask', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            this._log(
+                'restoreTask',
+                `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`,
+                true
+            );
             throw classified;
         }
     }
@@ -1332,7 +1457,11 @@ export class TickTickAdapter {
         } catch (error) {
             const elapsed = Date.now() - start;
             const classified = this._classifyError(error, 'listCompletedTasks');
-            this._log('listCompletedTasks', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            this._log(
+                'listCompletedTasks',
+                `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`,
+                true
+            );
             throw classified;
         }
     }
@@ -1349,11 +1478,9 @@ export class TickTickAdapter {
         const start = Date.now();
         this._log('listActiveTasks', { forceRefresh });
         try {
-            const tasks = forceRefresh
-                ? await this._client.getAllTasks()
-                : await this._client.getAllTasksCached();
+            const tasks = forceRefresh ? await this._client.getAllTasks() : await this._client.getAllTasksCached();
 
-            const result = tasks.map(t => ({
+            const result = tasks.map((t) => ({
                 id: t.id,
                 title: t.title || '',
                 projectId: t.projectId ?? null,
@@ -1361,7 +1488,7 @@ export class TickTickAdapter {
                 priority: t.priority ?? null,
                 dueDate: t.dueDate ?? null,
                 content: t.content ?? null,
-                status: t.status ?? 0,
+                status: t.status ?? 0
             }));
 
             const elapsed = Date.now() - start;
@@ -1370,7 +1497,11 @@ export class TickTickAdapter {
         } catch (error) {
             const elapsed = Date.now() - start;
             const classified = this._classifyError(error, 'listActiveTasks');
-            this._log('listActiveTasks', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            this._log(
+                'listActiveTasks',
+                `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`,
+                true
+            );
             throw classified;
         }
     }
@@ -1410,7 +1541,7 @@ export class TickTickAdapter {
             this._observeSignals('complete', {
                 userId,
                 taskId,
-                projectId,
+                projectId
             });
 
             this._log('completeTask', `SUCCESS { id: "${taskId}", ${elapsed}ms }`);
@@ -1418,7 +1549,11 @@ export class TickTickAdapter {
         } catch (error) {
             const elapsed = Date.now() - start;
             const classified = this._classifyError(error, 'completeTask');
-            this._log('completeTask', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            this._log(
+                'completeTask',
+                `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`,
+                true
+            );
             throw classified;
         }
     }
@@ -1458,7 +1593,7 @@ export class TickTickAdapter {
             this._observeSignals('delete', {
                 userId,
                 taskId,
-                projectId,
+                projectId
             });
 
             this._log('deleteTask', `SUCCESS { id: "${taskId}", ${elapsed}ms }`);
@@ -1466,7 +1601,11 @@ export class TickTickAdapter {
         } catch (error) {
             const elapsed = Date.now() - start;
             const classified = this._classifyError(error, 'deleteTask');
-            this._log('deleteTask', `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`, true);
+            this._log(
+                'deleteTask',
+                `FAILED { error: "${error.message}", code: "${classified.code}", ${elapsed}ms }`,
+                true
+            );
             throw classified;
         }
     }

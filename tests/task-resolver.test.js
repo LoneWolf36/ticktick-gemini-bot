@@ -19,7 +19,7 @@ const TASK_FIXTURES = {
     oldWifi: { id: 'task005', projectId: 'proj001', title: 'Old wifi task' },
     readBook: { id: 'task006', projectId: 'proj002', title: 'Read a book' },
     exercise: { id: 'task007', projectId: 'proj003', title: 'Exercise' },
-    callMomDuplicated: { id: 'task008', projectId: 'proj001', title: 'Call Mom' }, // Same as task001 with different case
+    callMomDuplicated: { id: 'task008', projectId: 'proj001', title: 'Call Mom' } // Same as task001 with different case
 };
 
 const ACTIVE_TASKS = [
@@ -29,7 +29,7 @@ const ACTIVE_TASKS = [
     TASK_FIXTURES.finishDesign,
     TASK_FIXTURES.oldWifi,
     TASK_FIXTURES.readBook,
-    TASK_FIXTURES.exercise,
+    TASK_FIXTURES.exercise
 ];
 
 describe('Task Resolver Module', () => {
@@ -56,8 +56,11 @@ describe('Task Resolver Module', () => {
             const validStatuses = ['resolved', 'clarification', 'not_found'];
             const results = [
                 resolveTarget({ targetQuery: 'buy groceries', activeTasks: [TASK_FIXTURES.buyGroceries] }),
-                resolveTarget({ targetQuery: 'call mom', activeTasks: [TASK_FIXTURES.callMom, TASK_FIXTURES.callMomInsurance] }),
-                resolveTarget({ targetQuery: 'nonexistent xyz', activeTasks: ACTIVE_TASKS }),
+                resolveTarget({
+                    targetQuery: 'call mom',
+                    activeTasks: [TASK_FIXTURES.callMom, TASK_FIXTURES.callMomInsurance]
+                }),
+                resolveTarget({ targetQuery: 'nonexistent xyz', activeTasks: ACTIVE_TASKS })
             ];
             for (const r of results) {
                 assert.ok(validStatuses.includes(r.status), `invalid status: ${r.status}`);
@@ -145,16 +148,16 @@ describe('Task Resolver Module', () => {
             const tasks = [
                 { id: 'duplicate-task', projectId: 'proj001', title: 'Record measurements' },
                 { id: 'duplicate-task', projectId: 'proj001', title: 'Record measurements' },
-                { id: 'other-task', projectId: 'proj001', title: 'Record blood pressure' },
+                { id: 'other-task', projectId: 'proj001', title: 'Record blood pressure' }
             ];
 
             const result = resolveTarget({ targetQuery: 'Record', activeTasks: tasks });
 
             assert.strictEqual(result.status, 'clarification');
-            assert.deepStrictEqual(
-                result.candidates.map(candidate => candidate.taskId).sort(),
-                ['duplicate-task', 'other-task'],
-            );
+            assert.deepStrictEqual(result.candidates.map((candidate) => candidate.taskId).sort(), [
+                'duplicate-task',
+                'other-task'
+            ]);
         });
     });
 
@@ -168,7 +171,10 @@ describe('Task Resolver Module', () => {
         });
 
         it('should resolve when task title is a prefix of query', () => {
-            const result = resolveTarget({ targetQuery: 'buy groceries tomorrow', activeTasks: [TASK_FIXTURES.buyGroceries] });
+            const result = resolveTarget({
+                targetQuery: 'buy groceries tomorrow',
+                activeTasks: [TASK_FIXTURES.buyGroceries]
+            });
             assert.strictEqual(result.status, 'resolved');
             assert.strictEqual(result.selected.taskId, 'task003');
             assert.strictEqual(result.selected.matchType, 'prefix');
@@ -177,7 +183,7 @@ describe('Task Resolver Module', () => {
         it('should prefer exact match over prefix match', () => {
             const result = resolveTarget({
                 targetQuery: 'buy groceries',
-                activeTasks: [TASK_FIXTURES.buyGroceries, TASK_FIXTURES.finishDesign],
+                activeTasks: [TASK_FIXTURES.buyGroceries, TASK_FIXTURES.finishDesign]
             });
             assert.strictEqual(result.status, 'resolved');
             assert.strictEqual(result.selected.matchType, 'exact');
@@ -187,7 +193,10 @@ describe('Task Resolver Module', () => {
 
     describe('Contains matching (T012)', () => {
         it('should resolve when query contains task title', () => {
-            const result = resolveTarget({ targetQuery: 'I need to buy groceries today', activeTasks: [TASK_FIXTURES.buyGroceries] });
+            const result = resolveTarget({
+                targetQuery: 'I need to buy groceries today',
+                activeTasks: [TASK_FIXTURES.buyGroceries]
+            });
             assert.strictEqual(result.status, 'resolved');
             assert.strictEqual(result.selected.taskId, 'task003');
             assert.strictEqual(result.selected.matchType, 'contains');
@@ -230,7 +239,10 @@ describe('Task Resolver Module', () => {
 
         it('should not auto-resolve broad fuzzy matches just because a candidate exists', () => {
             // A fuzzy match with low similarity should not resolve
-            const result = resolveTarget({ targetQuery: 'call', activeTasks: [TASK_FIXTURES.callMom, TASK_FIXTURES.callMomInsurance] });
+            const result = resolveTarget({
+                targetQuery: 'call',
+                activeTasks: [TASK_FIXTURES.callMom, TASK_FIXTURES.callMomInsurance]
+            });
             // "call" is a prefix of both, so it should be prefix match, but both match -> clarification
             assert.ok(result.status === 'clarification' || result.status === 'resolved');
             if (result.status === 'resolved') {
@@ -250,7 +262,7 @@ describe('Task Resolver Module', () => {
         it('should return clarification for overlapping titles', () => {
             const result = resolveTarget({
                 targetQuery: 'call mom',
-                activeTasks: [TASK_FIXTURES.callMom, TASK_FIXTURES.callMomInsurance],
+                activeTasks: [TASK_FIXTURES.callMom, TASK_FIXTURES.callMomInsurance]
             });
             // "call mom" is exact for task001, prefix for task002
             // Score gap: 100 - 80 = 20 >= 15, so exact wins
@@ -264,7 +276,7 @@ describe('Task Resolver Module', () => {
             // Two tasks with very similar fuzzy scores
             const tasks = [
                 { id: 't1', projectId: 'p1', title: 'Buy milk' },
-                { id: 't2', projectId: 'p1', title: 'Buy milk and eggs' },
+                { id: 't2', projectId: 'p1', title: 'Buy milk and eggs' }
             ];
             const result = resolveTarget({ targetQuery: 'buy milk', activeTasks: tasks });
             // "buy milk" is exact for t1 (100), prefix for t2 (80)
@@ -276,7 +288,7 @@ describe('Task Resolver Module', () => {
         it('should return clarification for ambiguous short references', () => {
             const tasks = [
                 { id: 't1', projectId: 'p1', title: 'Meeting with John' },
-                { id: 't2', projectId: 'p1', title: 'Meeting with Sarah' },
+                { id: 't2', projectId: 'p1', title: 'Meeting with Sarah' }
             ];
             const result = resolveTarget({ targetQuery: 'meeting', activeTasks: tasks });
             // "meeting" is prefix for both (80 each), gap = 0 < 15
@@ -289,7 +301,7 @@ describe('Task Resolver Module', () => {
         it('should include candidate titles in clarification result', () => {
             const tasks = [
                 { id: 't1', projectId: 'p1', title: 'Review PR 123' },
-                { id: 't2', projectId: 'p1', title: 'Review PR 456' },
+                { id: 't2', projectId: 'p1', title: 'Review PR 456' }
             ];
             const result = resolveTarget({ targetQuery: 'review pr', activeTasks: tasks });
             assert.strictEqual(result.status, 'clarification');
@@ -328,14 +340,14 @@ describe('Task Resolver Module', () => {
             const tasks = [
                 { id: 't1', projectId: 'p1', title: 'Abc' },
                 { id: 't2', projectId: 'p1', title: 'Abc def' },
-                { id: 't3', projectId: 'p1', title: 'Xyz something' },
+                { id: 't3', projectId: 'p1', title: 'Xyz something' }
             ];
             const result = resolveTarget({ targetQuery: 'abc', activeTasks: tasks });
             if (result.candidates.length > 1) {
                 for (let i = 0; i < result.candidates.length - 1; i++) {
                     assert.ok(
                         result.candidates[i].score >= result.candidates[i + 1].score,
-                        'candidates not sorted by score descending',
+                        'candidates not sorted by score descending'
                     );
                 }
             }
@@ -344,12 +356,12 @@ describe('Task Resolver Module', () => {
         it('should break score ties by title alphabetically', () => {
             const tasks = [
                 { id: 't1', projectId: 'p1', title: 'Beta task' },
-                { id: 't2', projectId: 'p1', title: 'Alpha task' },
+                { id: 't2', projectId: 'p1', title: 'Alpha task' }
             ];
             const result = resolveTarget({ targetQuery: 'task', activeTasks: tasks });
             if (result.candidates.length > 1) {
                 // Same match type -> same score -> sorted by title
-                const titles = result.candidates.map(c => c.title);
+                const titles = result.candidates.map((c) => c.title);
                 assert.deepStrictEqual(titles, [...titles].sort());
             }
         });
@@ -371,7 +383,7 @@ describe('Task Resolver Module', () => {
         it('should handle repeated titles with different IDs', () => {
             const tasks = [
                 { id: 't1', projectId: 'p1', title: 'Read book' },
-                { id: 't2', projectId: 'p1', title: 'Read book' },
+                { id: 't2', projectId: 'p1', title: 'Read book' }
             ];
             const result = resolveTarget({ targetQuery: 'read book', activeTasks: tasks });
             assert.strictEqual(result.status, 'clarification');
@@ -386,9 +398,15 @@ describe('Task Resolver Module', () => {
                 selected: null,
                 candidates: [
                     { taskId: 't1', projectId: 'p1', title: 'Call mom', score: 80, matchType: 'prefix' },
-                    { taskId: 't2', projectId: 'p1', title: 'Call mom about insurance', score: 60, matchType: 'contains' },
+                    {
+                        taskId: 't2',
+                        projectId: 'p1',
+                        title: 'Call mom about insurance',
+                        score: 60,
+                        matchType: 'contains'
+                    }
                 ],
-                reason: 'ambiguous_target',
+                reason: 'ambiguous_target'
             };
             const prompt = buildClarificationPrompt(result);
             assert.ok(prompt.includes('Call mom'));
@@ -408,11 +426,14 @@ describe('Task Resolver Module', () => {
         it('should allow branching on status without guessing field presence', () => {
             const results = [
                 resolveTarget({ targetQuery: 'buy groceries', activeTasks: [TASK_FIXTURES.buyGroceries] }),
-                resolveTarget({ targetQuery: 'meeting', activeTasks: [
-                    { id: 't1', projectId: 'p1', title: 'Meeting with John' },
-                    { id: 't2', projectId: 'p1', title: 'Meeting with Sarah' },
-                ]}),
-                resolveTarget({ targetQuery: 'xyz', activeTasks: ACTIVE_TASKS }),
+                resolveTarget({
+                    targetQuery: 'meeting',
+                    activeTasks: [
+                        { id: 't1', projectId: 'p1', title: 'Meeting with John' },
+                        { id: 't2', projectId: 'p1', title: 'Meeting with Sarah' }
+                    ]
+                }),
+                resolveTarget({ targetQuery: 'xyz', activeTasks: ACTIVE_TASKS })
             ];
 
             for (const result of results) {
@@ -439,10 +460,13 @@ describe('Task Resolver Module', () => {
         });
 
         it('should preserve original task title in candidates for clarification', () => {
-            const result = resolveTarget({ targetQuery: 'meeting', activeTasks: [
-                { id: 't1', projectId: 'p1', title: 'Meeting with John' },
-                { id: 't2', projectId: 'p1', title: 'Meeting with Sarah' },
-            ]});
+            const result = resolveTarget({
+                targetQuery: 'meeting',
+                activeTasks: [
+                    { id: 't1', projectId: 'p1', title: 'Meeting with John' },
+                    { id: 't2', projectId: 'p1', title: 'Meeting with Sarah' }
+                ]
+            });
             assert.strictEqual(result.status, 'clarification');
             for (const c of result.candidates) {
                 assert.ok(c.title === 'Meeting with John' || c.title === 'Meeting with Sarah');
@@ -454,12 +478,15 @@ describe('Task Resolver Module', () => {
             const testCases = [
                 { targetQuery: 'buy groceries', activeTasks: [TASK_FIXTURES.buyGroceries] },
                 { targetQuery: 'call mom', activeTasks: [TASK_FIXTURES.callMom, TASK_FIXTURES.callMomInsurance] },
-                { targetQuery: 'meeting', activeTasks: [
-                    { id: 't1', projectId: 'p1', title: 'Meeting with John' },
-                    { id: 't2', projectId: 'p1', title: 'Meeting with Sarah' },
-                ]},
+                {
+                    targetQuery: 'meeting',
+                    activeTasks: [
+                        { id: 't1', projectId: 'p1', title: 'Meeting with John' },
+                        { id: 't2', projectId: 'p1', title: 'Meeting with Sarah' }
+                    ]
+                },
                 { targetQuery: 'xyz nonexistent', activeTasks: ACTIVE_TASKS },
-                { targetQuery: '', activeTasks: ACTIVE_TASKS },
+                { targetQuery: '', activeTasks: ACTIVE_TASKS }
             ];
 
             for (const tc of testCases) {
@@ -481,7 +508,7 @@ describe('Task Resolver Module', () => {
         it('should clarify rather than guess for ambiguous references', () => {
             const tasks = [
                 { id: 't1', projectId: 'p1', title: 'Call doctor' },
-                { id: 't2', projectId: 'p1', title: 'Call dentist' },
+                { id: 't2', projectId: 'p1', title: 'Call dentist' }
             ];
             const result = resolveTarget({ targetQuery: 'call', activeTasks: tasks });
             assert.strictEqual(result.status, 'clarification');
@@ -492,7 +519,7 @@ describe('Task Resolver Module', () => {
             // Delete safety relies on the same clarification vs resolved contract
             const tasks = [
                 { id: 't1', projectId: 'p1', title: 'Old task' },
-                { id: 't2', projectId: 'p1', title: 'Old project notes' },
+                { id: 't2', projectId: 'p1', title: 'Old project notes' }
             ];
             const result = resolveTarget({ targetQuery: 'old', activeTasks: tasks });
             // Both are prefix matches with same score -> clarification
@@ -504,7 +531,7 @@ describe('Task Resolver Module', () => {
             // even though neither string contains the other fully.
             const tasks = [
                 { id: 't1', projectId: 'p1', title: 'Watch AI Coding Videos on Udemy' },
-                { id: 't2', projectId: 'p1', title: 'Buy groceries' },
+                { id: 't2', projectId: 'p1', title: 'Buy groceries' }
             ];
             const result = resolveTarget({ targetQuery: 'ai coder task', activeTasks: tasks });
             assert.strictEqual(result.status, 'resolved');
@@ -515,7 +542,7 @@ describe('Task Resolver Module', () => {
         it('should resolve token-overlap for multi-word NLQ references', () => {
             const tasks = [
                 { id: 't1', projectId: 'p1', title: 'Finish system design notes' },
-                { id: 't2', projectId: 'p1', title: 'Read a book' },
+                { id: 't2', projectId: 'p1', title: 'Read a book' }
             ];
             const result = resolveTarget({ targetQuery: 'system design task', activeTasks: tasks });
             assert.strictEqual(result.status, 'resolved');
@@ -550,7 +577,7 @@ describe('Task Resolver Module', () => {
             const result = resolveTarget({
                 targetQuery: 'it',
                 activeTasks: [TASK_FIXTURES.buyGroceries],
-                recentTask: TASK_FIXTURES.callMom,
+                recentTask: TASK_FIXTURES.callMom
             });
             assert.strictEqual(result.status, 'resolved');
             assert.strictEqual(result.selected.matchType, 'coreference');
@@ -561,15 +588,17 @@ describe('Task Resolver Module', () => {
             const result = resolveTarget({ targetQuery: 'grocries', activeTasks: [TASK_FIXTURES.buyGroceries] });
             assert.strictEqual(result.status, 'resolved');
             // token_overlap may catch this before pure fuzzy — either is medium confidence
-            assert.ok(['fuzzy', 'token_overlap'].includes(result.selected.matchType),
-                `expected fuzzy/token_overlap, got ${result.selected.matchType}`);
+            assert.ok(
+                ['fuzzy', 'token_overlap'].includes(result.selected.matchType),
+                `expected fuzzy/token_overlap, got ${result.selected.matchType}`
+            );
             assert.strictEqual(result.selected.matchConfidence, 'medium');
         });
 
         it('should set matchConfidence medium for token_overlap match', () => {
             const tasks = [
                 { id: 't1', projectId: 'p1', title: 'Watch AI Coding Videos on Udemy' },
-                { id: 't2', projectId: 'p1', title: 'Buy groceries' },
+                { id: 't2', projectId: 'p1', title: 'Buy groceries' }
             ];
             const result = resolveTarget({ targetQuery: 'ai coder task', activeTasks: tasks });
             assert.strictEqual(result.status, 'resolved');
@@ -588,7 +617,7 @@ describe('Task Resolver Module', () => {
         it('should include matchConfidence in all candidate objects', () => {
             const tasks = [
                 { id: 't1', projectId: 'p1', title: 'Review PR 123' },
-                { id: 't2', projectId: 'p1', title: 'Review PR 456' },
+                { id: 't2', projectId: 'p1', title: 'Review PR 456' }
             ];
             const result = resolveTarget({ targetQuery: 'review pr', activeTasks: tasks });
             // Both prefix, should be clarification

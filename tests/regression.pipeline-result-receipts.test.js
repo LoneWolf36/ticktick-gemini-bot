@@ -13,9 +13,13 @@ test('freeform receipt helper persists undo entries and adds undo button only on
             {
                 status: 'succeeded',
                 action: { type: 'create', title: 'Write report' },
-                rollbackStep: { type: 'delete_created', targetTaskId: 'task-1', payload: { snapshot: { title: 'Write report' } } },
-            },
-        ],
+                rollbackStep: {
+                    type: 'delete_created',
+                    targetTaskId: 'task-1',
+                    payload: { snapshot: { title: 'Write report' } }
+                }
+            }
+        ]
     };
 
     const receipt = await buildFreeformPipelineResultReceipt({
@@ -23,8 +27,8 @@ test('freeform receipt helper persists undo entries and adds undo button only on
         userId: 'user-1',
         projects: [],
         store: {
-            addUndoEntry: async (entry) => stored.push(entry),
-        },
+            addUndoEntry: async (entry) => stored.push(entry)
+        }
     });
 
     assert.equal(receipt.undoCount, 1);
@@ -43,16 +47,22 @@ test('freeform receipt helper suppresses undo button when persistence fails', as
             {
                 status: 'succeeded',
                 action: { type: 'delete', title: 'Secret task' },
-                rollbackStep: { type: 'restore_updated', targetTaskId: 'task-2', payload: { snapshot: { title: 'Secret task' } } },
-            },
-        ],
+                rollbackStep: {
+                    type: 'restore_updated',
+                    targetTaskId: 'task-2',
+                    payload: { snapshot: { title: 'Secret task' } }
+                }
+            }
+        ]
     };
 
     const receipt = await buildFreeformPipelineResultReceipt({
         result,
         store: {
-            addUndoEntry: async () => { throw new Error('write failed'); },
-        },
+            addUndoEntry: async () => {
+                throw new Error('write failed');
+            }
+        }
     });
 
     assert.equal(receipt.undoCount, 0);
@@ -70,14 +80,22 @@ test('freeform receipt helper keeps undo button when some rollback entries persi
             {
                 status: 'succeeded',
                 action: { type: 'update', title: 'First task' },
-                rollbackStep: { type: 'restore_updated', targetTaskId: 'task-3', payload: { snapshot: { title: 'First task' } } },
+                rollbackStep: {
+                    type: 'restore_updated',
+                    targetTaskId: 'task-3',
+                    payload: { snapshot: { title: 'First task' } }
+                }
             },
             {
                 status: 'succeeded',
                 action: { type: 'update', title: 'Second task' },
-                rollbackStep: { type: 'restore_updated', targetTaskId: 'task-4', payload: { snapshot: { title: 'Second task' } } },
-            },
-        ],
+                rollbackStep: {
+                    type: 'restore_updated',
+                    targetTaskId: 'task-4',
+                    payload: { snapshot: { title: 'Second task' } }
+                }
+            }
+        ]
     };
 
     const receipt = await buildFreeformPipelineResultReceipt({
@@ -87,8 +105,8 @@ test('freeform receipt helper keeps undo button when some rollback entries persi
                 stored.push(entry);
                 if (stored.length === 1) return;
                 throw new Error('second write failed');
-            },
-        },
+            }
+        }
     });
 
     assert.equal(receipt.undoCount, 1);
@@ -106,13 +124,19 @@ test('freeform receipt helper stays safe on dry run', async () => {
                 {
                     status: 'succeeded',
                     action: { type: 'create', title: 'Preview task' },
-                    rollbackStep: { type: 'delete_created', targetTaskId: 'task-5', payload: { snapshot: { title: 'Preview task' } } },
-                },
-            ],
+                    rollbackStep: {
+                        type: 'delete_created',
+                        targetTaskId: 'task-5',
+                        payload: { snapshot: { title: 'Preview task' } }
+                    }
+                }
+            ]
         },
         store: {
-            addUndoEntry: async () => { throw new Error('should not run'); },
-        },
+            addUndoEntry: async () => {
+                throw new Error('should not run');
+            }
+        }
     });
 
     assert.match(receipt.text, /preview/i);
@@ -126,11 +150,13 @@ test('freeform receipt helper omits undo affordance without rollback step', asyn
             type: 'task',
             dryRun: false,
             confirmationText: 'Done.',
-            results: [
-                { status: 'succeeded', action: { type: 'complete', title: 'Do thing' }, rollbackStep: null },
-            ],
+            results: [{ status: 'succeeded', action: { type: 'complete', title: 'Do thing' }, rollbackStep: null }]
         },
-        store: { addUndoEntry: async () => { throw new Error('should not run'); } },
+        store: {
+            addUndoEntry: async () => {
+                throw new Error('should not run');
+            }
+        }
     });
 
     assert.equal(receipt.undoCount, 0);
@@ -146,9 +172,9 @@ test('freeform receipt includes verification warning without leaking raw errors'
                 verified: false,
                 verificationNote: 'Verification failed: repeatFlag mismatch',
                 action: { type: 'update' },
-                rollbackStep: { payload: { snapshot: { title: 'Hidden task', repeatFlag: 'FREQ=DAILY' } } },
-            },
-        ],
+                rollbackStep: { payload: { snapshot: { title: 'Hidden task', repeatFlag: 'FREQ=DAILY' } } }
+            }
+        ]
     });
 
     assert.match(text, /Verification did not confirm this change in TickTick/);
@@ -161,9 +187,9 @@ test('freeform receipt omits title diff when update title missing', () => {
             {
                 status: 'succeeded',
                 action: { type: 'update' },
-                rollbackStep: { payload: { snapshot: { title: 'Task name', repeatFlag: 'RRULE:FREQ=DAILY' } } },
-            },
-        ],
+                rollbackStep: { payload: { snapshot: { title: 'Task name', repeatFlag: 'RRULE:FREQ=DAILY' } } }
+            }
+        ]
     });
 
     assert.doesNotMatch(text, /Task name" →/);
@@ -177,9 +203,9 @@ test('freeform receipt warns when verification is unavailable', () => {
                 status: 'succeeded',
                 result: { verified: false, verificationNote: 'Verification skipped due to fetch error: timeout' },
                 action: { type: 'update' },
-                rollbackStep: { payload: { snapshot: { title: 'Hidden task' } } },
-            },
-        ],
+                rollbackStep: { payload: { snapshot: { title: 'Hidden task' } } }
+            }
+        ]
     });
 
     assert.match(text, /verification unavailable/);

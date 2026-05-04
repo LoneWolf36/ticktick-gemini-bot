@@ -4,13 +4,40 @@ import * as normalizer from '../services/normalizer.js';
 export const DEFAULT_PROJECTS = [
     { id: 'aaaaaaaaaaaaaaaaaaaaaaaa', name: 'Inbox' },
     { id: 'bbbbbbbbbbbbbbbbbbbbbbbb', name: 'Career' },
-    { id: 'cccccccccccccccccccccccc', name: 'Personal' },
+    { id: 'cccccccccccccccccccccccc', name: 'Personal' }
 ];
 
 export const DEFAULT_ACTIVE_TASKS = [
-    { id: 'task000000000000000000001', title: 'Review PR #123', projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa', projectName: 'Inbox', priority: 3, dueDate: null, content: null, status: 0 },
-    { id: 'task000000000000000000002', title: 'Write weekly report', projectId: 'bbbbbbbbbbbbbbbbbbbbbbbb', projectName: 'Career', priority: 5, dueDate: '2026-03-15', content: 'Draft and send', status: 0 },
-    { id: 'task000000000000000000003', title: 'Buy groceries', projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa', projectName: 'Inbox', priority: 1, dueDate: null, content: null, status: 0 },
+    {
+        id: 'task000000000000000000001',
+        title: 'Review PR #123',
+        projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+        projectName: 'Inbox',
+        priority: 3,
+        dueDate: null,
+        content: null,
+        status: 0
+    },
+    {
+        id: 'task000000000000000000002',
+        title: 'Write weekly report',
+        projectId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
+        projectName: 'Career',
+        priority: 5,
+        dueDate: '2026-03-15',
+        content: 'Draft and send',
+        status: 0
+    },
+    {
+        id: 'task000000000000000000003',
+        title: 'Buy groceries',
+        projectId: 'aaaaaaaaaaaaaaaaaaaaaaaa',
+        projectName: 'Inbox',
+        priority: 1,
+        dueDate: null,
+        content: null,
+        status: 0
+    }
 ];
 
 export function createPipelineHarness({
@@ -22,7 +49,7 @@ export function createPipelineHarness({
     normalizedActions = null,
     adapterOverrides = {},
     observability = undefined,
-    deferIntent = undefined,
+    deferIntent = undefined
 } = {}) {
     const axCalls = [];
     const adapterCalls = {
@@ -31,7 +58,7 @@ export function createPipelineHarness({
         create: [],
         update: [],
         complete: [],
-        delete: [],
+        delete: []
     };
 
     const intentExtractor = {
@@ -41,7 +68,7 @@ export function createPipelineHarness({
                 return intents(userMessage, options);
             }
             return intents;
-        },
+        }
     };
 
     const baseAdapter = {
@@ -61,7 +88,7 @@ export function createPipelineHarness({
             priority: 0,
             dueDate: null,
             repeatFlag: null,
-            status: 0,
+            status: 0
         }),
         createTask: async (action) => {
             adapterCalls.create.push(action);
@@ -79,16 +106,16 @@ export function createPipelineHarness({
             adapterCalls.delete.push({ taskId, projectId });
             return { deleted: true, taskId };
         },
-        restoreTask: async (taskId, snapshot) => ({ id: taskId, ...snapshot }),
+        restoreTask: async (taskId, snapshot) => ({ id: taskId, ...snapshot })
     };
     const adapter = { ...baseAdapter, ...adapterOverrides };
 
     const normalizerImpl = useRealNormalizer
         ? {
-            normalizeActions: (input, options) => normalizer.normalizeActions(input, options),
-            normalizeActionBatch: (input, options) => normalizer.normalizeActionBatch(input, options),
-            validateMutationBatch: (actions) => normalizer.validateMutationBatch(actions),
-        }
+              normalizeActions: (input, options) => normalizer.normalizeActions(input, options),
+              normalizeActionBatch: (input, options) => normalizer.normalizeActionBatch(input, options),
+              validateMutationBatch: (actions) => normalizer.validateMutationBatch(actions)
+          }
         : { normalizeActions: () => normalizedActions ?? [] };
 
     const pipeline = createPipeline({
@@ -96,15 +123,14 @@ export function createPipelineHarness({
         normalizer: normalizerImpl,
         adapter,
         ...(observability ? { observability } : {}),
-        ...(deferIntent ? { deferIntent } : {}),
+        ...(deferIntent ? { deferIntent } : {})
     });
 
-    const processMessage = (userMessage, options = {}) => (
+    const processMessage = (userMessage, options = {}) =>
         pipeline.processMessage(userMessage, {
             currentDate: now,
-            ...options,
-        })
-    );
+            ...options
+        });
 
     return {
         pipeline,
@@ -113,6 +139,6 @@ export function createPipelineHarness({
         axCalls,
         adapter,
         projects,
-        activeTasks,
+        activeTasks
     };
 }

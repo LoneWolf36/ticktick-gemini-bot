@@ -8,7 +8,7 @@ import {
     STOP_WORDS,
     FOLLOWUP_PRONOUNS,
     FOLLOWUP_TIME_SHIFTS,
-    scoring,
+    scoring
 } from './project-policy.js';
 
 const recentRankingTelemetry = new Map();
@@ -44,9 +44,7 @@ function logRankingTelemetry(payload, context) {
         return;
     }
 
-    const sink = typeof context?.rankingTelemetrySink === 'function'
-        ? context.rankingTelemetrySink
-        : null;
+    const sink = typeof context?.rankingTelemetrySink === 'function' ? context.rankingTelemetrySink : null;
 
     if (sink) {
         sink(payload);
@@ -290,7 +288,7 @@ function normalizeBehavioralSignals(signals = [], threshold = 'strong') {
                 type: 'category_avoidance',
                 category,
                 confidence,
-                signalCount,
+                signalCount
             };
         })
         .filter(Boolean);
@@ -306,7 +304,7 @@ function summarizeCandidateForTelemetry(candidate) {
         taskAgeDays: candidate.taskAgeDays ?? null,
         status: candidate.status ?? null,
         source: candidate.source ?? 'ticktick',
-        containsSensitiveContent: candidate.containsSensitiveContent === true,
+        containsSensitiveContent: candidate.containsSensitiveContent === true
     };
 }
 
@@ -322,7 +320,7 @@ function summarizeAssessmentForTelemetry(assessment) {
         fallbackUsed: assessment.fallbackUsed === true,
         urgency: assessment.urgency || 'low',
         goalMatchCount: Array.isArray(assessment.themeMatches) ? assessment.themeMatches.length : 0,
-        behavioralSignalApplied: assessment.behavioralSignalApplied === true,
+        behavioralSignalApplied: assessment.behavioralSignalApplied === true
     };
 }
 
@@ -331,7 +329,9 @@ function buildRankingTelemetryPayload({ candidates, assessed, result, context })
         eventType: 'ranking.computed',
         timestamp: new Date().toISOString(),
         inputState: {
-            goalThemeCount: Array.isArray(context.goalThemeProfile?.themes) ? context.goalThemeProfile.themes.length : 0,
+            goalThemeCount: Array.isArray(context.goalThemeProfile?.themes)
+                ? context.goalThemeProfile.themes.length
+                : 0,
             goalConfidence: context.goalThemeProfile?.confidence || 'weak',
             nowIso: context.nowIso || null,
             workStyleMode: context.workStyleMode || 'unknown',
@@ -340,7 +340,7 @@ function buildRankingTelemetryPayload({ candidates, assessed, result, context })
             behavioralSignalCount: Array.isArray(context.behavioralSignals) ? context.behavioralSignals.length : 0,
             stateSource: context.stateSource || 'none',
             priorityOverrideCount: Array.isArray(context.priorityOverrides) ? context.priorityOverrides.length : 0,
-            candidates: candidates.map(summarizeCandidateForTelemetry),
+            candidates: candidates.map(summarizeCandidateForTelemetry)
         },
         computedScores: assessed.map(summarizeAssessmentForTelemetry),
         finalOrdering: result.ranked.map((decision) => ({
@@ -352,11 +352,11 @@ function buildRankingTelemetryPayload({ candidates, assessed, result, context })
             inferenceConfidence: decision.inferenceConfidence,
             exceptionApplied: decision.exceptionApplied === true,
             exceptionReason: decision.exceptionReason || 'none',
-            fallbackUsed: decision.fallbackUsed === true,
+            fallbackUsed: decision.fallbackUsed === true
         })),
         degraded: result.degraded === true,
         degradedReason: result.degradedReason || 'none',
-        rankingConfidence: result.rankingConfidence || 'low',
+        rankingConfidence: result.rankingConfidence || 'low'
     };
 }
 
@@ -370,12 +370,11 @@ function normalizePriorityOverride(override, nowIso = null) {
         return null;
     }
 
-    const expiresAt = typeof override.expiresAt === 'string' && !Number.isNaN(Date.parse(override.expiresAt))
-        ? override.expiresAt
-        : null;
-    const nowMs = typeof nowIso === 'string' && !Number.isNaN(Date.parse(nowIso))
-        ? Date.parse(nowIso)
-        : Date.now();
+    const expiresAt =
+        typeof override.expiresAt === 'string' && !Number.isNaN(Date.parse(override.expiresAt))
+            ? override.expiresAt
+            : null;
+    const nowMs = typeof nowIso === 'string' && !Number.isNaN(Date.parse(nowIso)) ? Date.parse(nowIso) : Date.now();
 
     if (expiresAt && Date.parse(expiresAt) <= nowMs) {
         return null;
@@ -384,7 +383,7 @@ function normalizePriorityOverride(override, nowIso = null) {
     return {
         taskId,
         reason: normalizeWhitespace(override.reason) || 'explicit_user_priority',
-        expiresAt,
+        expiresAt
     };
 }
 
@@ -393,16 +392,21 @@ function resolvePriorityOverrides(overrides, nowIso = null) {
         return [];
     }
 
-    return overrides
-        .map((override) => normalizePriorityOverride(override, nowIso))
-        .filter(Boolean);
+    return overrides.map((override) => normalizePriorityOverride(override, nowIso)).filter(Boolean);
 }
 
 function findPriorityOverride(taskId, context) {
     return (context.priorityOverrides || []).find((override) => override.taskId === taskId) || null;
 }
 
-function inferInferenceConfidence({ rationaleCode, urgency, degraded, themeMatches, exceptionApplied, behavioralConfidence = null }) {
+function inferInferenceConfidence({
+    rationaleCode,
+    urgency,
+    degraded,
+    themeMatches,
+    exceptionApplied,
+    behavioralConfidence = null
+}) {
     if (exceptionApplied === true) {
         return 'strong';
     }
@@ -463,7 +467,7 @@ function assessCandidate(candidate, context) {
             inferenceConfidence: 'strong',
             exceptionApplied: true,
             exceptionReason: priorityOverride.reason,
-            fallbackUsed: false,
+            fallbackUsed: false
         };
     }
 
@@ -513,7 +517,7 @@ function assessCandidate(candidate, context) {
         urgency,
         degraded,
         themeMatches,
-        exceptionApplied,
+        exceptionApplied
     });
 
     return {
@@ -528,7 +532,7 @@ function assessCandidate(candidate, context) {
         exceptionApplied,
         exceptionReason,
         fallbackUsed: degraded || rationaleCode === 'fallback',
-        suggestedPriority,
+        suggestedPriority
     };
 }
 
@@ -547,14 +551,14 @@ export function createGoalThemeProfile(rawContext = '', options = {}) {
         label,
         kind: inferThemeKind(label),
         priorityOrder: index + 1,
-        active: true,
+        active: true
     }));
 
     return {
         rawContext: asString(rawContext),
         themes,
         source: options.source || 'fallback',
-        confidence: themes.length > 0 ? 'explicit' : 'weak',
+        confidence: themes.length > 0 ? 'explicit' : 'weak'
     };
 }
 
@@ -583,7 +587,7 @@ export function normalizePriorityCandidate(task = {}) {
         taskAgeDays,
         status: task.status ?? null,
         source: 'ticktick',
-        containsSensitiveContent: containsSensitiveContent(`${asString(task.title)}\n${asString(task.content)}`),
+        containsSensitiveContent: containsSensitiveContent(`${asString(task.title)}\n${asString(task.content)}`)
     };
 }
 
@@ -602,14 +606,12 @@ export function buildRankingContext(options = {}) {
         behavioralInferenceThreshold: options.behavioralInferenceThreshold || 'strong',
         behavioralSignals: normalizeBehavioralSignals(
             options.behavioralSignals,
-            options.behavioralInferenceThreshold || 'strong',
+            options.behavioralInferenceThreshold || 'strong'
         ),
         priorityOverrides: resolvePriorityOverrides(options.priorityOverrides, options.nowIso),
-        rankingTelemetrySink: typeof options.rankingTelemetrySink === 'function'
-            ? options.rankingTelemetrySink
-            : null,
+        rankingTelemetrySink: typeof options.rankingTelemetrySink === 'function' ? options.rankingTelemetrySink : null,
         stateSource: options.stateSource || 'none',
-        userId: options.userId || options.user_id || null,
+        userId: options.userId || options.user_id || null
     };
 }
 
@@ -724,7 +726,9 @@ export function inferProjectIdFromTask(task, projects = [], options = {}) {
     }
 
     const configuredLookup = buildConfiguredProjectLookup(options.projectPolicy || projectPolicy);
-    const exactConfiguredMatch = configuredLookup.get(normalizeWhitespace(normalizedCandidate.projectName).toLowerCase());
+    const exactConfiguredMatch = configuredLookup.get(
+        normalizeWhitespace(normalizedCandidate.projectName).toLowerCase()
+    );
     if (exactConfiguredMatch) return exactConfiguredMatch;
 
     return null;
@@ -747,7 +751,7 @@ export function createRankingDecision(decision = {}) {
         exceptionApplied: decision.exceptionApplied === true,
         exceptionReason: decision.exceptionReason || 'none',
         fallbackUsed: decision.fallbackUsed === true,
-        suggestedPriority: decision.suggestedPriority,
+        suggestedPriority: decision.suggestedPriority
     };
 }
 
@@ -758,31 +762,34 @@ export function createRankingDecision(decision = {}) {
  * @returns {object} Recommendation result
  */
 export function buildRecommendationResult({ ranked = [], degradedReason = 'none', context = null } = {}) {
-    const normalizedRanked = ranked.map((decision, index) => createRankingDecision({
-        ...decision,
-        rank: decision.rank || index + 1,
-        scoreBand: decision.scoreBand || clampScoreBand(index + 1),
-    }));
+    const normalizedRanked = ranked.map((decision, index) =>
+        createRankingDecision({
+            ...decision,
+            rank: decision.rank || index + 1,
+            scoreBand: decision.scoreBand || clampScoreBand(index + 1)
+        })
+    );
     const resolvedContext = context || buildRankingContext();
-    const finalDegradedReason = normalizedRanked.length === 0
-        ? 'no_candidates'
-        : degradedReason;
-    const rankingConfidence = normalizedRanked.length > 0
-        && finalDegradedReason === 'none'
-        && normalizedRanked.every((decision) => decision.inferenceConfidence === 'strong')
-        ? 'high'
-        : 'low';
+    const finalDegradedReason = normalizedRanked.length === 0 ? 'no_candidates' : degradedReason;
+    const rankingConfidence =
+        normalizedRanked.length > 0 &&
+        finalDegradedReason === 'none' &&
+        normalizedRanked.every((decision) => decision.inferenceConfidence === 'strong')
+            ? 'high'
+            : 'low';
     const shouldAskClarification = rankingConfidence === 'low' && finalDegradedReason !== 'no_candidates';
-    const allLowPriority = normalizedRanked.length > 0
-        && normalizedRanked.every((decision) => decision.rationaleCode === 'fallback' || decision.inferenceConfidence === 'weak');
-    const uncertaintyLabel = rankingConfidence === 'low'
-        ? (finalDegradedReason === 'unknown_goals'
-            ? 'Ranking is uncertain because goal context is incomplete.'
-            : 'Ranking is uncertain because some evidence is weak or conflicting.')
-        : null;
-    const nothingCriticalLabel = allLowPriority
-        ? 'Nothing critical stands out right now.'
-        : null;
+    const allLowPriority =
+        normalizedRanked.length > 0 &&
+        normalizedRanked.every(
+            (decision) => decision.rationaleCode === 'fallback' || decision.inferenceConfidence === 'weak'
+        );
+    const uncertaintyLabel =
+        rankingConfidence === 'low'
+            ? finalDegradedReason === 'unknown_goals'
+                ? 'Ranking is uncertain because goal context is incomplete.'
+                : 'Ranking is uncertain because some evidence is weak or conflicting.'
+            : null;
+    const nothingCriticalLabel = allLowPriority ? 'Nothing critical stands out right now.' : null;
 
     return {
         topRecommendation: normalizedRanked[0] || null,
@@ -794,9 +801,11 @@ export function buildRecommendationResult({ ranked = [], degradedReason = 'none'
         nothingCriticalLabel,
         shouldAskClarification,
         clarificationReason: shouldAskClarification
-            ? (finalDegradedReason === 'unknown_goals' ? 'missing_goal_context' : 'weak_inference')
+            ? finalDegradedReason === 'unknown_goals'
+                ? 'missing_goal_context'
+                : 'weak_inference'
             : null,
-        context: resolvedContext,
+        context: resolvedContext
     };
 }
 
@@ -808,7 +817,7 @@ export function buildRecommendationResult({ ranked = [], degradedReason = 'none'
  * @returns {object} Recommendation result
  */
 export function rankPriorityCandidates(input, maybeContext) {
-    const rawCandidates = Array.isArray(input) ? input : (input?.candidates || []);
+    const rawCandidates = Array.isArray(input) ? input : input?.candidates || [];
     const context = buildRankingContext(Array.isArray(input) ? maybeContext : input?.context);
     const normalized = rawCandidates
         .map((candidate) => (candidate?.taskId ? candidate : normalizePriorityCandidate(candidate)))
@@ -822,7 +831,7 @@ export function rankPriorityCandidates(input, maybeContext) {
         if (!candidate.dueDate) return true;
         const dueMs = Date.parse(candidate.dueDate);
         if (Number.isNaN(dueMs)) return false; // Invalid date -> drop
-        return (dueMs - now) <= FOURTEEN_DAYS_MS;
+        return dueMs - now <= FOURTEEN_DAYS_MS;
     });
     const droppedCount = normalized.length - candidates.length;
     if (droppedCount > 0) {
@@ -833,14 +842,17 @@ export function rankPriorityCandidates(input, maybeContext) {
         const result = buildRecommendationResult({
             ranked: [],
             degradedReason: 'no_candidates',
-            context,
+            context
         });
-        logRankingTelemetry(buildRankingTelemetryPayload({
-            candidates: [],
-            assessed: [],
-            result,
-            context,
-        }), context);
+        logRankingTelemetry(
+            buildRankingTelemetryPayload({
+                candidates: [],
+                assessed: [],
+                result,
+                context
+            }),
+            context
+        );
         return result;
     }
 
@@ -858,35 +870,38 @@ export function rankPriorityCandidates(input, maybeContext) {
             return left.candidate.taskId.localeCompare(right.candidate.taskId);
         });
 
-    const ranked = assessed.map((assessment, index) => createRankingDecision({
-        taskId: assessment.candidate.taskId,
-        rank: index + 1,
-        scoreBand: clampScoreBand(index + 1),
-        rationaleCode: assessment.rationaleCode,
-        rationaleText: assessment.rationaleText,
-        inferenceConfidence: assessment.inferenceConfidence,
-        exceptionApplied: assessment.exceptionApplied,
-        exceptionReason: assessment.exceptionReason,
-        fallbackUsed: assessment.fallbackUsed,
-        suggestedPriority: assessment.suggestedPriority,
-    }));
+    const ranked = assessed.map((assessment, index) =>
+        createRankingDecision({
+            taskId: assessment.candidate.taskId,
+            rank: index + 1,
+            scoreBand: clampScoreBand(index + 1),
+            rationaleCode: assessment.rationaleCode,
+            rationaleText: assessment.rationaleText,
+            inferenceConfidence: assessment.inferenceConfidence,
+            exceptionApplied: assessment.exceptionApplied,
+            exceptionReason: assessment.exceptionReason,
+            fallbackUsed: assessment.fallbackUsed,
+            suggestedPriority: assessment.suggestedPriority
+        })
+    );
 
-    const degradedReason = context.goalThemeProfile.confidence === 'explicit'
-        ? 'none'
-        : 'unknown_goals';
+    const degradedReason = context.goalThemeProfile.confidence === 'explicit' ? 'none' : 'unknown_goals';
 
     const result = buildRecommendationResult({
         ranked,
         degradedReason,
-        context,
+        context
     });
 
-    logRankingTelemetry(buildRankingTelemetryPayload({
-        candidates,
-        assessed,
-        result,
-        context,
-    }), context);
+    logRankingTelemetry(
+        buildRankingTelemetryPayload({
+            candidates,
+            assessed,
+            result,
+            context
+        }),
+        context
+    );
 
     return result;
 }

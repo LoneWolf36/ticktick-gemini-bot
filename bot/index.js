@@ -28,4 +28,3 @@ export function createBot(token, ticktick, gemini, adapter, pipeline, config = {
 
     return bot;
 }
-

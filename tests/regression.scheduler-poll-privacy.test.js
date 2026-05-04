@@ -26,22 +26,24 @@ async function runCapturedPoll({ pipeline }) {
                 isQuotaExhausted: () => false,
                 quotaResumeTime: () => null,
                 generateDailyBriefingSummary: async () => ({ formattedText: 'daily' }),
-                generateWeeklyDigestSummary: async () => ({ formattedText: 'weekly' }),
+                generateWeeklyDigestSummary: async () => ({ formattedText: 'weekly' })
             },
             {
-                listActiveTasks: async () => ([{
-                    id: 'poll-secret-task',
-                    title: sensitiveTitle,
-                    content: sensitiveContent,
-                    projectId: 'inbox',
-                }]),
-                listProjects: async () => [],
+                listActiveTasks: async () => [
+                    {
+                        id: 'poll-secret-task',
+                        title: sensitiveTitle,
+                        content: sensitiveContent,
+                        projectId: 'inbox'
+                    }
+                ],
+                listProjects: async () => []
             },
             pipeline,
             {
                 pollMinutes: 5,
                 autoApplyLifeAdmin: true,
-                graceWindowMinutes: 0,
+                graceWindowMinutes: 0
             }
         );
 
@@ -64,10 +66,10 @@ test('scheduler poll redacts task text when pipeline returns an error result', a
                     type: 'error',
                     failure: {
                         class: 'validation',
-                        summary: 'Secret title should never appear',
-                    },
-                }),
-            },
+                        summary: 'Secret title should never appear'
+                    }
+                })
+            }
         });
     } finally {
         console.error = originalError;
@@ -88,8 +90,8 @@ test('scheduler poll redacts thrown error messages', async () => {
             pipeline: {
                 processMessageWithContext: async () => {
                     throw new Error('Sensitive thrown scheduler error');
-                },
-            },
+                }
+            }
         });
     } finally {
         console.error = originalError;

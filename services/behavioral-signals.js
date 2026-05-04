@@ -55,13 +55,13 @@ export const SignalType = Object.freeze({
     /** One category shows sustained neglect */
     CATEGORY_AVOIDANCE: 'category_avoidance',
     /** Planning activity grows without matching execution */
-    PLANNING_WITHOUT_EXECUTION: 'planning_without_execution',
+    PLANNING_WITHOUT_EXECUTION: 'planning_without_execution'
 });
 
 const CONFIDENCE = Object.freeze({
     LOW: 0.65,
     STANDARD: 0.8,
-    HIGH: 0.92,
+    HIGH: 0.92
 });
 
 /**
@@ -194,28 +194,34 @@ export function classifyTaskEvent(event) {
  * @private
  */
 function emitSignal(type, event) {
-    return withSubjectKey({
-        type,
-        category: event.category || 'unknown',
-        projectId: event.projectId || null,
-        confidence: 1.0,
-        metadata: buildMetadata(event),
-        timestamp: event.timestamp || new Date().toISOString(),
-    }, event);
+    return withSubjectKey(
+        {
+            type,
+            category: event.category || 'unknown',
+            projectId: event.projectId || null,
+            confidence: 1.0,
+            metadata: buildMetadata(event),
+            timestamp: event.timestamp || new Date().toISOString()
+        },
+        event
+    );
 }
 
 function emitPatternSignal(type, event, confidence, metadata = {}) {
-    return withSubjectKey({
-        type,
-        category: event.category || 'unknown',
-        projectId: event.projectId || null,
-        confidence,
-        metadata: {
-            ...buildMetadata(event),
-            ...metadata,
+    return withSubjectKey(
+        {
+            type,
+            category: event.category || 'unknown',
+            projectId: event.projectId || null,
+            confidence,
+            metadata: {
+                ...buildMetadata(event),
+                ...metadata
+            },
+            timestamp: event.timestamp || new Date().toISOString()
         },
-        timestamp: event.timestamp || new Date().toISOString(),
-    }, event);
+        event
+    );
 }
 
 /**
@@ -235,7 +241,7 @@ export function deriveSubjectKey(taskId) {
 function withSubjectKey(signal, event) {
     return {
         ...signal,
-        subjectKey: deriveSubjectKey(event?.taskId),
+        subjectKey: deriveSubjectKey(event?.taskId)
     };
 }
 
@@ -255,9 +261,12 @@ function buildMetadata(event) {
     const meta = {};
 
     if (event.dueDateBefore !== undefined) meta.dueDateChanged = event.dueDateBefore !== event.dueDateAfter;
-    if (event.checklistCountBefore !== undefined) meta.checklistDelta = (event.checklistCountAfter || 0) - (event.checklistCountBefore || 0);
-    if (event.descriptionLengthBefore !== undefined) meta.descriptionDelta = (event.descriptionLengthAfter || 0) - (event.descriptionLengthBefore || 0);
-    if (event.subtaskCountBefore !== undefined) meta.subtaskDelta = (event.subtaskCountAfter || 0) - (event.subtaskCountBefore || 0);
+    if (event.checklistCountBefore !== undefined)
+        meta.checklistDelta = (event.checklistCountAfter || 0) - (event.checklistCountBefore || 0);
+    if (event.descriptionLengthBefore !== undefined)
+        meta.descriptionDelta = (event.descriptionLengthAfter || 0) - (event.descriptionLengthBefore || 0);
+    if (event.subtaskCountBefore !== undefined)
+        meta.subtaskDelta = (event.subtaskCountAfter || 0) - (event.subtaskCountBefore || 0);
     if (event.titleWordCount !== undefined) meta.titleWordCount = event.titleWordCount;
     if (event.titleCharacterCount !== undefined) meta.titleCharacterCount = event.titleCharacterCount;
     if (event.hasActionVerb !== undefined) meta.hasActionVerb = event.hasActionVerb;
@@ -288,7 +297,7 @@ export function detectSnoozeSpiral(event) {
     if (!postpone) return null;
     return emitPatternSignal(SignalType.SNOOZE_SPIRAL, event, CONFIDENCE.STANDARD, {
         repeatedPostponeCandidate: true,
-        daysMoved: postpone.metadata.daysMoved,
+        daysMoved: postpone.metadata.daysMoved
     });
 }
 
@@ -310,8 +319,8 @@ export function detectCommitmentOverloader(event) {
     const safeRatio = Number.isFinite(ratio)
         ? ratio
         : completed <= 0 && created > 0
-            ? created
-            : created / Math.max(completed, 1);
+          ? created
+          : created / Math.max(completed, 1);
 
     if (safeRatio < 2 && created < 5) {
         return null;
@@ -324,8 +333,8 @@ export function detectCommitmentOverloader(event) {
         {
             creationCompletionRatio: safeRatio,
             recentCreatedCount: Number.isFinite(created) ? created : null,
-            recentCompletedCount: Number.isFinite(completed) ? completed : null,
-        },
+            recentCompletedCount: Number.isFinite(completed) ? completed : null
+        }
     );
 }
 
@@ -345,7 +354,7 @@ export function detectStaleTaskMuseum(event) {
         SignalType.STALE_TASK_MUSEUM,
         event,
         taskAgeDays >= 60 ? CONFIDENCE.HIGH : CONFIDENCE.STANDARD,
-        { taskAgeDays },
+        { taskAgeDays }
     );
 }
 
@@ -374,8 +383,8 @@ export function detectQuickWinAddiction(event) {
         {
             smallTaskCandidate,
             titleWordCount: Number.isFinite(titleWordCount) ? titleWordCount : null,
-            completionLeadTimeHours: Number.isFinite(completionLeadTimeHours) ? completionLeadTimeHours : null,
-        },
+            completionLeadTimeHours: Number.isFinite(completionLeadTimeHours) ? completionLeadTimeHours : null
+        }
     );
 }
 
@@ -394,9 +403,10 @@ export function detectVagueTaskWriter(event) {
         return null;
     }
 
-    const vague = (typeof hasActionVerb === 'boolean' && hasActionVerb === false)
-        || (Number.isFinite(titleWordCount) && titleWordCount <= 2)
-        || (Number.isFinite(titleCharacterCount) && titleCharacterCount < 12);
+    const vague =
+        (typeof hasActionVerb === 'boolean' && hasActionVerb === false) ||
+        (Number.isFinite(titleWordCount) && titleWordCount <= 2) ||
+        (Number.isFinite(titleCharacterCount) && titleCharacterCount < 12);
 
     if (!vague) {
         return null;
@@ -409,8 +419,8 @@ export function detectVagueTaskWriter(event) {
         {
             titleWordCount: Number.isFinite(titleWordCount) ? titleWordCount : null,
             hasActionVerb: typeof hasActionVerb === 'boolean' ? hasActionVerb : null,
-            titleCharacterCount: Number.isFinite(titleCharacterCount) ? titleCharacterCount : null,
-        },
+            titleCharacterCount: Number.isFinite(titleCharacterCount) ? titleCharacterCount : null
+        }
     );
 }
 
@@ -434,7 +444,7 @@ export function detectDeadlineDaredevil(event) {
         SignalType.DEADLINE_DAREDEVIL,
         event,
         completionLeadTimeHours <= 6 ? CONFIDENCE.HIGH : CONFIDENCE.STANDARD,
-        { completionLeadTimeHours },
+        { completionLeadTimeHours }
     );
 }
 
@@ -448,7 +458,10 @@ export function detectCategoryAvoidance(event) {
     const overdueCount = Number(event.categoryOverdueCount);
     const stalenessDays = Number(event.categoryStalenessDays);
 
-    if ((!Number.isFinite(overdueCount) || overdueCount < 3) && (!Number.isFinite(stalenessDays) || stalenessDays < 14)) {
+    if (
+        (!Number.isFinite(overdueCount) || overdueCount < 3) &&
+        (!Number.isFinite(stalenessDays) || stalenessDays < 14)
+    ) {
         return null;
     }
 
@@ -460,8 +473,8 @@ export function detectCategoryAvoidance(event) {
             : CONFIDENCE.STANDARD,
         {
             categoryOverdueCount: Number.isFinite(overdueCount) ? overdueCount : null,
-            categoryStalenessDays: Number.isFinite(stalenessDays) ? stalenessDays : null,
-        },
+            categoryStalenessDays: Number.isFinite(stalenessDays) ? stalenessDays : null
+        }
     );
 }
 
@@ -477,15 +490,18 @@ export function detectPlanningWithoutExecution(event) {
     const subtypeA = event.planningSubtypeA === true;
     const subtypeB = event.planningSubtypeB === true;
     const checklistDelta = Number(event.checklistCountAfter || 0) - Number(event.checklistCountBefore || 0);
-    const descriptionDeltaAbs = Math.abs(Number(event.descriptionLengthAfter || 0) - Number(event.descriptionLengthBefore || 0));
+    const descriptionDeltaAbs = Math.abs(
+        Number(event.descriptionLengthAfter || 0) - Number(event.descriptionLengthBefore || 0)
+    );
     const subtaskDelta = Number(event.subtaskCountAfter || 0) - Number(event.subtaskCountBefore || 0);
 
-    const planningHeavy = subtypeA
-        || subtypeB
-        || (Number.isFinite(planningComplexityScore) && planningComplexityScore >= 5)
-        || checklistDelta >= 5
-        || descriptionDeltaAbs >= 200
-        || subtaskDelta >= 5;
+    const planningHeavy =
+        subtypeA ||
+        subtypeB ||
+        (Number.isFinite(planningComplexityScore) && planningComplexityScore >= 5) ||
+        checklistDelta >= 5 ||
+        descriptionDeltaAbs >= 200 ||
+        subtaskDelta >= 5;
 
     if (!planningHeavy) {
         return null;
@@ -507,8 +523,8 @@ export function detectPlanningWithoutExecution(event) {
             completionRateWindow: Number.isFinite(completionRateWindow) ? completionRateWindow : null,
             checklistDelta,
             descriptionDeltaAbs,
-            subtaskDelta,
-        },
+            subtaskDelta
+        }
     );
 }
 
@@ -545,17 +561,20 @@ export function detectPostpone(event) {
 
     // Forward move = postponement
     if (after > before) {
-        return withSubjectKey({
-            type: SignalType.POSTPONE,
-            category: event.category || 'unknown',
-            projectId: event.projectId || null,
-            confidence: 0.9,
-            metadata: {
-                dueDateMovedForward: true,
-                daysMoved: Math.round((after.getTime() - before.getTime()) / (1000 * 60 * 60 * 24)),
+        return withSubjectKey(
+            {
+                type: SignalType.POSTPONE,
+                category: event.category || 'unknown',
+                projectId: event.projectId || null,
+                confidence: 0.9,
+                metadata: {
+                    dueDateMovedForward: true,
+                    daysMoved: Math.round((after.getTime() - before.getTime()) / (1000 * 60 * 60 * 24))
+                },
+                timestamp: event.timestamp || new Date().toISOString()
             },
-            timestamp: event.timestamp || new Date().toISOString(),
-        }, event);
+            event
+        );
     }
 
     // Backward move (earlier) — not a postpone
@@ -611,9 +630,9 @@ export function detectScopeChange(event) {
         projectId: event.projectId || null,
         confidence: 0.8,
         metadata: {
-            ...changeDetails,
+            ...changeDetails
         },
-        timestamp: event.timestamp || new Date().toISOString(),
+        timestamp: event.timestamp || new Date().toISOString()
     };
 }
 
@@ -641,17 +660,20 @@ export function detectDecomposition(event) {
 
     // Subtasks added — decomposition detected
     if (delta > 0) {
-        return withSubjectKey({
-            type: SignalType.DECOMPOSITION,
-            category: event.category || 'unknown',
-            projectId: event.projectId || null,
-            confidence: 0.85,
-            metadata: {
-                subtasksAdded: delta,
-                newSubtaskCount: subtaskCountAfter,
+        return withSubjectKey(
+            {
+                type: SignalType.DECOMPOSITION,
+                category: event.category || 'unknown',
+                projectId: event.projectId || null,
+                confidence: 0.85,
+                metadata: {
+                    subtasksAdded: delta,
+                    newSubtaskCount: subtaskCountAfter
+                },
+                timestamp: event.timestamp || new Date().toISOString()
             },
-            timestamp: event.timestamp || new Date().toISOString(),
-        }, event);
+            event
+        );
     }
 
     return null;
@@ -670,19 +692,36 @@ export function detectDecomposition(event) {
 export function getSignalRegistry() {
     return [
         { type: SignalType.POSTPONE, requires: ['dueDateBefore', 'dueDateAfter'] },
-        { type: SignalType.SCOPE_CHANGE, requires: ['descriptionLengthBefore', 'descriptionLengthAfter', 'checklistCountBefore', 'checklistCountAfter'] },
+        {
+            type: SignalType.SCOPE_CHANGE,
+            requires: [
+                'descriptionLengthBefore',
+                'descriptionLengthAfter',
+                'checklistCountBefore',
+                'checklistCountAfter'
+            ]
+        },
         { type: SignalType.DECOMPOSITION, requires: ['subtaskCountBefore', 'subtaskCountAfter'] },
         { type: SignalType.PLANNING_HEAVY, requires: ['eventType'] },
         { type: SignalType.COMPLETION, requires: ['eventType'] },
         { type: SignalType.CREATION, requires: ['eventType'] },
         { type: SignalType.DELETION, requires: ['eventType'] },
         { type: SignalType.SNOOZE_SPIRAL, requires: ['dueDateBefore', 'dueDateAfter'] },
-        { type: SignalType.COMMITMENT_OVERLOADER, requires: ['creationCompletionRatio', 'recentCreatedCount', 'recentCompletedCount'] },
+        {
+            type: SignalType.COMMITMENT_OVERLOADER,
+            requires: ['creationCompletionRatio', 'recentCreatedCount', 'recentCompletedCount']
+        },
         { type: SignalType.STALE_TASK_MUSEUM, requires: ['taskAgeDays'] },
-        { type: SignalType.QUICK_WIN_ADDICTION, requires: ['smallTaskCandidate', 'titleWordCount', 'completionLeadTimeHours'] },
+        {
+            type: SignalType.QUICK_WIN_ADDICTION,
+            requires: ['smallTaskCandidate', 'titleWordCount', 'completionLeadTimeHours']
+        },
         { type: SignalType.VAGUE_TASK_WRITER, requires: ['titleWordCount', 'titleCharacterCount', 'hasActionVerb'] },
         { type: SignalType.DEADLINE_DAREDEVIL, requires: ['completionLeadTimeHours'] },
         { type: SignalType.CATEGORY_AVOIDANCE, requires: ['categoryOverdueCount', 'categoryStalenessDays'] },
-        { type: SignalType.PLANNING_WITHOUT_EXECUTION, requires: ['planningComplexityScore', 'completionRateWindow', 'planningSubtypeA', 'planningSubtypeB'] },
+        {
+            type: SignalType.PLANNING_WITHOUT_EXECUTION,
+            requires: ['planningComplexityScore', 'completionRateWindow', 'planningSubtypeA', 'planningSubtypeB']
+        }
     ];
 }

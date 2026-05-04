@@ -2,7 +2,7 @@ import {
     SUMMARY_NOTICE_CODES,
     SUMMARY_NOTICE_EVIDENCE_SOURCES,
     SUMMARY_NOTICE_SEVERITIES,
-    WEEKLY_WATCHOUT_EVIDENCE_SOURCES,
+    WEEKLY_WATCHOUT_EVIDENCE_SOURCES
 } from '../schemas.js';
 import { buildBehavioralPatternNotice } from './behavioral-pattern-notices.js';
 import { buildEngagementPatternNotice, deriveInterventionProfile } from './intervention-profile.js';
@@ -46,7 +46,7 @@ function normalizeCarryForwardItems(items = [], { maxItems = 3 } = {}) {
             return {
                 task_id: item.task_id ?? item.taskId ?? null,
                 title,
-                reason: toString(item.reason, 'Still open and needs explicit completion next week.'),
+                reason: toString(item.reason, 'Still open and needs explicit completion next week.')
             };
         })
         .filter(Boolean)
@@ -64,7 +64,7 @@ function normalizeSummaryNotice(notice = {}) {
         code,
         message: toString(notice.message, 'No additional context provided.'),
         severity,
-        evidence_source: evidenceSource,
+        evidence_source: evidenceSource
     };
 }
 
@@ -100,13 +100,11 @@ function normalizeWatchouts(watchouts = [], evidenceContext = {}) {
             return {
                 label,
                 evidence,
-                evidence_source: evidenceSource,
+                evidence_source: evidenceSource
             };
         })
         .filter(Boolean);
 }
-
-
 
 function mergeWatchouts(modelWatchouts = [], computedWatchouts = []) {
     const merged = [];
@@ -138,15 +136,13 @@ function buildCarryForward(activeTasks = []) {
         title: task.title || 'Untitled task',
         reason: task.dueDate
             ? `Still active with due date ${task.dueDate}.`
-            : 'Still open and needs explicit completion next week.',
+            : 'Still open and needs explicit completion next week.'
     }));
 }
 
 function buildDeferredCarryForward(processedHistory = [], activeTasks = []) {
     const activeByTitle = new Map(
-        activeTasks
-            .map((task) => [toString(task.title).toLowerCase(), task])
-            .filter(([title]) => Boolean(title)),
+        activeTasks.map((task) => [toString(task.title).toLowerCase(), task]).filter(([title]) => Boolean(title))
     );
     const deferred = [];
     const seenTitles = new Set();
@@ -164,7 +160,7 @@ function buildDeferredCarryForward(processedHistory = [], activeTasks = []) {
         deferred.push({
             task_id: entry.taskId ?? activeTask?.id ?? activeTask?.taskId ?? null,
             title,
-            reason: 'Deferred or rescheduled this week and still needs a concrete next step.',
+            reason: 'Deferred or rescheduled this week and still needs a concrete next step.'
         });
     }
 
@@ -215,7 +211,7 @@ function buildWatchouts({ activeTasks = [], processedHistory = [], historyAvaila
         watchouts.push({
             label: 'Overdue tasks accumulating',
             evidence: `${overdueTasks.length} active task(s) are overdue right now.`,
-            evidence_source: 'current_tasks',
+            evidence_source: 'current_tasks'
         });
     }
 
@@ -224,7 +220,7 @@ function buildWatchouts({ activeTasks = [], processedHistory = [], historyAvaila
         watchouts.push({
             label: 'Dropped tasks this week',
             evidence: `${droppedCount} processed item(s) were dropped.`,
-            evidence_source: 'processed_history',
+            evidence_source: 'processed_history'
         });
     }
 
@@ -248,9 +244,10 @@ function buildRankingTrendNotice(rankingResult = null) {
 
     const counts = new Map();
     for (const decision of ranked) {
-        const code = typeof decision?.rationaleCode === 'string' && decision.rationaleCode.trim().length > 0
-            ? decision.rationaleCode
-            : 'fallback';
+        const code =
+            typeof decision?.rationaleCode === 'string' && decision.rationaleCode.trim().length > 0
+                ? decision.rationaleCode
+                : 'fallback';
         counts.set(code, (counts.get(code) || 0) + 1);
     }
 
@@ -260,11 +257,12 @@ function buildRankingTrendNotice(rankingResult = null) {
 
     return {
         code: 'ranking_trend',
-        message: primaryCount >= 2 || !secondaryCode
-            ? `Ranking trends toward ${describeRationaleTrend(primaryCode)}.`
-            : `Ranking trends blend ${describeRationaleTrend(primaryCode)} with ${describeRationaleTrend(secondaryCode)}.`,
+        message:
+            primaryCount >= 2 || !secondaryCode
+                ? `Ranking trends toward ${describeRationaleTrend(primaryCode)}.`
+                : `Ranking trends blend ${describeRationaleTrend(primaryCode)} with ${describeRationaleTrend(secondaryCode)}.`,
         severity: 'info',
-        evidence_source: 'ranking',
+        evidence_source: 'ranking'
     };
 }
 
@@ -276,11 +274,11 @@ function buildNotices({
     historyIsSparse = false,
     context = {},
     rankingResult = null,
-    recomputeContext = null,
+    recomputeContext = null
 } = {}) {
     const notices = [];
     const interventionProfile = deriveInterventionProfile(processedHistory, {
-        generatedAtIso: context.generatedAtIso,
+        generatedAtIso: context.generatedAtIso
     });
 
     if (activeTasks.length < 2) {
@@ -288,7 +286,7 @@ function buildNotices({
             code: 'sparse_tasks',
             message: 'Active task set is sparse, so weekly recommendations are intentionally compact.',
             severity: 'info',
-            evidence_source: 'tasks',
+            evidence_source: 'tasks'
         });
     }
 
@@ -299,7 +297,7 @@ function buildNotices({
                 ? 'Processed-task history is sparse, so weekly insights are intentionally compact.'
                 : 'Processed-task history was unavailable, so progress is based on current-task evidence.',
             severity: 'warning',
-            evidence_source: 'processed_history',
+            evidence_source: 'processed_history'
         });
     }
 
@@ -308,7 +306,7 @@ function buildNotices({
             code: 'degraded_ranking',
             message: rankingResult.degradedReason || 'Priority ranking confidence is degraded.',
             severity: 'warning',
-            evidence_source: 'system',
+            evidence_source: 'system'
         });
     }
 
@@ -317,7 +315,7 @@ function buildNotices({
             code: 'delivery_context',
             message: 'TickTick fetch failed, so this weekly review uses partial local context only.',
             severity: 'warning',
-            evidence_source: 'system',
+            evidence_source: 'system'
         });
     }
 
@@ -327,7 +325,7 @@ function buildNotices({
     }
 
     const behavioralNotice = buildBehavioralPatternNotice(behavioralPatterns, {
-        nowIso: context.generatedAtIso,
+        nowIso: context.generatedAtIso
     });
     if (behavioralNotice) {
         notices.push(behavioralNotice);
@@ -338,12 +336,12 @@ function buildNotices({
             code: 'urgent_mode_active',
             message: 'Urgent mode is active and may bias weekly next-focus ordering.',
             severity: 'info',
-            evidence_source: 'state',
+            evidence_source: 'state'
         });
     }
 
     const engagementNotice = buildEngagementPatternNotice(interventionProfile, {
-        workStyleMode: context.workStyleMode,
+        workStyleMode: context.workStyleMode
     });
     if (engagementNotice) {
         notices.push(engagementNotice);
@@ -363,7 +361,7 @@ function normalizeModelSummary(summary = {}, evidenceContext = {}) {
         carry_forward: normalizeCarryForwardItems(summary?.carry_forward, { maxItems: 3 }),
         next_focus: normalizeTextList(summary?.next_focus, { maxItems: 3 }),
         watchouts: normalizeWatchouts(summary?.watchouts, evidenceContext),
-        notices: normalizeNotices(summary?.notices),
+        notices: normalizeNotices(summary?.notices)
     };
 }
 
@@ -387,7 +385,7 @@ export function composeWeeklySummarySections({
     processedHistory = [],
     historyAvailable = true,
     rankingResult = null,
-    context = {},
+    context = {}
 } = {}) {
     const normalizedTasks = asActiveTasks(activeTasks);
     const normalizedHistory = asProcessedHistory(processedHistory);
@@ -396,22 +394,24 @@ export function composeWeeklySummarySections({
         behavioralPatterns,
         processedHistory: normalizedHistory,
         historyAvailable,
-        context,
+        context
     });
     const historyIsSparse = recomputeContext.historyIsSparse;
 
     const normalizedModel = normalizeModelSummary(modelSummary, {
         activeTasks: normalizedTasks,
         processedHistory: normalizedHistory,
-        historyAvailable,
+        historyAvailable
     });
 
-    const progress = (normalizedModel.progress.length > 0 && !historyIsSparse && historyAvailable)
-        ? normalizedModel.progress
-        : buildProgress(normalizedHistory, historyAvailable);
-    const carryForward = normalizedModel.carry_forward.length > 0
-        ? normalizedModel.carry_forward
-        : buildDeferredCarryForward(normalizedHistory, normalizedTasks);
+    const progress =
+        normalizedModel.progress.length > 0 && !historyIsSparse && historyAvailable
+            ? normalizedModel.progress
+            : buildProgress(normalizedHistory, historyAvailable);
+    const carryForward =
+        normalizedModel.carry_forward.length > 0
+            ? normalizedModel.carry_forward
+            : buildDeferredCarryForward(normalizedHistory, normalizedTasks);
     const nextFocus = buildNextFocus(normalizedTasks, rankingResult, context.excludedTaskIds || []);
     const watchouts = mergeWatchouts(
         normalizedModel.watchouts,
@@ -419,8 +419,8 @@ export function composeWeeklySummarySections({
             activeTasks: normalizedTasks,
             processedHistory: normalizedHistory,
             historyAvailable,
-            context,
-        }),
+            context
+        })
     );
     const notices = mergeNotices(
         normalizedModel.notices,
@@ -432,8 +432,8 @@ export function composeWeeklySummarySections({
             historyIsSparse,
             context,
             rankingResult,
-            recomputeContext,
-        }),
+            recomputeContext
+        })
     );
 
     return {
@@ -441,6 +441,6 @@ export function composeWeeklySummarySections({
         carry_forward: carryForward,
         next_focus: nextFocus,
         watchouts,
-        notices,
+        notices
     };
 }

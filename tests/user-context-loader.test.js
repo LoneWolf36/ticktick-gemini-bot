@@ -14,8 +14,16 @@ function withTempModule(exportCode, fn) {
         writeFileSync(modulePath, exportCode, 'utf-8');
         return fn(modulePath, tmpDir);
     } finally {
-        try { unlinkSync(modulePath); } catch { /* cleanup best-effort */ }
-        try { rmdirSync(tmpDir); } catch { /* cleanup best-effort */ }
+        try {
+            unlinkSync(modulePath);
+        } catch {
+            /* cleanup best-effort */
+        }
+        try {
+            rmdirSync(tmpDir);
+        } catch {
+            /* cleanup best-effort */
+        }
     }
 }
 
@@ -26,8 +34,16 @@ async function withTempModuleAsync(exportCode, fn) {
         writeFileSync(modulePath, exportCode, 'utf-8');
         return await fn(modulePath, tmpDir);
     } finally {
-        try { unlinkSync(modulePath); } catch { /* cleanup best-effort */ }
-        try { rmdirSync(tmpDir); } catch { /* cleanup best-effort */ }
+        try {
+            unlinkSync(modulePath);
+        } catch {
+            /* cleanup best-effort */
+        }
+        try {
+            rmdirSync(tmpDir);
+        } catch {
+            /* cleanup best-effort */
+        }
     }
 }
 
@@ -36,36 +52,30 @@ async function withTempModuleAsync(exportCode, fn) {
 // ============================================================
 
 test('L001: loadUserContextModule returns module from first path when it exists', async () => {
-    await withTempModuleAsync(
-        'export const USER_TIMEZONE = "Pacific/Auckland";',
-        async (modulePath) => {
-            const result = await loadUserContextModule([modulePath]);
-            assert.ok(result.mod, 'mod should be non-null');
-            assert.equal(result.source, 'user_context');
-            assert.equal(result.path, modulePath);
-            assert.equal(getModuleExport(result.mod, 'USER_TIMEZONE'), 'Pacific/Auckland');
-        }
-    );
+    await withTempModuleAsync('export const USER_TIMEZONE = "Pacific/Auckland";', async (modulePath) => {
+        const result = await loadUserContextModule([modulePath]);
+        assert.ok(result.mod, 'mod should be non-null');
+        assert.equal(result.source, 'user_context');
+        assert.equal(result.path, modulePath);
+        assert.equal(getModuleExport(result.mod, 'USER_TIMEZONE'), 'Pacific/Auckland');
+    });
 });
 
 test('L001: loadUserContextModule skips missing first path, loads from second', async () => {
-    await withTempModuleAsync(
-        'export const USER_CONTEXT = "second file ctx";',
-        async (modulePath) => {
-            const missingPath = '/tmp/nonexistent-xxxxx-user-context.js';
-            const result = await loadUserContextModule([missingPath, modulePath]);
-            assert.ok(result.mod, 'mod should be non-null (loaded from second path)');
-            assert.equal(result.source, 'user_context');
-            assert.equal(result.path, modulePath);
-            assert.equal(getModuleExport(result.mod, 'USER_CONTEXT'), 'second file ctx');
-        }
-    );
+    await withTempModuleAsync('export const USER_CONTEXT = "second file ctx";', async (modulePath) => {
+        const missingPath = '/tmp/nonexistent-xxxxx-user-context.js';
+        const result = await loadUserContextModule([missingPath, modulePath]);
+        assert.ok(result.mod, 'mod should be non-null (loaded from second path)');
+        assert.equal(result.source, 'user_context');
+        assert.equal(result.path, modulePath);
+        assert.equal(getModuleExport(result.mod, 'USER_CONTEXT'), 'second file ctx');
+    });
 });
 
 test('L001: loadUserContextModule returns null when no paths exist', async () => {
     const result = await loadUserContextModule([
         '/tmp/nonexistent-aaaa-user-context.js',
-        '/tmp/nonexistent-bbbb-user-context.js',
+        '/tmp/nonexistent-bbbb-user-context.js'
     ]);
     assert.equal(result.mod, null);
     assert.equal(result.source, null);
@@ -77,20 +87,21 @@ test('L001: loadUserContextModule returns null when no paths exist', async () =>
 // ============================================================
 
 test('L002: loadUserContextModule logs and continues on syntax error', async () => {
-    await withTempModuleAsync(
-        'export const INVALID = ;;;;',
-        async (modulePath) => {
-            const fallbackPath = path.join(path.dirname(modulePath), 'fallback.js');
-            writeFileSync(fallbackPath, 'export const VALUE = 42;', 'utf-8');
+    await withTempModuleAsync('export const INVALID = ;;;;', async (modulePath) => {
+        const fallbackPath = path.join(path.dirname(modulePath), 'fallback.js');
+        writeFileSync(fallbackPath, 'export const VALUE = 42;', 'utf-8');
+        try {
+            const result = await loadUserContextModule([modulePath, fallbackPath]);
+            assert.ok(result.mod, 'should fall through to valid path');
+            assert.equal(getModuleExport(result.mod, 'VALUE'), 42);
+        } finally {
             try {
-                const result = await loadUserContextModule([modulePath, fallbackPath]);
-                assert.ok(result.mod, 'should fall through to valid path');
-                assert.equal(getModuleExport(result.mod, 'VALUE'), 42);
-            } finally {
-                try { unlinkSync(fallbackPath); } catch { /* best-effort */ }
+                unlinkSync(fallbackPath);
+            } catch {
+                /* best-effort */
             }
         }
-    );
+    });
 });
 
 // ============================================================
@@ -159,15 +170,27 @@ test('L005: loadUserContextModule loads from subdirectory path (simulating /etc/
         const result = await loadUserContextModule([
             '/tmp/definitely-missing-1111-user_context.js',
             '/tmp/definitely-missing-2222-user_context.js',
-            secretsPath,
+            secretsPath
         ]);
         assert.ok(result.mod, 'should load from secrets path');
         assert.equal(result.path, secretsPath);
         assert.equal(getModuleExport(result.mod, 'USER_TIMEZONE'), 'Europe/London');
     } finally {
-        try { unlinkSync(secretsPath); } catch { /* best-effort */ }
-        try { rmdirSync(secretsDir); } catch { /* best-effort */ }
-        try { rmdirSync(tmpDir); } catch { /* best-effort */ }
+        try {
+            unlinkSync(secretsPath);
+        } catch {
+            /* best-effort */
+        }
+        try {
+            rmdirSync(secretsDir);
+        } catch {
+            /* best-effort */
+        }
+        try {
+            rmdirSync(tmpDir);
+        } catch {
+            /* best-effort */
+        }
     }
 });
 
@@ -176,14 +199,11 @@ test('L005: loadUserContextModule loads from subdirectory path (simulating /etc/
 // ============================================================
 
 test('L006: loadUserContextModule loads minimal module, getModuleExport returns undefined for missing keys', async () => {
-    await withTempModuleAsync(
-        'export const UNRELATED = true;',
-        async (modulePath) => {
-            const result = await loadUserContextModule([modulePath]);
-            assert.ok(result.mod, 'mod should load even without expected exports');
-            assert.equal(getModuleExport(result.mod, 'USER_TIMEZONE'), undefined);
-            assert.equal(getModuleExport(result.mod, 'PROJECT_POLICY'), undefined);
-            assert.equal(getModuleExport(result.mod, 'USER_CONTEXT'), undefined);
-        }
-    );
+    await withTempModuleAsync('export const UNRELATED = true;', async (modulePath) => {
+        const result = await loadUserContextModule([modulePath]);
+        assert.ok(result.mod, 'mod should load even without expected exports');
+        assert.equal(getModuleExport(result.mod, 'USER_TIMEZONE'), undefined);
+        assert.equal(getModuleExport(result.mod, 'PROJECT_POLICY'), undefined);
+        assert.equal(getModuleExport(result.mod, 'USER_CONTEXT'), undefined);
+    });
 });

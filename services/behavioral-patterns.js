@@ -3,13 +3,13 @@ import { SignalType } from './behavioral-signals.js';
 export const PatternConfidence = Object.freeze({
     LOW: 'low',
     STANDARD: 'standard',
-    HIGH: 'high',
+    HIGH: 'high'
 });
 
 export const BehavioralPatternType = Object.freeze({
     SNOOZE_SPIRAL: 'snooze_spiral',
     PLANNING_TYPE_A: 'planning_without_execution_type_a',
-    PLANNING_TYPE_B: 'planning_without_execution_type_b',
+    PLANNING_TYPE_B: 'planning_without_execution_type_b'
 });
 
 const DAY_MS = 24 * 60 * 60 * 1000;
@@ -23,13 +23,14 @@ function parseSignalTime(signal) {
 
 function isWithinRetentionWindow(signal, nowMs = Date.now()) {
     const signalMs = parseSignalTime(signal);
-    return signalMs !== null && signalMs >= nowMs - (RETENTION_DAYS * DAY_MS);
+    return signalMs !== null && signalMs >= nowMs - RETENTION_DAYS * DAY_MS;
 }
 
 function withEligibility(pattern) {
     return {
         ...pattern,
-        eligibleForSurfacing: pattern.confidence === PatternConfidence.STANDARD || pattern.confidence === PatternConfidence.HIGH,
+        eligibleForSurfacing:
+            pattern.confidence === PatternConfidence.STANDARD || pattern.confidence === PatternConfidence.HIGH
     };
 }
 
@@ -55,7 +56,7 @@ function toWeekKey(signal) {
     const day = utcDate.getUTCDay() || 7;
     utcDate.setUTCDate(utcDate.getUTCDate() + 4 - day);
     const yearStart = new Date(Date.UTC(utcDate.getUTCFullYear(), 0, 1));
-    const weekNo = Math.ceil((((utcDate - yearStart) / DAY_MS) + 1) / 7);
+    const weekNo = Math.ceil(((utcDate - yearStart) / DAY_MS + 1) / 7);
     return `${utcDate.getUTCFullYear()}-W${String(weekNo).padStart(2, '0')}`;
 }
 
@@ -80,24 +81,28 @@ function buildSnoozePatterns(signals) {
             confidence = PatternConfidence.STANDARD;
         }
 
-        patterns.push(withEligibility({
-            type: BehavioralPatternType.SNOOZE_SPIRAL,
-            confidence,
-            signalCount: count,
-            subjectKey,
-            windowStart: sortSignals(subjectSignals)[0].timestamp,
-            windowEnd: sortSignals(subjectSignals)[subjectSignals.length - 1].timestamp,
-        }));
+        patterns.push(
+            withEligibility({
+                type: BehavioralPatternType.SNOOZE_SPIRAL,
+                confidence,
+                signalCount: count,
+                subjectKey,
+                windowStart: sortSignals(subjectSignals)[0].timestamp,
+                windowEnd: sortSignals(subjectSignals)[subjectSignals.length - 1].timestamp
+            })
+        );
     }
 
     return patterns;
 }
 
 function buildTypeAPattern(signals) {
-    const planningSignals = sortSignals(signals.filter((signal) => (
-        signal.type === SignalType.PLANNING_WITHOUT_EXECUTION
-        && signal.metadata?.planningSubtypeA === true
-    )));
+    const planningSignals = sortSignals(
+        signals.filter(
+            (signal) =>
+                signal.type === SignalType.PLANNING_WITHOUT_EXECUTION && signal.metadata?.planningSubtypeA === true
+        )
+    );
 
     if (planningSignals.length < 2) {
         return null;
@@ -162,13 +167,15 @@ function buildTypeAPattern(signals) {
         windowStart: best.windowSignals[0].timestamp,
         windowEnd: best.windowSignals[best.windowSignals.length - 1].timestamp,
         replanningSignalCount: replanningSignalsInWindow.length,
-        ambiguousReplanning: replanningSignalsInWindow.length > 0,
+        ambiguousReplanning: replanningSignalsInWindow.length > 0
     });
 }
 
 function summarizeCreationWindow(signals, completionSignals) {
     const createdCount = signals.length;
-    const uniqueDomains = new Set(signals.map((signal) => `${signal.projectId || 'none'}:${signal.category || 'unknown'}`)).size;
+    const uniqueDomains = new Set(
+        signals.map((signal) => `${signal.projectId || 'none'}:${signal.category || 'unknown'}`)
+    ).size;
     const windowStart = signals[0].timestamp;
     const windowEnd = signals[signals.length - 1].timestamp;
     const startMs = parseSignalTime(signals[0]);
@@ -199,7 +206,7 @@ function summarizeCreationWindow(signals, completionSignals) {
         uniqueDomains,
         completionRate,
         windowStart,
-        windowEnd,
+        windowEnd
     });
 }
 
@@ -246,12 +253,16 @@ function buildTypeBPattern(signals) {
 export function detectBehavioralPatterns(signals = [], { nowMs = Date.now() } = {}) {
     try {
         const validSignals = Array.isArray(signals)
-            ? signals.filter((signal) => signal && typeof signal === 'object' && typeof signal.type === 'string' && isWithinRetentionWindow(signal, nowMs))
+            ? signals.filter(
+                  (signal) =>
+                      signal &&
+                      typeof signal === 'object' &&
+                      typeof signal.type === 'string' &&
+                      isWithinRetentionWindow(signal, nowMs)
+              )
             : [];
 
-        const patterns = [
-            ...buildSnoozePatterns(validSignals),
-        ];
+        const patterns = [...buildSnoozePatterns(validSignals)];
 
         const typeAPattern = buildTypeAPattern(validSignals);
         if (typeAPattern) {

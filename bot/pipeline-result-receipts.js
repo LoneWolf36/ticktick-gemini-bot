@@ -17,7 +17,7 @@ export async function buildFreeformPipelineResultReceipt({ result, store, userId
     const replyExtra = {};
     const text = result?.dryRun
         ? `${result?.confirmationText || 'Done.'} (preview)`
-        : (buildFreeformReceipt(result, { projects }) || result?.confirmationText || 'Done.');
+        : buildFreeformReceipt(result, { projects }) || result?.confirmationText || 'Done.';
 
     if (!result?.dryRun) {
         const { undoCount } = await persistPipelineUndoEntries({ result, store, userId, batchPrefix: 'undo' });

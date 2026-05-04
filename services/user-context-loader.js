@@ -11,9 +11,9 @@ import path from 'path';
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
 const DEFAULT_SEARCH_PATHS = [
-    path.resolve(__dirname, 'user_context.js'),      // services/user_context.js
-    path.resolve(process.cwd(), 'user_context.js'),   // root user_context.js
-    '/etc/secrets/user_context.js',                   // Render secret mount
+    path.resolve(__dirname, 'user_context.js'), // services/user_context.js
+    path.resolve(process.cwd(), 'user_context.js'), // root user_context.js
+    '/etc/secrets/user_context.js' // Render secret mount
 ];
 
 /**

@@ -1,7 +1,7 @@
 /**
  * tests/checklist-normalization.test.js
  * WP02: Checklist normalization tests (extracted from normalizer.test.js)
- * 
+ *
  * Covers T021-T026: Helper, Clean Item Text, Cap Length, Assign Sort Order,
  * Validate Items, Attach to Create Only.
  */
@@ -43,11 +43,7 @@ describe('WP02: Checklist Normalization — T021 (Helper)', () => {
         const result = normalizeAction({
             type: 'create',
             title: 'Plan party',
-            checklistItems: [
-                { title: 'buy decorations' },
-                { title: 'send invites' },
-                { title: 'bake cake' }
-            ]
+            checklistItems: [{ title: 'buy decorations' }, { title: 'send invites' }, { title: 'bake cake' }]
         });
 
         assert.strictEqual(result.checklistItems.length, 3);
@@ -72,12 +68,7 @@ describe('WP02: Checklist Normalization — T022 (Clean Item Text)', () => {
         const result = normalizeAction({
             type: 'create',
             title: 'Task',
-            checklistItems: [
-                { title: 'valid item' },
-                { title: '' },
-                { title: '   ' },
-                { title: null }
-            ]
+            checklistItems: [{ title: 'valid item' }, { title: '' }, { title: '   ' }, { title: null }]
         });
 
         assert.strictEqual(result.checklistItems.length, 1);
@@ -166,11 +157,7 @@ describe('WP02: Checklist Normalization — T024 (Assign Sort Order)', () => {
         const result = normalizeAction({
             type: 'create',
             title: 'Task',
-            checklistItems: [
-                { title: 'first' },
-                { title: 'second' },
-                { title: 'third' }
-            ]
+            checklistItems: [{ title: 'first' }, { title: 'second' }, { title: 'third' }]
         });
 
         assert.strictEqual(result.checklistItems[0].sortOrder, 0);
@@ -193,7 +180,7 @@ describe('WP02: Checklist Normalization — T024 (Assign Sort Order)', () => {
     });
 
     it('should keep item order stable', () => {
-        const items = ['alpha', 'beta', 'gamma'].map(t => ({ title: t }));
+        const items = ['alpha', 'beta', 'gamma'].map((t) => ({ title: t }));
         const result = normalizeAction({
             type: 'create',
             title: 'Task',
@@ -206,7 +193,7 @@ describe('WP02: Checklist Normalization — T024 (Assign Sort Order)', () => {
     });
 
     it('should produce deterministic order', () => {
-        const items = ['one', 'two', 'three'].map(t => ({ title: t }));
+        const items = ['one', 'two', 'three'].map((t) => ({ title: t }));
         const result1 = normalizeAction({
             type: 'create',
             title: 'Task',
@@ -219,8 +206,8 @@ describe('WP02: Checklist Normalization — T024 (Assign Sort Order)', () => {
         });
 
         assert.deepStrictEqual(
-            result1.checklistItems.map(i => i.sortOrder),
-            result2.checklistItems.map(i => i.sortOrder)
+            result1.checklistItems.map((i) => i.sortOrder),
+            result2.checklistItems.map((i) => i.sortOrder)
         );
     });
 });
@@ -230,12 +217,7 @@ describe('WP02: Checklist Normalization — T025 (Validate Items)', () => {
         const result = normalizeAction({
             type: 'create',
             title: 'Task',
-            checklistItems: [
-                { title: 'valid' },
-                { title: '' },
-                { title: null },
-                { title: 'also valid' }
-            ]
+            checklistItems: [{ title: 'valid' }, { title: '' }, { title: null }, { title: 'also valid' }]
         });
 
         assert.strictEqual(result.checklistItems.length, 2);
@@ -247,10 +229,7 @@ describe('WP02: Checklist Normalization — T025 (Validate Items)', () => {
         const result = normalizeAction({
             type: 'create',
             title: 'Task',
-            checklistItems: [
-                { title: 'item one' },
-                { title: 'item two' }
-            ]
+            checklistItems: [{ title: 'item one' }, { title: 'item two' }]
         });
 
         assert.strictEqual(result.checklistItems[0].status, 0);
@@ -261,10 +240,7 @@ describe('WP02: Checklist Normalization — T025 (Validate Items)', () => {
         const result = normalizeAction({
             type: 'create',
             title: 'Task',
-            checklistItems: [
-                { title: 'simple item' },
-                { title: 'nested', items: [{ title: 'sub-item' }] }
-            ]
+            checklistItems: [{ title: 'simple item' }, { title: 'nested', items: [{ title: 'sub-item' }] }]
         });
 
         assert.strictEqual(result.checklistItems.length, 1);
@@ -275,15 +251,11 @@ describe('WP02: Checklist Normalization — T025 (Validate Items)', () => {
         const result = normalizeAction({
             type: 'create',
             title: 'Task',
-            checklistItems: [
-                { title: 'item a' },
-                { title: 'item b' },
-                { title: 'item c' }
-            ]
+            checklistItems: [{ title: 'item a' }, { title: 'item b' }, { title: 'item c' }]
         });
 
         assert.strictEqual(result.checklistItems.length, 3);
-        result.checklistItems.forEach(item => {
+        result.checklistItems.forEach((item) => {
             assert.strictEqual(item.status, 0);
             assert.ok(typeof item.sortOrder === 'number');
         });
@@ -295,10 +267,7 @@ describe('WP02: Checklist Normalization — T026 (Attach to Create Only)', () =>
         const result = normalizeAction({
             type: 'create',
             title: 'Plan party',
-            checklistItems: [
-                { title: 'buy decorations' },
-                { title: 'send invites' }
-            ]
+            checklistItems: [{ title: 'buy decorations' }, { title: 'send invites' }]
         });
 
         assert.ok(Array.isArray(result.checklistItems));
@@ -366,15 +335,18 @@ describe('WP02: Checklist Normalization — T026 (Attach to Create Only)', () =>
         // Bug: follow-up messages like "make it recurring" get low confidence
         // from Gemini because the message is ambiguous in isolation. But the
         // task resolver already confirmed the target — that should override.
-        const result = normalizeAction({
-            type: 'update',
-            title: null,
-            confidence: 0.3,
-            repeatHint: 'daily',
-        }, {
-            existingTask: { id: 'task123', projectId: 'proj456', title: 'Watch AI Coding Videos' },
-            existingTaskContent: null,
-        });
+        const result = normalizeAction(
+            {
+                type: 'update',
+                title: null,
+                confidence: 0.3,
+                repeatHint: 'daily'
+            },
+            {
+                existingTask: { id: 'task123', projectId: 'proj456', title: 'Watch AI Coding Videos' },
+                existingTaskContent: null
+            }
+        );
 
         assert.strictEqual(result.confidence, 0.5);
         assert.strictEqual(result.valid, true);
@@ -386,11 +358,11 @@ describe('WP02: Checklist Normalization — T026 (Attach to Create Only)', () =>
             type: 'update',
             title: null,
             confidence: 0.3,
-            repeatHint: 'daily',
+            repeatHint: 'daily'
         });
 
         assert.strictEqual(result.confidence, 0.3);
         assert.strictEqual(result.valid, false);
-        assert.ok(result.validationErrors.some(e => e.includes('Confidence 0.3 below threshold')));
+        assert.ok(result.validationErrors.some((e) => e.includes('Confidence 0.3 below threshold')));
     });
 });

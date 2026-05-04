@@ -10,7 +10,7 @@ function createBotHarness() {
         callbackQuery(pattern, handler) {
             handlers.push({ pattern, handler });
             return bot;
-        },
+        }
     };
     return { bot, handlers };
 }
@@ -25,9 +25,9 @@ function createCtx({ chatId = 1, userId = 1 } = {}) {
             answerCallbackQuery: async () => {},
             editMessageText: async (text, extra) => {
                 edits.push({ text, extra });
-            },
+            }
         },
-        edits,
+        edits
     };
 }
 
@@ -46,7 +46,7 @@ test('mut:confirm shows structured freeform receipt and undo when rollback persi
         matchedTask: { taskId: 'task-confirm-1', projectId: 'inbox', title: 'Weekly report' },
         actionType: 'update',
         chatId,
-        userId,
+        userId
     });
 
     const { bot, handlers } = createBotHarness();
@@ -55,20 +55,22 @@ test('mut:confirm shows structured freeform receipt and undo when rollback persi
             type: 'task',
             confirmationText: 'ignored',
             actions: [{ type: 'update', taskId: 'task-confirm-1', title: 'Weekly report draft' }],
-            results: [{
-                status: 'succeeded',
-                action: { type: 'update', taskId: 'task-confirm-1', title: 'Weekly report draft' },
-                rollbackStep: {
-                    type: 'restore_updated',
-                    targetTaskId: 'task-confirm-1',
-                    payload: { snapshot: { title: 'Weekly report', content: '', priority: 3, projectId: 'inbox' } },
-                },
-            }],
-        }),
+            results: [
+                {
+                    status: 'succeeded',
+                    action: { type: 'update', taskId: 'task-confirm-1', title: 'Weekly report draft' },
+                    rollbackStep: {
+                        type: 'restore_updated',
+                        targetTaskId: 'task-confirm-1',
+                        payload: { snapshot: { title: 'Weekly report', content: '', priority: 3, projectId: 'inbox' } }
+                    }
+                }
+            ]
+        })
     };
     const adapter = {
         listActiveTasks: async () => [{ id: 'task-confirm-1', title: 'Weekly report', projectId: 'inbox', status: 0 }],
-        listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+        listProjects: async () => [{ id: 'inbox', name: 'Inbox' }]
     };
 
     registerCallbacks(bot, adapter, pipeline);
@@ -92,7 +94,7 @@ test('mut:pick omits undo button when no rollback entries persist', async () => 
         originalMessage: 'update weekly report',
         candidates: [{ id: 'task-pick-1', taskId: 'task-pick-1', title: 'Weekly report', projectName: 'Inbox' }],
         chatId,
-        userId,
+        userId
     });
 
     const { bot, handlers } = createBotHarness();
@@ -101,16 +103,18 @@ test('mut:pick omits undo button when no rollback entries persist', async () => 
             type: 'task',
             confirmationText: 'ignored',
             actions: [{ type: 'update', taskId: 'task-pick-1', title: 'Weekly report draft' }],
-            results: [{
-                status: 'succeeded',
-                action: { type: 'update', taskId: 'task-pick-1', title: 'Weekly report draft' },
-                rollbackStep: null,
-            }],
-        }),
+            results: [
+                {
+                    status: 'succeeded',
+                    action: { type: 'update', taskId: 'task-pick-1', title: 'Weekly report draft' },
+                    rollbackStep: null
+                }
+            ]
+        })
     };
     const adapter = {
         listActiveTasks: async () => [{ id: 'task-pick-1', title: 'Weekly report', projectId: 'inbox', status: 0 }],
-        listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+        listProjects: async () => [{ id: 'inbox', name: 'Inbox' }]
     };
 
     registerCallbacks(bot, adapter, pipeline);
@@ -133,7 +137,7 @@ test('mut:confirm keeps applied receipt when undo persistence fails', async () =
         matchedTask: { taskId: 'task-confirm-2', projectId: 'inbox', title: 'Weekly report' },
         actionType: 'update',
         chatId,
-        userId,
+        userId
     });
 
     const { bot, handlers } = createBotHarness();
@@ -142,22 +146,29 @@ test('mut:confirm keeps applied receipt when undo persistence fails', async () =
             type: 'task',
             confirmationText: 'ignored',
             actions: [{ type: 'update', taskId: 'task-confirm-2', title: 'Weekly report draft' }],
-            results: [{
-                status: 'succeeded',
-                action: { type: 'update', taskId: 'task-confirm-2', title: 'Weekly report draft' },
-                rollbackStep: {
-                    type: 'restore_updated',
-                    targetTaskId: 'task-confirm-2',
-                    payload: { snapshot: { title: 'Weekly report', content: '', priority: 3, projectId: 'inbox' } },
-                },
-            }],
-        }),
+            results: [
+                {
+                    status: 'succeeded',
+                    action: { type: 'update', taskId: 'task-confirm-2', title: 'Weekly report draft' },
+                    rollbackStep: {
+                        type: 'restore_updated',
+                        targetTaskId: 'task-confirm-2',
+                        payload: { snapshot: { title: 'Weekly report', content: '', priority: 3, projectId: 'inbox' } }
+                    }
+                }
+            ]
+        })
     };
     const adapter = {
         listActiveTasks: async () => [{ id: 'task-confirm-2', title: 'Weekly report', projectId: 'inbox', status: 0 }],
-        listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+        listProjects: async () => [{ id: 'inbox', name: 'Inbox' }]
     };
-    const failingStore = { ...store, addUndoEntry: async () => { throw new Error('disk full'); } };
+    const failingStore = {
+        ...store,
+        addUndoEntry: async () => {
+            throw new Error('disk full');
+        }
+    };
 
     registerCallbacks(bot, adapter, pipeline, { storeApi: failingStore });
     const confirmHandler = handlers.find(({ pattern }) => pattern.toString().includes('mut:confirm$')).handler;
@@ -179,7 +190,7 @@ test('mut:pick keeps undo button when some undo entries persist', async () => {
         originalMessage: 'update weekly report',
         candidates: [{ id: 'task-pick-2', taskId: 'task-pick-2', title: 'Weekly report', projectName: 'Inbox' }],
         chatId,
-        userId,
+        userId
     });
 
     const { bot, handlers } = createBotHarness();
@@ -195,8 +206,8 @@ test('mut:pick keeps undo button when some undo entries persist', async () => {
                     rollbackStep: {
                         type: 'restore_updated',
                         targetTaskId: 'task-pick-2',
-                        payload: { snapshot: { title: 'Weekly report', content: '', priority: 3, projectId: 'inbox' } },
-                    },
+                        payload: { snapshot: { title: 'Weekly report', content: '', priority: 3, projectId: 'inbox' } }
+                    }
                 },
                 {
                     status: 'succeeded',
@@ -204,22 +215,24 @@ test('mut:pick keeps undo button when some undo entries persist', async () => {
                     rollbackStep: {
                         type: 'restore_updated',
                         targetTaskId: 'task-pick-2b',
-                        payload: { snapshot: { title: 'Weekly report b', content: '', priority: 3, projectId: 'inbox' } },
-                    },
-                },
-            ],
-        }),
+                        payload: {
+                            snapshot: { title: 'Weekly report b', content: '', priority: 3, projectId: 'inbox' }
+                        }
+                    }
+                }
+            ]
+        })
     };
     const adapter = {
         listActiveTasks: async () => [{ id: 'task-pick-2', title: 'Weekly report', projectId: 'inbox', status: 0 }],
-        listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+        listProjects: async () => [{ id: 'inbox', name: 'Inbox' }]
     };
     const failingStore = {
         ...store,
         addUndoEntry: async (entry) => {
             await store.addUndoEntry(entry);
             if (entry.taskId === 'task-pick-2b') throw new Error('disk full');
-        },
+        }
     };
 
     registerCallbacks(bot, adapter, pipeline, { storeApi: failingStore });
@@ -242,7 +255,7 @@ test('cl:checklist shows structured receipt and undo when rollback persists', as
         originalMessage: 'plan trip',
         intents: [{ type: 'create', title: 'Plan trip' }],
         chatId,
-        userId,
+        userId
     });
 
     const { bot, handlers } = createBotHarness();
@@ -251,19 +264,21 @@ test('cl:checklist shows structured receipt and undo when rollback persists', as
             type: 'task',
             confirmationText: 'ignored',
             actions: [{ type: 'create', title: 'Plan trip', checklistItems: [{ title: 'Book flights' }] }],
-            results: [{
-                status: 'succeeded',
-                action: { type: 'create', title: 'Plan trip', checklistItems: [{ title: 'Book flights' }] },
-                rollbackStep: {
-                    type: 'delete_created',
-                    targetTaskId: 'task-checklist-1',
-                    payload: { snapshot: { title: 'Plan trip', content: '', priority: 3, projectId: 'inbox' } },
-                },
-            }],
-        }),
+            results: [
+                {
+                    status: 'succeeded',
+                    action: { type: 'create', title: 'Plan trip', checklistItems: [{ title: 'Book flights' }] },
+                    rollbackStep: {
+                        type: 'delete_created',
+                        targetTaskId: 'task-checklist-1',
+                        payload: { snapshot: { title: 'Plan trip', content: '', priority: 3, projectId: 'inbox' } }
+                    }
+                }
+            ]
+        })
     };
     const adapter = {
-        listProjects: async () => [{ id: 'inbox', name: 'Inbox' }],
+        listProjects: async () => [{ id: 'inbox', name: 'Inbox' }]
     };
 
     registerCallbacks(bot, adapter, pipeline, { storeApi: store });

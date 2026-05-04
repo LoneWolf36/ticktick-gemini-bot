@@ -13,7 +13,8 @@
 import { coerceDate, getZonedDateParts, getTimezoneOffsetMinutes, formatTickTickISO } from './date-utils.js';
 
 // Title normalization constants
-const DATE_PATTERNS = /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next\s+\w+|this\s+\w+)\b/gi;
+const DATE_PATTERNS =
+    /\b(today|tomorrow|monday|tuesday|wednesday|thursday|friday|saturday|sunday|next\s+\w+|this\s+\w+)\b/gi;
 const PRIORITY_PATTERNS = /^(urgent|important|critical|asap|high priority)[:\s-]*/i;
 const BRACKET_PREFIX = /^\[.*?\]\s*/;
 const LEADING_ARTICLES = /^(a|an|the)\s+/i;
@@ -24,41 +25,41 @@ const DEFAULT_MAX_CONTENT_LENGTH = 4000;
 const FILLER_PATTERNS = [
     /you('ve| have) got this!?/gi,
     /stay (focused|motivated|on track)!?/gi,
-    /remember (your goals?|that this|to stay|to keep).*$/gim,  // Only strip coaching, not actionable items
+    /remember (your goals?|that this|to stay|to keep).*$/gim, // Only strip coaching, not actionable items
     /this (is important|aligns|helps|supports).*$/gim,
     /priority (justification|reasoning|rationale):.*$/gim,
-    /consider (breaking|splitting|starting).*$/gim,
+    /consider (breaking|splitting|starting).*$/gim
 ];
 
 // RepeatHint mapping constants
 const REPEAT_MAPPINGS = {
-    'daily': 'RRULE:FREQ=DAILY;INTERVAL=1',
-    'weekdays': 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
-    'weekends': 'RRULE:FREQ=WEEKLY;BYDAY=SA,SU',
-    'weekly': 'RRULE:FREQ=WEEKLY;INTERVAL=1',
-    'biweekly': 'RRULE:FREQ=WEEKLY;INTERVAL=2',
-    'monthly': 'RRULE:FREQ=MONTHLY;INTERVAL=1',
-    'yearly': 'RRULE:FREQ=YEARLY;INTERVAL=1',
+    daily: 'RRULE:FREQ=DAILY;INTERVAL=1',
+    weekdays: 'RRULE:FREQ=WEEKLY;BYDAY=MO,TU,WE,TH,FR',
+    weekends: 'RRULE:FREQ=WEEKLY;BYDAY=SA,SU',
+    weekly: 'RRULE:FREQ=WEEKLY;INTERVAL=1',
+    biweekly: 'RRULE:FREQ=WEEKLY;INTERVAL=2',
+    monthly: 'RRULE:FREQ=MONTHLY;INTERVAL=1',
+    yearly: 'RRULE:FREQ=YEARLY;INTERVAL=1'
 };
 
 const DAY_MAPPINGS = {
-    'monday': 'MO',
-    'tuesday': 'TU',
-    'wednesday': 'WE',
-    'thursday': 'TH',
-    'friday': 'FR',
-    'saturday': 'SA',
-    'sunday': 'SU'
+    monday: 'MO',
+    tuesday: 'TU',
+    wednesday: 'WE',
+    thursday: 'TH',
+    friday: 'FR',
+    saturday: 'SA',
+    sunday: 'SU'
 };
 
 const DAY_INDEX = {
-    'sunday': 0,
-    'monday': 1,
-    'tuesday': 2,
-    'wednesday': 3,
-    'thursday': 4,
-    'friday': 5,
-    'saturday': 6
+    sunday: 0,
+    monday: 1,
+    tuesday: 2,
+    wednesday: 3,
+    thursday: 4,
+    friday: 5,
+    saturday: 6
 };
 
 /**
@@ -85,7 +86,7 @@ function _getNowComponents(timezone = 'Europe/Dublin', currentDate = new Date())
                 year,
                 month,
                 day,
-                dayOfWeek: parts.weekday,
+                dayOfWeek: parts.weekday
             };
         }
     }
@@ -96,7 +97,7 @@ function _getNowComponents(timezone = 'Europe/Dublin', currentDate = new Date())
         year: parts.year,
         month: parts.month,
         day: parts.day,
-        dayOfWeek: parts.weekday,
+        dayOfWeek: parts.weekday
     };
 }
 
@@ -131,7 +132,7 @@ function _addMonthsUtc(date, months) {
 
 /**
  * Normalizes a title to be concise, verb-led, and noise-free.
- * 
+ *
  * Transformations applied in order:
  * 1. Trim whitespace
  * 2. Strip bracket prefixes like "[Work] "
@@ -140,7 +141,7 @@ function _addMonthsUtc(date, months) {
  * 5. Strip leading articles ("A", "An", "The")
  * 6. Capitalize first letter (sentence case)
  * 7. Truncate to maxLength at word boundary with ellipsis
- * 
+ *
  * @param {string} rawTitle - The raw title from extracted intent
  * @param {number} maxLength - Maximum character limit (default 100)
  * @returns {string} Cleaned title
@@ -185,14 +186,14 @@ function _normalizeTitle(rawTitle, maxLength = 100, isMutation = false) {
 /**
  * Filters content, keeping only useful references (URLs, locations, instructions)
  * and preserving existing content during updates.
- * 
+ *
  * Content cleaning steps:
  * 1. Strip motivational/coaching filler phrases
  * 2. Strip analysis noise and priority justifications
  * 3. Preserve URLs, locations, specific instructions, technical details
  * 4. Preserve actionable sub-step lists
  * 5. For updates: merge with existing content if new content adds value
- * 
+ *
  * @param {string|null} rawContent - Raw content from extracted intent
  * @param {string|null} existingContent - Existing task content (for updates)
  * @returns {string|null} Cleaned content or null if empty
@@ -204,8 +205,10 @@ function _normalizeContent(rawContent, existingContent) {
         // Extract and preserve useful elements before stripping filler
         const urls = newContent.match(/https?:\/\/[^\s]+/gi) || [];
         const hasLocation = /\b(at|near|in|on)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\b/i.test(newContent);
-        const hasInstructions = /\b(step|instruction|note|important|remember to|make sure|don't|do not)\b/i.test(newContent);
-        
+        const hasInstructions = /\b(step|instruction|note|important|remember to|make sure|don't|do not)\b/i.test(
+            newContent
+        );
+
         // Strip filler patterns
         for (const pattern of FILLER_PATTERNS) {
             newContent = newContent.replace(pattern, '').trim();
@@ -233,7 +236,7 @@ function _normalizeContent(rawContent, existingContent) {
 
         // Check if new content adds value (not just noise)
         const newValueIsUseful = _contentAddsValue(newContent, existingContent);
-        
+
         if (!newValueIsUseful) {
             // New content is just noise, keep existing unchanged
             return existingContent;
@@ -243,7 +246,7 @@ function _normalizeContent(rawContent, existingContent) {
         if (existingContent.includes(newContent)) {
             return existingContent;
         }
-        
+
         // Append new content below existing, separated by divider
         return `${existingContent}\n---\n${newContent}`;
     }
@@ -271,39 +274,51 @@ function _truncateContent(content, maxLength = DEFAULT_MAX_CONTENT_LENGTH) {
 /**
  * Determines if new content adds value beyond existing content.
  * Checks for URLs, locations, instructions, or actionable items not already present.
- * 
+ *
  * @param {string} newContent - New content to evaluate
  * @param {string} existingContent - Existing content to compare against
  * @returns {boolean} True if new content adds value
  */
 function _contentAddsValue(newContent, existingContent) {
     if (!newContent) return false;
-    
+
     const newLower = newContent.toLowerCase();
     const existingLower = existingContent.toLowerCase();
-    
+
     // Extract URLs from new content
     const newUrls = newContent.match(/https?:\/\/[^\s]+/gi) || [];
     const existingUrls = existingContent.match(/https?:\/\/[^\s]+/gi) || [];
-    
+
     // Check if new content has URLs not in existing
-    const hasNewUrls = newUrls.some(url => !existingUrls.includes(url));
-    
+    const hasNewUrls = newUrls.some((url) => !existingUrls.includes(url));
+
     // Check for location references not in existing
     const locationPattern = /\b(at|near|in|on)\s+([A-Z][a-zA-Z]+(?:\s+[A-Z][a-zA-Z]+)*)\b/gi;
     const newLocations = newContent.match(locationPattern) || [];
-    const hasNewLocations = newLocations.some(loc => !existingLower.includes(loc.toLowerCase()));
-    
+    const hasNewLocations = newLocations.some((loc) => !existingLower.includes(loc.toLowerCase()));
+
     // Check for actionable instructions not in existing (case-insensitive)
-    const instructionKeywords = ['step', 'instruction', 'note', 'important', 'remember to', 'make sure', 'call', 'email', 'send', 'submit', 'complete'];
-    const hasNewInstructions = instructionKeywords.some(keyword => 
-        newLower.includes(keyword) && !existingLower.includes(keyword)
+    const instructionKeywords = [
+        'step',
+        'instruction',
+        'note',
+        'important',
+        'remember to',
+        'make sure',
+        'call',
+        'email',
+        'send',
+        'submit',
+        'complete'
+    ];
+    const hasNewInstructions = instructionKeywords.some(
+        (keyword) => newLower.includes(keyword) && !existingLower.includes(keyword)
     );
-    
+
     // Check if new content has significant length (more than just a few words)
     const wordCount = newContent.split(/\s+/).length;
     const hasSubstantialContent = wordCount >= 5;
-    
+
     return hasNewUrls || hasNewLocations || hasNewInstructions || hasSubstantialContent;
 }
 
@@ -404,13 +419,15 @@ function _normalizeChecklistItems(rawItems) {
         cleanedItems.push({
             title: cleanedTitle,
             status,
-            sortOrder,
+            sortOrder
         });
     }
 
     // Cap at 30 items
     if (cleanedItems.length > MAX_CHECKLIST_ITEMS) {
-        console.warn(`[Normalizer] Checklist truncated: ${cleanedItems.length} -> ${MAX_CHECKLIST_ITEMS} items (${cleanedItems.length - MAX_CHECKLIST_ITEMS} dropped)`);
+        console.warn(
+            `[Normalizer] Checklist truncated: ${cleanedItems.length} -> ${MAX_CHECKLIST_ITEMS} items (${cleanedItems.length - MAX_CHECKLIST_ITEMS} dropped)`
+        );
         cleanedItems.length = MAX_CHECKLIST_ITEMS;
     }
 
@@ -423,7 +440,7 @@ function _normalizeChecklistItems(rawItems) {
 
 /**
  * Converts natural-language recurrence hints to RRULE strings.
- * 
+ *
  * Supported patterns:
  * - Simple: "daily", "weekdays", "weekends", "weekly", "biweekly", "monthly", "yearly"
  * - "every <day>": "every monday", "every sunday"
@@ -431,7 +448,7 @@ function _normalizeChecklistItems(rawItems) {
  * - "every <day> and <day>": "every tuesday and thursday"
  * - "weekly on <day>": "weekly on monday", "weekly on friday"
  * - "every other day": RRULE:FREQ=DAILY;INTERVAL=2
- * 
+ *
  * @param {string|null} repeatHint - Natural language recurrence hint
  * @returns {string|null} RRULE string or null if unrecognized
  */
@@ -496,8 +513,8 @@ function _convertRepeatHint(repeatHint, { currentDate = new Date(), timezone = '
         }
 
         // Parse multiple days: "every tuesday and thursday" or "every mon, wed, fri"
-        const days = remainder.split(/(?:and|,|&)/).map(d => d.trim());
-        const matchedDays = days.map(d => DAY_MAPPINGS[d]).filter(Boolean);
+        const days = remainder.split(/(?:and|,|&)/).map((d) => d.trim());
+        const matchedDays = days.map((d) => DAY_MAPPINGS[d]).filter(Boolean);
 
         if (matchedDays.length > 0) {
             return `RRULE:FREQ=WEEKLY;BYDAY=${matchedDays.join(',')}`;
@@ -538,17 +555,24 @@ function _resolveRepeatFlag(intentAction = {}, options = {}) {
  * 3. defaultProjectResolution only when no projectHint exists
  * 4. defaultProjectId only when no projectHint exists and resolution is not provided
  */
-function _resolveProject(projectHint, projects = [], defaultProjectId = null, taskTitle = '', taskContent = '', defaultProjectResolution = null) {
+function _resolveProject(
+    projectHint,
+    projects = [],
+    defaultProjectId = null,
+    taskTitle = '',
+    taskContent = '',
+    defaultProjectResolution = null
+) {
     const trimmedHint = typeof projectHint === 'string' ? projectHint.trim() : '';
 
     if (trimmedHint) {
-        const matchedById = projects.find(p => p?.id === trimmedHint);
+        const matchedById = projects.find((p) => p?.id === trimmedHint);
         if (matchedById) {
             return { projectId: matchedById.id, source: 'exact_id' };
         }
 
         const hintLower = trimmedHint.toLowerCase();
-        const matches = projects.filter(p => p?.name?.toLowerCase() === hintLower);
+        const matches = projects.filter((p) => p?.name?.toLowerCase() === hintLower);
         if (matches.length === 1) {
             return { projectId: matches[0].id, source: 'exact_name' };
         }
@@ -557,10 +581,16 @@ function _resolveProject(projectHint, projects = [], defaultProjectId = null, ta
     }
 
     if (defaultProjectResolution?.confidence === 'ambiguous') {
-        return { projectId: null, source: 'ambiguous', choices: Array.isArray(defaultProjectResolution.choices) ? defaultProjectResolution.choices : [] };
+        return {
+            projectId: null,
+            source: 'ambiguous',
+            choices: Array.isArray(defaultProjectResolution.choices) ? defaultProjectResolution.choices : []
+        };
     }
 
-    return defaultProjectId ? { projectId: defaultProjectId, source: 'configured_default' } : { projectId: null, source: 'missing' };
+    return defaultProjectId
+        ? { projectId: defaultProjectId, source: 'configured_default' }
+        : { projectId: null, source: 'missing' };
 }
 
 /**
@@ -597,9 +627,16 @@ function _extractTimeHint(dateString) {
         const slot = slotMatch[1];
         result.cleaned = lower.slice(0, slotMatch.index).trim();
         result.isAllDay = false;
-        if (slot === 'morning') { result.hour = 9; result.minute = 0; }
-        else if (slot === 'afternoon') { result.hour = 14; result.minute = 0; }
-        else if (slot === 'evening') { result.hour = 18; result.minute = 0; }
+        if (slot === 'morning') {
+            result.hour = 9;
+            result.minute = 0;
+        } else if (slot === 'afternoon') {
+            result.hour = 14;
+            result.minute = 0;
+        } else if (slot === 'evening') {
+            result.hour = 18;
+            result.minute = 0;
+        }
         return result;
     }
 
@@ -761,10 +798,10 @@ export function validateMutationBatch(actions) {
         return { valid: true, reason: null };
     }
 
-    const types = actions.map(a => a.type);
+    const types = actions.map((a) => a.type);
     const hasCreate = types.includes('create');
     const mutationTypes = ['update', 'complete', 'delete'];
-    const hasMutation = types.some(t => mutationTypes.includes(t));
+    const hasMutation = types.some((t) => mutationTypes.includes(t));
 
     // Mixed create + mutation: out of scope for v1
     if (hasCreate && hasMutation) {
@@ -772,18 +809,20 @@ export function validateMutationBatch(actions) {
     }
 
     // Multiple mutations: out of scope for v1 (single-target only)
-    const mutationCount = types.filter(t => mutationTypes.includes(t)).length;
+    const mutationCount = types.filter((t) => mutationTypes.includes(t)).length;
     if (mutationCount > 1) {
-        const mutationActions = actions.filter(a => mutationTypes.includes(a.type));
+        const mutationActions = actions.filter((a) => mutationTypes.includes(a.type));
 
         // Allow if all mutations target the same task (resolved or unresolved)
-        const allSameTask = mutationActions.every(a => a.taskId === mutationActions[0].taskId);
+        const allSameTask = mutationActions.every((a) => a.taskId === mutationActions[0].taskId);
         if (allSameTask) {
             return { valid: true, reason: null };
         }
 
         // Allow small, lightweight mutation batches (<=3 actions)
-        const isLightweight = mutationActions.every(a => a.type === 'complete' || a.type === 'delete' || a.type === 'update');
+        const isLightweight = mutationActions.every(
+            (a) => a.type === 'complete' || a.type === 'delete' || a.type === 'update'
+        );
         if (mutationCount <= 3 && isLightweight) {
             return { valid: true, reason: null };
         }
@@ -814,7 +853,7 @@ function _validateAction(action, minConfidence = 0.5) {
     }
 
     if (action.type === 'create' && !action.title) {
-        errors.push("Empty title after normalization");
+        errors.push('Empty title after normalization');
     }
 
     // Mutation actions require resolved task context — fail closed.
@@ -827,8 +866,11 @@ function _validateAction(action, minConfidence = 0.5) {
     }
 
     // Validate original priority (before normalization)
-    if (action.originalPriority !== undefined && action.originalPriority !== null &&
-        ![0, 1, 3, 5].includes(action.originalPriority)) {
+    if (
+        action.originalPriority !== undefined &&
+        action.originalPriority !== null &&
+        ![0, 1, 3, 5].includes(action.originalPriority)
+    ) {
         errors.push(`Invalid priority: ${action.originalPriority}`);
     }
 
@@ -853,13 +895,20 @@ function _parseDateList(dueDateString) {
     let string = dueDateString.toLowerCase().replace(/,/g, ' ');
     // Hacky split for common days
     const validDaysMap = {
-        'monday': 'monday', 'mon': 'monday',
-        'tuesday': 'tuesday', 'tue': 'tuesday',
-        'wednesday': 'wednesday', 'wed': 'wednesday',
-        'thursday': 'thursday', 'thu': 'thursday',
-        'friday': 'friday', 'fri': 'friday',
-        'saturday': 'saturday', 'sat': 'saturday',
-        'sunday': 'sunday', 'sun': 'sunday'
+        monday: 'monday',
+        mon: 'monday',
+        tuesday: 'tuesday',
+        tue: 'tuesday',
+        wednesday: 'wednesday',
+        wed: 'wednesday',
+        thursday: 'thursday',
+        thu: 'thursday',
+        friday: 'friday',
+        fri: 'friday',
+        saturday: 'saturday',
+        sat: 'saturday',
+        sunday: 'sunday',
+        sun: 'sunday'
     };
 
     const results = new Set();
@@ -899,7 +948,7 @@ export function normalizeAction(intentAction, options = {}) {
         projects = [],
         defaultProjectId = null,
         minConfidence = 0.5,
-        resolvedTask = null,        // { id, projectId, title } from task-resolver
+        resolvedTask = null // { id, projectId, title } from task-resolver
     } = options;
 
     const isMutation = ['update', 'complete', 'delete'].includes(intentAction.type);
@@ -913,14 +962,16 @@ export function normalizeAction(intentAction, options = {}) {
     const resolvedOriginalProjectId = resolvedTask?.projectId ?? options.existingTask?.projectId ?? null;
 
     // For mutation actions, preserve existing content unless explicitly replacing
-    const mutationContent = isMutation && existingTaskContent !== null
-        ? _normalizeContentForMutation(intentAction.content, existingTaskContent)
-        : _normalizeContent(intentAction.content, existingTaskContent);
+    const mutationContent =
+        isMutation && existingTaskContent !== null
+            ? _normalizeContentForMutation(intentAction.content, existingTaskContent)
+            : _normalizeContent(intentAction.content, existingTaskContent);
 
     // Attach checklist items to create actions only
-    const checklistItems = intentAction.type === 'create' && intentAction.checklistItems !== undefined
-        ? _normalizeChecklistItems(intentAction.checklistItems)
-        : undefined;
+    const checklistItems =
+        intentAction.type === 'create' && intentAction.checklistItems !== undefined
+            ? _normalizeChecklistItems(intentAction.checklistItems)
+            : undefined;
 
     // Pre-compute title and content
     // For mutations: title is only included if it's an explicit rename
@@ -930,12 +981,8 @@ export function normalizeAction(intentAction, options = {}) {
         const intentTitle = intentAction.title?.trim().toLowerCase();
         const intentTarget = intentAction.targetQuery?.trim().toLowerCase();
         const existingTitle = options.existingTask?.title?.trim().toLowerCase();
-        const isRename = intentTitle
-            && intentTitle !== intentTarget
-            && intentTitle !== existingTitle;
-        normalizedTitle = isRename
-            ? _normalizeTitle(intentAction.title, maxTitleLength, isMutation)
-            : undefined;
+        const isRename = intentTitle && intentTitle !== intentTarget && intentTitle !== existingTitle;
+        normalizedTitle = isRename ? _normalizeTitle(intentAction.title, maxTitleLength, isMutation) : undefined;
     } else {
         normalizedTitle = _normalizeTitle(intentAction.title, maxTitleLength, false);
     }
@@ -959,7 +1006,7 @@ export function normalizeAction(intentAction, options = {}) {
         defaultProjectId,
         normalizedTitle || '',
         normalizedContent,
-        options.defaultProjectResolution || null,
+        options.defaultProjectResolution || null
     );
     // Expand dueDate and extract isAllDay from time hints
     let expandedDueDate, expandedIsAllDay;
@@ -982,7 +1029,9 @@ export function normalizeAction(intentAction, options = {}) {
         if (!hasDatePhrase) {
             // No date phrase in title — LLM likely inferred a dueDate.
             // Preserve the user-set existing dueDate.
-            console.log(`[Normalizer] Preserved existing due date for "${taskTitle}" (user-set: ${options.existingTask.dueDate})`);
+            console.log(
+                `[Normalizer] Preserved existing due date for "${taskTitle}" (user-set: ${options.existingTask.dueDate})`
+            );
             expandedDueDate = undefined;
             expandedIsAllDay = undefined;
         }
@@ -995,15 +1044,16 @@ export function normalizeAction(intentAction, options = {}) {
         taskId: resolvedTaskId,
         originalProjectId: resolvedOriginalProjectId,
         projectHint: intentAction.projectHint,
-        targetQuery: isMutation ? (intentAction.targetQuery || null) : null,
+        targetQuery: isMutation ? intentAction.targetQuery || null : null,
         title: normalizedTitle,
         content: normalizedContent,
-        mergeContent: (isMutation && existingTaskContent !== null && !normalizedContent) ? false : undefined,
-        priority: isMutation && (intentAction.priority == null || intentAction.priority === '') ? undefined : normalizedPriority,
-        originalPriority: originalPriority,  // Keep for validation
-        projectId: isMutation && !intentAction.projectHint
-            ? undefined
-            : resolvedProject.projectId,
+        mergeContent: isMutation && existingTaskContent !== null && !normalizedContent ? false : undefined,
+        priority:
+            isMutation && (intentAction.priority == null || intentAction.priority === '')
+                ? undefined
+                : normalizedPriority,
+        originalPriority: originalPriority, // Keep for validation
+        projectId: isMutation && !intentAction.projectHint ? undefined : resolvedProject.projectId,
         dueDate: expandedDueDate,
         isAllDay: expandedIsAllDay,
         repeatFlag: isMutation && !hasRepeatIntent ? undefined : _resolveRepeatFlag(intentAction, options),
@@ -1019,21 +1069,24 @@ export function normalizeAction(intentAction, options = {}) {
         normalized.validationErrors.push(`Unsupported repeat pattern: ${repeatLabel}`);
     }
 
-    const hintedProjectName = typeof intentAction.projectHint === 'string' ? intentAction.projectHint.trim().toLowerCase() : '';
+    const hintedProjectName =
+        typeof intentAction.projectHint === 'string' ? intentAction.projectHint.trim().toLowerCase() : '';
     const exactMatches = hintedProjectName
-        ? projects.filter(project => project?.name?.trim().toLowerCase() === hintedProjectName)
+        ? projects.filter((project) => project?.name?.trim().toLowerCase() === hintedProjectName)
         : [];
     if (hintedProjectName || !isMutation) {
-        normalized.projectResolution = resolvedProject.source === 'ambiguous'
-            ? {
-                confidence: 'ambiguous',
-                choices: Array.isArray(resolvedProject.choices) && resolvedProject.choices.length > 0
-                    ? resolvedProject.choices
-                    : exactMatches.map(project => ({ projectId: project.id, projectName: project.name })),
-            }
-            : resolvedProject.source === 'missing'
-                ? { confidence: 'missing' }
-                : resolvedProject.source === 'configured_default'
+        normalized.projectResolution =
+            resolvedProject.source === 'ambiguous'
+                ? {
+                      confidence: 'ambiguous',
+                      choices:
+                          Array.isArray(resolvedProject.choices) && resolvedProject.choices.length > 0
+                              ? resolvedProject.choices
+                              : exactMatches.map((project) => ({ projectId: project.id, projectName: project.name }))
+                  }
+                : resolvedProject.source === 'missing'
+                  ? { confidence: 'missing' }
+                  : resolvedProject.source === 'configured_default'
                     ? { confidence: 'configured', projectId: normalized.projectId }
                     : { confidence: 'exact', projectId: normalized.projectId };
     }
@@ -1058,16 +1111,17 @@ export function normalizeActions(intentActions, options = {}) {
     for (const [intentIndex, intent] of intentActions.entries()) {
         const indexedIntent = {
             ...intent,
-            _index: Number.isInteger(intent?._index) ? intent._index : intentIndex,
+            _index: Number.isInteger(intent?._index) ? intent._index : intentIndex
         };
 
         const parsedDates = _parseDateList(intent.dueDate);
         const hasMultipleNamedDays = parsedDates.length > 1;
         const hasRecurringHint = typeof intent.repeatHint === 'string' && intent.repeatHint.trim().length > 0;
-        const shouldSplitMultiDay = intent.type === 'create'
-            && intent.dueDate
-            && !hasRecurringHint
-            && (intent.splitStrategy === 'multi-day' || hasMultipleNamedDays);
+        const shouldSplitMultiDay =
+            intent.type === 'create' &&
+            intent.dueDate &&
+            !hasRecurringHint &&
+            (intent.splitStrategy === 'multi-day' || hasMultipleNamedDays);
 
         if (shouldSplitMultiDay) {
             const dates = _parseDateList(intent.dueDate);

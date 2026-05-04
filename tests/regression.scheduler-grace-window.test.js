@@ -3,253 +3,266 @@ import assert from 'node:assert/strict';
 
 import * as store from '../services/store.js';
 import {
-  buildSchedulingMetadata,
-  retryDeferredIntents,
-  runDailyBriefingJob,
-  runStartupCatchupJobs,
-  runWeeklyDigestJob,
-  shouldSendMissedDelivery,
+    buildSchedulingMetadata,
+    retryDeferredIntents,
+    runDailyBriefingJob,
+    runStartupCatchupJobs,
+    runWeeklyDigestJob,
+    shouldSendMissedDelivery
 } from '../services/scheduler.js';
 import { buildSummaryActiveTasksFixture } from './helpers/regression-fixtures.js';
 
 test('shouldSendMissedDelivery returns true when never sent before', () => {
-  const scheduledTime = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-  assert.equal(shouldSendMissedDelivery(null, scheduledTime, { graceWindowMinutes: 15 }), true);
+    const scheduledTime = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    assert.equal(shouldSendMissedDelivery(null, scheduledTime, { graceWindowMinutes: 15 }), true);
 });
 
 test('shouldSendMissedDelivery returns false when delivery already happened after schedule', () => {
-  const lastSent = new Date(Date.now() - 5 * 60 * 1000).toISOString();
-  const scheduledTime = new Date(Date.now() - 10 * 60 * 1000).toISOString();
-  assert.equal(shouldSendMissedDelivery(lastSent, scheduledTime, { graceWindowMinutes: 15 }), false);
+    const lastSent = new Date(Date.now() - 5 * 60 * 1000).toISOString();
+    const scheduledTime = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+    assert.equal(shouldSendMissedDelivery(lastSent, scheduledTime, { graceWindowMinutes: 15 }), false);
 });
 
 test('shouldSendMissedDelivery returns false when outside grace window', () => {
-  const scheduledTime = new Date(Date.now() - 20 * 60 * 1000).toISOString();
-  assert.equal(shouldSendMissedDelivery(null, scheduledTime, { graceWindowMinutes: 15 }), false);
+    const scheduledTime = new Date(Date.now() - 20 * 60 * 1000).toISOString();
+    assert.equal(shouldSendMissedDelivery(null, scheduledTime, { graceWindowMinutes: 15 }), false);
 });
 
 test('buildSchedulingMetadata creates correct metadata structure', () => {
-  const scheduledForIso = new Date().toISOString();
-  const metadata = buildSchedulingMetadata('daily-briefing', scheduledForIso, 15);
+    const scheduledForIso = new Date().toISOString();
+    const metadata = buildSchedulingMetadata('daily-briefing', scheduledForIso, 15);
 
-  assert.ok(metadata.schedulingMetadata);
-  assert.equal(metadata.schedulingMetadata.triggerKind, 'scheduled');
-  assert.equal(metadata.schedulingMetadata.scheduleKey, 'daily-briefing');
-  assert.equal(metadata.schedulingMetadata.scheduledForIso, scheduledForIso);
-  assert.equal(metadata.schedulingMetadata.graceWindowMinutes, 15);
+    assert.ok(metadata.schedulingMetadata);
+    assert.equal(metadata.schedulingMetadata.triggerKind, 'scheduled');
+    assert.equal(metadata.schedulingMetadata.scheduleKey, 'daily-briefing');
+    assert.equal(metadata.schedulingMetadata.scheduledForIso, scheduledForIso);
+    assert.equal(metadata.schedulingMetadata.graceWindowMinutes, 15);
 });
 
 test('runDailyBriefingJob includes scheduling metadata in context', async () => {
-  await store.resetAll();
-  const userId = `scheduler-metadata-daily-${Date.now()}`;
-  await store.setChatId(userId);
+    await store.resetAll();
+    const userId = `scheduler-metadata-daily-${Date.now()}`;
+    await store.setChatId(userId);
 
-  let receivedContext = null;
-  const ran = await runDailyBriefingJob({
-    bot: { api: { sendMessage: async () => {} } },
-    ticktick: { isAuthenticated: () => true },
-    adapter: { listActiveTasks: async () => [] },
-    gemini: {
-      isQuotaExhausted: () => false,
-      generateDailyBriefingSummary: async (_tasks, context) => {
-        receivedContext = context;
-        return { formattedText: '**MORNING BRIEFING**' };
-      },
-    },
-    config: { graceWindowMinutes: 20, scheduledForIso: '2026-03-12T08:00:00.000Z' },
-  });
+    let receivedContext = null;
+    const ran = await runDailyBriefingJob({
+        bot: { api: { sendMessage: async () => {} } },
+        ticktick: { isAuthenticated: () => true },
+        adapter: { listActiveTasks: async () => [] },
+        gemini: {
+            isQuotaExhausted: () => false,
+            generateDailyBriefingSummary: async (_tasks, context) => {
+                receivedContext = context;
+                return { formattedText: '**MORNING BRIEFING**' };
+            }
+        },
+        config: { graceWindowMinutes: 20, scheduledForIso: '2026-03-12T08:00:00.000Z' }
+    });
 
-  assert.equal(ran, true);
-  assert.ok(receivedContext);
-  assert.ok(receivedContext.schedulingMetadata);
-  assert.equal(receivedContext.schedulingMetadata.triggerKind, 'scheduled');
-  assert.equal(receivedContext.schedulingMetadata.scheduleKey, 'daily-briefing');
-  assert.equal(receivedContext.schedulingMetadata.scheduledForIso, '2026-03-12T08:00:00.000Z');
-  assert.equal(receivedContext.schedulingMetadata.graceWindowMinutes, 20);
+    assert.equal(ran, true);
+    assert.ok(receivedContext);
+    assert.ok(receivedContext.schedulingMetadata);
+    assert.equal(receivedContext.schedulingMetadata.triggerKind, 'scheduled');
+    assert.equal(receivedContext.schedulingMetadata.scheduleKey, 'daily-briefing');
+    assert.equal(receivedContext.schedulingMetadata.scheduledForIso, '2026-03-12T08:00:00.000Z');
+    assert.equal(receivedContext.schedulingMetadata.graceWindowMinutes, 20);
 });
 
 test('runWeeklyDigestJob includes scheduling metadata in context', async () => {
-  await store.resetAll();
-  const userId = `scheduler-metadata-weekly-${Date.now()}`;
-  await store.setChatId(userId);
+    await store.resetAll();
+    const userId = `scheduler-metadata-weekly-${Date.now()}`;
+    await store.setChatId(userId);
 
-  let receivedContext = null;
-  const ran = await runWeeklyDigestJob({
-    bot: { api: { sendMessage: async () => {} } },
-    ticktick: { isAuthenticated: () => true },
-    adapter: { listActiveTasks: async () => [] },
-    gemini: {
-      isQuotaExhausted: () => false,
-      generateWeeklyDigestSummary: async (_tasks, _processed, context) => {
-        receivedContext = context;
-        return { formattedText: '**WEEKLY DIGEST**' };
-      },
-    },
-    config: { graceWindowMinutes: 25, scheduledForIso: '2026-03-16T20:00:00.000Z' },
-  });
+    let receivedContext = null;
+    const ran = await runWeeklyDigestJob({
+        bot: { api: { sendMessage: async () => {} } },
+        ticktick: { isAuthenticated: () => true },
+        adapter: { listActiveTasks: async () => [] },
+        gemini: {
+            isQuotaExhausted: () => false,
+            generateWeeklyDigestSummary: async (_tasks, _processed, context) => {
+                receivedContext = context;
+                return { formattedText: '**WEEKLY DIGEST**' };
+            }
+        },
+        config: { graceWindowMinutes: 25, scheduledForIso: '2026-03-16T20:00:00.000Z' }
+    });
 
-  assert.equal(ran, true);
-  assert.ok(receivedContext);
-  assert.ok(receivedContext.schedulingMetadata);
-  assert.equal(receivedContext.schedulingMetadata.triggerKind, 'scheduled');
-  assert.equal(receivedContext.schedulingMetadata.scheduleKey, 'weekly-digest');
-  assert.equal(receivedContext.schedulingMetadata.scheduledForIso, '2026-03-16T20:00:00.000Z');
-  assert.equal(receivedContext.schedulingMetadata.graceWindowMinutes, 25);
+    assert.equal(ran, true);
+    assert.ok(receivedContext);
+    assert.ok(receivedContext.schedulingMetadata);
+    assert.equal(receivedContext.schedulingMetadata.triggerKind, 'scheduled');
+    assert.equal(receivedContext.schedulingMetadata.scheduleKey, 'weekly-digest');
+    assert.equal(receivedContext.schedulingMetadata.scheduledForIso, '2026-03-16T20:00:00.000Z');
+    assert.equal(receivedContext.schedulingMetadata.graceWindowMinutes, 25);
 });
 
 test('runStartupCatchupJobs sends missed daily briefing once when startup is inside grace window', async () => {
-  await store.resetAll();
-  const userId = `scheduler-startup-daily-${Date.now()}`;
-  await store.setChatId(userId);
-  await store.setWorkStyleMode(userId, store.MODE_STANDARD);
+    await store.resetAll();
+    const userId = `scheduler-startup-daily-${Date.now()}`;
+    await store.setChatId(userId);
+    await store.setWorkStyleMode(userId, store.MODE_STANDARD);
 
-  let dailyCalls = 0;
-  const result = await runStartupCatchupJobs({
-    bot: { api: { sendMessage: async () => {} } },
-    ticktick: { isAuthenticated: () => true },
-    adapter: { listActiveTasks: async () => buildSummaryActiveTasksFixture() },
-    gemini: {
-      isQuotaExhausted: () => false,
-      generateDailyBriefingSummary: async () => {
-        dailyCalls += 1;
-        return { formattedText: '**🌅 MORNING BRIEFING**' };
-      },
-      generateWeeklyDigestSummary: async () => {
-        throw new Error('weekly should not run in daily catch-up test');
-      },
-    },
-  }, {
-    dailyHour: 8,
-    weeklyDay: 0,
-    timezone: 'UTC',
-    graceWindowMinutes: 15,
-  }, {
-    now: new Date('2026-03-12T08:10:00.000Z'),
-  });
+    let dailyCalls = 0;
+    const result = await runStartupCatchupJobs(
+        {
+            bot: { api: { sendMessage: async () => {} } },
+            ticktick: { isAuthenticated: () => true },
+            adapter: { listActiveTasks: async () => buildSummaryActiveTasksFixture() },
+            gemini: {
+                isQuotaExhausted: () => false,
+                generateDailyBriefingSummary: async () => {
+                    dailyCalls += 1;
+                    return { formattedText: '**🌅 MORNING BRIEFING**' };
+                },
+                generateWeeklyDigestSummary: async () => {
+                    throw new Error('weekly should not run in daily catch-up test');
+                }
+            }
+        },
+        {
+            dailyHour: 8,
+            weeklyDay: 0,
+            timezone: 'UTC',
+            graceWindowMinutes: 15
+        },
+        {
+            now: new Date('2026-03-12T08:10:00.000Z')
+        }
+    );
 
-  assert.equal(result.daily, true);
-  assert.equal(result.weekly, false);
-  assert.equal(dailyCalls, 1);
+    assert.equal(result.daily, true);
+    assert.equal(result.weekly, false);
+    assert.equal(dailyCalls, 1);
 });
 
 test('runStartupCatchupJobs skips duplicate or late daily briefing catch-up', async () => {
-  await store.resetAll();
-  const userId = `scheduler-startup-skip-${Date.now()}`;
-  await store.setChatId(userId);
-  await store.setWorkStyleMode(userId, store.MODE_STANDARD);
-  await store.updateStats({ lastDailyBriefing: '2026-03-12T08:05:00.000Z' });
+    await store.resetAll();
+    const userId = `scheduler-startup-skip-${Date.now()}`;
+    await store.setChatId(userId);
+    await store.setWorkStyleMode(userId, store.MODE_STANDARD);
+    await store.updateStats({ lastDailyBriefing: '2026-03-12T08:05:00.000Z' });
 
-  let dailyCalls = 0;
-  const result = await runStartupCatchupJobs({
-    bot: { api: { sendMessage: async () => {} } },
-    ticktick: { isAuthenticated: () => true },
-    adapter: { listActiveTasks: async () => buildSummaryActiveTasksFixture() },
-    gemini: {
-      isQuotaExhausted: () => false,
-      generateDailyBriefingSummary: async () => {
-        dailyCalls += 1;
-        return { formattedText: '**🌅 MORNING BRIEFING**' };
-      },
-      generateWeeklyDigestSummary: async () => ({ formattedText: '**📊 WEEKLY ACCOUNTABILITY REVIEW**' }),
-    },
-  }, {
-    dailyHour: 8,
-    weeklyDay: 0,
-    timezone: 'UTC',
-    graceWindowMinutes: 15,
-  }, {
-    now: new Date('2026-03-12T08:20:00.000Z'),
-  });
+    let dailyCalls = 0;
+    const result = await runStartupCatchupJobs(
+        {
+            bot: { api: { sendMessage: async () => {} } },
+            ticktick: { isAuthenticated: () => true },
+            adapter: { listActiveTasks: async () => buildSummaryActiveTasksFixture() },
+            gemini: {
+                isQuotaExhausted: () => false,
+                generateDailyBriefingSummary: async () => {
+                    dailyCalls += 1;
+                    return { formattedText: '**🌅 MORNING BRIEFING**' };
+                },
+                generateWeeklyDigestSummary: async () => ({ formattedText: '**📊 WEEKLY ACCOUNTABILITY REVIEW**' })
+            }
+        },
+        {
+            dailyHour: 8,
+            weeklyDay: 0,
+            timezone: 'UTC',
+            graceWindowMinutes: 15
+        },
+        {
+            now: new Date('2026-03-12T08:20:00.000Z')
+        }
+    );
 
-  assert.equal(result.daily, false);
-  assert.equal(dailyCalls, 0);
+    assert.equal(result.daily, false);
+    assert.equal(dailyCalls, 0);
 });
 
 test('runStartupCatchupJobs sends missed weekly digest once when startup is inside grace window', async () => {
-  await store.resetAll();
-  const userId = `scheduler-startup-weekly-${Date.now()}`;
-  await store.setChatId(userId);
-  await store.setWorkStyleMode(userId, store.MODE_STANDARD);
+    await store.resetAll();
+    const userId = `scheduler-startup-weekly-${Date.now()}`;
+    await store.setChatId(userId);
+    await store.setWorkStyleMode(userId, store.MODE_STANDARD);
 
-  let weeklyCalls = 0;
-  const result = await runStartupCatchupJobs({
-    bot: { api: { sendMessage: async () => {} } },
-    ticktick: { isAuthenticated: () => true },
-    adapter: { listActiveTasks: async () => buildSummaryActiveTasksFixture() },
-    gemini: {
-      isQuotaExhausted: () => false,
-      generateDailyBriefingSummary: async () => ({ formattedText: '**🌅 MORNING BRIEFING**' }),
-      generateWeeklyDigestSummary: async () => {
-        weeklyCalls += 1;
-        return { formattedText: '**📊 WEEKLY ACCOUNTABILITY REVIEW**' };
-      },
-    },
-  }, {
-    dailyHour: 8,
-    weeklyDay: 0,
-    timezone: 'UTC',
-    graceWindowMinutes: 15,
-  }, {
-    now: new Date('2026-03-15T20:10:00.000Z'),
-  });
+    let weeklyCalls = 0;
+    const result = await runStartupCatchupJobs(
+        {
+            bot: { api: { sendMessage: async () => {} } },
+            ticktick: { isAuthenticated: () => true },
+            adapter: { listActiveTasks: async () => buildSummaryActiveTasksFixture() },
+            gemini: {
+                isQuotaExhausted: () => false,
+                generateDailyBriefingSummary: async () => ({ formattedText: '**🌅 MORNING BRIEFING**' }),
+                generateWeeklyDigestSummary: async () => {
+                    weeklyCalls += 1;
+                    return { formattedText: '**📊 WEEKLY ACCOUNTABILITY REVIEW**' };
+                }
+            }
+        },
+        {
+            dailyHour: 8,
+            weeklyDay: 0,
+            timezone: 'UTC',
+            graceWindowMinutes: 15
+        },
+        {
+            now: new Date('2026-03-15T20:10:00.000Z')
+        }
+    );
 
-  assert.equal(result.weekly, true);
-  assert.equal(weeklyCalls, 1);
+    assert.equal(result.weekly, true);
+    assert.equal(weeklyCalls, 1);
 });
 
 test('startup catch-up delivers daily and weekly as separate messages with non-duplicated focus list', async () => {
-  await store.resetAll();
-  const userId = `scheduler-startup-both-${Date.now()}`;
-  await store.setChatId(userId);
-  await store.setWorkStyleMode(userId, store.MODE_STANDARD);
+    await store.resetAll();
+    const userId = `scheduler-startup-both-${Date.now()}`;
+    await store.setChatId(userId);
+    await store.setWorkStyleMode(userId, store.MODE_STANDARD);
 
-  const sent = [];
-  let weeklyContext = null;
+    const sent = [];
+    let weeklyContext = null;
 
-  const result = await runStartupCatchupJobs({
-    bot: {
-      api: {
-        sendMessage: async (_chatId, message) => {
-          sent.push(message);
+    const result = await runStartupCatchupJobs(
+        {
+            bot: {
+                api: {
+                    sendMessage: async (_chatId, message) => {
+                        sent.push(message);
+                    }
+                }
+            },
+            ticktick: { isAuthenticated: () => true },
+            adapter: { listActiveTasks: async () => buildSummaryActiveTasksFixture() },
+            gemini: {
+                isQuotaExhausted: () => false,
+                generateDailyBriefingSummary: async () => ({
+                    summary: {
+                        priorities: [{ task_id: 'task-focus' }, { task_id: 'task-support' }]
+                    },
+                    formattedText: '**🌅 MORNING BRIEFING**\n\n**Focus**: Daily focus'
+                }),
+                generateWeeklyDigestSummary: async (_tasks, _processed, context) => {
+                    weeklyContext = context;
+                    return {
+                        formattedText: '**📊 WEEKLY ACCOUNTABILITY REVIEW**\n\n**Next focus**:\n1. Weekly focus task'
+                    };
+                }
+            }
         },
-      },
-    },
-    ticktick: { isAuthenticated: () => true },
-    adapter: { listActiveTasks: async () => buildSummaryActiveTasksFixture() },
-    gemini: {
-      isQuotaExhausted: () => false,
-      generateDailyBriefingSummary: async () => ({
-        summary: {
-          priorities: [
-            { task_id: 'task-focus' },
-            { task_id: 'task-support' },
-          ],
+        {
+            dailyHour: 20,
+            weeklyDay: 0,
+            timezone: 'UTC',
+            graceWindowMinutes: 15
         },
-        formattedText: '**🌅 MORNING BRIEFING**\n\n**Focus**: Daily focus',
-      }),
-      generateWeeklyDigestSummary: async (_tasks, _processed, context) => {
-        weeklyContext = context;
-        return {
-          formattedText: '**📊 WEEKLY ACCOUNTABILITY REVIEW**\n\n**Next focus**:\n1. Weekly focus task',
-        };
-      },
-    },
-  }, {
-    dailyHour: 20,
-    weeklyDay: 0,
-    timezone: 'UTC',
-    graceWindowMinutes: 15,
-  }, {
-    now: new Date('2026-03-15T20:10:00.000Z'),
-  });
+        {
+            now: new Date('2026-03-15T20:10:00.000Z')
+        }
+    );
 
-  assert.equal(result.daily, true);
-  assert.equal(result.weekly, true);
-  assert.equal(sent.length, 2);
-  assert.match(sent[0], /MORNING BRIEFING/);
-  assert.match(sent[1], /WEEKLY ACCOUNTABILITY REVIEW/);
-  assert.notEqual(sent[0], sent[1]);
-  assert.deepEqual(weeklyContext.excludedTaskIds, ['task-focus', 'task-support']);
+    assert.equal(result.daily, true);
+    assert.equal(result.weekly, true);
+    assert.equal(sent.length, 2);
+    assert.match(sent[0], /MORNING BRIEFING/);
+    assert.match(sent[1], /WEEKLY ACCOUNTABILITY REVIEW/);
+    assert.notEqual(sent[0], sent[1]);
+    assert.deepEqual(weeklyContext.excludedTaskIds, ['task-focus', 'task-support']);
 });
 
 // ─── Deferred Pipeline Intents — Store CRUD (R12) ────────────
@@ -258,7 +271,7 @@ test('store: appendDeferredPipelineIntent persists and returns entry with genera
     await store.resetAll();
     const entry = await store.appendDeferredPipelineIntent({
         userMessage: 'Buy milk',
-        entryPoint: 'free-form',
+        entryPoint: 'free-form'
     });
     assert.ok(entry.id.startsWith('dpi_'));
     assert.equal(entry.userMessage, 'Buy milk');
@@ -274,7 +287,7 @@ test('store: appendDeferredPipelineIntent preserves explicit id', async () => {
     await store.resetAll();
     const entry = await store.appendDeferredPipelineIntent({
         id: 'custom-id-1',
-        userMessage: 'Do laundry',
+        userMessage: 'Do laundry'
     });
     assert.equal(entry.id, 'custom-id-1');
 });
@@ -316,7 +329,7 @@ test('retryDeferredIntents returns zeros when no deferred intents exist', async 
     await store.resetAll();
     const result = await retryDeferredIntents({
         adapter: { listActiveTasks: async () => [] },
-        pipeline: { processMessage: async () => ({ type: 'task' }) },
+        pipeline: { processMessage: async () => ({ type: 'task' }) }
     });
     assert.deepEqual(result, { retried: 0, failed: 0, givenUp: 0, remaining: 0 });
 });
@@ -326,8 +339,12 @@ test('retryDeferredIntents skips retry when API health check fails', async () =>
     await store.appendDeferredPipelineIntent({ userMessage: 'Deferred task' });
 
     const result = await retryDeferredIntents({
-        adapter: { listActiveTasks: async () => { throw new Error('API down'); } },
-        pipeline: { processMessage: async () => ({ type: 'task' }) },
+        adapter: {
+            listActiveTasks: async () => {
+                throw new Error('API down');
+            }
+        },
+        pipeline: { processMessage: async () => ({ type: 'task' }) }
     });
     assert.equal(result.retried, 0);
     assert.equal(result.remaining, 1);
@@ -339,7 +356,7 @@ test('retryDeferredIntents retries and removes successful intent', async () => {
     const entry = await store.appendDeferredPipelineIntent({
         userMessage: 'Buy groceries',
         entryPoint: 'free-form',
-        nextAttemptAt: Date.now() - 1000,
+        nextAttemptAt: Date.now() - 1000
     });
 
     const processCalls = [];
@@ -348,10 +365,27 @@ test('retryDeferredIntents retries and removes successful intent', async () => {
         pipeline: {
             processMessageWithContext: async (msg, opts) => {
                 processCalls.push({ msg, opts });
-                return { type: 'task', actions: [{ title: 'Buy groceries' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-1', results: [{ status: 'succeeded' }] } };
-            },
+                return {
+                    type: 'task',
+                    actions: [{ title: 'Buy groceries' }],
+                    operationReceipt: {
+                        status: 'applied',
+                        scope: 'ticktick_live',
+                        command: 'scheduler',
+                        operationType: 'create',
+                        nextAction: 'none',
+                        changed: true,
+                        dryRun: false,
+                        applied: true,
+                        fallbackUsed: false,
+                        message: 'Applied',
+                        traceId: 'trace-1',
+                        results: [{ status: 'succeeded' }]
+                    }
+                };
+            }
         },
-        bot: { api: { sendMessage: async () => {} } },
+        bot: { api: { sendMessage: async () => {} } }
     });
 
     assert.equal(result.retried, 1);
@@ -372,9 +406,9 @@ test('retryDeferredIntents leaves transient failures in queue', async () => {
         pipeline: {
             processMessage: async () => ({
                 type: 'error',
-                failure: { failureCategory: 'transient' },
-            }),
-        },
+                failure: { failureCategory: 'transient' }
+            })
+        }
     });
 
     assert.equal(result.retried, 0);
@@ -392,10 +426,10 @@ test('retryDeferredIntents removes permanent failures from queue', async () => {
         pipeline: {
             processMessage: async () => ({
                 type: 'error',
-                failure: { failureCategory: 'permanent' },
-            }),
+                failure: { failureCategory: 'permanent' }
+            })
         },
-        bot: { api: { sendMessage: async () => {} } },
+        bot: { api: { sendMessage: async () => {} } }
     });
 
     assert.equal(result.failed, 1);
@@ -412,10 +446,10 @@ test('retryDeferredIntents does not match legacy category field', async () => {
         pipeline: {
             processMessage: async () => ({
                 type: 'error',
-                failure: { category: 'transient' }, // WRONG field name
-            }),
+                failure: { category: 'transient' } // WRONG field name
+            })
         },
-        bot: { api: { sendMessage: async () => {} } },
+        bot: { api: { sendMessage: async () => {} } }
     });
 
     assert.equal(result.retried, 0);
@@ -431,8 +465,25 @@ test('retryDeferredIntents removes malformed entries without userMessage', async
     const result = await retryDeferredIntents({
         adapter: { listActiveTasks: async () => [] },
         pipeline: {
-            processMessage: async () => ({ type: 'task', actions: [{ title: 'Valid task' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-2', results: [{ status: 'succeeded' }] } }),
-        },
+            processMessage: async () => ({
+                type: 'task',
+                actions: [{ title: 'Valid task' }],
+                operationReceipt: {
+                    status: 'applied',
+                    scope: 'ticktick_live',
+                    command: 'scheduler',
+                    operationType: 'create',
+                    nextAction: 'none',
+                    changed: true,
+                    dryRun: false,
+                    applied: true,
+                    fallbackUsed: false,
+                    message: 'Applied',
+                    traceId: 'trace-2',
+                    results: [{ status: 'succeeded' }]
+                }
+            })
+        }
     });
 
     assert.equal(result.retried, 1);
@@ -446,15 +497,35 @@ test('retryDeferredIntents respects maxRetries batch limit', async () => {
     }
 
     let callCount = 0;
-    const result = await retryDeferredIntents({
-        adapter: { listActiveTasks: async () => [] },
-        pipeline: {
-            processMessage: async () => {
-                callCount++;
-                return { type: 'task', actions: [{ title: 'ok' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-5', results: [{ status: 'succeeded' }] } };
-            },
+    const result = await retryDeferredIntents(
+        {
+            adapter: { listActiveTasks: async () => [] },
+            pipeline: {
+                processMessage: async () => {
+                    callCount++;
+                    return {
+                        type: 'task',
+                        actions: [{ title: 'ok' }],
+                        operationReceipt: {
+                            status: 'applied',
+                            scope: 'ticktick_live',
+                            command: 'scheduler',
+                            operationType: 'create',
+                            nextAction: 'none',
+                            changed: true,
+                            dryRun: false,
+                            applied: true,
+                            fallbackUsed: false,
+                            message: 'Applied',
+                            traceId: 'trace-5',
+                            results: [{ status: 'succeeded' }]
+                        }
+                    };
+                }
+            }
         },
-    }, { maxRetries: 3 });
+        { maxRetries: 3 }
+    );
 
     assert.equal(callCount, 3);
     assert.equal(result.retried, 3);
@@ -470,13 +541,32 @@ test('retryDeferredIntents sends notification to user on success', async () => {
     const result = await retryDeferredIntents({
         adapter: { listActiveTasks: async () => [] },
         pipeline: {
-            processMessage: async () => ({ type: 'task', actions: [{ title: 'Notify me' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-4', results: [{ status: 'succeeded' }] } }),
+            processMessage: async () => ({
+                type: 'task',
+                actions: [{ title: 'Notify me' }],
+                operationReceipt: {
+                    status: 'applied',
+                    scope: 'ticktick_live',
+                    command: 'scheduler',
+                    operationType: 'create',
+                    nextAction: 'none',
+                    changed: true,
+                    dryRun: false,
+                    applied: true,
+                    fallbackUsed: false,
+                    message: 'Applied',
+                    traceId: 'trace-4',
+                    results: [{ status: 'succeeded' }]
+                }
+            })
         },
         bot: {
             api: {
-                sendMessage: async (_chatId, msg) => { sentMessages.push(msg); },
-            },
-        },
+                sendMessage: async (_chatId, msg) => {
+                    sentMessages.push(msg);
+                }
+            }
+        }
     });
 
     assert.equal(result.retried, 1);
@@ -495,12 +585,29 @@ test('retryDeferredIntents prefers processMessageWithContext over processMessage
         pipeline: {
             processMessageWithContext: async () => {
                 usedWithContext = true;
-                return { type: 'task', actions: [{ title: 'ok' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-6', results: [{ status: 'succeeded' }] } };
+                return {
+                    type: 'task',
+                    actions: [{ title: 'ok' }],
+                    operationReceipt: {
+                        status: 'applied',
+                        scope: 'ticktick_live',
+                        command: 'scheduler',
+                        operationType: 'create',
+                        nextAction: 'none',
+                        changed: true,
+                        dryRun: false,
+                        applied: true,
+                        fallbackUsed: false,
+                        message: 'Applied',
+                        traceId: 'trace-6',
+                        results: [{ status: 'succeeded' }]
+                    }
+                };
             },
             processMessage: async () => {
                 throw new Error('should not be called');
-            },
-        },
+            }
+        }
     });
 
     assert.equal(usedWithContext, true);
@@ -517,9 +624,26 @@ test('retryDeferredIntents falls back to processMessage when processMessageWithC
         pipeline: {
             processMessage: async () => {
                 usedFallback = true;
-                return { type: 'task', actions: [{ title: 'ok' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-7', results: [{ status: 'succeeded' }] } };
-            },
-        },
+                return {
+                    type: 'task',
+                    actions: [{ title: 'ok' }],
+                    operationReceipt: {
+                        status: 'applied',
+                        scope: 'ticktick_live',
+                        command: 'scheduler',
+                        operationType: 'create',
+                        nextAction: 'none',
+                        changed: true,
+                        dryRun: false,
+                        applied: true,
+                        fallbackUsed: false,
+                        message: 'Applied',
+                        traceId: 'trace-7',
+                        results: [{ status: 'succeeded' }]
+                    }
+                };
+            }
+        }
     });
 
     assert.equal(usedFallback, true);
@@ -535,10 +659,31 @@ test('auto-apply safety relies on pipeline blockedActionTypes to prevent destruc
         intents: [{ type: 'delete', taskId: 'task-1', title: 'Old task' }],
         useRealNormalizer: false,
         normalizedActions: [
-            { type: 'delete', taskId: 'task-1', title: 'Old task', originalProjectId: 'proj-a', valid: true, validationErrors: [] },
-            { type: 'complete', taskId: 'task-2', title: 'Buy milk', originalProjectId: 'proj-b', valid: true, validationErrors: [] },
-            { type: 'update', taskId: 'task-3', title: 'Updated task', originalProjectId: 'proj-c', valid: true, validationErrors: [] },
-        ],
+            {
+                type: 'delete',
+                taskId: 'task-1',
+                title: 'Old task',
+                originalProjectId: 'proj-a',
+                valid: true,
+                validationErrors: []
+            },
+            {
+                type: 'complete',
+                taskId: 'task-2',
+                title: 'Buy milk',
+                originalProjectId: 'proj-b',
+                valid: true,
+                validationErrors: []
+            },
+            {
+                type: 'update',
+                taskId: 'task-3',
+                title: 'Updated task',
+                originalProjectId: 'proj-c',
+                valid: true,
+                validationErrors: []
+            }
+        ]
     });
 
     const result = await processMessage('process tasks', { blockedActionTypes: ['delete', 'complete'] });
@@ -549,8 +694,8 @@ test('auto-apply safety relies on pipeline blockedActionTypes to prevent destruc
     assert.equal(adapterCalls.update.length, 1);
     assert.ok(result.skippedActions);
     assert.equal(result.skippedActions.length, 2);
-    assert.ok(result.skippedActions.some(a => a.type === 'delete'));
-    assert.ok(result.skippedActions.some(a => a.type === 'complete'));
+    assert.ok(result.skippedActions.some((a) => a.type === 'delete'));
+    assert.ok(result.skippedActions.some((a) => a.type === 'complete'));
 });
 
 // ─── Exponential Backoff & DLQ (deferred queue improvements) ─
@@ -576,7 +721,7 @@ test('retryDeferredIntents skips items that are not yet due', async () => {
     await store.resetAll();
     await store.appendDeferredPipelineIntent({
         userMessage: 'Future task',
-        nextAttemptAt: Date.now() + 60 * 60 * 1000, // 1 hour from now
+        nextAttemptAt: Date.now() + 60 * 60 * 1000 // 1 hour from now
     });
 
     let called = false;
@@ -585,9 +730,26 @@ test('retryDeferredIntents skips items that are not yet due', async () => {
         pipeline: {
             processMessage: async () => {
                 called = true;
-                return { type: 'task', actions: [{ title: 'ok' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-8', results: [{ status: 'succeeded' }] } };
-            },
-        },
+                return {
+                    type: 'task',
+                    actions: [{ title: 'ok' }],
+                    operationReceipt: {
+                        status: 'applied',
+                        scope: 'ticktick_live',
+                        command: 'scheduler',
+                        operationType: 'create',
+                        nextAction: 'none',
+                        changed: true,
+                        dryRun: false,
+                        applied: true,
+                        fallbackUsed: false,
+                        message: 'Applied',
+                        traceId: 'trace-8',
+                        results: [{ status: 'succeeded' }]
+                    }
+                };
+            }
+        }
     });
 
     assert.equal(called, false);
@@ -599,14 +761,31 @@ test('retryDeferredIntents processes items that are due now', async () => {
     await store.resetAll();
     await store.appendDeferredPipelineIntent({
         userMessage: 'Due now',
-        nextAttemptAt: Date.now() - 1000,
+        nextAttemptAt: Date.now() - 1000
     });
 
     const result = await retryDeferredIntents({
         adapter: { listActiveTasks: async () => [] },
         pipeline: {
-            processMessage: async () => ({ type: 'task', actions: [{ title: 'ok' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-9', results: [{ status: 'succeeded' }] } }),
-        },
+            processMessage: async () => ({
+                type: 'task',
+                actions: [{ title: 'ok' }],
+                operationReceipt: {
+                    status: 'applied',
+                    scope: 'ticktick_live',
+                    command: 'scheduler',
+                    operationType: 'create',
+                    nextAction: 'none',
+                    changed: true,
+                    dryRun: false,
+                    applied: true,
+                    fallbackUsed: false,
+                    message: 'Applied',
+                    traceId: 'trace-9',
+                    results: [{ status: 'succeeded' }]
+                }
+            })
+        }
     });
 
     assert.equal(result.retried, 1);
@@ -619,15 +798,32 @@ test('retryDeferredIntents gives up after 3 attempts and moves to DLQ', async ()
     const entry = await store.appendDeferredPipelineIntent({
         userMessage: 'Give up task',
         retryCount: 3,
-        nextAttemptAt: Date.now() - 1000,
+        nextAttemptAt: Date.now() - 1000
     });
 
     const result = await retryDeferredIntents({
         adapter: { listActiveTasks: async () => [] },
         pipeline: {
-            processMessage: async () => ({ type: 'task', actions: [{ title: 'ok' }], operationReceipt: { status: 'applied', scope: 'ticktick_live', command: 'scheduler', operationType: 'create', nextAction: 'none', changed: true, dryRun: false, applied: true, fallbackUsed: false, message: 'Applied', traceId: 'trace-10', results: [{ status: 'succeeded' }] } }),
+            processMessage: async () => ({
+                type: 'task',
+                actions: [{ title: 'ok' }],
+                operationReceipt: {
+                    status: 'applied',
+                    scope: 'ticktick_live',
+                    command: 'scheduler',
+                    operationType: 'create',
+                    nextAction: 'none',
+                    changed: true,
+                    dryRun: false,
+                    applied: true,
+                    fallbackUsed: false,
+                    message: 'Applied',
+                    traceId: 'trace-10',
+                    results: [{ status: 'succeeded' }]
+                }
+            })
         },
-        bot: { api: { sendMessage: async () => {} } },
+        bot: { api: { sendMessage: async () => {} } }
     });
 
     assert.equal(result.givenUp, 1);
@@ -646,7 +842,7 @@ test('retryDeferredIntents increments retryCount and updates nextAttemptAt on tr
     await store.appendDeferredPipelineIntent({
         userMessage: 'Transient retry',
         retryCount: 0,
-        nextAttemptAt: Date.now() - 1000,
+        nextAttemptAt: Date.now() - 1000
     });
 
     const before = Date.now();
@@ -655,9 +851,9 @@ test('retryDeferredIntents increments retryCount and updates nextAttemptAt on tr
         pipeline: {
             processMessage: async () => ({
                 type: 'error',
-                failure: { failureCategory: 'transient' },
-            }),
-        },
+                failure: { failureCategory: 'transient' }
+            })
+        }
     });
     const after = Date.now();
 
@@ -675,7 +871,7 @@ test('retryDeferredIntents treats unexpected exception as failed attempt with ba
     await store.appendDeferredPipelineIntent({
         userMessage: 'Unexpected crash',
         retryCount: 0,
-        nextAttemptAt: Date.now() - 1000,
+        nextAttemptAt: Date.now() - 1000
     });
 
     const before = Date.now();
@@ -684,8 +880,8 @@ test('retryDeferredIntents treats unexpected exception as failed attempt with ba
         pipeline: {
             processMessage: async () => {
                 throw new Error('Unexpected crash');
-            },
-        },
+            }
+        }
     });
     const after = Date.now();
 
@@ -704,7 +900,7 @@ test('retryDeferredIntents moves unexpected exception to DLQ after 3 attempts an
     const entry = await store.appendDeferredPipelineIntent({
         userMessage: 'Unexpected crash dlq',
         retryCount: 2,
-        nextAttemptAt: Date.now() - 1000,
+        nextAttemptAt: Date.now() - 1000
     });
 
     const sentMessages = [];
@@ -713,13 +909,15 @@ test('retryDeferredIntents moves unexpected exception to DLQ after 3 attempts an
         pipeline: {
             processMessage: async () => {
                 throw new Error('Unexpected crash dlq');
-            },
+            }
         },
         bot: {
             api: {
-                sendMessage: async (_chatId, msg) => { sentMessages.push(msg); },
-            },
-        },
+                sendMessage: async (_chatId, msg) => {
+                    sentMessages.push(msg);
+                }
+            }
+        }
     });
 
     assert.equal(result.givenUp, 1);
