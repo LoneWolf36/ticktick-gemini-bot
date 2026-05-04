@@ -70,7 +70,7 @@ test('WP04 T046: checklist create creates one parent task with items', async () 
         type: 'create',
         title: 'Onboard new client',
         confidence: 0.95,
-        projectId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
+        projectHint: 'Career',
         checklistItems: [
           { title: 'Send welcome email' },
           { title: 'Create project folder' },
@@ -82,12 +82,9 @@ test('WP04 T046: checklist create creates one parent task with items', async () 
 
   const result = await processMessage('Onboard new client: send welcome email, create project folder, schedule kickoff');
 
-  assert.equal(result.type, 'blocked', 'should block without a safe destination');
-  assert.deepEqual(result.checklistContext, {
-    hasChecklist: true,
-    clarificationQuestion: null,
-  });
-  assert.equal(adapterCalls.create.length, 0, 'should not create without a safe destination');
+  assert.equal(result.type, 'task');
+  assert.equal(adapterCalls.create.length, 1);
+  assert.equal(adapterCalls.create[0].checklistItems.length, 3);
 });
 
 test('R5: checklist create confirmation stays terse and includes item count', async () => {
@@ -97,7 +94,7 @@ test('R5: checklist create confirmation stays terse and includes item count', as
         type: 'create',
         title: 'Plan trip',
         confidence: 0.95,
-        projectId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
+        projectHint: 'Career',
         checklistItems: [
           { title: 'Book flights' },
           { title: 'Pack bags' },
@@ -114,8 +111,8 @@ test('R5: checklist create confirmation stays terse and includes item count', as
     workStyleMode: store.MODE_URGENT,
   });
 
-  assert.equal(standard.confirmationText, 'Blocked — no safe TickTick destination found. Choose a project or restore an Inbox/default project, then retry.');
-  assert.equal(urgent.confirmationText, standard.confirmationText);
+  assert.match(standard.confirmationText, /\(3 items\)/);
+  assert.match(urgent.confirmationText, /\(3 items\)/);
   assert.doesNotMatch(standard.confirmationText, /Book flights|Pack bags|Renew travel card/);
   assert.doesNotMatch(urgent.confirmationText, /Book flights|Pack bags|Renew travel card/);
 });
@@ -256,13 +253,13 @@ test('WP05 P0#1: pipeline resolves ambiguity with checklistPreference=checklist'
         type: 'create',
         title: 'Plan event',
         confidence: 0.8,
-        projectId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
+        projectHint: 'Career',
         checklistItems: [
           { title: 'Book venue' },
           { title: 'Send invites' },
         ],
       },
-      { type: 'create', title: 'Buy decorations', confidence: 0.8, projectId: 'bbbbbbbbbbbbbbbbbbbbbbbb' },
+      { type: 'create', title: 'Buy decorations', confidence: 0.8, projectHint: 'Career' },
     ],
   });
 
@@ -272,8 +269,9 @@ test('WP05 P0#1: pipeline resolves ambiguity with checklistPreference=checklist'
     entryPoint: 'telegram:checklist-clarification-button',
   });
 
-  assert.equal(result.type, 'blocked', 'should block without a safe destination');
-  assert.equal(adapterCalls.create.length, 0, 'should not create without a safe destination');
+  assert.equal(result.type, 'task');
+  assert.equal(adapterCalls.create.length, 1);
+  assert.equal(adapterCalls.create[0].checklistItems.length, 3);
 });
 
 test('WP05 P0#1: pipeline resolves ambiguity with checklistPreference=separate', async () => {
@@ -283,13 +281,13 @@ test('WP05 P0#1: pipeline resolves ambiguity with checklistPreference=separate',
         type: 'create',
         title: 'Plan event',
         confidence: 0.8,
-        projectId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
+        projectHint: 'Career',
         checklistItems: [
           { title: 'Book venue' },
           { title: 'Send invites' },
         ],
       },
-      { type: 'create', title: 'Buy decorations', confidence: 0.8, projectId: 'bbbbbbbbbbbbbbbbbbbbbbbb' },
+      { type: 'create', title: 'Buy decorations', confidence: 0.8, projectHint: 'Career' },
     ],
   });
 
@@ -299,8 +297,8 @@ test('WP05 P0#1: pipeline resolves ambiguity with checklistPreference=separate',
     entryPoint: 'telegram:checklist-clarification-button',
   });
 
-  assert.equal(result.type, 'blocked', 'should block without a safe destination');
-  assert.equal(adapterCalls.create.length, 0, 'should not create without a safe destination');
+  assert.equal(result.type, 'task');
+  assert.equal(adapterCalls.create.length, 2);
 });
 
 test('WP05 P0#1: pipeline resolves ambiguity with skipChecklist=true', async () => {
@@ -310,13 +308,13 @@ test('WP05 P0#1: pipeline resolves ambiguity with skipChecklist=true', async () 
         type: 'create',
         title: 'Plan event',
         confidence: 0.8,
-        projectId: 'bbbbbbbbbbbbbbbbbbbbbbbb',
+        projectHint: 'Career',
         checklistItems: [
           { title: 'Book venue' },
           { title: 'Send invites' },
         ],
       },
-      { type: 'create', title: 'Buy decorations', confidence: 0.8, projectId: 'bbbbbbbbbbbbbbbbbbbbbbbb' },
+      { type: 'create', title: 'Buy decorations', confidence: 0.8, projectHint: 'Career' },
     ],
   });
 
@@ -326,8 +324,8 @@ test('WP05 P0#1: pipeline resolves ambiguity with skipChecklist=true', async () 
     entryPoint: 'telegram:checklist-clarification-skip',
   });
 
-  assert.equal(result.type, 'blocked', 'should block without a safe destination');
-  assert.equal(adapterCalls.create.length, 0, 'should not create without a safe destination');
+  assert.equal(result.type, 'task');
+  assert.equal(adapterCalls.create.length, 2);
 });
 
 test('WP05 P0#1: pipeline asks for clarification when no preference provided', async () => {

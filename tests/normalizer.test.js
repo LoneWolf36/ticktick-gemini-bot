@@ -1431,5 +1431,34 @@ describe('Mutation-safe field preservation', () => {
 
         assert.strictEqual(result.priority, 5);
     });
+
+    it('should not wipe dueDate when mutation has empty string dueDate', () => {
+        // Bug fix: LLM returns dueDate: '' — must not overwrite existing dueDate
+        const result = normalizeAction({
+            type: 'update',
+            title: null,
+            dueDate: '',
+            confidence: 0.9,
+        }, {
+            existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: 'Existing task', dueDate: '2026-04-15' },
+            existingTaskContent: null,
+        });
+
+        assert.strictEqual(result.dueDate, undefined);
+    });
+
+    it('should not wipe priority when mutation has empty string priority', () => {
+        // Bug fix: LLM returns priority: '' — must not overwrite existing priority
+        const result = normalizeAction({
+            type: 'update',
+            title: null,
+            priority: '',
+            confidence: 0.9,
+        }, {
+            existingTask: { id: 'task-abc', projectId: 'proj-xyz', title: 'Important task' },
+        });
+
+        assert.strictEqual(result.priority, undefined);
+    });
 });
 

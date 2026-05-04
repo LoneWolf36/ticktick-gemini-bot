@@ -72,6 +72,7 @@ const TYPED_ERROR_CODES = new Set(Object.values(ERROR_CODES));
  */
 function areEquivalentDueDates(expected, actual) {
     if (expected === actual) return true;
+    if ((expected == null) && (actual == null)) return true;
     if (!expected || !actual) return false;
     const expectedTime = Date.parse(expected);
     const actualTime = Date.parse(actual);

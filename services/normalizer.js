@@ -963,7 +963,7 @@ export function normalizeAction(intentAction, options = {}) {
     );
     // Expand dueDate and extract isAllDay from time hints
     let expandedDueDate, expandedIsAllDay;
-    if (isMutation && intentAction.dueDate == null) {
+    if (isMutation && !intentAction.dueDate) {
         expandedDueDate = undefined;
         expandedIsAllDay = undefined; // don't touch
     } else {
@@ -999,7 +999,7 @@ export function normalizeAction(intentAction, options = {}) {
         title: normalizedTitle,
         content: normalizedContent,
         mergeContent: (isMutation && existingTaskContent !== null && !normalizedContent) ? false : undefined,
-        priority: isMutation && intentAction.priority == null ? undefined : normalizedPriority,
+        priority: isMutation && (intentAction.priority == null || intentAction.priority === '') ? undefined : normalizedPriority,
         originalPriority: originalPriority,  // Keep for validation
         projectId: isMutation && !intentAction.projectHint
             ? undefined

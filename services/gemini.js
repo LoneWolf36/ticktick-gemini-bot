@@ -188,11 +188,11 @@ export class GeminiAnalyzer {
         this._modelTiers = {
             fast: this._buildTierChain(
                 config.modelFast || 'gemini-2.5-flash',
-                config.modelFastFallbacks,
+                config.modelFastFallbacks?.length ? config.modelFastFallbacks : ['gemini-3-flash-preview', 'gemini-2.5-flash-lite'],
             ),
             advanced: this._buildTierChain(
                 config.modelAdvanced || 'gemini-2.5-pro',
-                config.modelAdvancedFallbacks ?? ['gemini-2.5-flash'],
+                config.modelAdvancedFallbacks?.length ? config.modelAdvancedFallbacks : ['gemini-2.5-flash', 'gemini-3-flash-preview', 'gemini-2.5-flash-lite'],
             ),
         };
 
