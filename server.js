@@ -36,7 +36,7 @@ const {
     GEMINI_MODEL_FAST = 'gemini-2.5-flash',
     GEMINI_MODEL_ADVANCED = 'gemini-2.5-pro',
     GEMINI_MODEL_FAST_FALLBACKS = '',
-    GEMINI_MODEL_ADVANCED_FALLBACKS = '',
+    GEMINI_MODEL_ADVANCED_FALLBACKS = 'gemini-2.5-flash',
     DEFAULT_PROJECT_NAME = null,
     // TICKTICK_ACCESS_TOKEN is loaded by dotenv and used by TickTickClient internally
     // (validated at first API call, not at startup — the OAuth flow sets it)

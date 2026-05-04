@@ -1354,7 +1354,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     // Persist pending clarification with TTL (T052)
                     await store.setPendingChecklistClarification({
                         originalMessage: userMessage,
-                        intents: intents.map(i => ({ type: i.type, title: i.title })),
+                        intents: intents.map(i => ({ type: i.type, title: i.title, projectHint: i.projectHint })),
                         chatId: ctx.chat?.id ?? null,
                         userId: ctx.from?.id ?? null,
                         entryPoint: 'telegram:freeform',

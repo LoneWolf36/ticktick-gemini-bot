@@ -1438,9 +1438,10 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                     }
                     // Continue processing with modified intents
                 } else if (userPreference === 'checklist') {
-                    // User chose checklist mode — merge multiple creates into one with checklist
+                    // User chose checklist mode — merging creates into single task.
                     console.log(`[Pipeline:${context.requestId}] User chose checklist mode — merging creates into single task.`);
                     const checklistItems = [];
+                    let mergedProjectHint = null;
                     for (const intent of intents) {
                         if (Array.isArray(intent.checklistItems) && intent.checklistItems.length > 0) {
                             checklistItems.push(...intent.checklistItems);
@@ -1448,13 +1449,20 @@ export function createPipeline({ intentExtractor, normalizer, adapter, observabi
                             // Convert standalone create into checklist item
                             checklistItems.push({ title: intent.title, sortOrder: checklistItems.length });
                         }
+                        if (!mergedProjectHint && intent.projectHint) {
+                            mergedProjectHint = intent.projectHint;
+                        }
                     }
                     // Replace intents with single checklist create
-                    intents = [{
+                    const mergedIntent = {
                         type: 'create',
                         title: checklistItems[0]?.title || 'Checklist',
                         checklistItems,
-                    }];
+                    };
+                    if (mergedProjectHint) {
+                        mergedIntent.projectHint = mergedProjectHint;
+                    }
+                    intents = [mergedIntent];
                 } else if (userPreference === 'separate') {
                     // User chose separate tasks — strip checklist, keep all creates
                     console.log(`[Pipeline:${context.requestId}] User chose separate tasks — keeping all creates.`);

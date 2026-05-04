@@ -1240,6 +1240,84 @@ test('pipeline shortens urgent confirmations and clarification prompts while kee
   assert.equal(urgentFailure.confirmationText, standardFailure.confirmationText);
 });
 
+test('GeminiAnalyzer _buildTierChain parses string fallbacks into chain', () => {
+  const analyzer = new GeminiAnalyzer(['dummy-key']);
+
+  // String fallback (constructor default uses comma-separated string)
+  const stringChain = analyzer._buildTierChain('gemini-2.5-pro', 'gemini-2.5-flash');
+  assert.deepEqual(stringChain, ['gemini-2.5-pro', 'gemini-2.5-flash']);
+
+  // Array fallback (server.js uses parseModelList which returns array)
+  const arrayChain = analyzer._buildTierChain('gemini-2.5-pro', ['gemini-2.5-flash']);
+  assert.deepEqual(arrayChain, ['gemini-2.5-pro', 'gemini-2.5-flash']);
+
+  // Multiple string fallbacks
+  const multiStringChain = analyzer._buildTierChain('gemini-2.5-pro', 'gemini-2.5-flash,gemini-1.5-pro');
+  assert.deepEqual(multiStringChain, ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-pro']);
+
+  // Empty string fallback
+  const emptyChain = analyzer._buildTierChain('gemini-2.5-pro', '');
+  assert.deepEqual(emptyChain, ['gemini-2.5-pro']);
+
+  // Empty array fallback
+  const emptyArrayChain = analyzer._buildTierChain('gemini-2.5-pro', []);
+  assert.deepEqual(emptyArrayChain, ['gemini-2.5-pro']);
+
+  // null/undefined fallback
+  const nullChain = analyzer._buildTierChain('gemini-2.5-pro', null);
+  assert.deepEqual(nullChain, ['gemini-2.5-pro']);
+
+  // Duplicates in fallback are skipped
+  const dedupChain = analyzer._buildTierChain('gemini-2.5-pro', 'gemini-2.5-flash,gemini-2.5-flash');
+  assert.deepEqual(dedupChain, ['gemini-2.5-pro', 'gemini-2.5-flash']);
+
+  // Primary in fallback is skipped
+  const skipPrimaryChain = analyzer._buildTierChain('gemini-2.5-pro', 'gemini-2.5-pro,gemini-2.5-flash');
+  assert.deepEqual(skipPrimaryChain, ['gemini-2.5-pro', 'gemini-2.5-flash']);
+});
+
+test('GeminiAnalyzer advanced tier includes gemini-2.5-flash fallback by default', () => {
+  // No config passed — should use default fallback
+  const analyzer = new GeminiAnalyzer(['dummy-key']);
+  const advancedChain = analyzer._modelTiers.advanced;
+  assert.ok(advancedChain.includes('gemini-2.5-flash'),
+    `Expected chain to include gemini-2.5-flash fallback, got: ${JSON.stringify(advancedChain)}`);
+  assert.equal(advancedChain[0], 'gemini-2.5-pro',
+    `Expected primary model gemini-2.5-pro, got: ${advancedChain[0]}`);
+});
+
+test('GeminiAnalyzer _executeWithFailover falls back to flash when all keys exhausted on pro', async () => {
+  const analyzer = new GeminiAnalyzer(['dummy-key-1', 'dummy-key-2']);
+  const calledModels = [];
+
+  // Override _buildTierChain to ensure explicit chain for test
+  analyzer._modelTiers.advanced = ['gemini-2.5-pro', 'gemini-2.5-flash'];
+
+  await assert.rejects(
+    () => analyzer._executeWithFailover(
+      'test prompt',
+      async (ai, prompt, model) => {
+        calledModels.push(model);
+        // Throw daily quota on pro, then on flash
+        const err = new Error('Daily quota exhausted');
+        err.status = 429;
+        throw err;
+      },
+      { modelTier: 'advanced' },
+    ),
+    (err) => {
+      // Should exhaust both pro and flash before throwing quota exhaustion
+      assert.ok(calledModels.includes('gemini-2.5-pro'),
+        `Expected pro to be tried, got: ${JSON.stringify(calledModels)}`);
+      assert.ok(calledModels.includes('gemini-2.5-flash'),
+        `Expected flash to be tried as fallback, got: ${JSON.stringify(calledModels)}`);
+      assert.ok(calledModels.indexOf('gemini-2.5-pro') < calledModels.indexOf('gemini-2.5-flash'),
+        'Expected pro to be tried before flash');
+      return true;
+    },
+  );
+});
+
 test('TickTickAdapter updateTask verifyAfterWrite treats timezone-equivalent dueDate values as verified', async () => {
   const client = Object.create(TickTickClient.prototype);
   client.getTask = async () => ({

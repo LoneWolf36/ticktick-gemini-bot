@@ -162,7 +162,7 @@ function inferThemeMatches(candidate, goalThemeProfile) {
 }
 
 function hasExplicitTimeZone(dueDate) {
-    return /(?:Z|[+-]\d{2}:\d{2})$/.test(dueDate);
+    return /(?:Z|[+-]\d{2}:?\d{2})$/.test(dueDate);
 }
 
 function parseUrgency(candidate, nowIso) {

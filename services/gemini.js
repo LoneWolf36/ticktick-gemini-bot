@@ -184,10 +184,16 @@ export class GeminiAnalyzer {
         this._exhaustedUntilByKey = new Array(this._keys.length).fill(null);
         this._keyUnavailableReason = new Array(this._keys.length).fill(null);
 
-        // Model fallback chains per tier
+        // Model fallback chains per tier (use same defaults as this._config)
         this._modelTiers = {
-            fast: this._buildTierChain(config.modelFast, config.modelFastFallbacks),
-            advanced: this._buildTierChain(config.modelAdvanced, config.modelAdvancedFallbacks),
+            fast: this._buildTierChain(
+                config.modelFast || 'gemini-2.5-flash',
+                config.modelFastFallbacks,
+            ),
+            advanced: this._buildTierChain(
+                config.modelAdvanced || 'gemini-2.5-pro',
+                config.modelAdvancedFallbacks ?? ['gemini-2.5-flash'],
+            ),
         };
 
         // Per-model+key exhaustion tracking
@@ -436,11 +442,15 @@ export class GeminiAnalyzer {
 
     _buildTierChain(primary, fallbacks) {
         const chain = [primary];
-        if (Array.isArray(fallbacks)) {
-            for (const fb of fallbacks) {
-                if (fb && typeof fb === 'string' && fb !== primary && !chain.includes(fb)) {
-                    chain.push(fb);
-                }
+        // Accept both arrays and comma-separated strings (handles constructor defaults)
+        const list = Array.isArray(fallbacks)
+            ? fallbacks
+            : (typeof fallbacks === 'string' && fallbacks.trim()
+                ? fallbacks.split(',').map(s => s.trim()).filter(Boolean)
+                : []);
+        for (const fb of list) {
+            if (fb && typeof fb === 'string' && fb !== primary && !chain.includes(fb)) {
+                chain.push(fb);
             }
         }
         return chain;
