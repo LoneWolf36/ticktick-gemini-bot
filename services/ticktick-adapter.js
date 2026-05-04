@@ -75,6 +75,16 @@ function areEquivalentDueDates(expected, actual) {
     if (expected === actual) return true;
     if (expected == null && actual == null) return true;
     if (!expected || !actual) return false;
+
+    const ISO_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
+    const expectedIsDateOnly = ISO_DATE_ONLY.test(expected);
+    const actualIsDateOnly = ISO_DATE_ONLY.test(actual);
+
+    if (expectedIsDateOnly || actualIsDateOnly) {
+        const extractDate = (s) => s.split('T')[0];
+        return extractDate(expected) === extractDate(actual);
+    }
+
     const expectedTime = Date.parse(expected);
     const actualTime = Date.parse(actual);
     if (Number.isNaN(expectedTime) || Number.isNaN(actualTime)) return false;
