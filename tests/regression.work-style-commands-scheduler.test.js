@@ -199,7 +199,7 @@ test('work-style integration switches to urgent mode and shortens briefing plus 
         intents: [
             {
                 type: 'create',
-                title: 'Buy groceries',
+                title: 'Pick up milk',
                 content: '',
                 priority: 1,
                 projectHint: 'Inbox',
@@ -211,11 +211,11 @@ test('work-style integration switches to urgent mode and shortens briefing plus 
         ]
     });
 
-    const standardResult = await processMessage('buy groceries', { workStyleMode: store.MODE_STANDARD });
-    const urgentResult = await processMessage('buy groceries', { workStyleMode: store.MODE_URGENT });
+    const standardResult = await processMessage('pick up milk', { workStyleMode: store.MODE_STANDARD });
+    const urgentResult = await processMessage('pick up milk', { workStyleMode: store.MODE_URGENT });
 
-    assert.equal(standardResult.confirmationText, 'Created: Buy groceries');
-    assert.equal(urgentResult.confirmationText, 'Buy groceries');
+    assert.equal(standardResult.confirmationText, 'Created: Pick up milk');
+    assert.equal(urgentResult.confirmationText, 'Pick up milk');
 });
 
 test('store logs work-style transitions as operational telemetry, not behavioral memory', async () => {

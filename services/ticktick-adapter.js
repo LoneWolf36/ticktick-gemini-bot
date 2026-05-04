@@ -830,7 +830,7 @@ export class TickTickAdapter {
             ) {
                 mismatches.push(`dueDate: expected "${expectedPayload.dueDate}", got "${task.dueDate}"`);
             }
-            if (expectedPayload.priority !== undefined && task.priority !== expectedPayload.priority) {
+            if (expectedPayload.priority != null && task.priority !== expectedPayload.priority) {
                 mismatches.push(`priority: expected ${expectedPayload.priority}, got ${task.priority}`);
             }
             if (expectedPayload.projectId !== undefined && task.projectId !== expectedPayload.projectId) {
@@ -1265,14 +1265,14 @@ export class TickTickAdapter {
                 updatePayload.dueDate = payloadDueDate || anchor;
                 updatePayload.timeZone = payloadTimeZone || USER_TZ;
                 if (payloadReminders !== undefined) updatePayload.reminders = payloadReminders;
-                if (payloadPriority !== undefined) updatePayload.priority = payloadPriority;
+                if (payloadPriority != null) updatePayload.priority = payloadPriority;
                 if (payloadSortOrder !== undefined) updatePayload.sortOrder = payloadSortOrder;
                 if (payloadItems !== undefined) updatePayload.items = payloadItems;
                 updatePayload.repeatFlag = normalizedAction.repeatFlag;
             } else {
                 if (hasNonEmptyString(normalizedAction.title)) updatePayload.title = normalizedAction.title.trim();
                 if (normalizedAction.dueDate !== undefined) updatePayload.dueDate = normalizedAction.dueDate;
-                if (normalizedAction.priority !== undefined) updatePayload.priority = normalizedAction.priority;
+                if (normalizedAction.priority != null) updatePayload.priority = normalizedAction.priority;
                 if (targetProjectId !== undefined && targetProjectId !== null)
                     updatePayload.projectId = targetProjectId;
                 if (normalizedAction.repeatFlag !== undefined) updatePayload.repeatFlag = normalizedAction.repeatFlag;

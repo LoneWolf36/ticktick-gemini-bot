@@ -1413,7 +1413,7 @@ test('WP07 T072: delete remains fail-closed when resolution is uncertain', async
 // Recent-task memory + force_reply refinement
 // =========================================================================
 
-test('isFollowUpMessage requires pronoun or time-shift keyword under 60 chars', () => {
+test('isFollowUpMessage requires pronoun or time-shift keyword', () => {
     assert.equal(isFollowUpMessage('Buy milk'), false);
     assert.equal(isFollowUpMessage('done'), false);
     assert.equal(isFollowUpMessage('Book dentist appointment Thursday'), false);
@@ -1428,7 +1428,7 @@ test('isFollowUpMessage requires pronoun or time-shift keyword under 60 chars', 
         isFollowUpMessage(
             'it is a very long message that exceeds the sixty character limit and should not be treated as follow up even with a pronoun inside'
         ),
-        false
+        true
     );
 });
 

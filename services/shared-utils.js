@@ -1414,9 +1414,6 @@ export function buildFreeformReceipt(result, { projects = [] } = {}) {
  */
 export function isFollowUpMessage(text = '', recentTaskTitle = null) {
     const t = text.trim().toLowerCase();
-    const length = t.length;
-
-    if (length >= 60) return false;
     return FOLLOWUP_PRONOUNS.test(t) || FOLLOWUP_TIME_SHIFTS.test(t);
 }
 

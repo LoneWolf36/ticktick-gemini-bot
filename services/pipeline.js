@@ -2646,6 +2646,29 @@ export function createPipeline({
             const action = actions[index];
             const record = createExecutionRecord(action, index);
 
+            // Pre-create deduplication check
+            if (action.type === 'create') {
+                const normalizedTitle = action.title?.trim().toLowerCase();
+                const actionProjectId = action.projectId || null;
+                const duplicate = context.activeTasks?.find(t =>
+                    t.title?.trim().toLowerCase() === normalizedTitle &&
+                    (t.projectId || null) === actionProjectId
+                );
+                if (duplicate) {
+                    const dupMsg = `Skipping create: duplicate task found "${duplicate.title}" (id=${duplicate.id})`;
+                    console.warn(`[Pipeline:${context.requestId}] ${dupMsg}`);
+                    record.status = 'failed';
+                    record.failureClass = ACTION_FAILURE_CLASSES.VALIDATION;
+                    record.errorMessage = dupMsg;
+                    record.attempts = 1;
+                    errors.push(`create failed: ${dupMsg}`);
+                    failures.push(buildExecutionFailure(action, dupMsg, 0));
+                    failedActionLabels.push(getActionLabel(action));
+                    results.push(record);
+                    continue;
+                }
+            }
+
             for (let attempt = 1; attempt <= maxAttempts; attempt++) {
                 record.attempts = attempt;
                 executionRequests.push(
