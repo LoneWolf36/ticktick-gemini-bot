@@ -2,6 +2,7 @@ import { GeminiAnalyzer } from './gemini.js';
 import { Type as SchemaType } from '@google/genai';
 import { MAX_CHECKLIST_ITEMS, CHECKLIST_ITEM_SHAPE } from './schemas.js';
 import { MODE_FOCUS, MODE_STANDARD, MODE_URGENT } from './store.js';
+import { projectPolicy } from './project-policy.js';
 
 const R1_INTENT_ACTION_FIELDS = Object.freeze([
     'type',
@@ -279,8 +280,8 @@ export function validateIntentAction(action, index, { requireR1Fields = false, a
     }
 
     // Clarification should have low confidence
-    if (action.clarification === true && (action.confidence === undefined || action.confidence > 0.5)) {
-        errors.push(`Action ${index}: clarification actions should have confidence <= 0.5`);
+    if (action.clarification === true && action.confidence > 0.39) {
+        errors.push(`Action ${index}: clarification actions should have confidence <= 0.39`);
     }
 
     return { valid: errors.length === 0, errors };
@@ -292,378 +293,347 @@ export function validateIntentAction(action, index, { requireR1Fields = false, a
  * System prompt for Gemini-based intent extraction.
  * This prompt was preserved from the original framework instruction text.
  */
-const INTENT_EXTRACTION_PROMPT = `Extract structured task/intent actions from the user's message.
+ const INTENT_EXTRACTION_PROMPT = `Extract structured task/intent actions from the user's message.
+ 
+ Return ONLY a valid JSON array. No extra text.
+ 
+ --------------------------------
+ DECISION ORDER (STRICT)
+ --------------------------------
+ Follow this sequence:
+ 1. Detect ambiguity (may trigger clarification)
+ 2. Determine action type (create/update/complete/delete)
+ 3. Resolve task structure (single vs checklist vs multi-task vs multi-day)
+ 4. Populate schema fields
+ 5. Assign confidence score
+ 
+ If rules conflict, follow this order.
+ 
+ --------------------------------
+ CORE RULES
+ --------------------------------
+ - Extract one action per distinct user intent.
+  - If input mixes create + mutation → PRIORITIZE mutation (emit ONE action only). BUT if dropping the create would lose important user intent → return clarification instead.
+ - Use "multi-task" splitStrategy when multiple independent tasks are detected.
+ - Use "multi-day" splitStrategy when distinct days are named (not recurrence).
+ - Set "repeatHint" when the user expresses a repeating pattern (e.g. "daily", "weekdays").
+ - Preserve recurrence phrasing as closely as possible without changing meaning.
+ - Keep titles short, verb-first, without dates or project names.
+ - Set confidence based on guidelines below.
+ - Output must be a JSON array of action objects.
+ - For conversational/non-task messages → return [].
+ 
+ --------------------------------
+ CHECKLIST vs MULTI-TASK DISCRIMINATION
+ --------------------------------
+ - ONE outcome with sub-steps → SINGLE "create" action with "checklistItems".
+ - INDEPENDENT tasks → SEPARATE "create" actions with splitStrategy "multi-task".
+ - If unclear:
+   - Emit ONE "create" action
+   - "clarification": true
+   - Provide "clarificationQuestion" (≤120 chars)
+   - "confidence" ≤ 0.39
+ - Checklist items:
+   - Short, verb-first, executable
+   - Under 80 chars each
+   - Max 30 items
+ - Do NOT turn brainstorming dumps into checklists.
+ 
+ --------------------------------
+ ACTION TYPES AND REQUIRED FIELDS
+ --------------------------------
+ 
+ Every action MUST include ALL fields below (use null when not applicable):
+ 
+ {
+   "type": "create" | "update" | "complete" | "delete",
+   "targetQuery": "string or null",
+   "title": "string or null",
+   "content": "string or null",
+   "priority": 0 | 1 | 3 | 5 | null,
+   "projectHint": "string or null",
+   "dueDate": "string or null",
+   "repeatHint": "string or null",
+   "splitStrategy": "single" | "multi-task" | "multi-day" | null,
+   "checklistItems": "array of {title, status?, sortOrder?} or null",
+   "clarification": "boolean or null",
+   "clarificationQuestion": "string or null",
+   "confidence": number (0.0 to 1.0)
+ }
+ 
+ If ANY field is missing → output is INVALID.
+ 
+ --------------------------------
+ FIELD RULES BY ACTION TYPE
+ --------------------------------
+ 
+ For "create":
+ - "title" is REQUIRED (non-empty string)
+ - "targetQuery" must be null
+ - "checklistItems" optional
+ 
+ For "update", "complete", "delete":
+ - "targetQuery" is REQUIRED
+ - "title" ONLY when renaming
+ 
+ For "update":
+ - Fields (title, dueDate, priority, content) = NEW values
+ 
+ For "complete"/"delete":
+ - Usually only targetQuery needed
+ 
+ --------------------------------
+ FREE-FORM MUTATION INTENT MAPPING
+ --------------------------------
+ - "move buy groceries to tomorrow" → type "update", dueDate "tomorrow"
+ - "done buy groceries" → type "complete"
+ - "delete old wifi task" → type "delete"
+ - "rename netflix task to finish system design notes" → type "update", title = new name
+ 
+ --------------------------------
+ CONFIDENCE GUIDELINES (MANDATORY)
+ --------------------------------
+ - 0.90–1.00 → explicit, unambiguous intent
+ - 0.70–0.89 → minor ambiguity
+ - 0.40–0.69 → unclear structure or references
+ - ≤0.39 → requires clarification
+ 
+ --------------------------------
+ CHECKLIST ITEM SHAPE
+ --------------------------------
+ { "title": "string (required)", "status": "completed|incomplete (optional)", "sortOrder": "number (optional)" }
+ 
+ --------------------------------
+ EXAMPLES
+ --------------------------------
+ 
+ Example: ordinary create
+ [
+   {
+     "type": "create",
+     "targetQuery": null,
+     "title": "Buy groceries",
+     "content": "Milk, eggs, bread",
+     "priority": 1,
+     "projectHint": null,
+     "dueDate": "tomorrow",
+     "repeatHint": null,
+     "splitStrategy": "single",
+     "checklistItems": null,
+     "clarification": null,
+     "clarificationQuestion": null,
+     "confidence": 0.95
+   }
+ ]
+ 
+ Example: checklist
+ [
+   {
+     "type": "create",
+     "targetQuery": null,
+     "title": "Plan birthday party",
+     "content": null,
+     "priority": 3,
+     "projectHint": null,
+     "dueDate": "next Saturday",
+     "repeatHint": null,
+     "splitStrategy": "single",
+     "checklistItems": [
+       { "title": "Buy decorations" },
+       { "title": "Send invitations" },
+       { "title": "Bake cake" }
+     ],
+     "clarification": null,
+     "clarificationQuestion": null,
+     "confidence": 0.88
+   }
+ ]
+ 
+ Example: multi-task
+ [
+   {
+     "type": "create",
+     "targetQuery": null,
+     "title": "Buy groceries",
+     "content": null,
+     "priority": null,
+     "projectHint": null,
+     "dueDate": null,
+     "repeatHint": null,
+     "splitStrategy": "multi-task",
+     "checklistItems": null,
+     "clarification": null,
+     "clarificationQuestion": null,
+     "confidence": 0.92
+   },
+   {
+     "type": "create",
+     "targetQuery": null,
+     "title": "Call mom",
+     "content": null,
+     "priority": null,
+     "projectHint": null,
+     "dueDate": null,
+     "repeatHint": null,
+     "splitStrategy": "multi-task",
+     "checklistItems": null,
+     "clarification": null,
+     "clarificationQuestion": null,
+     "confidence": 0.92
+   }
+ ]
+ 
+ Example: ambiguous
+ [
+   {
+     "type": "create",
+     "targetQuery": null,
+     "title": "Plan project",
+     "content": null,
+     "priority": null,
+     "projectHint": null,
+     "dueDate": null,
+     "repeatHint": null,
+     "splitStrategy": null,
+     "checklistItems": null,
+     "clarification": true,
+     "clarificationQuestion": "Is this one task with steps or multiple separate tasks?",
+     "confidence": 0.3
+   }
+ ]
+ 
+ Example: update (due date)
+ [
+   {
+     "type": "update",
+     "targetQuery": "buy groceries",
+     "title": null,
+     "content": null,
+     "priority": null,
+     "projectHint": null,
+     "dueDate": "tomorrow",
+     "repeatHint": null,
+     "splitStrategy": null,
+     "checklistItems": null,
+     "clarification": null,
+     "clarificationQuestion": null,
+     "confidence": 0.9
+   }
+ ]
+ 
+ Example: rename
+ [
+   {
+     "type": "update",
+     "targetQuery": "netflix task",
+     "title": "finish system design notes",
+     "content": null,
+     "priority": null,
+     "projectHint": null,
+     "dueDate": null,
+     "repeatHint": null,
+     "splitStrategy": null,
+     "checklistItems": null,
+     "clarification": null,
+     "clarificationQuestion": null,
+     "confidence": 0.85
+   }
+ ]
+ 
+ Example: complete
+ [
+   {
+     "type": "complete",
+     "targetQuery": "buy groceries",
+     "title": null,
+     "content": null,
+     "priority": null,
+     "projectHint": null,
+     "dueDate": null,
+     "repeatHint": null,
+     "splitStrategy": null,
+     "checklistItems": null,
+     "clarification": null,
+     "clarificationQuestion": null,
+     "confidence": 0.92
+   }
+ ]
+ 
+ Example: delete
+ [
+   {
+     "type": "delete",
+     "targetQuery": "old wifi task",
+     "title": null,
+     "content": null,
+     "priority": null,
+     "projectHint": null,
+     "dueDate": null,
+     "repeatHint": null,
+     "splitStrategy": null,
+     "checklistItems": null,
+     "clarification": null,
+     "clarificationQuestion": null,
+     "confidence": 0.88
+   }
+ ]
+ 
+ Example: non-task
+ []
+ `;
 
-Instructions:
-- Extract one action per distinct user intent.
-- Use "multi-task" splitStrategy when multiple independent tasks are detected.
-- Use "multi-day" splitStrategy when distinct days are named (not recurrence).
-- Set "repeatHint" when the user expresses a repeating pattern (e.g. "daily", "weekdays").
-- Preserve bounded recurrence phrases exactly when present (e.g. "every Sunday for a month", "weekly on Sunday for 1 month", "alternate day for 2 months", "every alternate day for 2 months").
-- Keep titles short, verb-first, without dates or project names.
-- Set confidence low when intent is ambiguous.
-- The output must be a JSON array of action objects.
-- For conversational or non-task messages (e.g. "hello", "thanks", "how are you"), return an empty array []. Do not invent a task.
-
-CHECKLIST vs MULTI-TASK DISCRIMINATION:
-- When the user describes ONE outcome with multiple sub-steps (e.g., "plan party: buy decorations, send invites, bake cake"), emit a SINGLE "create" action with "checklistItems" array.
-- When the user describes INDEPENDENT tasks (e.g., "buy groceries and call mom"), emit SEPARATE "create" actions with splitStrategy "multi-task".
-- When it is unclear whether items are sub-steps or independent tasks, emit ONE action with "clarification": true and a short "clarificationQuestion".
-- Checklist items should be short (under 80 chars), verb-first, and executable. Cap at 30 items.
-- Do NOT turn brainstorm dumps into checklists. If the input looks like raw brainstorming, ask for clarification.
-
-ACTION TYPES AND REQUIRED FIELDS:
-
-Every action object MUST include these R1 fields, using null when a value does not apply:
-- "type"
-- "title"
-- "content"
-- "priority"
-- "projectHint"
-- "dueDate"
-- "repeatHint"
-- "splitStrategy"
-- "confidence"
-
-For type "create":
-- "title" is REQUIRED (non-empty string describing the new task)
-- "checklistItems" is OPTIONAL (array of {title, status?, sortOrder?} for sub-steps)
-- All other fields are optional (null when not applicable)
-
-For type "update", "complete", or "delete" (mutation actions):
-- "targetQuery" is REQUIRED (the user's reference to find the existing task, e.g. "buy groceries", "that meeting task")
-- "title" is OPTIONAL for mutations — only include it when the user is renaming the task
-- For "update": include change fields (title, dueDate, priority, content) as needed
-- For "complete"/"delete": targetQuery is sufficient; omit title unless explicitly renaming
-
-For AMBIGUOUS intent (cannot safely determine checklist vs multi-task):
-- Emit ONE "create" action with "clarification": true
-- Set "clarificationQuestion" to a short, narrow question (under 120 chars)
-- Set "confidence" to 0.3 or lower
-- Do NOT include checklistItems until the user clarifies
-
-Each action object MUST have this exact structure:
-{
-  "type": "create" | "update" | "complete" | "delete",
-  "targetQuery": "string or null (required for mutations, null for create)",
-  "title": "string or null (required for create, optional for mutations)",
-  "content": "string or null (additional details)",
-  "priority": 0 | 1 | 3 | 5 | null,
-  "projectHint": "string or null (project name hint)",
-  "dueDate": "string or null (natural language date)",
-  "repeatHint": "string or null (recurrence pattern)",
-  "splitStrategy": "single" | "multi-task" | "multi-day" | null,
-  "checklistItems": "array of {title, status?, sortOrder?} or null (sub-steps within one task)",
-  "clarification": "boolean or null (true when intent is ambiguous and needs user input)",
-  "clarificationQuestion": "string or null (short question to resolve ambiguity)",
-  "confidence": number (0.0 to 1.0)
-}
-
-Required fields by action type:
-- create: requires "title"; targetQuery should be null
-- update/complete/delete: requires "targetQuery"; title is optional (only when renaming)
-- clarification actions: requires "clarification": true, "clarificationQuestion", confidence <= 0.5
-- confidence: always required (0.0 to 1.0)
-
-Mutation field semantics:
-- For "update": title = new title (not the lookup key), targetQuery = lookup key
-- dueDate, priority, content = the new values the user wants
-- For "complete"/"delete": usually only targetQuery is needed
-
-FREE-FORM MUTATION INTENT MAPPING (R9):
-- "move buy groceries to tomorrow" => type "update", targetQuery "buy groceries", dueDate "tomorrow"
-- "done buy groceries" => type "complete", targetQuery "buy groceries"
-- "delete old wifi task" => type "delete", targetQuery "old wifi task"
-- "rename netflix task to finish system design notes" => type "update", targetQuery "netflix task", title "finish system design notes"
-
-Checklist item shape:
-{ "title": "string (required)", "status": "completed|incomplete (optional)", "sortOrder": "number (optional)" }
-
-Example output for ordinary create:
-[
-  {
-    "type": "create",
-    "targetQuery": null,
-    "title": "Buy groceries",
-    "content": "Milk, eggs, bread",
-    "priority": 1,
-    "projectHint": null,
-    "dueDate": "tomorrow",
-    "repeatHint": null,
-    "splitStrategy": "single",
-    "checklistItems": null,
-    "clarification": null,
-    "clarificationQuestion": null,
-    "confidence": 0.95
-  }
-]
-
-Example output for checklist (one task with sub-steps):
-[
-  {
-    "type": "create",
-    "targetQuery": null,
-    "title": "Plan birthday party",
-    "content": null,
-    "priority": 3,
-    "projectHint": null,
-    "dueDate": "next Saturday",
-    "repeatHint": null,
-    "splitStrategy": "single",
-    "checklistItems": [
-      { "title": "Buy decorations" },
-      { "title": "Send invitations" },
-      { "title": "Bake cake" }
-    ],
-    "clarification": null,
-    "clarificationQuestion": null,
-    "confidence": 0.88
-  }
-]
-
-Example output for multi-task (independent tasks):
-[
-  {
-    "type": "create",
-    "targetQuery": null,
-    "title": "Buy groceries",
-    "content": null,
-    "priority": null,
-    "projectHint": null,
-    "dueDate": null,
-    "repeatHint": null,
-    "splitStrategy": "multi-task",
-    "checklistItems": null,
-    "clarification": null,
-    "clarificationQuestion": null,
-    "confidence": 0.92
-  },
-  {
-    "type": "create",
-    "targetQuery": null,
-    "title": "Call mom",
-    "content": null,
-    "priority": null,
-    "projectHint": null,
-    "dueDate": null,
-    "repeatHint": null,
-    "splitStrategy": "multi-task",
-    "checklistItems": null,
-    "clarification": null,
-    "clarificationQuestion": null,
-    "confidence": 0.92
-  }
-]
-
-Example output for ambiguous intent (needs clarification):
-[
-  {
-    "type": "create",
-    "targetQuery": null,
-    "title": "Plan project",
-    "content": null,
-    "priority": null,
-    "projectHint": null,
-    "dueDate": null,
-    "repeatHint": null,
-    "splitStrategy": null,
-    "checklistItems": null,
-    "clarification": true,
-    "clarificationQuestion": "Is this one task with steps, or several separate tasks?",
-    "confidence": 0.3
-  }
-]
-
-Example output for mutation (update due date):
-[
-  {
-    "type": "update",
-    "targetQuery": "buy groceries",
-    "title": null,
-    "content": null,
-    "priority": null,
-    "projectHint": null,
-    "dueDate": "tomorrow",
-    "repeatHint": null,
-    "splitStrategy": null,
-    "checklistItems": null,
-    "clarification": null,
-    "clarificationQuestion": null,
-    "confidence": 0.9
-  }
-]
-
-Example input: "move buy groceries to tomorrow"
-Expected output:
-[
-  {
-    "type": "update",
-    "targetQuery": "buy groceries",
-    "title": null,
-    "content": null,
-    "priority": null,
-    "projectHint": null,
-    "dueDate": "tomorrow",
-    "repeatHint": null,
-    "splitStrategy": null,
-    "checklistItems": null,
-    "clarification": null,
-    "clarificationQuestion": null,
-    "confidence": 0.9
-  }
-]
-
-Example output for mutation (rename):
-[
-  {
-    "type": "update",
-    "targetQuery": "netflix task",
-    "title": "Finish system design notes",
-    "content": null,
-    "priority": null,
-    "projectHint": null,
-    "dueDate": null,
-    "repeatHint": null,
-    "splitStrategy": null,
-    "checklistItems": null,
-    "clarification": null,
-    "clarificationQuestion": null,
-    "confidence": 0.85
-  }
-]
-
-Example input: "rename netflix task to finish system design notes"
-Expected output:
-[
-  {
-    "type": "update",
-    "targetQuery": "netflix task",
-    "title": "finish system design notes",
-    "content": null,
-    "priority": null,
-    "projectHint": null,
-    "dueDate": null,
-    "repeatHint": null,
-    "splitStrategy": null,
-    "checklistItems": null,
-    "clarification": null,
-    "clarificationQuestion": null,
-    "confidence": 0.85
-  }
-]
-
-Example output for mutation (complete):
-[
-  {
-    "type": "complete",
-    "targetQuery": "buy groceries",
-    "title": null,
-    "content": null,
-    "priority": null,
-    "projectHint": null,
-    "dueDate": null,
-    "repeatHint": null,
-    "splitStrategy": null,
-    "checklistItems": null,
-    "clarification": null,
-    "clarificationQuestion": null,
-    "confidence": 0.92
-  }
-]
-
-Example input: "done buy groceries"
-Expected output:
-[
-  {
-    "type": "complete",
-    "targetQuery": "buy groceries",
-    "title": null,
-    "content": null,
-    "priority": null,
-    "projectHint": null,
-    "dueDate": null,
-    "repeatHint": null,
-    "splitStrategy": null,
-    "checklistItems": null,
-    "clarification": null,
-    "clarificationQuestion": null,
-    "confidence": 0.92
-  }
-]
-
-Example output for mutation (delete):
-[
-  {
-    "type": "delete",
-    "targetQuery": "old wifi task",
-    "title": null,
-    "content": null,
-    "priority": null,
-    "projectHint": null,
-    "dueDate": null,
-    "repeatHint": null,
-    "splitStrategy": null,
-    "checklistItems": null,
-    "clarification": null,
-    "clarificationQuestion": null,
-    "confidence": 0.88
-  }
-]
-
-Example input: "delete old wifi task"
-Expected output:
-[
-  {
-    "type": "delete",
-    "targetQuery": "old wifi task",
-    "title": null,
-    "content": null,
-    "priority": null,
-    "projectHint": null,
-    "dueDate": null,
-    "repeatHint": null,
-    "splitStrategy": null,
-    "checklistItems": null,
-    "clarification": null,
-    "clarificationQuestion": null,
-    "confidence": 0.88
-  }
-]
-
-Example output for non-task conversational input:
-[]
-
-OUT-OF-SCOPE EXAMPLES (should return low confidence or unsupported):
-- Mixed create+mutation: "add buy milk and move groceries to tomorrow" — do not split into create + mutation
-- Underspecified pronouns: "move that one to Friday" — should have low confidence (<0.5)
-- Reschedule as a separate type: do NOT emit type "reschedule"; use "update" with dueDate instead`;
-
-const COMPACT_INTENT_EXTRACTION_PROMPT = `Extract structured task/intent actions from the user's message.
-
-Rules:
-- One action per distinct intent.
-- "multi-task" splitStrategy for multiple independent tasks.
-- "multi-day" splitStrategy for distinct days (not recurrence).
-- Set repeatHint for repeating patterns. Preserve bounded recurrence phrases exactly when possible (e.g. "every Sunday for a month", "every alternate day for 2 months") so normalizer can convert them to RRULE UNTIL.
-- Short, verb-first titles. No dates or project names in titles.
-- Low confidence for ambiguous intent.
-- JSON array of action objects.
-- Conversational/non-task messages ("hello", "thanks") → return empty array [].
-
-Checklist vs multi-task:
-- ONE outcome with sub-steps → single "create" with checklistItems.
-- INDEPENDENT tasks → separate "create" actions with splitStrategy "multi-task".
-- Unclear → one "create" with clarification:true and a short clarificationQuestion.
-
-Action types: create, update, complete, delete.
-
-Required fields for every action: type, title, content, priority, projectHint, dueDate, repeatHint, splitStrategy, confidence (use null when not applicable).
-
-create: requires title; targetQuery null.
-update/complete/delete: requires targetQuery; title optional (only when renaming).
-clarification: requires clarification:true, clarificationQuestion, confidence <= 0.5.
-
-Checklist item shape: { title: string (required), status?: "completed"|"incomplete", sortOrder?: number }`;
+ const COMPACT_INTENT_EXTRACTION_PROMPT = `Extract structured task actions from the user's message.
+ 
+ Return ONLY a JSON array. No extra text.
+ 
+ PRIORITY ORDER:
+ 1. Ambiguity
+ 2. Action type
+ 3. Task structure
+ 4. Field population
+ 5. Confidence
+ 
+ CORE RULES:
+ - One action per distinct intent
+  - If input mixes create + mutation → PRIORITIZE mutation (single action only). BUT if dropping the create would lose important user intent → return clarification instead.
+ - multi-task = independent tasks
+ - multi-day = same task across different days (not recurrence)
+ - Recurrence → repeatHint (preserve phrasing closely)
+ - Titles: short, verb-first, no dates/project names
+ - Non-task → []
+ 
+ CHECKLIST vs MULTI-TASK:
+ - One outcome → checklistItems
+ - Independent tasks → split into multiple actions (splitStrategy: "multi-task")
+ - Unclear → one create with:
+   - clarification: true
+   - clarificationQuestion (≤120 chars)
+   - confidence ≤ 0.39
+ - Do NOT convert brainstorming into checklist
+ 
+ ACTION TYPES:
+ create | update | complete | delete
+ 
+ SCHEMA (ALL fields required, use null if not applicable):
+ type, targetQuery, title, content, priority, projectHint, dueDate, repeatHint, splitStrategy, checklistItems, clarification, clarificationQuestion, confidence
+ 
+ FIELD RULES:
+ - create → title required, targetQuery null
+ - update/complete/delete → targetQuery required
+ - title only for renaming in mutations
+ - update fields = new values
+ 
+ MUTATION MAPPING:
+ - "move X to tomorrow" → update + dueDate
+ - "done X" → complete
+ - "delete X" → delete
+ - "rename X to Y" → update + title
+ 
+ CONFIDENCE:
+ 0.90–1.00 clear
+ 0.70–0.89 minor ambiguity
+ 0.40–0.69 unclear
+ ≤0.39 needs clarification`;
 
 // ─── Intent Action Response Schema ─────────────────────────────────────
 
@@ -688,7 +658,7 @@ const intentActionSchema = {
                     dueDate: { type: SchemaType.STRING, nullable: true, description: 'Due date in natural language or ISO format' },
                     repeatHint: { type: SchemaType.STRING, nullable: true, description: 'Recurrence pattern, preserving bounded duration phrases when present' },
                     splitStrategy: { type: SchemaType.STRING, nullable: true, description: 'How to split: multi-task, multi-day, or null' },
-                    confidence: { type: SchemaType.NUMBER, nullable: true, description: 'Confidence score 0.0 to 1.0' },
+                    confidence: { type: SchemaType.NUMBER, description: 'Confidence score 0.0 to 1.0' },
                     checklistItems: {
                         type: SchemaType.ARRAY,
                         nullable: true,
@@ -705,7 +675,7 @@ const intentActionSchema = {
                     clarification: { type: SchemaType.BOOLEAN, nullable: true, description: 'True when intent is ambiguous' },
                     clarificationQuestion: { type: SchemaType.STRING, nullable: true, description: 'Question to ask user' },
                 },
-                required: ['type', 'title', 'content', 'priority', 'projectHint', 'dueDate', 'repeatHint', 'splitStrategy', 'confidence'],
+                required: ['type', 'targetQuery', 'title', 'content', 'priority', 'projectHint', 'dueDate', 'repeatHint', 'splitStrategy', 'checklistItems', 'clarification', 'clarificationQuestion', 'confidence'],
             },
         },
     },
@@ -739,6 +709,14 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
     }
     if (projects.length > 0) {
         contextSection += `Available projects: ${projects.join(', ')}\n`;
+    }
+    if (projectPolicy?.projects?.length > 0) {
+        const aliasLines = projectPolicy.projects
+            .filter(p => p.aliases?.length > 0)
+            .map(p => `- "${p.aliases.join('", "')}" → ${p.match}`);
+        if (aliasLines.length > 0) {
+            contextSection += `Project aliases (use these to infer the correct project from the user's message):\n${aliasLines.join('\n')}\n`;
+        }
     }
 
     const fullPrompt = contextSection
@@ -847,7 +825,7 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
             });
         };
         try {
-            const retryResponse = await gemini._executeWithFailover(fullPrompt, compactApiCallFn, { modelTier: 'fast', interactiveWritePath: true });
+            const retryResponse = await gemini._executeWithFailover(finalPrompt, compactApiCallFn, { modelTier: 'fast', interactiveWritePath: true });
             const retryRaw = retryResponse.text.trim();
             const retryJsonStr = retryRaw.replace(/^```(?:json)?\s*\n?/i, '').replace(/\n?\s*```$/i, '').trim();
             let retryParsed;
@@ -884,7 +862,7 @@ async function extractIntentsWithGemini(gemini, userMessage, { currentDate, avai
             type: 'create',
             clarification: true,
             clarificationQuestion: `I wasn't quite sure what you meant or which task to update. Could you clarify?`,
-            confidence: 0,
+            confidence: 0.3,
             title: 'Ambiguous Request',
             targetQuery: null,
             content: null,

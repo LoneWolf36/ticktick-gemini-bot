@@ -135,7 +135,7 @@ const briefingPriorityItemSchema = {
         title: { type: SchemaType.STRING },
         project_name: { type: SchemaType.STRING, nullable: true },
         due_date: { type: SchemaType.STRING, nullable: true },
-        priority_label: { type: SchemaType.STRING, nullable: true },
+        priority_label: { type: SchemaType.STRING, enum: ['low', 'medium', 'high', 'none'], nullable: true },
         rationale_text: { type: SchemaType.STRING },
     },
     required: ['task_id', 'title', 'rationale_text'],
