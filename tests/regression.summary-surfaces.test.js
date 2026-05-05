@@ -34,6 +34,7 @@ import {
     formatSummary,
     normalizeWeeklyWatchouts
 } from '../services/summary-surfaces/index.js';
+import { formatNotices } from '../services/summary-surfaces/summary-formatter.js';
 import { buildBehavioralPatternNotice } from '../services/summary-surfaces/behavioral-pattern-notices.js';
 import { createPipelineHarness, DEFAULT_PROJECTS, DEFAULT_ACTIVE_TASKS } from './pipeline-harness.js';
 import {
@@ -1197,4 +1198,101 @@ test('daily close handles zero-activity and high-activity days', () => {
 
     assert.equal(typeof zeroActivity.summary.reflection, 'string');
     assert.match(highActivity.summary.reflection, /meaningful work/i);
+});
+
+test('formatNotices joins lines with newline (not bullet dashes)', () => {
+    const notices = [
+        { message: 'TickTick sync delayed', severity: 'warning' },
+        { message: '3 tasks rescheduled', severity: 'info' }
+    ];
+    const result = formatNotices(notices);
+    assert.equal(result, '⚠️ **TickTick sync delayed**\nℹ️ 3 tasks rescheduled');
+    assert.doesNotMatch(result, /^- /m, 'notices must not have dash prefix');
+});
+
+test('formatNotices handles empty or missing input', () => {
+    assert.equal(formatNotices([]), '');
+    assert.equal(formatNotices(), '');
+    assert.equal(formatNotices(null), '');
+    assert.equal(formatNotices([{ message: '', severity: 'info' }]), '');
+});
+
+test('composeBriefingSummary deduplicates modelSummary priorities by task_id', () => {
+    const activeTasks = buildSummaryActiveTasksFixture();
+    const rankingResult = buildSummaryRankingFixture(activeTasks);
+    const context = buildSummaryResolvedStateFixture();
+    const modelSummary = {
+        focus: 'Test dedup focus',
+        priorities: [
+            {
+                task_id: activeTasks[0].id,
+                title: 'First occurrence',
+                rationale_text: 'Should be kept'
+            },
+            {
+                task_id: activeTasks[1].id,
+                title: 'Unique task',
+                rationale_text: 'Unique entry'
+            },
+            {
+                task_id: activeTasks[0].id,
+                title: 'Duplicate of first',
+                rationale_text: 'Should be dropped'
+            }
+        ],
+        why_now: [],
+        start_now: '',
+        notices: []
+    };
+
+    const result = composeBriefingSummary({
+        context,
+        activeTasks,
+        rankingResult,
+        modelSummary
+    });
+
+    // Only 2 unique task_ids should survive dedup (plus possible fallback fill)
+    const taskIds = result.summary.priorities.map((p) => p.task_id);
+    const uniqueTaskIds = new Set(taskIds);
+    assert.ok(uniqueTaskIds.has(activeTasks[0].id));
+    assert.ok(uniqueTaskIds.has(activeTasks[1].id));
+    assert.equal(uniqueTaskIds.size, taskIds.length, 'no duplicate task_id in priorities');
+});
+
+test('composeBriefingSummary filters out modelSummary priorities with invalid task_ids', () => {
+    const activeTasks = buildSummaryActiveTasksFixture();
+    const rankingResult = buildSummaryRankingFixture(activeTasks);
+    const context = buildSummaryResolvedStateFixture();
+    const phantomId = 'nonexistent-task-id';
+    const modelSummary = {
+        focus: 'Test validation focus',
+        priorities: [
+            {
+                task_id: activeTasks[0].id,
+                title: 'Real task',
+                rationale_text: 'This task exists'
+            },
+            {
+                task_id: phantomId,
+                title: 'Phantom task',
+                rationale_text: 'This task does not exist'
+            }
+        ],
+        why_now: [],
+        start_now: '',
+        notices: []
+    };
+
+    const result = composeBriefingSummary({
+        context,
+        activeTasks,
+        rankingResult,
+        modelSummary
+    });
+
+    // Phantom task_id must be filtered out entirely
+    assert.equal(result.summary.priorities.some((p) => p.task_id === phantomId), false);
+    // Real task_id should still appear (possibly with fallback fill)
+    assert.ok(result.summary.priorities.some((p) => p.task_id === activeTasks[0].id));
 });

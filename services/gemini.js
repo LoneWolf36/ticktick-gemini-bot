@@ -9,6 +9,7 @@ import {
     createGoalThemeProfile,
     inferPriorityValueFromTask,
     inferProjectIdFromTask,
+    inferSemanticGoalMatches,
     rankPriorityCandidates
 } from './execution-prioritization.js';
 import { detectBehavioralPatterns } from './behavioral-patterns.js';
@@ -155,9 +156,32 @@ Field constraints:
 - rationale_text: ≤ 120 chars
 - start_now: ≤ 100 chars
 
---------------------------------
+-------------------------------
+TASK ID RULES
+-------------------------------
+- Each task listing includes [id: TASK_ID] — extract that value into the task_id field of priorities
+- Never guess task_id; if [id: ...] is missing, use empty string
+- task_id in the output must match the exact [id: ...] from input
+
+-------------------------------
+TASK SELECTION RULES (STRICT)
+-------------------------------
+- task_id values MUST be selected only from provided [id: ...] inputs
+- Do NOT invent, modify, or infer task IDs
+- Each task_id may appear AT MOST once in the output
+- Do NOT duplicate task_id values under any circumstance
+- If unsure about a task_id, use an empty string instead of guessing
+
+-------------------------------
+GROUNDING RULES
+-------------------------------
+- All selected tasks MUST exist in the provided task list
+- Do NOT introduce tasks not explicitly listed in the input
+- priorities should prefer tasks from the ranked preview when available
+
+-------------------------------
 STRICT RULES
---------------------------------
+-------------------------------
 - Use snake_case keys exactly
 - Do not add extra keys
 - Do not omit required fields
@@ -206,16 +230,38 @@ CONSTRAINTS
 
 --------------------------------
 CONTENT RULES
---------------------------------
 - progress must describe concrete completed outcomes (not vague progress)
 - Avoid phrases like "made progress", "worked on"
 - No behavioral labels or callouts
 - No avoidance framing or ratios
 - Evidence must come from provided data only
 
---------------------------------
+-------------------------------
+TASK ID RULES
+-------------------------------
+- Each task listing includes [id: TASK_ID] — extract that value into the task_id field of carry_forward items
+- Never guess task_id; if [id: ...] is missing, use empty string
+- task_id in the output must match the exact [id: ...] from input
+
+-------------------------------
+TASK SELECTION RULES (STRICT)
+-------------------------------
+- task_id values MUST be selected only from provided [id: ...] inputs
+- Do NOT invent, modify, or infer task IDs
+- Each task_id may appear AT MOST once in the output
+- Do NOT duplicate task_id values under any circumstance
+- If unsure about a task_id, use an empty string instead of guessing
+
+-------------------------------
+GROUNDING RULES
+-------------------------------
+- All selected tasks MUST exist in the provided task list
+- Do NOT introduce tasks not explicitly listed in the input
+- carry_forward should prefer tasks from the ranked preview when available
+
+-------------------------------
 STRICT RULES
---------------------------------
+-------------------------------
 - No extra keys
 - No missing keys
 - JSON only (no markdown, no prose)
@@ -327,21 +373,34 @@ export class GeminiAnalyzer {
      * Prepares tasks for briefing by filtering and ranking.
      * @param {Array<Object>} tasks - Raw tasks
      * @param {Object} options - Preparation options
-     * @returns {Object} { goalThemeProfile, ranking, orderedTasks }
+     * @returns {Promise<Object>} { goalThemeProfile, ranking, orderedTasks }
      * @private
      */
-    _prepareBriefingTasks(tasks = [], options = {}) {
+    async _prepareBriefingTasks(tasks = [], options = {}) {
         const activeTasks = (Array.isArray(tasks) ? tasks : []).filter(
             (task) => task && (task.status === 0 || task.status === undefined)
         );
         const goalThemeProfile =
             options.goalThemeProfile || createGoalThemeProfile(USER_CONTEXT, { source: USER_CONTEXT_SOURCE });
+
+        // Compute semantic goal-task alignment if goal labels and analyzer are available
+        const goalLabels = goalThemeProfile.themes.map((t) => t.label);
+        let preComputedGoalMatches = null;
+        if (goalLabels.length > 0) {
+            try {
+                preComputedGoalMatches = await inferSemanticGoalMatches(activeTasks, goalLabels, this);
+            } catch {
+                // Non-critical — fall back to token-only matching
+            }
+        }
+
         const ranking = rankPriorityCandidates(activeTasks, {
             goalThemeProfile,
             nowIso: options.nowIso || new Date().toISOString(),
             workStyleMode: options.workStyleMode,
             urgentMode: options.urgentMode,
-            stateSource: options.stateSource
+            stateSource: options.stateSource,
+            preComputedGoalMatches
         });
 
         const byTaskId = new Map(activeTasks.map((task) => [task.id || task.taskId, task]));
@@ -1043,7 +1102,7 @@ export class GeminiAnalyzer {
      */
     async generateDailyBriefingModelSummary(tasks, options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
-        const { ranking, orderedTasks } = this._prepareBriefingTasks(tasks, {
+        const { ranking, orderedTasks } = await this._prepareBriefingTasks(tasks, {
             ...options,
             ...recommendationState
         });
@@ -1052,13 +1111,15 @@ export class GeminiAnalyzer {
             .map((decision, index) => {
                 const task = orderedTasks.find((candidate) => (candidate.id || candidate.taskId) === decision.taskId);
                 const title = task?.title || decision.taskId;
-                return `${index + 1}. "${title}" — ${decision.rationaleText}`;
+                const taskId = task ? (task.id || task.taskId) : decision.taskId;
+                return `${index + 1}. [id: ${taskId}] "${title}" — ${decision.rationaleText}`;
             })
             .join('\n');
 
         const taskList = orderedTasks
             .map((t, i) => {
-                let line = `${i + 1}. "${t.title}" [${t.projectName || 'Inbox'}]`;
+                const taskId = t.id || t.taskId;
+                let line = `${i + 1}. [id: ${taskId}] "${t.title}" [${t.projectName || 'Inbox'}]`;
                 if (t.dueDate) line += ` — due: ${t.dueDate}`;
                 if (t.priority === 5) line += ` ${PRIORITY_EMOJI[5]}`;
                 return line;
@@ -1145,14 +1206,15 @@ export class GeminiAnalyzer {
      */
     async generateWeeklyDigestSummary(allTasks, processedThisWeek, options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
-        const { ranking, orderedTasks } = this._prepareBriefingTasks(allTasks, {
+        const { ranking, orderedTasks } = await this._prepareBriefingTasks(allTasks, {
             ...options,
             ...recommendationState
         });
 
         const taskList = orderedTasks
             .map((t, i) => {
-                let line = `${i + 1}. "${t.title}" [${t.projectName || 'Inbox'}]`;
+                const taskId = t.id || t.taskId;
+                let line = `${i + 1}. [id: ${taskId}] "${t.title}" [${t.projectName || 'Inbox'}]`;
                 if (t.dueDate) line += ` - due: ${t.dueDate}`;
                 if (t.priority !== undefined) line += ` priority=${t.priority}`;
                 return line;
@@ -1213,7 +1275,7 @@ export class GeminiAnalyzer {
      */
     async generateDailyCloseSummary(allTasks, processedTasks, options = {}) {
         const recommendationState = await this._resolveRecommendationState(options);
-        const { ranking, orderedTasks } = this._prepareBriefingTasks(allTasks, {
+        const { ranking, orderedTasks } = await this._prepareBriefingTasks(allTasks, {
             ...options,
             ...recommendationState
         });

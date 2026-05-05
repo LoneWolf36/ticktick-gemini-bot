@@ -188,3 +188,26 @@ export const dailyCloseSummarySchema = {
     },
     required: DAILY_CLOSE_SUMMARY_SECTION_KEYS
 };
+
+/**
+ * Schema item for semantic goal-task alignment responses.
+ * Each item maps a task to a goal with a confidence score.
+ */
+export const semanticGoalMatchItemSchema = {
+    type: SchemaType.OBJECT,
+    properties: {
+        task_id: { type: SchemaType.STRING },
+        goal_label: { type: SchemaType.STRING },
+        confidence: { type: SchemaType.NUMBER }
+    },
+    required: ['task_id', 'goal_label', 'confidence']
+};
+
+/**
+ * Gemini response schema for semantic goal alignment.
+ * Returns an array of task-goal match items.
+ */
+export const semanticGoalMatchResponseSchema = {
+    type: SchemaType.ARRAY,
+    items: semanticGoalMatchItemSchema
+};

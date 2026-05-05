@@ -1161,6 +1161,54 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             await replyWithCurrentMode(ctx);
             return;
         }
+
+        // ─── Advisory / planning question detection ─────────────────
+        // Matches: "what should I do today?", "plan my day", "what to focus on now", etc.
+        // Skips task creation messages like "add task do something today".
+        const advisoryRe = /(?:(?:what|how)\s+(?:should|do)\s+I\s+(?:do|focus|work|prioritize)\s+(?:today|now|next)|what\s+(?:is|are)\s+(?:most|top)\s+(?:important|priority)|plan\s+(?:my\s+day|today)|show\s+(?:my\s+)?(?:priorities|tasks))/i;
+        const taskCreationRe = /\b(add|create|new|remind|schedule|set)\b/i;
+        if (advisoryRe.test(rawText) && !taskCreationRe.test(rawText)) {
+            if (!ticktick.isAuthenticated()) {
+                await ctx.reply('🔴 TickTick not connected yet. Complete OAuth first.');
+                return;
+            }
+            try {
+                const tasks = await adapter.listActiveTasks(true);
+                if (tasks.length === 0) {
+                    await ctx.reply('You have no active tasks right now — take a breather!');
+                    return;
+                }
+                const workStyleMode = await resolveCurrentWorkStyleMode(ctx);
+                const { orderedTasks, ranking } = await gemini._prepareBriefingTasks(tasks, {
+                    workStyleMode,
+                    urgentMode: workStyleMode === store.MODE_URGENT
+                });
+                const top3 = orderedTasks.slice(0, 3);
+                if (top3.length === 0) {
+                    await ctx.reply('No ranked tasks available right now.');
+                    return;
+                }
+                const lines = ['**Here are your top priorities right now:**', ''];
+                for (const [i, task] of top3.entries()) {
+                    const decision = ranking.ranked.find(d => d.taskId === task.id);
+                    const rationale = decision?.rationaleText ? ` — *${decision.rationaleText}*` : '';
+                    const priority = task.priority != null ? ` [P${task.priority}]` : '';
+                    const project = task.projectName ? ` (${task.projectName})` : '';
+                    lines.push(`${i + 1}. **${task.title}**${priority}${project}${rationale}`);
+                }
+                await replyWithMarkdown(ctx, lines.join('\n'));
+                return;
+            } catch (err) {
+                if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
+                    await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
+                    return;
+                }
+                console.error('Advisory briefing error:', err.message);
+                await ctx.reply('Could not fetch your priorities right now.');
+                return;
+            }
+        }
+
         if (!ticktick.isAuthenticated()) {
             await ctx.reply('🔴 TickTick not connected yet. Complete OAuth first.');
             return;

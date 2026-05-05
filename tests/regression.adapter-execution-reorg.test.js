@@ -812,7 +812,7 @@ test('runWeeklyDigestJob suppresses scheduled weekly briefings in focus mode', a
     assert.equal(store.getStats().lastWeeklyDigest || null, null);
 });
 
-test('GeminiAnalyzer briefing preparation uses shared ranking outputs', () => {
+test('GeminiAnalyzer briefing preparation uses shared ranking outputs', async () => {
     const analyzer = new GeminiAnalyzer(['dummy-key']);
     const tasks = [
         {
@@ -831,7 +831,7 @@ test('GeminiAnalyzer briefing preparation uses shared ranking outputs', () => {
         }
     ];
 
-    const prepared = analyzer._prepareBriefingTasks(tasks, {
+    const prepared = await analyzer._prepareBriefingTasks(tasks, {
         goalThemeProfile: createGoalThemeProfile(
             `GOALS:
 1. Land a senior backend role`,

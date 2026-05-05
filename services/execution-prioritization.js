@@ -10,8 +10,207 @@ import {
     FOLLOWUP_TIME_SHIFTS,
     scoring
 } from './project-policy.js';
+import { semanticGoalMatchResponseSchema } from './schemas.js';
+import * as store from './store.js';
 
 const recentRankingTelemetry = new Map();
+
+// ─── Semantic Goal Alignment Cache ───────────────────────────
+const GOAL_ALIGNMENT_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+const goalAlignmentCache = new Map(); // taskId -> { goalIndices: number[], cachedAt: number }
+
+function _getCachedGoalAlignment(taskId) {
+    const entry = goalAlignmentCache.get(taskId);
+    if (!entry) return null;
+    if (Date.now() - entry.cachedAt > GOAL_ALIGNMENT_CACHE_TTL_MS) {
+        goalAlignmentCache.delete(taskId);
+        return null;
+    }
+    return entry.goalIndices;
+}
+
+function _setCachedGoalAlignment(taskId, goalIndices) {
+    goalAlignmentCache.set(taskId, {
+        goalIndices: Array.isArray(goalIndices) ? goalIndices : [],
+        cachedAt: Date.now()
+    });
+}
+
+/**
+ * Infer semantic goal-task alignment using Gemini.
+ *
+ * Calls Gemini to determine which tasks semantically align with which goals.
+ * Checks in-memory cache first for each task; only uncached tasks trigger
+ * a Gemini API call. Falls back to empty Map on any failure.
+ *
+ * @param {Array<Object>} candidates - Task candidates (raw or normalized) with taskId/id and title
+ * @param {string[]} goalLabels - Goal label strings to match against
+ * @param {Object} geminiAnalyzer - GeminiAnalyzer instance with _executeWithFailover and _safeParseJson
+ * @returns {Promise<Map<string, number[]>>} taskId → array of goal indices (confidence >= 0.7)
+ */
+export async function inferSemanticGoalMatches(candidates, goalLabels, geminiAnalyzer) {
+    if (!Array.isArray(candidates) || candidates.length === 0 || !Array.isArray(goalLabels) || goalLabels.length === 0) {
+        return new Map();
+    }
+
+    if (!geminiAnalyzer || typeof geminiAnalyzer._executeWithFailover !== 'function') {
+        return new Map();
+    }
+
+    // Check cache first — skip Gemini if all tasks are cached
+    const result = new Map();
+    const uncached = [];
+    for (const candidate of candidates) {
+        const taskId = candidate.taskId || candidate.id;
+        if (!taskId) continue;
+        const cached = _getCachedGoalAlignment(taskId);
+        if (cached !== null) {
+            result.set(taskId, cached);
+        } else {
+            uncached.push(candidate);
+        }
+    }
+
+    if (uncached.length === 0) {
+        return result;
+    }
+
+    // Build lightweight prompt with uncached task titles and all goal labels
+    const taskList = uncached
+        .map((c, i) => {
+            const tid = c.taskId || c.id || `unknown-${i}`;
+            return `${i + 1}. [id: ${tid}] "${c.title}"`;
+        })
+        .join('\n');
+    const goalList = goalLabels.map((label, i) => `${i + 1}. ${label}`).join('\n');
+
+    const prompt = `Analyze semantic alignment between TASKS and GOALS.
+
+--------------------------------
+DEFINITION OF ALIGNMENT
+--------------------------------
+A task aligns with a goal ONLY if:
+- It directly contributes to completing that goal
+- OR it is a clear sub-step or requirement of that goal
+
+DO NOT match:
+- vague or loosely related tasks
+- general life tasks unless clearly tied to a goal
+- tasks that could apply to many unrelated goals
+
+--------------------------------
+INPUT
+--------------------------------
+TASKS:
+${taskList}
+
+GOALS:
+${goalList}
+
+--------------------------------
+OUTPUT RULES (STRICT)
+--------------------------------
+Return a JSON array of objects:
+{
+  "task_id": string,
+  "goal_label": string,
+  "confidence": number (0.0 to 1.0)
+}
+
+--------------------------------
+STRICT CONSTRAINTS
+--------------------------------
+- task_id MUST exactly match an [id: ...] from TASKS
+- goal_label MUST exactly match a GOALS entry (no paraphrasing)
+- Do NOT invent or modify task_id or goal_label
+- Do NOT include duplicates (same task_id + goal_label)
+- Only include matches with confidence >= 0.7
+- If unsure, DO NOT include the match
+- Prefer precision over recall
+
+--------------------------------
+CONFIDENCE GUIDELINES
+--------------------------------
+0.9-1.0 -> direct, explicit alignment
+0.7-0.89 -> clear but indirect contribution
+<0.7 -> DO NOT include
+
+--------------------------------
+OUTPUT
+--------------------------------
+Return ONLY the JSON array. No extra text.`;
+
+    try {
+        const response = await geminiAnalyzer._executeWithFailover(
+            prompt,
+            async (ai, p, model) => ai.models.generateContent({
+                model,
+                contents: p,
+                config: {
+                    responseMimeType: 'application/json',
+                    responseSchema: semanticGoalMatchResponseSchema
+                }
+            }),
+            { transientBaseMs: 15 }
+        );
+
+        const raw = response.text.trim();
+        const parsed = geminiAnalyzer._safeParseJson(raw);
+
+        if (!Array.isArray(parsed)) {
+            return result;
+        }
+
+        const goalLabelToIndex = new Map(goalLabels.map((label, i) => [label, i]));
+        const validTaskIds = new Set(uncached.map(c => c.taskId || c.id).filter(Boolean));
+        const seenPairs = new Set();
+
+        // Group by taskId
+        const liveResults = new Map();
+        for (const item of parsed) {
+            if (!item || typeof item !== 'object') continue;
+            const { task_id: taskId, goal_label: goalLabel, confidence } = item;
+            if (!taskId || !goalLabel || typeof confidence !== 'number') continue;
+            if (confidence < 0.7) continue;
+
+            // Filter out task_ids not present in the original candidate list
+            if (!validTaskIds.has(taskId)) continue;
+
+            // Deduplicate identical (task_id, goal_label) pairs
+            const pairKey = `${taskId}::${goalLabel}`;
+            if (seenPairs.has(pairKey)) continue;
+            seenPairs.add(pairKey);
+
+            const goalIndex = goalLabelToIndex.get(goalLabel);
+            if (goalIndex === undefined) continue;
+
+            if (!liveResults.has(taskId)) {
+                liveResults.set(taskId, []);
+            }
+            liveResults.get(taskId).push(goalIndex);
+        }
+
+        // Cache and merge live results
+        for (const [taskId, indices] of liveResults) {
+            _setCachedGoalAlignment(taskId, indices);
+            result.set(taskId, indices);
+        }
+
+        return result;
+    } catch (err) {
+        console.warn('[SemanticGoalMatch] Gemini call failed, falling back to token-only matching:', err.message);
+        return result;
+    }
+}
+
+function dedupeThemes(themes) {
+    const seen = new Set();
+    return themes.filter((t) => {
+        if (seen.has(t.key)) return false;
+        seen.add(t.key);
+        return true;
+    });
+}
 
 function asString(value) {
     return typeof value === 'string' ? value : '';
@@ -74,7 +273,7 @@ function extractGoalSection(rawContext) {
     let inGoals = false;
 
     for (const rawLine of lines) {
-        const line = rawLine.trim();
+        const line = rawLine.trim().replace(/^#{1,3}\s+/, '');
         if (!inGoals && /^GOALS\b/i.test(line)) {
             inGoals = true;
             continue;
@@ -479,7 +678,13 @@ function assessCandidate(candidate, context) {
         console.log(`[RankingAutoPriority] Strategic task "${candidate.title}" has low priority — suggesting P3`);
     }
 
-    const themeMatches = inferThemeMatches(candidate, context.goalThemeProfile);
+    const tokenMatches = inferThemeMatches(candidate, context.goalThemeProfile);
+    const preComputedGoalMatches = context.preComputedGoalMatches || {};
+    const semanticGoalIndices = preComputedGoalMatches[candidate.taskId] || [];
+    const semanticThemeMatches = semanticGoalIndices
+        .map((idx) => context.goalThemeProfile.themes[idx])
+        .filter(Boolean);
+    const themeMatches = dedupeThemes([...tokenMatches, ...semanticThemeMatches]);
     const urgency = parseUrgency(candidate, context.nowIso);
     const degraded = context.goalThemeProfile.confidence !== 'explicit';
     const capacityProtection = isCapacityProtection(candidate, context);
@@ -611,7 +816,8 @@ export function buildRankingContext(options = {}) {
         priorityOverrides: resolvePriorityOverrides(options.priorityOverrides, options.nowIso),
         rankingTelemetrySink: typeof options.rankingTelemetrySink === 'function' ? options.rankingTelemetrySink : null,
         stateSource: options.stateSource || 'none',
-        userId: options.userId || options.user_id || null
+        userId: options.userId || options.user_id || null,
+        preComputedGoalMatches: options.preComputedGoalMatches || {}
     };
 }
 

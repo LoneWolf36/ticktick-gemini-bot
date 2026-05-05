@@ -1453,3 +1453,43 @@ test('runWeeklyDigestJob passes historyAvailable false when processed-task histo
     assert.equal(ran, true);
     assert.equal(summaryCalls, 1);
 });
+
+test('registerCommands routes advisory questions to top-3 briefing, skips pipeline', async () => {
+    const h = { commands: new Map(), callbacks: [], events: [] };
+    const b = { command: (n, fn) => (h.commands.set(n, fn), b), callbackQuery: (p, fn) => (h.callbacks.push({ p, fn }), b), on: (e, fn) => (h.events.push({ e, fn }), b) };
+    const axCalls = [];
+    const tasks = [
+        { id: 't1', title: 'Write quarterly review', projectId: 'p1', projectName: 'Career', priority: 5, status: 0 },
+        { id: 't2', title: 'Buy groceries', projectId: 'p1', projectName: 'Personal', priority: 3, status: 0 }
+    ];
+    const _pbt = async (_tasks) => { const ranked = _tasks.map((t, i) => ({ taskId: t.id, rank: i + 1, scoreBand: 'top', rationaleCode: 'goal_alignment', rationaleText: i === 0 ? 'Core goal task' : '', inferenceConfidence: 'strong' })); const byId = new Map(_tasks.map(t => [t.id, t])); return { ranking: { ranked }, orderedTasks: ranked.map(d => byId.get(d.taskId)).filter(Boolean) }; };
+    registerCommands(b,
+        { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://auth.test', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+        { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, _prepareBriefingTasks: _pbt },
+        { listActiveTasks: async () => tasks, listProjects: async () => [] },
+        { processMessage: async (m, o) => { axCalls.push({ m, o }); return { type: 'task' }; } }
+    );
+    const msgHandler = h.events.find(e => e.e === 'message:text')?.fn || h.events.find(e => e.eventName === 'message:text')?.handler;
+    const replies = []; const userId = `adv-test-${Date.now()}`;
+    await msgHandler({ message: { text: 'what should I do today' }, chat: { id: userId }, from: { id: userId }, reply: async (msg) => { replies.push(msg); }, editMessageText: async () => {} });
+    assert.equal(axCalls.length, 0, 'should NOT reach pipeline');
+    assert(replies.some(r => /top priorities/.test(r)));
+    assert(replies.some(r => /Write quarterly review/.test(r)));
+    assert(replies.some(r => /Core goal task/.test(r)));
+});
+
+test('registerCommands does NOT route task creation to advisory path (goes to pipeline)', async () => {
+    const h = { commands: new Map(), callbacks: [], events: [] };
+    const b = { command: (n, fn) => (h.commands.set(n, fn), b), callbackQuery: (p, fn) => (h.callbacks.push({ p, fn }), b), on: (e, fn) => (h.events.push({ e, fn }), b) };
+    const axCalls = [];
+    registerCommands(b,
+        { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://auth.test', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+        { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null },
+        { listActiveTasks: async () => [], listProjects: async () => [] },
+        { processMessage: async (m, o) => { axCalls.push({ m, o }); return { type: 'task', confirmationText: 'Done.' }; } }
+    );
+    const msgHandler = h.events.find(e => e.e === 'message:text')?.fn || h.events.find(e => e.eventName === 'message:text')?.handler;
+    const replies = []; const userId = `adv-negative-${Date.now()}`;
+    await msgHandler({ message: { text: 'add task do something today' }, chat: { id: userId }, from: { id: userId }, reply: async (msg) => { replies.push(msg); }, editMessageText: async () => {} });
+    assert.equal(axCalls.length, 1, 'should reach pipeline for task creation');
+});

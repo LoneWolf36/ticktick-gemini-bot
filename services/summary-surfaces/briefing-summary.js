@@ -252,6 +252,19 @@ export function composeBriefingSummarySections({
         : 'Review active tasks, select one high-impact action, and begin immediately.';
 
     const modelNormalized = normalizeModelSummary(modelSummary || {});
+
+    // Safety: deduplicate priorities by task_id (each task_id at most once)
+    const seenPriorities = new Set();
+    modelNormalized.priorities = (modelNormalized.priorities || []).filter((p) => {
+        if (!p || !p.task_id || seenPriorities.has(p.task_id)) return false;
+        seenPriorities.add(p.task_id);
+        return true;
+    });
+
+    // Safety: validate task_ids exist in known active tasks
+    const validTaskIds = new Set(normalizedTasks.map((t) => t.id || t.taskId));
+    modelNormalized.priorities = modelNormalized.priorities.filter((p) => validTaskIds.has(p.task_id));
+
     const priorities = limitRecommendationsForConfidence(
         ensureGoalAlignedPriority(
             mergePriorities({

@@ -38,21 +38,6 @@ function renderNumberedList(items = [], emptyLabel = EMPTY_LABEL) {
     return normalized.map((item, index) => `${index + 1}. ${item}`).join('\n');
 }
 
-function formatNotices(notices = []) {
-    const lines = (Array.isArray(notices) ? notices : [])
-        .map((notice) => {
-            const message = normalizeInline(notice?.message);
-            if (!message) return '';
-            if (notice?.severity === 'warning') {
-                return `⚠️ **${message}**`;
-            }
-            return `ℹ️ ${message}`;
-        })
-        .filter(Boolean);
-
-    return renderList(lines);
-}
-
 function formatBriefing(summary = {}, context = {}) {
     const urgentMode = context.workStyleMode === 'urgent' || context.urgentMode === true;
     const priorities = (Array.isArray(summary.priorities) ? summary.priorities : []).map((item) => {
@@ -212,6 +197,21 @@ function buildRenderResult({ kind, body, context = {} }) {
  * @param {Object} [params.context={}] - Request context (for urgent mode reminders).
  * @returns {Object} Formatted result containing `text` and metadata.
  */
+export function formatNotices(notices = []) {
+    const lines = (Array.isArray(notices) ? notices : [])
+        .map((notice) => {
+            const message = normalizeInline(notice?.message);
+            if (!message) return '';
+            if (notice?.severity === 'warning') {
+                return `⚠️ **${message}**`;
+            }
+            return `ℹ️ ${message}`;
+        })
+        .filter(Boolean);
+
+    return lines.join('\n');
+}
+
 export function formatSummary({ kind, summary = {}, context = {} } = {}) {
     if (kind === 'weekly') {
         const body = formatWeekly(summary, context);
