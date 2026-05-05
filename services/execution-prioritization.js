@@ -686,6 +686,17 @@ function assessCandidate(candidate, context) {
         .filter(Boolean);
     const themeMatches = dedupeThemes([...tokenMatches, ...semanticThemeMatches]);
     const urgency = parseUrgency(candidate, context.nowIso);
+    // Due today boost: tasks scheduled for today get priority over backlog
+    const dueDate = candidate.dueDate || candidate.due || null;
+    let dueTodayBoost = 0;
+    if (dueDate && context.nowIso) {
+        const todayStr = context.nowIso.slice(0, 10);
+        const dueStr = String(dueDate).slice(0, 10);
+        if (dueStr === todayStr) {
+            dueTodayBoost = 8;
+        }
+    }
+
     const degraded = context.goalThemeProfile.confidence !== 'explicit';
     const capacityProtection = isCapacityProtection(candidate, context);
 
@@ -716,6 +727,8 @@ function assessCandidate(candidate, context) {
 
         score += urgentModeWeight(candidate, urgency, context);
     }
+
+    score += dueTodayBoost;
 
     const inferenceConfidence = inferInferenceConfidence({
         rationaleCode,

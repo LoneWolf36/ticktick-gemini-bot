@@ -1476,6 +1476,55 @@ test('registerCommands routes advisory questions to top-3 briefing, skips pipeli
     assert(replies.some(r => /top priorities/.test(r)));
     assert(replies.some(r => /Write quarterly review/.test(r)));
     assert(replies.some(r => /Core goal task/.test(r)));
+    // New format checks
+    assert(replies.some(r => /Backlog:/.test(r)), 'should show Backlog section');
+    assert(replies.some(r => /Focus:/.test(r)), 'should have a focus line');
+    assert(replies.some(r => /Focus: Core goal task/.test(r)), 'focus line should use first task rationale');
+    assert(!replies.some(r => /\[P5\]/.test(r)), 'should NOT contain priority label');
+    assert(!replies.some(r => /\(Career\)/.test(r)), 'should NOT contain project name');
+});
+
+test('registerCommands groups advisory tasks by due-today and backlog', async () => {
+    const h = { commands: new Map(), callbacks: [], events: [] };
+    const b = { command: (n, fn) => (h.commands.set(n, fn), b), callbackQuery: (p, fn) => (h.callbacks.push({ p, fn }), b), on: (e, fn) => (h.events.push({ e, fn }), b) };
+    const axCalls = [];
+    const today = new Date();
+    const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    const tasks = [
+        { id: 't1', title: 'Due today task', dueDate: `${todayIso}T10:00:00.000Z`, priority: 5, projectName: 'Career', status: 0 },
+        { id: 't2', title: 'Overdue task', dueDate: '2025-01-01T10:00:00.000Z', priority: 3, projectName: 'Personal', status: 0 },
+        { id: 't3', title: 'No date task', dueDate: null, status: 0 }
+    ];
+    const _pbt = async (_tasks) => {
+        const ranked = _tasks.map((t, i) => ({
+            taskId: t.id, rank: i + 1, scoreBand: 'top',
+            rationaleCode: 'goal_alignment',
+            rationaleText: i === 0 ? 'Due today rationale' : (i === 1 ? 'Overdue rationale' : ''),
+            inferenceConfidence: 'strong'
+        }));
+        const byId = new Map(_tasks.map(t => [t.id, t]));
+        return { ranking: { ranked }, orderedTasks: ranked.map(d => byId.get(d.taskId)).filter(Boolean) };
+    };
+    registerCommands(b,
+        { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://auth.test', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+        { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, _prepareBriefingTasks: _pbt },
+        { listActiveTasks: async () => tasks, listProjects: async () => [] },
+        { processMessage: async (m, o) => { axCalls.push({ m, o }); return { type: 'task' }; } }
+    );
+    const msgHandler = h.events.find(e => e.e === 'message:text')?.fn || h.events.find(e => e.eventName === 'message:text')?.handler;
+    const replies = []; const userId = `adv-due-${Date.now()}`;
+    await msgHandler({ message: { text: 'what should I do today' }, chat: { id: userId }, from: { id: userId }, reply: async (msg) => { replies.push(msg); }, editMessageText: async () => {} });
+    assert.equal(axCalls.length, 0, 'should NOT reach pipeline');
+    assert(replies.some(r => /Due today:/.test(r)), 'should show Due today section');
+    assert(replies.some(r => /Backlog:/.test(r)), 'should show Backlog section');
+    assert(replies.some(r => /Due today task/.test(r)), 'should include due-today task');
+    assert(replies.some(r => /Overdue task/.test(r)), 'should include overdue task');
+    assert(replies.some(r => /No date task/.test(r)), 'should include no-date task');
+    assert(replies.some(r => /Due today rationale/.test(r)), 'should include rationale for first task');
+    assert(replies.some(r => /Overdue rationale/.test(r)), 'should include rationale for second task');
+    assert(replies.some(r => /Focus: Due today rationale/.test(r)), 'focus line should use first task rationale');
+    assert(!replies.some(r => /\[P5\]/.test(r)), 'should NOT contain priority label');
+    assert(!replies.some(r => /\(Career\)/.test(r)), 'should NOT contain project name');
 });
 
 test('registerCommands does NOT route task creation to advisory path (goes to pipeline)', async () => {

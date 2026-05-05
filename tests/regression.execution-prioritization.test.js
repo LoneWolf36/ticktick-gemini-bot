@@ -1800,3 +1800,61 @@ test('inferSemanticGoalMatches does not match paraphrased goal_labels that diffe
     assert.ok(!result.has('task-para2'), 'lowercased variant excluded');
     assert.ok(!result.has('task-para3'), 'whitespace-padded variant excluded');
 });
+
+test('execution prioritization boosts tasks due today above overdue same-priority tasks', () => {
+    const nowIso = '2026-05-05T10:00:00Z'; // Today
+    const context = buildRankingContext({
+        goalThemeProfile: createGoalThemeProfile('', { source: 'fallback' }),
+        nowIso
+    });
+    const candidates = [
+        normalizePriorityCandidate({
+            id: 'task-due-today-p1',
+            title: 'Submit timesheet',
+            projectName: 'Admin',
+            priority: 1,
+            dueDate: '2026-05-05', // today
+            status: 0
+        }),
+        normalizePriorityCandidate({
+            id: 'task-overdue-p1',
+            title: 'Pay electricity bill',
+            projectName: 'Admin',
+            priority: 1,
+            dueDate: '2026-05-03', // overdue
+            status: 0
+        }),
+        normalizePriorityCandidate({
+            id: 'task-due-today-p3',
+            title: 'Review project proposal',
+            projectName: 'Career',
+            priority: 3,
+            dueDate: '2026-05-05', // today
+            status: 0
+        })
+    ];
+
+    const result = rankPriorityCandidatesForTest(candidates, context);
+
+    const todayP1 = result.ranked.find((d) => d.taskId === 'task-due-today-p1');
+    const overdueP1 = result.ranked.find((d) => d.taskId === 'task-overdue-p1');
+    const todayP3 = result.ranked.find((d) => d.taskId === 'task-due-today-p3');
+
+    // Same P1: due today outranks overdue
+    const idxTodayP1 = result.ranked.indexOf(todayP1);
+    const idxOverdueP1 = result.ranked.indexOf(overdueP1);
+    assert.ok(idxTodayP1 < idxOverdueP1,
+        'P1 task due today ranks above overdue P1 task'
+    );
+
+    // P3 due today still outranks P1 due today (priority weight dominates)
+    const idxTodayP3 = result.ranked.indexOf(todayP3);
+    assert.ok(idxTodayP3 < idxTodayP1,
+        'P3 task due today ranks above P1 task due today'
+    );
+
+    // Verify due today boost is applied — P1 due today outranks P1 overdue
+    assert.ok(todayP1.rank < overdueP1.rank,
+        'P1 due today ranks above P1 overdue'
+    );
+});

@@ -1188,14 +1188,57 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     await ctx.reply('No ranked tasks available right now.');
                     return;
                 }
-                const lines = ['**Here are your top priorities right now:**', ''];
-                for (const [i, task] of top3.entries()) {
-                    const decision = ranking.ranked.find(d => d.taskId === task.id);
-                    const rationale = decision?.rationaleText ? ` — *${decision.rationaleText}*` : '';
-                    const priority = task.priority != null ? ` [P${task.priority}]` : '';
-                    const project = task.projectName ? ` (${task.projectName})` : '';
-                    lines.push(`${i + 1}. **${task.title}**${priority}${project}${rationale}`);
+                const now = new Date();
+                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
+
+                // Group ordered tasks into due-today and backlog (up to 2 each)
+                const dueTodayTasks = [];
+                const backlogTasks = [];
+                for (const task of orderedTasks) {
+                    if (dueTodayTasks.length >= 2 && backlogTasks.length >= 2) break;
+                    const isDueToday = task.dueDate && task.dueDate.startsWith(todayStr);
+                    if (isDueToday && dueTodayTasks.length < 2) {
+                        dueTodayTasks.push(task);
+                    } else if (!isDueToday && backlogTasks.length < 2) {
+                        backlogTasks.push(task);
+                    }
                 }
+
+                const lines = ['**Here are your top priorities right now:**', ''];
+                let counter = 0;
+
+                if (dueTodayTasks.length > 0) {
+                    lines.push('Due today:');
+                    for (const task of dueTodayTasks) {
+                        counter++;
+                        const decision = ranking.ranked.find(d => d.taskId === task.id);
+                        const rationale = decision?.rationaleText ? `   ${decision.rationaleText}` : '';
+                        lines.push(`${counter}. **${task.title}**`);
+                        if (rationale) lines.push(rationale);
+                        lines.push('');
+                    }
+                }
+
+                if (backlogTasks.length > 0) {
+                    lines.push('Backlog:');
+                    for (const task of backlogTasks) {
+                        counter++;
+                        const decision = ranking.ranked.find(d => d.taskId === task.id);
+                        const rationale = decision?.rationaleText ? `   ${decision.rationaleText}` : '';
+                        lines.push(`${counter}. **${task.title}**`);
+                        if (rationale) lines.push(rationale);
+                        lines.push('');
+                    }
+                }
+
+                // Focus/context line from first task's rationale
+                const firstRanked = orderedTasks[0];
+                const firstDecision = firstRanked ? ranking.ranked.find(d => d.taskId === firstRanked.id) : null;
+                const focusLine = firstDecision?.rationaleText
+                    ? `Focus: ${firstDecision.rationaleText}`
+                    : "Focus on today's work first";
+                lines.push(focusLine);
+
                 await replyWithMarkdown(ctx, lines.join('\n'));
                 return;
             } catch (err) {
