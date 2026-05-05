@@ -2,7 +2,7 @@ import { TickTickClient } from './ticktick.js';
 import { USER_TZ, validateChecklistItem } from './shared-utils.js';
 import { classifyTaskEvent } from './behavioral-signals.js';
 import { appendBehavioralSignals, DEFAULT_BEHAVIORAL_USER_ID } from './store.js';
-import { getZonedDateParts, getTimezoneOffsetMinutes } from './date-utils.js';
+import { areEquivalentDueDates, getZonedDateParts, getTimezoneOffsetMinutes } from './date-utils.js';
 
 /**
  * Project cache TTL in milliseconds.
@@ -63,33 +63,6 @@ const NETWORK_ERROR_CODES = new Set([
  * @type {Set<string>}
  */
 const TYPED_ERROR_CODES = new Set(Object.values(ERROR_CODES));
-
-/**
- * Compares TickTick due-date values by instant, not string offset.
- * TickTick may return UTC for a date sent with a local timezone offset.
- * @param {string|null|undefined} expected
- * @param {string|null|undefined} actual
- * @returns {boolean}
- */
-function areEquivalentDueDates(expected, actual) {
-    if (expected === actual) return true;
-    if (expected == null && actual == null) return true;
-    if (!expected || !actual) return false;
-
-    const ISO_DATE_ONLY = /^\d{4}-\d{2}-\d{2}$/;
-    const expectedIsDateOnly = ISO_DATE_ONLY.test(expected);
-    const actualIsDateOnly = ISO_DATE_ONLY.test(actual);
-
-    if (expectedIsDateOnly || actualIsDateOnly) {
-        const extractDate = (s) => s.split('T')[0];
-        return extractDate(expected) === extractDate(actual);
-    }
-
-    const expectedTime = Date.parse(expected);
-    const actualTime = Date.parse(actual);
-    if (Number.isNaN(expectedTime) || Number.isNaN(actualTime)) return false;
-    return expectedTime === actualTime;
-}
 
 const VALID_REPEAT_FREQUENCIES = new Set(['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY']);
 const VALID_REPEAT_WEEKDAYS = new Set(['MO', 'TU', 'WE', 'TH', 'FR', 'SA', 'SU']);

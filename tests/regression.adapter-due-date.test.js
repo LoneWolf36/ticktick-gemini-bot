@@ -1,87 +1,50 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 
-import { TickTickAdapter } from '../services/ticktick-adapter.js';
-import { TickTickClient } from '../services/ticktick.js';
+import { areEquivalentDueDates } from '../services/date-utils.js';
 
-test('TickTickAdapter _verifyUpdate treats date-only dueDate as equivalent to same-day datetime', async () => {
-    const client = Object.create(TickTickClient.prototype);
-    client.getTask = async () => ({
-        id: 'task-due-date-verify',
-        projectId: 'project-due-date',
-        dueDate: '2026-05-05T23:00:00.000+0000'
-    });
-
-    const adapter = new TickTickAdapter(client);
-    const result = await adapter._verifyUpdate('task-due-date-verify', 'project-due-date', {
-        dueDate: '2026-05-05'
-    });
-
-    assert.equal(result.verified, true);
+test('areEquivalentDueDates date-only vs same-day datetime returns true', () => {
+    assert.equal(areEquivalentDueDates('2026-05-05', '2026-05-05T23:00:00.000+0000'), true);
 });
 
-test('TickTickAdapter _verifyUpdate still rejects date-only dueDate on different day', async () => {
-    const client = Object.create(TickTickClient.prototype);
-    client.getTask = async () => ({
-        id: 'task-due-date-mismatch',
-        projectId: 'project-due-date',
-        dueDate: '2026-05-06T00:00:00.000+0000'
-    });
-
-    const adapter = new TickTickAdapter(client);
-    const result = await adapter._verifyUpdate('task-due-date-mismatch', 'project-due-date', {
-        dueDate: '2026-05-05'
-    });
-
-    assert.equal(result.verified, false);
-    assert.match(result.verificationNote, /dueDate:/);
+test('areEquivalentDueDates date-only vs different-day datetime returns false', () => {
+    assert.equal(areEquivalentDueDates('2026-05-05', '2026-05-06T00:00:00.000+0000'), false);
 });
 
-test('TickTickAdapter _verifyUpdate treats date-only startDate as equivalent to same-day datetime', async () => {
-    const client = Object.create(TickTickClient.prototype);
-    client.getTask = async () => ({
-        id: 'task-start-date-verify',
-        projectId: 'project-start-date',
-        startDate: '2026-05-05T23:00:00.000+0000'
-    });
-
-    const adapter = new TickTickAdapter(client);
-    const result = await adapter._verifyUpdate('task-start-date-verify', 'project-start-date', {
-        startDate: '2026-05-05'
-    });
-
-    assert.equal(result.verified, true);
+test('areEquivalentDueDates date-only startDate vs same-day datetime returns true', () => {
+    assert.equal(areEquivalentDueDates('2026-05-05', '2026-05-05T23:00:00.000+0000'), true);
 });
 
-test('TickTickAdapter _verifyUpdate keeps exact datetime comparison when both sides are datetime', async () => {
-    const client = Object.create(TickTickClient.prototype);
-    client.getTask = async () => ({
-        id: 'task-datetime-verify',
-        projectId: 'project-datetime',
-        dueDate: '2026-05-05T12:00:00.000+0000'
-    });
-
-    const adapter = new TickTickAdapter(client);
-    const result = await adapter._verifyUpdate('task-datetime-verify', 'project-datetime', {
-        dueDate: '2026-05-05T12:00:00.000+0000'
-    });
-
-    assert.equal(result.verified, true);
+test('areEquivalentDueDates exact same datetime returns true', () => {
+    assert.equal(
+        areEquivalentDueDates('2026-05-05T12:00:00.000+0000', '2026-05-05T12:00:00.000+0000'),
+        true
+    );
 });
 
-test('TickTickAdapter _verifyUpdate rejects mismatched datetimes', async () => {
-    const client = Object.create(TickTickClient.prototype);
-    client.getTask = async () => ({
-        id: 'task-datetime-mismatch',
-        projectId: 'project-datetime',
-        dueDate: '2026-05-05T12:00:00.000+0000'
-    });
+test('areEquivalentDueDates different datetimes returns false', () => {
+    assert.equal(
+        areEquivalentDueDates('2026-05-05T12:00:00.000+0000', '2026-05-05T13:00:00.000+0000'),
+        false
+    );
+});
 
-    const adapter = new TickTickAdapter(client);
-    const result = await adapter._verifyUpdate('task-datetime-mismatch', 'project-datetime', {
-        dueDate: '2026-05-05T13:00:00.000+0000'
-    });
+test('areEquivalentDueDates both null returns true', () => {
+    assert.equal(areEquivalentDueDates(null, null), true);
+});
 
-    assert.equal(result.verified, false);
-    assert.match(result.verificationNote, /dueDate:/);
+test('areEquivalentDueDates expected null actual undefined returns true', () => {
+    assert.equal(areEquivalentDueDates(null, undefined), true);
+});
+
+test('areEquivalentDueDates one null one value returns false', () => {
+    assert.equal(areEquivalentDueDates(null, '2026-05-05'), false);
+});
+
+test('areEquivalentDueDates both date-only same day returns true', () => {
+    assert.equal(areEquivalentDueDates('2026-05-05', '2026-05-05'), true);
+});
+
+test('areEquivalentDueDates both date-only different day returns false', () => {
+    assert.equal(areEquivalentDueDates('2026-05-05', '2026-05-06'), false);
 });

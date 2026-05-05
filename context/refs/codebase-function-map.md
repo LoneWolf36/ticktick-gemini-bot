@@ -250,6 +250,10 @@ Returns structured date components for the given date at the given timezone.</p>
 <dt><a href="#getTimezoneOffsetMinutes">getTimezoneOffsetMinutes(year, month, day, hour, minute, timezone)</a> ⇒ <code>number</code></dt>
 <dd><p>Computes the timezone offset in minutes for a given local date/time and timezone.</p>
 </dd>
+<dt><a href="#areEquivalentDueDates">areEquivalentDueDates(expected, actual)</a> ⇒ <code>boolean</code></dt>
+<dd><p>Checks whether two date/datetime strings represent the same calendar date.
+Handles date-only (YYYY-MM-DD) vs full datetime comparisons.</p>
+</dd>
 <dt><a href="#formatTickTickISO">formatTickTickISO(date, timezone, [options])</a> ⇒ <code>string</code></dt>
 <dd><p>Formats a Date object to a TickTick-compatible ISO datetime string with timezone offset.
 Produces format: YYYY-MM-DDTHH:mm:ss.000±HHMM</p>
@@ -962,10 +966,6 @@ Returns a candidate object or null if no meaningful match.</p>
 <dt><a href="#buildClarificationPrompt">buildClarificationPrompt(result)</a> ⇒ <code>string</code></dt>
 <dd><p>Build a terse clarification prompt from a clarification result.
 Returns a string suitable for user-facing clarification.</p>
-</dd>
-<dt><a href="#areEquivalentDueDates">areEquivalentDueDates(expected, actual)</a> ⇒ <code>boolean</code></dt>
-<dd><p>Compares TickTick due-date values by instant, not string offset.
-TickTick may return UTC for a date sent with a local timezone offset.</p>
 </dd>
 <dt><a href="#buildErrorText">buildErrorText(error)</a> ⇒ <code>string</code></dt>
 <dd><p>Extracts and concatenates error message chunks from an error object or API response.</p>
@@ -1861,6 +1861,19 @@ Computes the timezone offset in minutes for a given local date/time and timezone
 | minute | <code>number</code> | Local minute (0-59) |
 | timezone | <code>string</code> | IANA timezone string |
 
+<a name="areEquivalentDueDates"></a>
+
+## areEquivalentDueDates(expected, actual) ⇒ <code>boolean</code>
+Checks whether two date/datetime strings represent the same calendar date.
+Handles date-only (YYYY-MM-DD) vs full datetime comparisons.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| expected | <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+| actual | <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
+
 <a name="formatTickTickISO"></a>
 
 ## formatTickTickISO(date, timezone, [options]) ⇒ <code>string</code>
@@ -2530,7 +2543,8 @@ Normalizes and validates checklist context metadata.
 <a name="coerceDate"></a>
 
 ## coerceDate(value, fallback) ⇒ <code>Date</code>
-Coerces a value to a Date object.Delegates to the shared coerceDate from date-utils.
+Coerces a value to a Date object.
+Delegates to the shared coerceDate from date-utils.
 
 **Kind**: global function  
 
@@ -3002,7 +3016,9 @@ Executes the weekly digest job, analyzing processed tasks from the past week.
 <a name="retryDeferredIntents"></a>
 
 ## retryDeferredIntents(deps, [options]) ⇒ <code>Object</code>
-Retry deferred pipeline intents that were saved when the TickTick APIwas unavailable (R12 graceful degradation).  Runs on startup andperiodically during the poll cycle.
+Retry deferred pipeline intents that were saved when the TickTick API
+was unavailable (R12 graceful degradation).  Runs on startup and
+periodically during the poll cycle.
 
 **Kind**: global function  
 
@@ -4378,19 +4394,6 @@ Returns a string suitable for user-facing clarification.
 | Param | Type | Description |
 | --- | --- | --- |
 | result | <code>object</code> | A resolver result with status 'clarification' |
-
-<a name="areEquivalentDueDates"></a>
-
-## areEquivalentDueDates(expected, actual) ⇒ <code>boolean</code>
-Compares TickTick due-date values by instant, not string offset.
-TickTick may return UTC for a date sent with a local timezone offset.
-
-**Kind**: global function  
-
-| Param | Type |
-| --- | --- |
-| expected | <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
-| actual | <code>string</code> \| <code>null</code> \| <code>undefined</code> | 
 
 <a name="buildErrorText"></a>
 
