@@ -1177,7 +1177,7 @@ export class GeminiAnalyzer {
             await this.generateDailyBriefingModelSummary(tasks, options);
         const behavioralPatterns = await this._resolveBehavioralPatterns(options);
 
-        return composeBriefingSummary({
+        const result = composeBriefingSummary({
             context: {
                 kind: 'briefing',
                 entryPoint: options.entryPoint || 'manual_command',
@@ -1193,6 +1193,12 @@ export class GeminiAnalyzer {
             rankingResult: ranking,
             modelSummary
         });
+
+        // Expose raw ranked data for "Show more" expansion
+        result.orderedTasks = orderedTasks;
+        result.ranking = ranking;
+
+        return result;
     }
 
     // ─── Generate weekly digest ───────────────────────────────
@@ -1246,7 +1252,7 @@ export class GeminiAnalyzer {
         const parsed = this._safeParseJson(raw);
         const summaryPayload = parsed && typeof parsed === 'object' ? parsed : {};
 
-        return composeWeeklySummary({
+        const result = composeWeeklySummary({
             context: {
                 entryPoint: options.entryPoint || 'manual_command',
                 userId: options.userId ?? options.chatId ?? store.getChatId(),
@@ -1264,6 +1270,12 @@ export class GeminiAnalyzer {
             rankingResult: ranking,
             modelSummary: summaryPayload
         });
+
+        // Expose raw ranked data for "Show more" expansion
+        result.orderedTasks = orderedTasks;
+        result.ranking = ranking;
+
+        return result;
     }
 
     /**

@@ -1150,4 +1150,74 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
             return;
         }
     });
+
+    // ─── Show More: Advisory ───────────────────────────────────
+    bot.callbackQuery(/^advisory:more:(.+)$/, async (ctx) => {
+        if (!isAuthorized(ctx)) {
+            await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
+            return;
+        }
+        const expansionId = ctx.match[1];
+        const expansion = store.getPendingBriefingExpansion();
+        const chatId = ctx.chat?.id;
+        if (
+            !expansion ||
+            expansion.expansionId !== expansionId ||
+            expansion.kind !== 'advisory' ||
+            (expansion.chatId != null && chatId != null && expansion.chatId !== chatId)
+        ) {
+            await safeAnswerCallbackQuery(ctx, { text: '⚠️ Session expired. Ask again.' });
+            return;
+        }
+        await safeAnswerCallbackQuery(ctx, { text: 'Loading full list…' });
+        await store.clearPendingBriefingExpansion();
+
+        const lines = ['**All your ranked tasks:**', ''];
+        const orderedTasks = expansion.orderedTasks || [];
+        const ranking = expansion.ranking || [];
+        for (let i = 0; i < orderedTasks.length; i++) {
+            const task = orderedTasks[i];
+            const decision = ranking.find(r => r.taskId === task.id);
+            const rationale = decision?.rationaleText ? `   ${decision.rationaleText}` : '';
+            lines.push(`${i + 1}. **${task.title}**`);
+            if (rationale) lines.push(rationale);
+            lines.push('');
+        }
+        await replyWithMarkdown(ctx, lines.join('\n'));
+    });
+
+    // ─── Show More: Briefing ───────────────────────────────────
+    bot.callbackQuery(/^briefing:more:(.+)$/, async (ctx) => {
+        if (!isAuthorized(ctx)) {
+            await safeAnswerCallbackQuery(ctx, { text: '🔒 Unauthorized' });
+            return;
+        }
+        const expansionId = ctx.match[1];
+        const expansion = store.getPendingBriefingExpansion();
+        const chatId = ctx.chat?.id;
+        if (
+            !expansion ||
+            expansion.expansionId !== expansionId ||
+            expansion.kind !== 'briefing' ||
+            (expansion.chatId != null && chatId != null && expansion.chatId !== chatId)
+        ) {
+            await safeAnswerCallbackQuery(ctx, { text: '⚠️ Session expired. Ask again.' });
+            return;
+        }
+        await safeAnswerCallbackQuery(ctx, { text: 'Loading full list…' });
+        await store.clearPendingBriefingExpansion();
+
+        const lines = ['**All your ranked tasks:**', ''];
+        const orderedTasks = expansion.orderedTasks || [];
+        const ranking = expansion.ranking || [];
+        for (let i = 0; i < orderedTasks.length; i++) {
+            const task = orderedTasks[i];
+            const decision = ranking.find(r => r.taskId === task.id);
+            const rationale = decision?.rationaleText ? `   ${decision.rationaleText}` : '';
+            lines.push(`${i + 1}. **${task.title}**`);
+            if (rationale) lines.push(rationale);
+            lines.push('');
+        }
+        await replyWithMarkdown(ctx, lines.join('\n'));
+    });
 }

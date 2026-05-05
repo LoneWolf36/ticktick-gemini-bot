@@ -189,13 +189,10 @@ function buildRenderResult({ kind, body, context = {} }) {
 }
 
 /**
- * Format a structured summary object into a user-facing string.
+ * Format notice objects into markdown lines.
  *
- * @param {Object} params - Formatting parameters.
- * @param {string} params.kind - Summary kind (briefing, weekly, daily_close).
- * @param {Object} [params.summary={}] - The structured summary object.
- * @param {Object} [params.context={}] - Request context (for urgent mode reminders).
- * @returns {Object} Formatted result containing `text` and metadata.
+ * @param {Array<Object>} [notices=[]] - Notice objects.
+ * @returns {string} Formatted notice lines.
  */
 export function formatNotices(notices = []) {
     const lines = (Array.isArray(notices) ? notices : [])
@@ -212,6 +209,15 @@ export function formatNotices(notices = []) {
     return lines.join('\n');
 }
 
+/**
+ * Format a structured summary object into a user-facing string.
+ *
+ * @param {Object} params - Formatting parameters.
+ * @param {string} params.kind - Summary kind (briefing, weekly, daily_close).
+ * @param {Object} [params.summary={}] - The structured summary object.
+ * @param {Object} [params.context={}] - Request context (for urgent mode reminders).
+ * @returns {Object} Formatted result containing `text` and metadata.
+ */
 export function formatSummary({ kind, summary = {}, context = {} } = {}) {
     if (kind === 'weekly') {
         const body = formatWeekly(summary, context);

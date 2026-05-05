@@ -121,6 +121,14 @@ Used by validateIntentAction to check checklistItems arrays.</p>
 <dt><a href="#dailyCloseSummarySchema">dailyCloseSummarySchema</a></dt>
 <dd><p>Gemini response schema for daily close summaries.</p>
 </dd>
+<dt><a href="#semanticGoalMatchItemSchema">semanticGoalMatchItemSchema</a></dt>
+<dd><p>Schema item for semantic goal-task alignment responses.
+Each item maps a task to a goal with a confidence score.</p>
+</dd>
+<dt><a href="#semanticGoalMatchResponseSchema">semanticGoalMatchResponseSchema</a></dt>
+<dd><p>Gemini response schema for semantic goal alignment.
+Returns an array of task-goal match items.</p>
+</dd>
 <dt><a href="#PRIORITY_MAP">PRIORITY_MAP</a> : <code>Object.&lt;string, number&gt;</code></dt>
 <dd><p>Priority map from Gemini labels to TickTick priority integers.</p>
 </dd>
@@ -257,6 +265,12 @@ Handles date-only (YYYY-MM-DD) vs full datetime comparisons.</p>
 <dt><a href="#formatTickTickISO">formatTickTickISO(date, timezone, [options])</a> ⇒ <code>string</code></dt>
 <dd><p>Formats a Date object to a TickTick-compatible ISO datetime string with timezone offset.
 Produces format: YYYY-MM-DDTHH:mm:ss.000±HHMM</p>
+</dd>
+<dt><a href="#inferSemanticGoalMatches">inferSemanticGoalMatches(candidates, goalLabels, geminiAnalyzer)</a> ⇒ <code>Promise.&lt;Map.&lt;string, Array.&lt;number&gt;&gt;&gt;</code></dt>
+<dd><p>Infer semantic goal-task alignment using Gemini.</p>
+<p>Calls Gemini to determine which tasks semantically align with which goals.
+Checks in-memory cache first for each task; only uncached tasks trigger
+a Gemini API call. Falls back to empty Map on any failure.</p>
 </dd>
 <dt><a href="#createGoalThemeProfile">createGoalThemeProfile(rawContext, [options])</a> ⇒ <code>object</code></dt>
 <dd><p>Creates a goal theme profile from raw context.</p>
@@ -836,6 +850,15 @@ Preserves the pending snapshot, flags the processed entry stale, and removes it 
 <dt><a href="#getNextPendingTask">getNextPendingTask()</a> ⇒ <code>Array</code> | <code>null</code></dt>
 <dd><p>Return the oldest pending task (by sentAt).</p>
 </dd>
+<dt><a href="#getPendingBriefingExpansion">getPendingBriefingExpansion()</a> ⇒ <code>Object</code> | <code>null</code></dt>
+<dd><p>Get pending briefing/advisory expansion payload if it has not expired.</p>
+</dd>
+<dt><a href="#setPendingBriefingExpansion">setPendingBriefingExpansion(data)</a> ⇒ <code>Promise.&lt;void&gt;</code></dt>
+<dd><p>Persist pending briefing/advisory expansion payload.</p>
+</dd>
+<dt><a href="#clearPendingBriefingExpansion">clearPendingBriefingExpansion()</a> ⇒ <code>Promise.&lt;void&gt;</code></dt>
+<dd><p>Clear pending briefing/advisory expansion payload.</p>
+</dd>
 <dt><a href="#getPendingChecklistClarification">getPendingChecklistClarification()</a> ⇒ <code>Object</code> | <code>null</code></dt>
 <dd><p>Gets the pending checklist clarification if it exists and hasn&#39;t expired.</p>
 </dd>
@@ -937,6 +960,9 @@ Returns the snapshot data needed for the revert (old value).</p>
 </dd>
 <dt><a href="#buildReflectionRecomputeNotice">buildReflectionRecomputeNotice([recomputeContext], [options])</a> ⇒ <code>Object</code> | <code>null</code></dt>
 <dd><p>Build a notice explaining if/why summary context was recomputed.</p>
+</dd>
+<dt><a href="#formatNotices">formatNotices([notices])</a> ⇒ <code>string</code></dt>
+<dd><p>Format notice objects into markdown lines.</p>
 </dd>
 <dt><a href="#formatSummary">formatSummary(params)</a> ⇒ <code>Object</code></dt>
 <dd><p>Format a structured summary object into a user-facing string.</p>
@@ -1609,6 +1635,20 @@ Gemini response schema for weekly summaries.
 Gemini response schema for daily close summaries.
 
 **Kind**: global constant  
+<a name="semanticGoalMatchItemSchema"></a>
+
+## semanticGoalMatchItemSchema
+Schema item for semantic goal-task alignment responses.
+Each item maps a task to a goal with a confidence score.
+
+**Kind**: global constant  
+<a name="semanticGoalMatchResponseSchema"></a>
+
+## semanticGoalMatchResponseSchema
+Gemini response schema for semantic goal alignment.
+Returns an array of task-goal match items.
+
+**Kind**: global constant  
 <a name="PRIORITY_MAP"></a>
 
 ## PRIORITY\_MAP : <code>Object.&lt;string, number&gt;</code>
@@ -1890,6 +1930,24 @@ Produces format: YYYY-MM-DDTHH:mm:ss.000±HHMM
 | [options] | <code>object</code> | <code>{}</code> | Options |
 | [options.hour] | <code>number</code> | <code>0</code> | Hour override (0-23) |
 | [options.minute] | <code>number</code> | <code>0</code> | Minute override (0-59) |
+
+<a name="inferSemanticGoalMatches"></a>
+
+## inferSemanticGoalMatches(candidates, goalLabels, geminiAnalyzer) ⇒ <code>Promise.&lt;Map.&lt;string, Array.&lt;number&gt;&gt;&gt;</code>
+Infer semantic goal-task alignment using Gemini.
+
+Calls Gemini to determine which tasks semantically align with which goals.
+Checks in-memory cache first for each task; only uncached tasks trigger
+a Gemini API call. Falls back to empty Map on any failure.
+
+**Kind**: global function  
+**Returns**: <code>Promise.&lt;Map.&lt;string, Array.&lt;number&gt;&gt;&gt;</code> - taskId → array of goal indices (confidence >= 0.7)  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| candidates | <code>Array.&lt;Object&gt;</code> | Task candidates (raw or normalized) with taskId/id and title |
+| goalLabels | <code>Array.&lt;string&gt;</code> | Goal label strings to match against |
+| geminiAnalyzer | <code>Object</code> | GeminiAnalyzer instance with _executeWithFailover and _safeParseJson |
 
 <a name="createGoalThemeProfile"></a>
 
@@ -3881,6 +3939,30 @@ Return the oldest pending task (by sentAt).
 
 **Kind**: global function  
 **Returns**: <code>Array</code> \| <code>null</code> - [taskId, data] or null  
+<a name="getPendingBriefingExpansion"></a>
+
+## getPendingBriefingExpansion() ⇒ <code>Object</code> \| <code>null</code>
+Get pending briefing/advisory expansion payload if it has not expired.
+
+**Kind**: global function  
+**Returns**: <code>Object</code> \| <code>null</code> - Pending expansion payload, or null when missing/expired.  
+<a name="setPendingBriefingExpansion"></a>
+
+## setPendingBriefingExpansion(data) ⇒ <code>Promise.&lt;void&gt;</code>
+Persist pending briefing/advisory expansion payload.
+
+**Kind**: global function  
+
+| Param | Type | Description |
+| --- | --- | --- |
+| data | <code>Object</code> \| <code>null</code> | Lightweight expansion payload. |
+
+<a name="clearPendingBriefingExpansion"></a>
+
+## clearPendingBriefingExpansion() ⇒ <code>Promise.&lt;void&gt;</code>
+Clear pending briefing/advisory expansion payload.
+
+**Kind**: global function  
 <a name="getPendingChecklistClarification"></a>
 
 ## getPendingChecklistClarification() ⇒ <code>Object</code> \| <code>null</code>
@@ -4274,6 +4356,18 @@ Build a notice explaining if/why summary context was recomputed.
 | [recomputeContext] | <code>Object</code> | <code>{}</code> | Result from buildReflectionRecomputeContext. |
 | [options] | <code>Object</code> | <code>{}</code> | Options. |
 | [options.surface] | <code>string</code> | <code>&quot;&#x27;weekly&#x27;&quot;</code> | Summary surface name. |
+
+<a name="formatNotices"></a>
+
+## formatNotices([notices]) ⇒ <code>string</code>
+Format notice objects into markdown lines.
+
+**Kind**: global function  
+**Returns**: <code>string</code> - Formatted notice lines.  
+
+| Param | Type | Default | Description |
+| --- | --- | --- | --- |
+| [notices] | <code>Array.&lt;Object&gt;</code> | <code>[]</code> | Notice objects. |
 
 <a name="formatSummary"></a>
 

@@ -772,7 +772,21 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 generatedAtIso: context.generatedAtIso
             });
             logSummarySurfaceEvent({ context, result: briefingResult, deliveryStatus: 'ready' });
-            await replyWithMarkdown(ctx, briefingResult.formattedText);
+
+            // Store expansion data and attach "Show more" button
+            const expansionId = `exp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+            const orderedTasks = briefingResult.orderedTasks || [];
+            const ranking = briefingResult.ranking || { ranked: [] };
+            await store.setPendingBriefingExpansion({
+                expansionId,
+                orderedTasks: orderedTasks.map(t => ({ id: t.id, title: t.title, priority: t.priority, dueDate: t.dueDate })),
+                ranking: (ranking.ranked || []).map(r => ({ taskId: r.taskId, score: r.score, rationaleText: r.rationaleText })),
+                kind: 'briefing',
+                chatId: ctx.chat?.id
+            });
+            const keyboard = new InlineKeyboard().text('Show more', `briefing:more:${expansionId}`);
+            await replyWithMarkdown(ctx, briefingResult.formattedText, { reply_markup: keyboard });
+
             logSummarySurfaceEvent({ context, result: briefingResult, deliveryStatus: 'sent' });
             await store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         } catch (err) {
@@ -1191,25 +1205,36 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 const now = new Date();
                 const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
 
-                // Group ordered tasks into due-today and backlog (up to 2 each)
-                const dueTodayTasks = [];
-                const backlogTasks = [];
-                for (const task of orderedTasks) {
-                    if (dueTodayTasks.length >= 2 && backlogTasks.length >= 2) break;
-                    const isDueToday = task.dueDate && task.dueDate.startsWith(todayStr);
-                    if (isDueToday && dueTodayTasks.length < 2) {
-                        dueTodayTasks.push(task);
-                    } else if (!isDueToday && backlogTasks.length < 2) {
-                        backlogTasks.push(task);
+                // Priority-aware filtering: preserve ranking order, show ALL high-priority (>=3),
+                // cap low-priority at 2 per section.
+                function filterPriorityAware(tasks, maxLowPriority = 2) {
+                    const shown = [];
+                    let lowShown = 0;
+                    for (const task of tasks) {
+                        if ((task.priority || 0) >= 3) {
+                            shown.push(task);
+                            continue;
+                        }
+                        if (lowShown < maxLowPriority) {
+                            shown.push(task);
+                            lowShown++;
+                        }
                     }
+                    return { shown, total: tasks.length, highCount: shown.filter((task) => (task.priority || 0) >= 3).length };
                 }
+
+                const dueToday = orderedTasks.filter(t => t.dueDate && t.dueDate.startsWith(todayStr));
+                const backlog = orderedTasks.filter(t => !(t.dueDate && t.dueDate.startsWith(todayStr)));
+
+                const dueTodayFiltered = filterPriorityAware(dueToday);
+                const backlogFiltered = filterPriorityAware(backlog);
 
                 const lines = ['**Here are your top priorities right now:**', ''];
                 let counter = 0;
 
-                if (dueTodayTasks.length > 0) {
-                    lines.push('Due today:');
-                    for (const task of dueTodayTasks) {
+                if (dueTodayFiltered.shown.length > 0) {
+                    lines.push(`Due today (${dueTodayFiltered.total} total):`);
+                    for (const task of dueTodayFiltered.shown) {
                         counter++;
                         const decision = ranking.ranked.find(d => d.taskId === task.id);
                         const rationale = decision?.rationaleText ? `   ${decision.rationaleText}` : '';
@@ -1219,9 +1244,9 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     }
                 }
 
-                if (backlogTasks.length > 0) {
-                    lines.push('Backlog:');
-                    for (const task of backlogTasks) {
+                if (backlogFiltered.shown.length > 0) {
+                    lines.push(`Backlog (${backlogFiltered.total} total):`);
+                    for (const task of backlogFiltered.shown) {
                         counter++;
                         const decision = ranking.ranked.find(d => d.taskId === task.id);
                         const rationale = decision?.rationaleText ? `   ${decision.rationaleText}` : '';
@@ -1239,7 +1264,17 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     : "Focus on today's work first";
                 lines.push(focusLine);
 
-                await replyWithMarkdown(ctx, lines.join('\n'));
+                // Store expansion data and attach "Show more" button
+                const expansionId = `exp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+                await store.setPendingBriefingExpansion({
+                    expansionId,
+                    orderedTasks: orderedTasks.map(t => ({ id: t.id, title: t.title, priority: t.priority, dueDate: t.dueDate })),
+                    ranking: ranking.ranked.map(r => ({ taskId: r.taskId, score: r.score, rationaleText: r.rationaleText })),
+                    kind: 'advisory',
+                    chatId: ctx.chat?.id
+                });
+                const keyboard = new InlineKeyboard().text('Show more', `advisory:more:${expansionId}`);
+                await replyWithMarkdown(ctx, lines.join('\n'), { reply_markup: keyboard });
                 return;
             } catch (err) {
                 if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {

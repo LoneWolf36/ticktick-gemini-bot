@@ -73,6 +73,7 @@ const DEFAULT_STATE = {
     pendingMutationClarification: null, // Pending mutation clarification state for free-form handler
     pendingMutationConfirmation: null, // Pending destructive/non-exact mutation confirmation gate
     pendingChecklistClarification: null, // Pending checklist vs separate-tasks clarification
+    pendingBriefingExpansion: null, // Pending "Show more" expansion data for advisory/briefing
     deferredPipelineIntents: [], // Pending deferred pipeline intents for API-unavailable recovery
     failedDeferredIntents: [], // Dead-letter queue for intents that exhausted retries
     behavioralSignals: {}, // R2: { [userId]: BehavioralSignal[] }
@@ -1073,6 +1074,50 @@ export async function clearPendingMutationConfirmation() {
     state.pendingMutationConfirmation = null;
     await save();
     console.log('[MutationConfirmation] Pending state cleared');
+}
+
+// ─── Pending Briefing Expansion ────────────────────────────────
+
+/**
+ * Get pending briefing/advisory expansion payload if it has not expired.
+ *
+ * @returns {Object|null} Pending expansion payload, or null when missing/expired.
+ */
+export function getPendingBriefingExpansion() {
+    const pending = state.pendingBriefingExpansion;
+    if (!pending) return null;
+
+    // TTL check — 5 minutes for advisory/briefing expansion data
+    const createdAt = pending.createdAt ? new Date(pending.createdAt).getTime() : 0;
+    if (createdAt && Date.now() - createdAt > TASK_REFINEMENT_TTL_MS) {
+        console.log('[BriefingExpansion] Expired pending state cleared (TTL exceeded)');
+        state.pendingBriefingExpansion = null;
+        save().catch(() => {}); // Best-effort cleanup
+        return null;
+    }
+
+    return pending;
+}
+
+/**
+ * Persist pending briefing/advisory expansion payload.
+ *
+ * @param {Object|null} data - Lightweight expansion payload.
+ * @returns {Promise<void>}
+ */
+export async function setPendingBriefingExpansion(data) {
+    state.pendingBriefingExpansion = data ? { ...data, createdAt: new Date().toISOString() } : null;
+    await save();
+}
+
+/**
+ * Clear pending briefing/advisory expansion payload.
+ *
+ * @returns {Promise<void>}
+ */
+export async function clearPendingBriefingExpansion() {
+    state.pendingBriefingExpansion = null;
+    await save();
 }
 
 // ─── Pending Checklist Clarification ──────────────────────────

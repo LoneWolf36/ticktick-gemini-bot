@@ -1296,3 +1296,91 @@ test('composeBriefingSummary filters out modelSummary priorities with invalid ta
     // Real task_id should still appear (possibly with fallback fill)
     assert.ok(result.summary.priorities.some((p) => p.task_id === activeTasks[0].id));
 });
+
+test('/briefing command attaches "Show more" inline keyboard button', async () => {
+    const handlers = { commands: new Map(), callbacks: [], events: [] };
+    const bot = {
+        command(name, handler) {
+            handlers.commands.set(name, handler);
+            return this;
+        },
+        callbackQuery(pattern, handler) {
+            handlers.callbacks.push({ pattern, handler });
+            return this;
+        },
+        on(eventName, handler) {
+            handlers.events.push({ eventName, handler });
+            return this;
+        }
+    };
+
+    const summaryCalls = [];
+    const orderedTasks = [
+        { id: 'bt1', title: 'Briefing task 1', priority: 5, dueDate: null },
+        { id: 'bt2', title: 'Briefing task 2', priority: 3, dueDate: null }
+    ];
+    const ranking = {
+        ranked: [
+            { taskId: 'bt1', score: 9, rationaleText: 'Core goal alignment' },
+            { taskId: 'bt2', score: 5, rationaleText: 'Some rationale' }
+        ]
+    };
+
+    registerCommands(
+        bot,
+        {
+            isAuthenticated: () => true,
+            getCacheAgeSeconds: () => null,
+            getAuthUrl: () => 'https://example.test/auth',
+            getAllTasks: async () => [],
+            getAllTasksCached: async () => [],
+            getLastFetchedProjects: () => []
+        },
+        {
+            isQuotaExhausted: () => false,
+            quotaResumeTime: () => null,
+            activeKeyInfo: () => null,
+            generateDailyBriefingSummary: async (_tasks, options) => {
+                summaryCalls.push(options);
+                return {
+                    formattedText: '**☀️ MORNING BRIEFING**\n\n**Focus**: Test focus',
+                    orderedTasks,
+                    ranking
+                };
+            }
+        },
+        {
+            listActiveTasks: async () => [],
+            listProjects: async () => []
+        },
+        {}
+    );
+
+    const briefingHandler = handlers.commands.get('briefing');
+    assert.equal(typeof briefingHandler, 'function');
+
+    const replyOpts = [];
+    const userId = AUTHORIZED_CHAT_ID || `briefing-showmore-${Date.now()}`;
+    await briefingHandler({
+        chat: { id: userId },
+        from: { id: userId },
+        reply: async (msg, opts) => { replyOpts.push({ msg, opts }); }
+    });
+
+    // Verify options include keyboard
+    assert(replyOpts.length > 0, 'should have replied');
+    const lastReply = replyOpts[replyOpts.length - 1];
+    assert(lastReply.opts, 'should have options');
+    assert(lastReply.opts.reply_markup, 'should have reply_markup with keyboard');
+
+    // Verify store has expansion data
+    const expansion = store.getPendingBriefingExpansion();
+    assert(expansion, 'should store briefing expansion data');
+    assert.equal(expansion.kind, 'briefing');
+    assert.equal(expansion.orderedTasks.length, 2);
+    assert.equal(expansion.ranking.length, 2);
+    assert(expansion.expansionId, 'should have expansionId');
+
+    // Clean up
+    await store.clearPendingBriefingExpansion();
+});

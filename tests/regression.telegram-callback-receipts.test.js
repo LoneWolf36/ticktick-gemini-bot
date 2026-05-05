@@ -22,6 +22,9 @@ function createCtx({ chatId = 1, userId = 1 } = {}) {
             match: [],
             chat: { id: chatId },
             from: { id: userId },
+            reply: async (text, extra) => {
+                edits.push({ text, extra });
+            },
             answerCallbackQuery: async () => {},
             editMessageText: async (text, extra) => {
                 edits.push({ text, extra });
@@ -29,6 +32,20 @@ function createCtx({ chatId = 1, userId = 1 } = {}) {
         },
         edits
     };
+}
+
+function createCallbackBotHarness() {
+    const handlers = [];
+    const bot = {
+        on() {
+            return bot;
+        },
+        callbackQuery(pattern, handler) {
+            handlers.push({ pattern, handler });
+            return bot;
+        }
+    };
+    return { bot, handlers };
 }
 
 async function reset() {
@@ -291,4 +308,65 @@ test('cl:checklist shows structured receipt and undo when rollback persists', as
     assert.match(edits.at(-1).text, /Plan trip/);
     assert.ok(edits.at(-1).extra.reply_markup);
     assert.equal(store.getLastUndoEntry()?.taskId, 'task-checklist-1');
+});
+
+test('advisory:more preserves ranking order and chat session', async () => {
+    await reset();
+    const chatId = 99887;
+    await store.setPendingBriefingExpansion({
+        expansionId: 'exp_test_1',
+        kind: 'advisory',
+        chatId,
+        orderedTasks: [
+            { id: 'low-1', title: 'Low one', priority: 1, dueDate: null },
+            { id: 'high-1', title: 'High one', priority: 3, dueDate: null },
+            { id: 'low-2', title: 'Low two', priority: 0, dueDate: null },
+            { id: 'high-2', title: 'High two', priority: 4, dueDate: null },
+            { id: 'low-3', title: 'Low three', priority: 2, dueDate: null }
+        ],
+        ranking: [
+            { taskId: 'low-1', score: 1, rationaleText: 'first' },
+            { taskId: 'high-1', score: 9, rationaleText: 'second' },
+            { taskId: 'low-2', score: 2, rationaleText: 'third' },
+            { taskId: 'high-2', score: 8, rationaleText: 'fourth' },
+            { taskId: 'low-3', score: 0, rationaleText: 'fifth' }
+        ]
+    });
+
+    const { bot, handlers } = createCallbackBotHarness();
+    registerCallbacks(bot, {}, {});
+    const handler = handlers.find(({ pattern }) => pattern.toString().includes('advisory:more')).handler;
+    const { ctx, edits } = createCtx({ chatId });
+    ctx.match = ['advisory:more:exp_test_1', 'exp_test_1'];
+
+    await handler(ctx);
+
+    assert.match(edits.at(-1).text, /1\. <b>Low one<\/b>/);
+    assert.match(edits.at(-1).text, /2\. <b>High one<\/b>/);
+    assert.match(edits.at(-1).text, /3\. <b>Low two<\/b>/);
+    assert.match(edits.at(-1).text, /4\. <b>High two<\/b>/);
+    assert.match(edits.at(-1).text, /5\. <b>Low three<\/b>/);
+    assert.equal(await store.getPendingBriefingExpansion(), null);
+});
+
+test('briefing:more rejects chat mismatch', async () => {
+    await reset();
+    await store.setPendingBriefingExpansion({
+        expansionId: 'exp_test_2',
+        kind: 'briefing',
+        chatId: 11111,
+        orderedTasks: [{ id: 'task-1', title: 'Task one', priority: 3, dueDate: null }],
+        ranking: [{ taskId: 'task-1', score: 10, rationaleText: 'reason' }]
+    });
+
+    const { bot, handlers } = createCallbackBotHarness();
+    registerCallbacks(bot, {}, {});
+    const handler = handlers.find(({ pattern }) => pattern.toString().includes('briefing:more')).handler;
+    const { ctx, edits } = createCtx({ chatId: 22222 });
+    ctx.match = ['briefing:more:exp_test_2', 'exp_test_2'];
+
+    await handler(ctx);
+
+    assert.equal(edits.length, 0);
+    assert.ok(store.getPendingBriefingExpansion(), 'session should remain until valid claim');
 });

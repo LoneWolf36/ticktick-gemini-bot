@@ -1477,7 +1477,8 @@ test('registerCommands routes advisory questions to top-3 briefing, skips pipeli
     assert(replies.some(r => /Write quarterly review/.test(r)));
     assert(replies.some(r => /Core goal task/.test(r)));
     // New format checks
-    assert(replies.some(r => /Backlog:/.test(r)), 'should show Backlog section');
+    // Both tasks are high priority (5, 3) with no dueDate → all in Backlog
+    assert(replies.some(r => /Backlog \(2 total\):/.test(r)), 'should show Backlog with count');
     assert(replies.some(r => /Focus:/.test(r)), 'should have a focus line');
     assert(replies.some(r => /Focus: Core goal task/.test(r)), 'focus line should use first task rationale');
     assert(!replies.some(r => /\[P5\]/.test(r)), 'should NOT contain priority label');
@@ -1515,8 +1516,8 @@ test('registerCommands groups advisory tasks by due-today and backlog', async ()
     const replies = []; const userId = `adv-due-${Date.now()}`;
     await msgHandler({ message: { text: 'what should I do today' }, chat: { id: userId }, from: { id: userId }, reply: async (msg) => { replies.push(msg); }, editMessageText: async () => {} });
     assert.equal(axCalls.length, 0, 'should NOT reach pipeline');
-    assert(replies.some(r => /Due today:/.test(r)), 'should show Due today section');
-    assert(replies.some(r => /Backlog:/.test(r)), 'should show Backlog section');
+    assert(replies.some(r => /Due today \(1 total\):/.test(r)), 'should show Due today with count');
+    assert(replies.some(r => /Backlog \(2 total\):/.test(r)), 'should show Backlog with count');
     assert(replies.some(r => /Due today task/.test(r)), 'should include due-today task');
     assert(replies.some(r => /Overdue task/.test(r)), 'should include overdue task');
     assert(replies.some(r => /No date task/.test(r)), 'should include no-date task');
@@ -1525,6 +1526,50 @@ test('registerCommands groups advisory tasks by due-today and backlog', async ()
     assert(replies.some(r => /Focus: Due today rationale/.test(r)), 'focus line should use first task rationale');
     assert(!replies.some(r => /\[P5\]/.test(r)), 'should NOT contain priority label');
     assert(!replies.some(r => /\(Career\)/.test(r)), 'should NOT contain project name');
+});
+
+test('registerCommands priority-aware advisory caps low-priority tasks at 2, shows all high-priority', async () => {
+    const h = { commands: new Map(), callbacks: [], events: [] };
+    const b = { command: (n, fn) => (h.commands.set(n, fn), b), callbackQuery: (p, fn) => (h.callbacks.push({ p, fn }), b), on: (e, fn) => (h.events.push({ e, fn }), b) };
+    const axCalls = [];
+    const today = new Date();
+    const todayIso = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+    // 5 backlog tasks: 3 high priority (>=3), 2 low priority (<3) — all high shown, low capped at 2
+    const tasks = [
+        { id: 't1', title: 'High pri 1', dueDate: '2025-01-01T10:00:00.000Z', priority: 5, projectName: 'Career', status: 0 },
+        { id: 't2', title: 'High pri 2', dueDate: '2025-01-02T10:00:00.000Z', priority: 4, projectName: 'Personal', status: 0 },
+        { id: 't3', title: 'High pri 3', dueDate: '2025-01-03T10:00:00.000Z', priority: 3, projectName: 'Health', status: 0 },
+        { id: 't4', title: 'Low pri 1', dueDate: '2025-01-04T10:00:00.000Z', priority: 1, projectName: 'Admin', status: 0 },
+        { id: 't5', title: 'Low pri 2', dueDate: '2025-01-05T10:00:00.000Z', priority: 0, projectName: 'Errands', status: 0 },
+        { id: 't6', title: 'Low pri 3 (hidden)', dueDate: '2025-01-06T10:00:00.000Z', priority: 2, projectName: 'Misc', status: 0 },
+    ];
+    const _pbt = async (_tasks) => {
+        const ranked = _tasks.map((t, i) => ({
+            taskId: t.id, rank: i + 1, scoreBand: 'top',
+            rationaleCode: 'goal_alignment',
+            rationaleText: i === 0 ? 'First rationale' : '',
+            inferenceConfidence: 'strong'
+        }));
+        const byId = new Map(_tasks.map(t => [t.id, t]));
+        return { ranking: { ranked }, orderedTasks: ranked.map(d => byId.get(d.taskId)).filter(Boolean) };
+    };
+    registerCommands(b,
+        { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://auth.test', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+        { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, _prepareBriefingTasks: _pbt },
+        { listActiveTasks: async () => tasks, listProjects: async () => [] },
+        { processMessage: async (m, o) => { axCalls.push({ m, o }); return { type: 'task' }; } }
+    );
+    const msgHandler = h.events.find(e => e.e === 'message:text')?.fn || h.events.find(e => e.eventName === 'message:text')?.handler;
+    const replies = []; const userId = `adv-cap-${Date.now()}`;
+    await msgHandler({ message: { text: 'what should I do today' }, chat: { id: userId }, from: { id: userId }, reply: async (msg) => { replies.push(msg); }, editMessageText: async () => {} });
+    assert.equal(axCalls.length, 0, 'should NOT reach pipeline');
+    assert(replies.some(r => /Backlog \(6 total\):/.test(r)), 'should show Backlog with total count 6');
+    assert(replies.some(r => /High pri 1/.test(r)), 'should show high-priority task 1');
+    assert(replies.some(r => /High pri 2/.test(r)), 'should show high-priority task 2');
+    assert(replies.some(r => /High pri 3/.test(r)), 'should show high-priority task 3');
+    assert(replies.some(r => /Low pri 1/.test(r)), 'should show first low-priority task');
+    assert(replies.some(r => /Low pri 2/.test(r)), 'should show second low-priority task');
+    assert(!replies.some(r => /Low pri 3 \(hidden\)/.test(r)), 'should NOT show third low-priority task (capped at 2)');
 });
 
 test('registerCommands does NOT route task creation to advisory path (goes to pipeline)', async () => {
@@ -1541,4 +1586,59 @@ test('registerCommands does NOT route task creation to advisory path (goes to pi
     const replies = []; const userId = `adv-negative-${Date.now()}`;
     await msgHandler({ message: { text: 'add task do something today' }, chat: { id: userId }, from: { id: userId }, reply: async (msg) => { replies.push(msg); }, editMessageText: async () => {} });
     assert.equal(axCalls.length, 1, 'should reach pipeline for task creation');
+});
+
+test('registerCommands advisory reply includes "Show more" inline keyboard button', async () => {
+    const h = { commands: new Map(), callbacks: [], events: [] };
+    const b = { command: (n, fn) => (h.commands.set(n, fn), b), callbackQuery: (p, fn) => (h.callbacks.push({ p, fn }), b), on: (e, fn) => (h.events.push({ e, fn }), b) };
+    const tasks = [
+        { id: 't1', title: 'Write quarterly review', projectId: 'p1', projectName: 'Career', priority: 5, status: 0 },
+        { id: 't2', title: 'Buy groceries', projectId: 'p1', projectName: 'Personal', priority: 3, status: 0 }
+    ];
+    const _pbt = async (_tasks) => {
+        const ranked = _tasks.map((t, i) => ({
+            taskId: t.id, rank: i + 1, scoreBand: 'top',
+            rationaleCode: 'goal_alignment',
+            rationaleText: i === 0 ? 'Core goal task' : '',
+            inferenceConfidence: 'strong'
+        }));
+        const byId = new Map(_tasks.map(t => [t.id, t]));
+        return { ranking: { ranked }, orderedTasks: ranked.map(d => byId.get(d.taskId)).filter(Boolean) };
+    };
+    const replyOpts = [];
+    registerCommands(b,
+        { isAuthenticated: () => true, getCacheAgeSeconds: () => null, getAuthUrl: () => 'https://auth.test', getAllTasks: async () => [], getAllTasksCached: async () => [], getLastFetchedProjects: () => [] },
+        { isQuotaExhausted: () => false, quotaResumeTime: () => null, activeKeyInfo: () => null, _prepareBriefingTasks: _pbt },
+        { listActiveTasks: async () => tasks, listProjects: async () => [] },
+        { processMessage: async (m, o) => ({ type: 'task' }) }
+    );
+    const msgHandler = h.events.find(e => e.e === 'message:text')?.fn || h.events.find(e => e.eventName === 'message:text')?.handler;
+    const userId = `adv-showmore-${Date.now()}`;
+    await msgHandler({
+        message: { text: 'what should I do today' },
+        chat: { id: userId },
+        from: { id: userId },
+        reply: async (msg, opts) => { replyOpts.push({ msg, opts }); },
+        editMessageText: async () => {}
+    });
+
+    // Check that reply included keyboard options
+    assert(replyOpts.length > 0, 'should have replied');
+    const lastReply = replyOpts[replyOpts.length - 1];
+    assert(lastReply.opts, 'should have options with keyboard');
+    assert(lastReply.opts.reply_markup, 'should have reply_markup');
+
+    // Check store for expansion data
+    const expansion = store.getPendingBriefingExpansion();
+    assert(expansion, 'should store briefing expansion');
+    assert.equal(expansion.kind, 'advisory');
+    assert.equal(expansion.orderedTasks.length, 2);
+    assert.equal(expansion.ranking.length, 2);
+    assert(expansion.expansionId, 'should have expansionId');
+
+    // Verify callback data matches advisory:more: prefix
+    const inlineKeyboard = lastReply.opts.reply_markup;
+    assert(inlineKeyboard, 'inline keyboard should be present');
+    // Clean up
+    await store.clearPendingBriefingExpansion();
 });
