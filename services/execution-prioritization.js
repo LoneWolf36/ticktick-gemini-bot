@@ -1,4 +1,6 @@
 import { containsSensitiveContent } from './shared-utils.js';
+import { USER_TZ } from './shared-utils.js';
+import { isSameLocalDate } from './date-utils.js';
 import {
     projectPolicy,
     resolveProjectCategory,
@@ -690,9 +692,7 @@ function assessCandidate(candidate, context) {
     const dueDate = candidate.dueDate || candidate.due || null;
     let dueTodayBoost = 0;
     if (dueDate && context.nowIso) {
-        const todayStr = context.nowIso.slice(0, 10);
-        const dueStr = String(dueDate).slice(0, 10);
-        if (dueStr === todayStr) {
+        if (isSameLocalDate(dueDate, context.nowIso, USER_TZ)) {
             dueTodayBoost = 8;
         }
     }

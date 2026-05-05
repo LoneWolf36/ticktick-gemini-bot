@@ -18,6 +18,23 @@ import {
 import { buildFreeformPipelineResultReceipt } from './pipeline-result-receipts.js';
 import { executeUndoBatch } from '../services/undo-executor.js';
 
+const GENERIC_RATIONALE_TEXTS = new Set([
+    'Strong alignment with current user-owned goals.',
+    'Strong career-signaling alignment with current user-owned goals.',
+    'Time-sensitive work that should move now.',
+    'Possible next candidate under degraded goal context.'
+]);
+
+function getDisplayRationale(text) {
+    if (!text) return null;
+    const value = String(text).trim();
+    if (!value) return null;
+    if (GENERIC_RATIONALE_TEXTS.has(value)) return null;
+    if (/^(Strong|Time-sensitive|Possible next candidate)/i.test(value)) return null;
+    if (value.length < 18) return null;
+    return value;
+}
+
 // Pending mutation clarification expiry: 10 minutes
 const MUTATION_CLARIFICATION_TTL_MS = 10 * 60 * 1000;
 
@@ -1164,6 +1181,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
             !expansion ||
             expansion.expansionId !== expansionId ||
             expansion.kind !== 'advisory' ||
+            (expansion.chatId != null && chatId == null) ||
             (expansion.chatId != null && chatId != null && expansion.chatId !== chatId)
         ) {
             await safeAnswerCallbackQuery(ctx, { text: '⚠️ Session expired. Ask again.' });
@@ -1172,15 +1190,15 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
         await safeAnswerCallbackQuery(ctx, { text: 'Loading full list…' });
         await store.clearPendingBriefingExpansion();
 
-        const lines = ['**All your ranked tasks:**', ''];
+        const lines = ['**Full priority list**', ''];
         const orderedTasks = expansion.orderedTasks || [];
         const ranking = expansion.ranking || [];
         for (let i = 0; i < orderedTasks.length; i++) {
             const task = orderedTasks[i];
             const decision = ranking.find(r => r.taskId === task.id);
-            const rationale = decision?.rationaleText ? `   ${decision.rationaleText}` : '';
             lines.push(`${i + 1}. **${task.title}**`);
-            if (rationale) lines.push(rationale);
+            const rationale = getDisplayRationale(decision?.rationaleText);
+            if (rationale) lines.push(`   ${rationale}`);
             lines.push('');
         }
         await replyWithMarkdown(ctx, lines.join('\n'));
@@ -1199,6 +1217,7 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
             !expansion ||
             expansion.expansionId !== expansionId ||
             expansion.kind !== 'briefing' ||
+            (expansion.chatId != null && chatId == null) ||
             (expansion.chatId != null && chatId != null && expansion.chatId !== chatId)
         ) {
             await safeAnswerCallbackQuery(ctx, { text: '⚠️ Session expired. Ask again.' });
@@ -1207,15 +1226,15 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
         await safeAnswerCallbackQuery(ctx, { text: 'Loading full list…' });
         await store.clearPendingBriefingExpansion();
 
-        const lines = ['**All your ranked tasks:**', ''];
+        const lines = ['**Full priority list**', ''];
         const orderedTasks = expansion.orderedTasks || [];
         const ranking = expansion.ranking || [];
         for (let i = 0; i < orderedTasks.length; i++) {
             const task = orderedTasks[i];
             const decision = ranking.find(r => r.taskId === task.id);
-            const rationale = decision?.rationaleText ? `   ${decision.rationaleText}` : '';
             lines.push(`${i + 1}. **${task.title}**`);
-            if (rationale) lines.push(rationale);
+            const rationale = getDisplayRationale(decision?.rationaleText);
+            if (rationale) lines.push(`   ${rationale}`);
             lines.push('');
         }
         await replyWithMarkdown(ctx, lines.join('\n'));

@@ -27,12 +27,14 @@ import {
     PRIORITY_LABEL,
     retryWithBackoff,
     isFollowUpMessage,
-    answerCallbackQueryBestEffort
+    answerCallbackQueryBestEffort,
+    USER_TZ
 } from '../services/shared-utils.js';
 import { buildFreeformPipelineResultReceipt } from './pipeline-result-receipts.js';
 import { formatPipelineFailure, executeUndoBatch } from '../services/undo-executor.js';
 import { logSummarySurfaceEvent } from '../services/summary-surfaces/index.js';
 import { formatBusyLockMessage } from '../services/operation-receipt.js';
+import { isSameLocalDate } from '../services/date-utils.js';
 import {
     createGoalThemeProfile,
     inferPriorityLabelFromTask,
@@ -59,6 +61,74 @@ import { detectBehavioralPatterns } from '../services/behavioral-patterns.js';
  */
 export function registerCommands(bot, ticktick, gemini, adapter, pipeline, config = {}) {
     const { autoApplyLifeAdmin = false, autoApplyMode = 'metadata-only' } = config;
+    const briefingInFlightByChatKey = new Set();
+
+    const GENERIC_RATIONALE_TEXTS = new Set([
+        'Strong alignment with current user-owned goals.',
+        'Strong career-signaling alignment with current user-owned goals.',
+        'Time-sensitive work that should move now.',
+        'Possible next candidate under degraded goal context.'
+    ]);
+
+    function isDisplaySafeRationale(text) {
+        if (!text) return false;
+        const value = String(text).trim();
+        if (!value) return false;
+        if (GENERIC_RATIONALE_TEXTS.has(value)) return false;
+        if (/^(Strong|Time-sensitive|Possible next candidate)/i.test(value)) return false;
+        if (value.length < 18) return false;
+        return true;
+    }
+
+    function getDisplayRationale(text) {
+        return isDisplaySafeRationale(text) ? String(text).trim() : null;
+    }
+
+    function buildAdvisoryDisplayTasks(orderedTasks) {
+        const displayTasks = [];
+        let lowPriorityCount = 0;
+        for (const task of orderedTasks) {
+            if ((Number(task?.priority) || 0) >= 3) {
+                displayTasks.push(task);
+                continue;
+            }
+            if (lowPriorityCount < 2) {
+                displayTasks.push(task);
+                lowPriorityCount += 1;
+            }
+        }
+        return displayTasks;
+    }
+
+    function buildAdvisoryLines(orderedTasks, ranking, referenceDate, timezone) {
+        const lines = ['**🌅 PRIORITY BRIEFING**', ''];
+        const dueToday = [];
+        const nextUp = [];
+        for (const task of orderedTasks) {
+            if (task?.dueDate && isSameLocalDate(task.dueDate, referenceDate, timezone)) dueToday.push(task);
+            else nextUp.push(task);
+        }
+        const sections = [
+            ['Due today', dueToday],
+            ['Next up', nextUp]
+        ];
+        let firstTaskTitle = null;
+        for (const [label, tasks] of sections) {
+            if (tasks.length === 0) continue;
+            const displayTasks = buildAdvisoryDisplayTasks(tasks);
+            lines.push(`**${label} (${displayTasks.length})**`);
+            for (const task of displayTasks) {
+                if (!firstTaskTitle) firstTaskTitle = task.title;
+                const decision = ranking.find(d => d.taskId === task.id);
+                const rationale = getDisplayRationale(decision?.rationaleText);
+                lines.push(`• **${task.title}**`);
+                if (rationale) lines.push(`  ${rationale}`);
+            }
+            lines.push('');
+        }
+        lines.push(`**Start with:** ${firstTaskTitle || 'the top task'}`);
+        return lines;
+    }
 
     const menuKeyboard = () =>
         new InlineKeyboard()
@@ -750,19 +820,26 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
     // ─── /briefing ────────────────────────────────────────────
     async function cmdBriefing(ctx) {
         if (!(await guardAccess(ctx))) return;
-        if (!ticktick.isAuthenticated()) {
-            await ctx.reply('🔴 TickTick not connected.');
+        const briefingKey = String(ctx.chat?.id ?? ctx.from?.id ?? 'default');
+        if (briefingInFlightByChatKey.has(briefingKey)) {
+            await ctx.reply('Briefing already in progress — I’ll send it here when ready.');
             return;
         }
-        if (gemini.isQuotaExhausted()) {
-            await replyWithMarkdown(ctx, buildQuotaExhaustedMessage(gemini));
-            return;
-        }
-        await ctx.reply('🌅 Generating your briefing...');
-        const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
-        const workStyleMode = userId == null ? store.MODE_STANDARD : await store.getWorkStyleMode(userId);
-        const context = buildSummaryContext({ kind: 'briefing', userId, workStyleMode });
+        briefingInFlightByChatKey.add(briefingKey);
+        let context = null;
         try {
+            if (!ticktick.isAuthenticated()) {
+                await ctx.reply('🔴 TickTick not connected.');
+                return;
+            }
+            if (gemini.isQuotaExhausted()) {
+                await replyWithMarkdown(ctx, buildQuotaExhaustedMessage(gemini));
+                return;
+            }
+            await ctx.reply('🌅 Generating your briefing...');
+            const userId = ctx.from?.id ?? ctx.chat?.id ?? null;
+            const workStyleMode = userId == null ? store.MODE_STANDARD : await store.getWorkStyleMode(userId);
+            context = buildSummaryContext({ kind: 'briefing', userId, workStyleMode });
             const tasks = await adapter.listActiveTasks(true);
             const briefingResult = await gemini.generateDailyBriefingSummary(tasks, {
                 entryPoint: context.entryPoint,
@@ -790,12 +867,14 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             logSummarySurfaceEvent({ context, result: briefingResult, deliveryStatus: 'sent' });
             await store.updateStats({ lastDailyBriefing: new Date().toISOString() });
         } catch (err) {
-            logSummarySurfaceEvent({ context, deliveryStatus: 'failed', error: err });
+            if (context) logSummarySurfaceEvent({ context, deliveryStatus: 'failed', error: err });
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
                 await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
                 return;
             }
             await ctx.reply('Could not generate the briefing right now. Try again in a moment.');
+        } finally {
+            briefingInFlightByChatKey.delete(briefingKey);
         }
     }
 
@@ -1202,67 +1281,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     await ctx.reply('No ranked tasks available right now.');
                     return;
                 }
-                const now = new Date();
-                const todayStr = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}`;
-
-                // Priority-aware filtering: preserve ranking order, show ALL high-priority (>=3),
-                // cap low-priority at 2 per section.
-                function filterPriorityAware(tasks, maxLowPriority = 2) {
-                    const shown = [];
-                    let lowShown = 0;
-                    for (const task of tasks) {
-                        if ((task.priority || 0) >= 3) {
-                            shown.push(task);
-                            continue;
-                        }
-                        if (lowShown < maxLowPriority) {
-                            shown.push(task);
-                            lowShown++;
-                        }
-                    }
-                    return { shown, total: tasks.length, highCount: shown.filter((task) => (task.priority || 0) >= 3).length };
-                }
-
-                const dueToday = orderedTasks.filter(t => t.dueDate && t.dueDate.startsWith(todayStr));
-                const backlog = orderedTasks.filter(t => !(t.dueDate && t.dueDate.startsWith(todayStr)));
-
-                const dueTodayFiltered = filterPriorityAware(dueToday);
-                const backlogFiltered = filterPriorityAware(backlog);
-
-                const lines = ['**Here are your top priorities right now:**', ''];
-                let counter = 0;
-
-                if (dueTodayFiltered.shown.length > 0) {
-                    lines.push(`Due today (${dueTodayFiltered.total} total):`);
-                    for (const task of dueTodayFiltered.shown) {
-                        counter++;
-                        const decision = ranking.ranked.find(d => d.taskId === task.id);
-                        const rationale = decision?.rationaleText ? `   ${decision.rationaleText}` : '';
-                        lines.push(`${counter}. **${task.title}**`);
-                        if (rationale) lines.push(rationale);
-                        lines.push('');
-                    }
-                }
-
-                if (backlogFiltered.shown.length > 0) {
-                    lines.push(`Backlog (${backlogFiltered.total} total):`);
-                    for (const task of backlogFiltered.shown) {
-                        counter++;
-                        const decision = ranking.ranked.find(d => d.taskId === task.id);
-                        const rationale = decision?.rationaleText ? `   ${decision.rationaleText}` : '';
-                        lines.push(`${counter}. **${task.title}**`);
-                        if (rationale) lines.push(rationale);
-                        lines.push('');
-                    }
-                }
-
-                // Focus/context line from first task's rationale
-                const firstRanked = orderedTasks[0];
-                const firstDecision = firstRanked ? ranking.ranked.find(d => d.taskId === firstRanked.id) : null;
-                const focusLine = firstDecision?.rationaleText
-                    ? `Focus: ${firstDecision.rationaleText}`
-                    : "Focus on today's work first";
-                lines.push(focusLine);
+                const lines = buildAdvisoryLines(orderedTasks, ranking.ranked || [], new Date(), USER_TZ);
 
                 // Store expansion data and attach "Show more" button
                 const expansionId = `exp_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;

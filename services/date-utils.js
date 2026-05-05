@@ -25,6 +25,65 @@ export function coerceDate(value, fallback = new Date()) {
     return new Date();
 }
 
+function formatDateKeyFromParts(parts) {
+    if (!parts || !Number.isInteger(parts.year) || !Number.isInteger(parts.month) || !Number.isInteger(parts.day)) {
+        return null;
+    }
+
+    return `${String(parts.year).padStart(4, '0')}-${String(parts.month + 1).padStart(2, '0')}-${String(parts.day).padStart(2, '0')}`;
+}
+
+/**
+ * Returns a YYYY-MM-DD key for a value in a timezone.
+ * Invalid input returns null unless a valid fallback is provided.
+ *
+ * @param {Date|string|number|undefined|null} value
+ * @param {string} timezone
+ * @param {Date|string|number|undefined|null} [fallback=null]
+ * @returns {string|null}
+ */
+export function getLocalDateKey(value, timezone, fallback = null) {
+    const resolved =
+        Object.prototype.toString.call(value) === '[object Date]'
+            ? value
+            : typeof value === 'string' || typeof value === 'number'
+              ? new Date(value)
+              : null;
+    if (resolved && !Number.isNaN(resolved.getTime())) {
+        return formatDateKeyFromParts(getZonedDateParts(resolved, timezone));
+    }
+
+    if (fallback == null) {
+        return null;
+    }
+
+    const fallbackDate =
+        Object.prototype.toString.call(fallback) === '[object Date]'
+            ? fallback
+            : typeof fallback === 'string' || typeof fallback === 'number'
+              ? new Date(fallback)
+              : null;
+    if (!fallbackDate || Number.isNaN(fallbackDate.getTime())) {
+        return null;
+    }
+
+    return formatDateKeyFromParts(getZonedDateParts(fallbackDate, timezone));
+}
+
+/**
+ * Checks whether two values land on the same local calendar date.
+ *
+ * @param {Date|string|number|undefined|null} value
+ * @param {Date|string|number|undefined|null} reference
+ * @param {string} timezone
+ * @returns {boolean}
+ */
+export function isSameLocalDate(value, reference, timezone) {
+    const valueKey = getLocalDateKey(value, timezone);
+    const referenceKey = getLocalDateKey(reference, timezone);
+    return valueKey !== null && valueKey === referenceKey;
+}
+
 /**
  * Gets local date parts in a specific timezone using Intl.DateTimeFormat.
  * Returns structured date components for the given date at the given timezone.

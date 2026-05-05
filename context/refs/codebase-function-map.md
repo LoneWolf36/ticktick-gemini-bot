@@ -251,6 +251,13 @@ All magic numbers from the codebase are extracted here with documentation.</p>
 <dt><a href="#coerceDate">coerceDate(value, [fallback])</a> ⇒ <code>Date</code></dt>
 <dd><p>Coerces a value to a Date object.</p>
 </dd>
+<dt><a href="#getLocalDateKey">getLocalDateKey(value, timezone, [fallback])</a> ⇒ <code>string</code> | <code>null</code></dt>
+<dd><p>Returns a YYYY-MM-DD key for a value in a timezone.
+Invalid input returns null unless a valid fallback is provided.</p>
+</dd>
+<dt><a href="#isSameLocalDate">isSameLocalDate(value, reference, timezone)</a> ⇒ <code>boolean</code></dt>
+<dd><p>Checks whether two values land on the same local calendar date.</p>
+</dd>
 <dt><a href="#getZonedDateParts">getZonedDateParts(date, timezone)</a> ⇒ <code>Object</code></dt>
 <dd><p>Gets local date parts in a specific timezone using Intl.DateTimeFormat.
 Returns structured date components for the given date at the given timezone.</p>
@@ -1864,6 +1871,33 @@ Coerces a value to a Date object.
 | --- | --- | --- | --- |
 | value | <code>Date</code> \| <code>string</code> \| <code>number</code> \| <code>undefined</code> \| <code>null</code> |  | Value to coerce |
 | [fallback] | <code>Date</code> | <code>new Date()</code> | Fallback Date if coercion fails |
+
+<a name="getLocalDateKey"></a>
+
+## getLocalDateKey(value, timezone, [fallback]) ⇒ <code>string</code> \| <code>null</code>
+Returns a YYYY-MM-DD key for a value in a timezone.
+Invalid input returns null unless a valid fallback is provided.
+
+**Kind**: global function  
+
+| Param | Type | Default |
+| --- | --- | --- |
+| value | <code>Date</code> \| <code>string</code> \| <code>number</code> \| <code>undefined</code> \| <code>null</code> |  | 
+| timezone | <code>string</code> |  | 
+| [fallback] | <code>Date</code> \| <code>string</code> \| <code>number</code> \| <code>undefined</code> \| <code>null</code> | <code></code> | 
+
+<a name="isSameLocalDate"></a>
+
+## isSameLocalDate(value, reference, timezone) ⇒ <code>boolean</code>
+Checks whether two values land on the same local calendar date.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| value | <code>Date</code> \| <code>string</code> \| <code>number</code> \| <code>undefined</code> \| <code>null</code> | 
+| reference | <code>Date</code> \| <code>string</code> \| <code>number</code> \| <code>undefined</code> \| <code>null</code> | 
+| timezone | <code>string</code> | 
 
 <a name="getZonedDateParts"></a>
 

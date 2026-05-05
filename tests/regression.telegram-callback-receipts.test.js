@@ -1,8 +1,12 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
+import { execFile } from 'node:child_process';
+import { promisify } from 'node:util';
 
 import { registerCallbacks } from '../bot/callbacks.js';
 import * as store from '../services/store.js';
+
+const execFileAsync = promisify(execFile);
 
 function createBotHarness() {
     const handlers = [];
@@ -17,20 +21,24 @@ function createBotHarness() {
 
 function createCtx({ chatId = 1, userId = 1 } = {}) {
     const edits = [];
+    const callbackAnswers = [];
     return {
         ctx: {
             match: [],
-            chat: { id: chatId },
+            chat: chatId == null ? undefined : { id: chatId },
             from: { id: userId },
             reply: async (text, extra) => {
                 edits.push({ text, extra });
             },
-            answerCallbackQuery: async () => {},
+            answerCallbackQuery: async (payload) => {
+                callbackAnswers.push(payload);
+            },
             editMessageText: async (text, extra) => {
                 edits.push({ text, extra });
             }
         },
-        edits
+        edits,
+        callbackAnswers
     };
 }
 
@@ -349,6 +357,83 @@ test('advisory:more preserves ranking order and chat session', async () => {
     assert.equal(await store.getPendingBriefingExpansion(), null);
 });
 
+test('advisory:more rejects expired expansion without list reply', async () => {
+    await reset();
+    const { bot, handlers } = createCallbackBotHarness();
+    registerCallbacks(bot, {}, {});
+    const handler = handlers.find(({ pattern }) => pattern.toString().includes('advisory:more')).handler;
+    const { ctx, edits, callbackAnswers } = createCtx({ chatId: 99887 });
+    ctx.match = ['advisory:more:missing', 'missing'];
+
+    await handler(ctx);
+
+    assert.equal(edits.length, 0);
+    assert.match(String(callbackAnswers.at(-1)?.text || ''), /Session expired/);
+});
+
+test('advisory:more rejects missing chat when stored chatId exists', async () => {
+    await reset();
+    await store.setPendingBriefingExpansion({
+        expansionId: 'exp_test_3',
+        kind: 'advisory',
+        chatId: 44444,
+        orderedTasks: [{ id: 'task-1', title: 'Task one', priority: 3, dueDate: null }],
+        ranking: [{ taskId: 'task-1', score: 10, rationaleText: 'reason' }]
+    });
+
+    const { bot, handlers } = createCallbackBotHarness();
+    registerCallbacks(bot, {}, {});
+    const handler = handlers.find(({ pattern }) => pattern.toString().includes('advisory:more')).handler;
+    const { ctx, edits, callbackAnswers } = createCtx({ chatId: null });
+    ctx.match = ['advisory:more:exp_test_3', 'exp_test_3'];
+
+    await handler(ctx);
+
+    assert.equal(edits.length, 0);
+    assert.match(String(callbackAnswers.at(-1)?.text || ''), /Session expired/);
+    assert.ok(store.getPendingBriefingExpansion(), 'session should remain on rejection');
+});
+
+test('advisory:more rejects unauthorized callback', async () => {
+    const script = `
+        import assert from 'node:assert/strict';
+        import { registerCallbacks } from './bot/callbacks.js';
+        import * as store from './services/store.js';
+
+        await store.resetAll();
+        await store.setPendingBriefingExpansion({
+            expansionId: 'exp_test_4',
+            kind: 'advisory',
+            chatId: 99999,
+            orderedTasks: [{ id: 'task-1', title: 'Task one', priority: 3, dueDate: null }],
+            ranking: [{ taskId: 'task-1', score: 10, rationaleText: 'reason' }]
+        });
+
+        const handlers = [];
+        const bot = { callbackQuery(pattern, handler) { handlers.push({ pattern, handler }); return bot; } };
+        registerCallbacks(bot, {}, {});
+        const handler = handlers.find(({ pattern }) => pattern.toString().includes('advisory:more')).handler;
+        const edits = [];
+        const callbackAnswers = [];
+        await handler({
+            match: ['advisory:more:exp_test_4', 'exp_test_4'],
+            chat: { id: 1 },
+            from: { id: 1 },
+            reply: async (text, extra) => edits.push({ text, extra }),
+            editMessageText: async (text, extra) => edits.push({ text, extra }),
+            answerCallbackQuery: async (payload) => callbackAnswers.push(payload)
+        });
+
+        assert.equal(edits.length, 0);
+        assert.match(String(callbackAnswers.at(-1)?.text || ''), /Unauthorized/);
+    `;
+
+    await execFileAsync(process.execPath, ['--input-type=module', '-e', script], {
+        cwd: new URL('..', import.meta.url),
+        env: { ...process.env, TELEGRAM_CHAT_ID: '99999' }
+    });
+});
+
 test('briefing:more rejects chat mismatch', async () => {
     await reset();
     await store.setPendingBriefingExpansion({
@@ -369,4 +454,34 @@ test('briefing:more rejects chat mismatch', async () => {
 
     assert.equal(edits.length, 0);
     assert.ok(store.getPendingBriefingExpansion(), 'session should remain until valid claim');
+});
+
+test('briefing:more hides generic rationale but keeps custom rationale', async () => {
+    await reset();
+    await store.setPendingBriefingExpansion({
+        expansionId: 'exp_test_5',
+        kind: 'briefing',
+        chatId: 33333,
+        orderedTasks: [
+            { id: 'task-1', title: 'Task one', priority: 3, dueDate: null },
+            { id: 'task-2', title: 'Task two', priority: 3, dueDate: null }
+        ],
+        ranking: [
+            { taskId: 'task-1', score: 10, rationaleText: 'Strong alignment with current user-owned goals.' },
+            { taskId: 'task-2', score: 9, rationaleText: 'Custom rationale worth showing.' }
+        ]
+    });
+
+    const { bot, handlers } = createCallbackBotHarness();
+    registerCallbacks(bot, {}, {});
+    const handler = handlers.find(({ pattern }) => pattern.toString().includes('briefing:more')).handler;
+    const { ctx, edits } = createCtx({ chatId: 33333 });
+    ctx.match = ['briefing:more:exp_test_5', 'exp_test_5'];
+
+    await handler(ctx);
+
+    assert.match(edits.at(-1).text, /<b>Full priority list<\/b>/);
+    assert.match(edits.at(-1).text, /Task one/);
+    assert.doesNotMatch(edits.at(-1).text, /Strong alignment with current user-owned goals\./);
+    assert.match(edits.at(-1).text, /Custom rationale worth showing\./);
 });
