@@ -151,6 +151,9 @@ Centralized to prevent duplication across pipeline and shared-utils.</p>
 <dt><a href="#MUTATION_CONFIRMATION_TTL_MS">MUTATION_CONFIRMATION_TTL_MS</a></dt>
 <dd><p>Mutation confirmation TTL: 10 minutes</p>
 </dd>
+<dt><a href="#FREEFORM_MESSAGE_IDEMPOTENCY_TTL_MS">FREEFORM_MESSAGE_IDEMPOTENCY_TTL_MS</a></dt>
+<dd><p>Freeform duplicate suppression TTL: 10 minutes.</p>
+</dd>
 <dt><a href="#CHECKLIST_CLARIFICATION_TTL_MS">CHECKLIST_CLARIFICATION_TTL_MS</a></dt>
 <dd><p>Checklist clarification TTL: 24 hours</p>
 </dd>
@@ -856,6 +859,17 @@ Preserves the pending snapshot, flags the processed entry stale, and removes it 
 </dd>
 <dt><a href="#getNextPendingTask">getNextPendingTask()</a> ⇒ <code>Array</code> | <code>null</code></dt>
 <dd><p>Return the oldest pending task (by sentAt).</p>
+</dd>
+<dt><a href="#buildFreeformIdempotencyKey">buildFreeformIdempotencyKey(payload)</a> ⇒ <code>string</code> | <code>null</code></dt>
+<dd><p>Build a durable idempotency key for a Telegram freeform update.
+Prefers chatId + messageId. Falls back to updateId when messageId is missing.</p>
+</dd>
+<dt><a href="#claimFreeformMessageIdempotency">claimFreeformMessageIdempotency(payload)</a> ⇒ <code>Promise.&lt;(boolean|null)&gt;</code></dt>
+<dd><p>Claim a freeform message idempotency key.
+Returns false for duplicates; null when no durable key can be built.</p>
+</dd>
+<dt><a href="#finalizeFreeformMessageIdempotency">finalizeFreeformMessageIdempotency(payload, succeeded)</a> ⇒ <code>Promise.&lt;void&gt;</code></dt>
+<dd><p>Mark a claimed freeform message as processed or clear it on failure.</p>
 </dd>
 <dt><a href="#getPendingBriefingExpansion">getPendingBriefingExpansion()</a> ⇒ <code>Object</code> | <code>null</code></dt>
 <dd><p>Get pending briefing/advisory expansion payload if it has not expired.</p>
@@ -1697,6 +1711,12 @@ Centralized to prevent duplication across pipeline and shared-utils.
 
 ## MUTATION\_CONFIRMATION\_TTL\_MS
 Mutation confirmation TTL: 10 minutes
+
+**Kind**: global constant  
+<a name="FREEFORM_MESSAGE_IDEMPOTENCY_TTL_MS"></a>
+
+## FREEFORM\_MESSAGE\_IDEMPOTENCY\_TTL\_MS
+Freeform duplicate suppression TTL: 10 minutes.
 
 **Kind**: global constant  
 <a name="CHECKLIST_CLARIFICATION_TTL_MS"></a>
@@ -3973,6 +3993,45 @@ Return the oldest pending task (by sentAt).
 
 **Kind**: global function  
 **Returns**: <code>Array</code> \| <code>null</code> - [taskId, data] or null  
+<a name="buildFreeformIdempotencyKey"></a>
+
+## buildFreeformIdempotencyKey(payload) ⇒ <code>string</code> \| <code>null</code>
+Build a durable idempotency key for a Telegram freeform update.
+Prefers chatId + messageId. Falls back to updateId when messageId is missing.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| payload | <code>Object</code> | 
+| payload.chatId | <code>string</code> \| <code>number</code> \| <code>null</code> | 
+| payload.messageId | <code>string</code> \| <code>number</code> \| <code>null</code> | 
+| payload.updateId | <code>string</code> \| <code>number</code> \| <code>null</code> | 
+
+<a name="claimFreeformMessageIdempotency"></a>
+
+## claimFreeformMessageIdempotency(payload) ⇒ <code>Promise.&lt;(boolean\|null)&gt;</code>
+Claim a freeform message idempotency key.
+Returns false for duplicates; null when no durable key can be built.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| payload | <code>Object</code> | 
+
+<a name="finalizeFreeformMessageIdempotency"></a>
+
+## finalizeFreeformMessageIdempotency(payload, succeeded) ⇒ <code>Promise.&lt;void&gt;</code>
+Mark a claimed freeform message as processed or clear it on failure.
+
+**Kind**: global function  
+
+| Param | Type |
+| --- | --- |
+| payload | <code>Object</code> | 
+| succeeded | <code>boolean</code> | 
+
 <a name="getPendingBriefingExpansion"></a>
 
 ## getPendingBriefingExpansion() ⇒ <code>Object</code> \| <code>null</code>

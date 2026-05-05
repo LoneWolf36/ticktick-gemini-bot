@@ -1394,8 +1394,20 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
         }
 
         // New pipeline path. Note: we leave gemini check in for the coach fallback optionally.
-        await ctx.reply('Working on that...');
+        const freeformIdempotencyPayload = {
+            chatId: ctx.chat?.id ?? null,
+            messageId: ctx.message?.message_id ?? null,
+            updateId: ctx.update?.update_id ?? null
+        };
+        const freeformClaimed = await store.claimFreeformMessageIdempotency(freeformIdempotencyPayload);
+        if (freeformClaimed === false) {
+            return;
+        }
+
+        const shouldFinalizeFreeform = freeformClaimed === true;
+        let freeformSucceeded = false;
         try {
+            await ctx.reply('Working on that...');
             // Check for pending checklist clarification resume.
             const pendingChecklist = store.getPendingChecklistClarification();
             if (pendingChecklist) {
@@ -1553,6 +1565,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             const result = await processPipelineMessage(userMessage, pipelineOptions);
 
             if (result.type === 'task') {
+                freeformSucceeded = true;
                 const { text: receipt, replyExtra } = await buildFreeformPipelineResultReceipt({
                     result,
                     store,
@@ -1592,6 +1605,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                 }
                 await ctx.reply(result.confirmationText || 'Got it — no actionable tasks detected.');
             } else if (result.type === 'clarification') {
+                freeformSucceeded = true;
                 // Determine clarification type: checklist vs mutation
                 const reason = result.clarification?.reason || '';
 
@@ -1649,12 +1663,14 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
                     }
                 }
             } else if (result.type === 'pending-confirmation') {
+                freeformSucceeded = true;
                 // Non-exact match confirmation gate
                 const userId = ctx.from?.id;
                 await store.setPendingMutationConfirmation({
                     originalMessage: userMessage,
                     matchedTask: result.pendingConfirmation?.matchedTask || null,
                     actionType: result.pendingConfirmation?.actionType || null,
+                    confirmedAction: result.pendingConfirmation?.confirmedAction || null,
                     targetQuery: result.pendingConfirmation?.targetQuery || null,
                     matchConfidence: result.pendingConfirmation?.matchConfidence || null,
                     matchType: result.pendingConfirmation?.matchType || null,
@@ -1677,6 +1693,7 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             } else if (result.type === 'error') {
                 await ctx.reply(formatPipelineFailure(result));
             }
+            freeformSucceeded = true;
         } catch (err) {
             if (err.isAuthError || err.message === 'TICKTICK_TOKEN_EXPIRED') {
                 await ctx.reply('🔴 TickTick disconnected (token expired). Please re-authenticate.');
@@ -1684,6 +1701,10 @@ export function registerCommands(bot, ticktick, gemini, adapter, pipeline, confi
             }
             console.error('Pipeline error:', err.message);
             await ctx.reply('Something went wrong. Try again, or run /status.');
+        } finally {
+            if (shouldFinalizeFreeform) {
+                await store.finalizeFreeformMessageIdempotency(freeformIdempotencyPayload, freeformSucceeded);
+            }
         }
     });
 }

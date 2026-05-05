@@ -72,6 +72,7 @@ const DEFAULT_STATE = {
     pendingTasks: {}, // Analyzed + sent to Telegram, awaiting user review
     pendingMutationClarification: null, // Pending mutation clarification state for free-form handler
     pendingMutationConfirmation: null, // Pending destructive/non-exact mutation confirmation gate
+    processedFreeformMessages: {}, // Durable freeform idempotency markers keyed by chat/message/update id
     pendingChecklistClarification: null, // Pending checklist vs separate-tasks clarification
     pendingBriefingExpansion: null, // Pending "Show more" expansion data for advisory/briefing
     deferredPipelineIntents: [], // Pending deferred pipeline intents for API-unavailable recovery
@@ -180,6 +181,7 @@ async function loadFromRedis() {
                 pendingTasks: rest.pendingTasks || {},
                 pendingMutationClarification: rest.pendingMutationClarification || null,
                 pendingMutationConfirmation: rest.pendingMutationConfirmation || null,
+                processedFreeformMessages: rest.processedFreeformMessages || {},
                 pendingChecklistClarification: rest.pendingChecklistClarification || null,
                 deferredPipelineIntents: Array.isArray(rest.deferredPipelineIntents)
                     ? rest.deferredPipelineIntents
@@ -259,6 +261,7 @@ function loadFromFile() {
             pendingTasks: rest.pendingTasks || {},
             pendingMutationClarification: rest.pendingMutationClarification || null,
             pendingMutationConfirmation: rest.pendingMutationConfirmation || null,
+            processedFreeformMessages: rest.processedFreeformMessages || {},
             pendingChecklistClarification: rest.pendingChecklistClarification || null,
             deferredPipelineIntents: Array.isArray(rest.deferredPipelineIntents) ? rest.deferredPipelineIntents : [],
             failedDeferredIntents: Array.isArray(rest.failedDeferredIntents) ? rest.failedDeferredIntents : [],
@@ -1074,6 +1077,105 @@ export async function clearPendingMutationConfirmation() {
     state.pendingMutationConfirmation = null;
     await save();
     console.log('[MutationConfirmation] Pending state cleared');
+}
+
+// ─── Freeform Message Idempotency ─────────────────────────────
+
+/** Freeform duplicate suppression TTL: 10 minutes. */
+export const FREEFORM_MESSAGE_IDEMPOTENCY_TTL_MS = 10 * 60 * 1000;
+
+/**
+ * Build a durable idempotency key for a Telegram freeform update.
+ * Prefers chatId + messageId. Falls back to updateId when messageId is missing.
+ *
+ * @param {Object} payload
+ * @param {string|number|null} payload.chatId
+ * @param {string|number|null} payload.messageId
+ * @param {string|number|null} payload.updateId
+ * @returns {string|null}
+ */
+export function buildFreeformIdempotencyKey({ chatId = null, messageId = null, updateId = null } = {}) {
+    if (chatId != null && messageId != null) return `chat:${chatId}:message:${messageId}`;
+    if (updateId != null) return `update:${updateId}`;
+    return null;
+}
+
+function normalizeFreeformIdempotencyMap(value) {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) return {};
+    return Object.fromEntries(
+        Object.entries(value).filter(([, entry]) => entry && typeof entry === 'object' && !Array.isArray(entry))
+    );
+}
+
+function isFreeformEntryExpired(entry, nowMs = Date.now()) {
+    const createdAtMs = entry?.createdAt ? new Date(entry.createdAt).getTime() : 0;
+    return createdAtMs > 0 && nowMs - createdAtMs > FREEFORM_MESSAGE_IDEMPOTENCY_TTL_MS;
+}
+
+/**
+ * Claim a freeform message idempotency key.
+ * Returns false for duplicates; null when no durable key can be built.
+ *
+ * @param {Object} payload
+ * @returns {Promise<boolean|null>}
+ */
+export async function claimFreeformMessageIdempotency(payload = {}) {
+    const key = buildFreeformIdempotencyKey(payload);
+    if (!key) return null;
+
+    const nowIso = new Date().toISOString();
+    const existing = state.processedFreeformMessages?.[key];
+    if (existing && !isFreeformEntryExpired(existing)) {
+        return false;
+    }
+
+    if (!state.processedFreeformMessages || typeof state.processedFreeformMessages !== 'object') {
+        state.processedFreeformMessages = {};
+    }
+    state.processedFreeformMessages[key] = {
+        createdAt: nowIso,
+        status: 'processing'
+    };
+    await save();
+    return true;
+}
+
+/**
+ * Mark a claimed freeform message as processed or clear it on failure.
+ *
+ * @param {Object} payload
+ * @param {boolean} succeeded
+ * @returns {Promise<void>}
+ */
+export async function finalizeFreeformMessageIdempotency(payload = {}, succeeded = true) {
+    const key = buildFreeformIdempotencyKey(payload);
+    if (!key) return;
+    if (!state.processedFreeformMessages || typeof state.processedFreeformMessages !== 'object') {
+        state.processedFreeformMessages = {};
+    }
+    if (succeeded) {
+        state.processedFreeformMessages[key] = {
+            createdAt: state.processedFreeformMessages[key]?.createdAt || new Date().toISOString(),
+            status: 'processed'
+        };
+    } else {
+        delete state.processedFreeformMessages[key];
+    }
+    await save();
+}
+
+export async function pruneFreeformMessageIdempotency(now = new Date()) {
+    if (!state.processedFreeformMessages || typeof state.processedFreeformMessages !== 'object') return 0;
+    let removed = 0;
+    const nowMs = now.getTime();
+    for (const [key, entry] of Object.entries(state.processedFreeformMessages)) {
+        if (isFreeformEntryExpired(entry, nowMs)) {
+            delete state.processedFreeformMessages[key];
+            removed += 1;
+        }
+    }
+    if (removed > 0) await save();
+    return removed;
 }
 
 // ─── Pending Briefing Expansion ────────────────────────────────

@@ -791,6 +791,12 @@ export function registerCallbacks(bot, adapter, pipeline, { storeApi = store } =
 
             const result = await processPipelineMessage(pending.originalMessage, {
                 existingTask: resolvedTask,
+                confirmedAction: {
+                    taskId: pending.matchedTask.taskId,
+                    actionType: pending.actionType,
+                    title: pending.matchedTask.title,
+                    projectId: pending.matchedTask.projectId || null
+                },
                 entryPoint: pending.entryPoint || 'telegram:confirmation-resume',
                 mode: pending.mode || 'interactive',
                 workStyleMode: pending.workStyleMode || null,

@@ -207,6 +207,48 @@ test('mut:confirm keeps applied receipt when undo persistence fails', async () =
     assert.equal(store.getLastUndoEntry(), null);
 });
 
+test('mut:confirm passes confirmedAction scope to pipeline', async () => {
+    await reset();
+    const chatId = 22334;
+    const userId = 22334;
+    await store.setPendingMutationConfirmation({
+        originalMessage: 'complete weekly report',
+        matchedTask: { taskId: 'task-confirm-scope', projectId: 'inbox', title: 'Weekly report' },
+        actionType: 'complete',
+        chatId,
+        userId
+    });
+
+    const { bot, handlers } = createBotHarness();
+    const pipelineCalls = [];
+    const pipeline = {
+        processMessage: async (message, options) => {
+            pipelineCalls.push({ message, options });
+            return {
+                type: 'task',
+                confirmationText: 'Completed 1 task',
+                actions: [{ type: 'complete', taskId: 'task-confirm-scope', projectId: 'inbox' }],
+                results: [{ status: 'succeeded', action: { type: 'complete', taskId: 'task-confirm-scope' } }]
+            };
+        }
+    };
+    const adapter = {
+        listActiveTasks: async () => [{ id: 'task-confirm-scope', title: 'Weekly report', projectId: 'inbox', status: 0 }],
+        listProjects: async () => [{ id: 'inbox', name: 'Inbox' }]
+    };
+
+    registerCallbacks(bot, adapter, pipeline);
+    const confirmHandler = handlers.find(({ pattern }) => pattern.toString().includes('mut:confirm$')).handler;
+    const { ctx } = createCtx({ chatId, userId });
+    ctx.match = ['mut:confirm'];
+
+    await confirmHandler(ctx);
+
+    assert.equal(pipelineCalls.length, 1);
+    assert.equal(pipelineCalls[0].options.confirmedAction.taskId, 'task-confirm-scope');
+    assert.equal(pipelineCalls[0].options.confirmedAction.actionType, 'complete');
+});
+
 test('mut:pick keeps undo button when some undo entries persist', async () => {
     await reset();
     const chatId = 77889;

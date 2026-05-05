@@ -135,6 +135,31 @@ function hasMutationPayload(intent) {
     );
 }
 
+function getActionDedupKey(action) {
+    const taskId = action?.taskId || action?.resolvedTaskId || null;
+    if (!taskId || !action?.type) return null;
+    if (!['complete', 'delete'].includes(action.type)) return null;
+    return `${action.type}:${taskId}`;
+}
+
+function dedupeExecutableActions(actions = [], { confirmedAction = null } = {}) {
+    const filtered = Array.isArray(actions) ? [...actions] : [];
+    const scopedActions = confirmedAction?.taskId && confirmedAction?.actionType
+        ? filtered.filter(
+              (action) => action?.type === confirmedAction.actionType && (action?.taskId || action?.resolvedTaskId) === confirmedAction.taskId
+          )
+        : filtered;
+
+    const seen = new Set();
+    return scopedActions.filter((action) => {
+        const key = getActionDedupKey(action);
+        if (!key) return true;
+        if (seen.has(key)) return false;
+        seen.add(key);
+        return true;
+    });
+}
+
 function repairMutationShapedCreateIntents(intents, userMessage) {
     if (!Array.isArray(intents) || intents.length !== 1) return intents;
     const [intent] = intents;
@@ -1950,7 +1975,11 @@ export function createPipeline({
 
             const validActions = normalizedActions.filter((a) => a.valid);
             const invalidActions = normalizedActions.filter((a) => !a.valid);
-            const blockedMutationDestinationActions = validActions.filter(
+            const dedupedActions = dedupeExecutableActions(validActions, {
+                confirmedAction: options.confirmedAction || null
+            });
+            const dedupedActionCount = dedupedActions.length;
+            const blockedMutationDestinationActions = dedupedActions.filter(
                 (action) =>
                     ['update', 'complete', 'delete'].includes(action.type) &&
                     action.projectHint &&
@@ -1960,7 +1989,7 @@ export function createPipeline({
             context = updatePipelineContext(context, (draft) => {
                 draft.lifecycle.normalize.status = 'success';
                 draft.lifecycle.normalize.normalizedActions = snapshotPrivacySafePipelineValue(normalizedActions);
-                draft.lifecycle.normalize.validActions = snapshotPrivacySafePipelineValue(validActions);
+                draft.lifecycle.normalize.validActions = snapshotPrivacySafePipelineValue(dedupedActions);
                 draft.lifecycle.normalize.invalidActions = snapshotPrivacySafePipelineValue(invalidActions);
                 draft.lifecycle.validationFailures = snapshotPipelineValue(
                     invalidActions.map((a) => a.validationErrors).flat()
@@ -1981,6 +2010,7 @@ export function createPipeline({
                 metadata: {
                     normalizedCount: normalizedActions.length,
                     validCount: validActions.length,
+                    dedupedCount: dedupedActionCount,
                     invalidCount: invalidActions.length,
                     checklistActionCount: validActions.filter(
                         (a) => Array.isArray(a.checklistItems) && a.checklistItems.length > 0
@@ -2009,7 +2039,7 @@ export function createPipeline({
                 );
             }
 
-            if (validActions.length === 0 && invalidActions.length > 0) {
+            if (dedupedActions.length === 0 && invalidActions.length > 0) {
                 const failureResult = buildFailureResult(context, {
                     failureClass: FAILURE_CLASSES.VALIDATION,
                     stage: 'normalize',
@@ -2040,7 +2070,7 @@ export function createPipeline({
                 return attachPipelineContext(failureResult, context);
             }
 
-            if (validActions.length === 0) {
+            if (dedupedActions.length === 0) {
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'non-task',
                     status: 'success',
@@ -2116,7 +2146,7 @@ export function createPipeline({
                 );
             }
 
-            const pendingCreateDestination = validActions.find(
+            const pendingCreateDestination = dedupedActions.find(
                 (action) => action.type === 'create' && action.projectResolution?.confidence === 'ambiguous'
             );
             if (pendingCreateDestination) {
@@ -2173,7 +2203,7 @@ export function createPipeline({
                 );
             }
 
-            const createActionsMissingDestination = validActions.filter(
+            const createActionsMissingDestination = dedupedActions.filter(
                 (action) => action.type === 'create' && !action.projectId
             );
             if (createActionsMissingDestination.length > 0) {
@@ -2242,7 +2272,7 @@ export function createPipeline({
             }
 
             if (isDryRun) {
-                const dryRunConfirmationText = `Preview only — nothing changed. ${validActions.length} action(s) ready for review.`;
+                const dryRunConfirmationText = `Preview only — nothing changed. ${dedupedActions.length} action(s) ready for review.`;
                 context = finalizePipelineContext(context, requestStartedAt, {
                     resultType: 'preview',
                     status: 'success',
@@ -2255,7 +2285,7 @@ export function createPipeline({
                     durationMs: Date.now() - requestStartedAt,
                     metadata: {
                         type: 'preview',
-                        actionCount: validActions.length,
+                        actionCount: dedupedActions.length,
                         dryRun: true,
                         changed: false
                     }
@@ -2264,7 +2294,7 @@ export function createPipeline({
                     status: 'preview',
                     scope: 'preview',
                     command: resolveReceiptCommand(context),
-                    operationType: inferOperationType(validActions),
+                    operationType: inferOperationType(dedupedActions),
                     nextAction: 'apply',
                     changed: false,
                     dryRun: true,
@@ -2273,14 +2303,14 @@ export function createPipeline({
                     message: dryRunConfirmationText
                 });
                 await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
-                    actionCount: validActions.length
+                    actionCount: dedupedActions.length
                 });
 
                 return attachPipelineContext(
                     {
                         type: 'preview',
                         status: 'preview',
-                        actions: validActions,
+                        actions: dedupedActions,
                         results: [],
                         errors: [],
                         confirmationText: dryRunConfirmationText,
@@ -2306,7 +2336,7 @@ export function createPipeline({
             }
 
             const skippedActions = [];
-            const executableActions = validActions.filter((a) => {
+            const executableActions = dedupedActions.filter((a) => {
                 if (blockedActionTypes.has(a.type)) {
                     skippedActions.push(a);
                     return false;
@@ -2366,7 +2396,7 @@ export function createPipeline({
                     status: deferredIntent ? 'deferred' : 'failed',
                     scope: deferredIntent ? 'deferred_queue' : 'system',
                     command: resolveReceiptCommand(context),
-                    operationType: inferOperationType(validActions),
+                    operationType: inferOperationType(dedupedActions),
                     nextAction: deferredIntent ? 'wait' : 'retry',
                     changed: !!deferredIntent,
                     dryRun: isDryRun,
@@ -2383,7 +2413,7 @@ export function createPipeline({
                     rolledBack: !!executionResult.terminalFailure.rolledBack
                 };
                 await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
-                    actionCount: validActions.length
+                    actionCount: dedupedActions.length
                 });
 
                 context = finalizePipelineContext(context, requestStartedAt, {
@@ -2451,7 +2481,7 @@ export function createPipeline({
                           status: 'applied',
                           scope: 'ticktick_live',
                           command: resolveReceiptCommand(context),
-                          operationType: inferOperationType(validActions),
+                          operationType: inferOperationType(dedupedActions),
                           nextAction: 'none',
                           changed: true,
                           dryRun: false,
@@ -2464,7 +2494,7 @@ export function createPipeline({
                           status: skippedActions.length > 0 ? 'blocked' : 'failed',
                           scope: 'system',
                           command: resolveReceiptCommand(context),
-                          operationType: inferOperationType(validActions),
+                          operationType: inferOperationType(dedupedActions),
                           nextAction: skippedActions.length > 0 ? 'retry' : 'none',
                           changed: false,
                           dryRun: false,
@@ -2477,7 +2507,7 @@ export function createPipeline({
                       }
             );
             await emitTerminalOperationTelemetry(telemetry, context, terminalReceipt, {
-                actionCount: validActions.length
+                actionCount: dedupedActions.length
             });
             context = finalizePipelineContext(context, requestStartedAt, {
                 resultType: 'task',
@@ -2493,7 +2523,7 @@ export function createPipeline({
                 durationMs: Date.now() - requestStartedAt,
                 metadata: {
                     type: 'task',
-                    actionCount: validActions.length,
+                    actionCount: dedupedActions.length,
                     checklistActionCount: validActions.filter(
                         (a) => Array.isArray(a.checklistItems) && a.checklistItems.length > 0
                     ).length
@@ -2503,7 +2533,7 @@ export function createPipeline({
             return attachPipelineContext(
                 {
                     type: 'task',
-                    actions: validActions,
+                    actions: dedupedActions,
                     results: executionResult.results,
                     errors: allErrors,
                     skippedActions,

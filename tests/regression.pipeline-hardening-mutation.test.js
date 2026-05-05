@@ -1278,8 +1278,8 @@ test('WP07 T072: mixed create+mutation request is rejected', async () => {
 test('WP07 T072: small multi-mutation request is allowed for lightweight actions', async () => {
     const harness = createPipelineHarness({
         intents: [
-            { type: 'complete', title: 'Task A', targetQuery: 'task A', confidence: 0.9 },
-            { type: 'complete', title: 'Task B', targetQuery: 'task B', confidence: 0.9 }
+            { type: 'complete', taskId: 'task-a-01', projectId: 'inbox', title: 'Task A', confidence: 0.9 },
+            { type: 'complete', taskId: 'task-b-01', projectId: 'inbox', title: 'Task B', confidence: 0.9 }
         ],
         activeTasks: [
             { id: 'task-a-01', title: 'Task A', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
@@ -1291,6 +1291,46 @@ test('WP07 T072: small multi-mutation request is allowed for lightweight actions
 
     assert.equal(result.type, 'task');
     assert.equal(harness.adapterCalls.complete.length, 2);
+});
+
+test('WP07 T072: same-task distinct updates stay separate', async () => {
+    const harness = createPipelineHarness({
+        intents: [
+            { type: 'update', taskId: 'task-up-1', projectId: 'inbox', title: 'Task A', dueDate: 'tomorrow', confidence: 0.9 },
+            { type: 'update', taskId: 'task-up-1', projectId: 'inbox', title: 'Task A', priority: 5, confidence: 0.9 }
+        ],
+        activeTasks: [
+            { id: 'task-up-1', title: 'Task A', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 }
+        ]
+    });
+
+    const result = await harness.processMessage('update task a twice');
+
+    assert.equal(result.type, 'task');
+    assert.equal(harness.adapterCalls.update.length, 2);
+});
+
+test('WP07 T072: confirmed action ignores unrelated blocked destination action', async () => {
+    const harness = createPipelineHarness({
+        intents: [
+            { type: 'complete', taskId: 'task-good-1', projectId: 'inbox', title: 'Task Good', confidence: 0.9 },
+            { type: 'update', title: null, targetQuery: 'other task', projectHint: 'Missing', confidence: 0.9 }
+        ],
+        activeTasks: [
+            { id: 'task-good-1', title: 'Task Good', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 },
+            { id: 'task-other-1', title: 'Other task', projectId: 'inbox', projectName: 'Inbox', priority: 3, status: 0 }
+        ]
+    });
+
+    const result = await harness.processMessage('complete good task and move other task', {
+        confirmedAction: { taskId: 'task-good-1', actionType: 'complete' },
+        skipClarification: true,
+        skipMutationConfirmation: true
+    });
+
+    assert.equal(result.type, 'task');
+    assert.equal(harness.adapterCalls.complete.length, 1);
+    assert.equal(harness.adapterCalls.update.length, 0);
 });
 
 test('WP07 T072: batch-style mutation phrasing is rejected with single-target guidance', async () => {
