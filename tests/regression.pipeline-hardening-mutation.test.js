@@ -175,6 +175,47 @@ test('pipeline context resolves project hints from available projects', async ()
     assert.equal(adapterCalls.create.length, 1);
     assert.equal(adapterCalls.create[0].projectId, DEFAULT_PROJECTS[1].id);
 });
+test('pipeline updates existing Saturday due date with explicit calendar intent', async () => {
+    const { processMessage, adapterCalls } = createPipelineHarness({
+        intents: [
+            {
+                type: 'update',
+                taskId: 'task-existing-saturday',
+                title: 'Pay rent',
+                projectHint: DEFAULT_PROJECTS[0].name,
+                dueDate: 'Saturday',
+                confidence: 0.9,
+                targetQuery: 'Pay rent'
+            }
+        ],
+        activeTasks: [
+            {
+                id: 'task-existing-saturday',
+                title: 'Pay rent',
+                projectId: DEFAULT_PROJECTS[0].id,
+                projectName: DEFAULT_PROJECTS[0].name,
+                priority: 1,
+                dueDate: '2026-05-01T09:00:00.000+0000',
+                content: null,
+                status: 0
+            }
+        ],
+    });
+
+    const result = await processMessage('move it to Saturday', {
+        currentDate: '2026-05-01',
+        timezone: 'Europe/Dublin',
+        entryPoint: 'freeform',
+        requestId: 'req-saturday-move'
+    });
+
+    assert.equal(result.type, 'task');
+    assert.equal(result.results.length, 1);
+    assert.equal(result.results[0].status, 'succeeded');
+    assert.equal(adapterCalls.update.length, 1);
+    assert.match(adapterCalls.update[0].action.dueDate, /^2026-05-02T00:00:00\.000\+0100$/);
+    assert.equal(adapterCalls.update[0].action.isAllDay, true);
+});
 
 test('pipeline fails safely on malformed intent extraction output', async () => {
     const { processMessage, adapterCalls } = createPipelineHarness({

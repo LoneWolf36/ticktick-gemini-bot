@@ -211,15 +211,9 @@ export function areEquivalentDueDates(expected, actual) {
  * @returns {string} Formatted ISO string with timezone offset
  */
 export function formatTickTickISO(date, timezone, { hour = 0, minute = 0 } = {}) {
-    // Use UTC getters instead of local-time getters so the function is
-    // consistent regardless of the system's local timezone. The input Date
-    // was constructed via new Date(year, month, day) which creates midnight
-    // in the system's local timezone — using UTC getters extracts those same
-    // components correctly on UTC-based systems and avoids timezone-dependent
-    // behavior on non-UTC systems.
-    const year = date.getUTCFullYear();
-    const month = date.getUTCMonth();
-    const day = date.getUTCDate();
+    const year = date.getFullYear();
+    const month = date.getMonth();
+    const day = date.getDate();
     const h = hour;
     const m = minute;
     const offsetMinutes = getTimezoneOffsetMinutes(year, month, day, h, m, timezone);

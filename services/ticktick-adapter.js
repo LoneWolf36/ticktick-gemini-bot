@@ -1259,6 +1259,8 @@ export class TickTickAdapter {
                 if (targetProjectId !== undefined && targetProjectId !== null)
                     updatePayload.projectId = targetProjectId;
                 if (normalizedAction.repeatFlag !== undefined) updatePayload.repeatFlag = normalizedAction.repeatFlag;
+                if (normalizedAction.isAllDay !== undefined) updatePayload.isAllDay = normalizedAction.isAllDay;
+                if (normalizedAction.timeZone !== undefined) updatePayload.timeZone = normalizedAction.timeZone;
             }
 
             // Handle content merge with adapter-owned single merge path
@@ -1285,6 +1287,26 @@ export class TickTickAdapter {
 
             if (sourceProjectId && targetProjectId && targetProjectId !== sourceProjectId) {
                 updatePayload.originalProjectId = sourceProjectId;
+            }
+
+            const isSameValue = (key, left, right) => {
+                if (['dueDate', 'startDate'].includes(key)) {
+                    return areEquivalentDueDates(left, right);
+                }
+                if (Array.isArray(left) || Array.isArray(right)) {
+                    return JSON.stringify(left ?? null) === JSON.stringify(right ?? null);
+                }
+                return left === right;
+            };
+
+            const changedKeys = Object.entries(updatePayload)
+                .filter(([key]) => !['id', 'originalProjectId'].includes(key))
+                .filter(([key, value]) => !isSameValue(key, value, existingTask[key]));
+
+            if (changedKeys.length === 0 && !(hasRepeatUpdate && wantsRepeat)) {
+                const err = new Error('updateTask requires at least one changed field');
+                err.code = 'VALIDATION_ERROR';
+                throw err;
             }
 
             let updatedTask = await this._client.updateTask(taskId, updatePayload);

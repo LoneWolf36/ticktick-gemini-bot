@@ -19,6 +19,16 @@ const PRIORITY_PATTERNS = /^(urgent|important|critical|asap|high priority)[:\s-]
 const BRACKET_PREFIX = /^\[.*?\]\s*/;
 const LEADING_ARTICLES = /^(a|an|the)\s+/i;
 
+function isExplicitDueDateText(value) {
+    if (typeof value !== 'string') return false;
+    const raw = value.trim();
+    if (!raw) return false;
+    if (/^\d{4}-\d{2}-\d{2}(?:[tT\s].*)?$/.test(raw)) return true;
+    const hasDatePhrase = DATE_PATTERNS.test(raw);
+    DATE_PATTERNS.lastIndex = 0;
+    return hasDatePhrase;
+}
+
 // Content normalization constants
 const DEFAULT_MAX_CONTENT_LENGTH = 4000;
 
@@ -1023,14 +1033,12 @@ export function normalizeAction(intentAction, options = {}) {
     // dueDate set by the user and the LLM-inferred dueDate is not based on
     // explicit date phrases in the title, skip the dueDate change.
     if (expandedDueDate != null && options.existingTask?.dueDate && options.preserveExistingDueDate !== false) {
-        const taskTitle = intentAction.title || '';
-        const hasDatePhrase = DATE_PATTERNS.test(taskTitle);
-        DATE_PATTERNS.lastIndex = 0; // reset global regex state
-        if (!hasDatePhrase) {
+        const explicitDueDate = isExplicitDueDateText(intentAction.dueDate);
+        if (!explicitDueDate) {
             // No date phrase in title — LLM likely inferred a dueDate.
             // Preserve the user-set existing dueDate.
             console.log(
-                `[Normalizer] Preserved existing due date for "${taskTitle}" (user-set: ${options.existingTask.dueDate})`
+                `[Normalizer] Preserved existing due date for "${intentAction.title || ''}" (user-set: ${options.existingTask.dueDate})`
             );
             expandedDueDate = undefined;
             expandedIsAllDay = undefined;

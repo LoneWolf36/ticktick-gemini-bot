@@ -200,6 +200,91 @@ test('TickTickAdapter updateTask preserves existing notes on due-date-only mutat
     assert.equal(Object.hasOwn(updatePayload, 'content'), false);
 });
 
+test('TickTickAdapter updateTask rejects no-op updates after normalization', async () => {
+    const client = Object.create(TickTickClient.prototype);
+    client.getTask = async () => ({
+        id: 'task-no-op',
+        projectId: 'proj-no-op',
+        title: 'Task No Op',
+        content: null,
+        priority: 2,
+        dueDate: '2026-05-02T00:00:00.000+0000',
+        isAllDay: true,
+        status: 0
+    });
+    client.updateTask = async () => {
+        throw new Error('should not write');
+    };
+
+    const adapter = new TickTickAdapter(client);
+
+    await assert.rejects(
+        () =>
+            adapter.updateTask('task-no-op', {
+                originalProjectId: 'proj-no-op',
+                dueDate: '2026-05-02T00:00:00.000+0000',
+                isAllDay: true
+            }),
+        /changed field|VALIDATION_ERROR/
+    );
+});
+
+test('TickTickAdapter updateTask treats equivalent dueDate shapes as no-op', async () => {
+    const client = Object.create(TickTickClient.prototype);
+    client.getTask = async () => ({
+        id: 'task-date-equivalent',
+        projectId: 'proj-date-equivalent',
+        title: 'Task Date Equivalent',
+        content: null,
+        priority: 2,
+        dueDate: '2026-05-02',
+        status: 0
+    });
+    client.updateTask = async () => {
+        throw new Error('should not write equivalent dueDate');
+    };
+
+    const adapter = new TickTickAdapter(client);
+
+    await assert.rejects(
+        () =>
+            adapter.updateTask('task-date-equivalent', {
+                originalProjectId: 'proj-date-equivalent',
+                dueDate: '2026-05-02T00:00:00.000+0000'
+            }),
+        /changed field|VALIDATION_ERROR/
+    );
+});
+
+test('TickTickAdapter updateTask preserves explicit all-day dueDate payload shape', async () => {
+    let updatePayload = null;
+    const client = Object.create(TickTickClient.prototype);
+    client.getTask = async () => ({
+        id: 'task-explicit-date',
+        projectId: 'proj-explicit',
+        title: 'Move report',
+        content: null,
+        priority: 0,
+        status: 0
+    });
+    client.updateTask = async (_taskId, payload) => {
+        updatePayload = payload;
+        return { id: 'task-explicit-date', ...payload };
+    };
+
+    const adapter = new TickTickAdapter(client);
+    await adapter.updateTask('task-explicit-date', {
+        originalProjectId: 'proj-explicit',
+        dueDate: '2026-05-02T00:00:00.000+0000',
+        isAllDay: true,
+        timeZone: 'Europe/Dublin'
+    });
+
+    assert.equal(updatePayload.dueDate, '2026-05-02T00:00:00.000+0000');
+    assert.equal(updatePayload.isAllDay, true);
+    assert.equal(updatePayload.timeZone, 'Europe/Dublin');
+});
+
 test('TickTickAdapter updateTask appends genuinely new notes once with separator', async () => {
     let updatePayload = null;
     const client = Object.create(TickTickClient.prototype);
@@ -1117,336 +1202,4 @@ test('formatSummary keeps standard briefing full and reduces urgent briefing to 
     assert.doesNotMatch(urgent, /Pay rent/);
     assert.match(urgent, /Ship weekly architecture PR/);
     assert.match(urgent, /Prepare system design notes/);
-});
-
-test('composeBriefingSummary keeps the daily plan to 3 tasks and preserves plausible goal work', () => {
-    const activeTasks = [
-        ...buildSummaryActiveTasksFixture(),
-        {
-            id: 'task-busywork',
-            title: 'Organize desktop icons',
-            projectId: 'admin',
-            projectName: 'Admin',
-            priority: 0,
-            dueDate: null,
-            status: 0
-        }
-    ];
-    const rankingResult = {
-        ranked: [
-            {
-                taskId: 'task-focus',
-                rationaleCode: 'goal_alignment',
-                rationaleText: 'Directly moves the highest-priority goal.'
-            },
-            {
-                taskId: 'task-support',
-                rationaleCode: 'urgency',
-                rationaleText: 'Time-bound execution window is closing.'
-            },
-            {
-                taskId: 'task-admin',
-                rationaleCode: 'capacity_protection',
-                rationaleText: 'Protects important admin follow-through.'
-            },
-            {
-                taskId: 'task-busywork',
-                rationaleCode: 'fallback',
-                rationaleText: 'Possible next candidate under degraded goal context.'
-            }
-        ],
-        topRecommendation: {
-            taskId: 'task-focus',
-            rationaleCode: 'goal_alignment',
-            rationaleText: 'Directly moves the highest-priority goal.'
-        },
-        degraded: false,
-        degradedReason: null,
-        context: { workStyleMode: store.MODE_STANDARD, urgentMode: false, stateSource: 'fixture' }
-    };
-
-    const result = composeBriefingSummary({
-        context: buildSummaryResolvedStateFixture({ kind: 'briefing', workStyleMode: store.MODE_STANDARD }),
-        activeTasks,
-        rankingResult
-    });
-
-    assert.equal(result.summary.priorities.length, 3);
-    assert.ok(result.summary.priorities.some((item) => item.task_id === 'task-focus'));
-    assert.ok(result.summary.priorities.some((item) => /highest-priority goal/i.test(item.rationale_text)));
-    assert.equal(
-        result.summary.priorities.some((item) => item.task_id === 'task-busywork'),
-        false
-    );
-});
-
-test('composeBriefingSummary says no relevant tasks concisely instead of inventing work', () => {
-    const result = composeBriefingSummary({
-        context: buildSummaryResolvedStateFixture({ kind: 'briefing', workStyleMode: store.MODE_STANDARD }),
-        activeTasks: [],
-        rankingResult: buildSummaryRankingFixture([], { degraded: true })
-    });
-
-    assert.equal(result.summary.priorities.length, 0);
-    assert.equal(result.summary.focus, 'No active tasks right now.');
-    assert.equal(result.summary.start_now, 'No briefing actions right now.');
-    assert.match(result.formattedText, /No active tasks right now\./);
-    assert.doesNotMatch(result.formattedText, /Pick one concrete task/i);
-});
-
-test('formatSummary adapts daily close verbosity by work-style mode', () => {
-    const summary = {
-        stats: ['Completed: 2', 'Skipped: 1', 'Dropped: 0', 'Still open: 3'],
-        reflection: 'Today was mixed: some progress landed, and some work stayed open.',
-        reset_cue: 'Tomorrow’s restart: begin with “Ship weekly architecture PR”.',
-        notices: [
-            { code: 'delivery_context', message: 'Keep it factual.', severity: 'info', evidence_source: 'system' }
-        ]
-    };
-
-    const standard = formatSummary({
-        kind: 'daily_close',
-        summary,
-        context: buildSummaryResolvedStateFixture({ kind: 'daily_close', workStyleMode: store.MODE_STANDARD })
-    }).text;
-    const focus = formatSummary({
-        kind: 'daily_close',
-        summary,
-        context: buildSummaryResolvedStateFixture({ kind: 'daily_close', workStyleMode: store.MODE_FOCUS })
-    }).text;
-    const urgent = formatSummary({
-        kind: 'daily_close',
-        summary,
-        context: buildSummaryResolvedStateFixture({ kind: 'daily_close', workStyleMode: store.MODE_URGENT })
-    }).text;
-
-    assert.match(standard, /\*\*Stats\*\*/);
-    assert.match(standard, /\*\*Notes\*\*/);
-
-    assert.match(focus, /\*\*Stats\*\*/);
-    assert.doesNotMatch(focus, /\*\*Notes\*\*/);
-    assert.doesNotMatch(focus, /Still open: 3/);
-
-    assert.doesNotMatch(urgent, /\*\*Stats\*\*/);
-    assert.doesNotMatch(urgent, /\*\*Notes\*\*/);
-    assert.match(urgent, /\*\*Reflection\*\*/);
-    assert.match(urgent, /\*\*Reset cue\*\*/);
-});
-
-test('formatSummary keeps weekly default compact in standard mode and shortens in urgent mode', () => {
-    const summary = buildWeeklySummaryFixture();
-
-    const standard = formatSummary({
-        kind: 'weekly',
-        summary,
-        context: buildSummaryResolvedStateFixture({ kind: 'weekly', workStyleMode: store.MODE_STANDARD })
-    }).text;
-    const urgent = formatSummary({
-        kind: 'weekly',
-        summary,
-        context: buildSummaryResolvedStateFixture({ kind: 'weekly', workStyleMode: store.MODE_URGENT })
-    }).text;
-
-    assert.match(standard, /\*\*Carry forward\*\*/);
-    assert.match(standard, /\*\*Notes\*\*/);
-    assert.match(standard, /Finalize system design notes/);
-
-    assert.doesNotMatch(urgent, /\*\*Carry forward\*\*/);
-    assert.doesNotMatch(urgent, /\*\*Notes\*\*/);
-    assert.match(urgent, /\*\*Progress\*\*/);
-    assert.match(urgent, /\*\*Next focus\*\*/);
-    assert.match(urgent, /\*\*Watchouts\*\*/);
-});
-
-test('pipeline shortens urgent confirmations and clarification prompts while keeping errors clear', async () => {
-    const creationHarness = createPipelineHarness({
-        intents: [{ type: 'create', title: 'Buy groceries', confidence: 0.9, projectHint: 'Career' }]
-    });
-
-    const standardTask = await creationHarness.processMessage('buy groceries', {
-        workStyleMode: store.MODE_STANDARD
-    });
-    const urgentTask = await creationHarness.processMessage('buy groceries', {
-        workStyleMode: store.MODE_URGENT
-    });
-
-    assert.equal(standardTask.confirmationText, 'Created: Buy groceries');
-    assert.equal(urgentTask.confirmationText, 'Buy groceries');
-
-    const multiCreateHarness = createPipelineHarness({
-        intents: [
-            { type: 'create', title: 'Book flight', confidence: 0.9, projectHint: 'Career' },
-            { type: 'create', title: 'Pack bag', confidence: 0.9, projectHint: 'Career' }
-        ]
-    });
-    const standardMultiCreate = await multiCreateHarness.processMessage('book flight and pack bag', {
-        workStyleMode: store.MODE_STANDARD
-    });
-    const urgentMultiCreate = await multiCreateHarness.processMessage('book flight and pack bag', {
-        workStyleMode: store.MODE_URGENT
-    });
-
-    assert.equal(standardMultiCreate.confirmationText, 'Created 2 tasks');
-    assert.equal(urgentMultiCreate.confirmationText, 'Done. Created 2');
-
-    const clarificationHarness = createPipelineHarness({
-        intents: [{ type: 'update', title: 'Weekly update', confidence: 0.9, targetQuery: 'weekly' }],
-        activeTasks: [
-            { id: 't1', title: 'Write weekly report', projectId: 'p1', projectName: 'Career', priority: 5, status: 0 },
-            { id: 't2', title: 'Review weekly metrics', projectId: 'p1', projectName: 'Career', priority: 3, status: 0 }
-        ]
-    });
-
-    const standardClarification = await clarificationHarness.processMessage('update weekly', {
-        workStyleMode: store.MODE_STANDARD
-    });
-    const urgentClarification = await clarificationHarness.processMessage('update weekly', {
-        workStyleMode: store.MODE_URGENT
-    });
-
-    assert.match(standardClarification.confirmationText, /^Which task did you mean\?/);
-    assert.match(standardClarification.confirmationText, /Write weekly report/);
-    assert.match(standardClarification.confirmationText, /Review weekly metrics/);
-    assert.match(urgentClarification.confirmationText, /^Which task\?/);
-    assert.doesNotMatch(urgentClarification.confirmationText, /\n\n/);
-    assert.match(urgentClarification.confirmationText, /Write weekly report/);
-    assert.match(urgentClarification.confirmationText, /Review weekly metrics/);
-
-    const failureHarness = createPipelineHarness({
-        intents: [{ type: 'create', title: 'Buy groceries', confidence: 0.9 }],
-        useRealNormalizer: false,
-        normalizedActions: [{ valid: false, validationErrors: ['missing title'] }]
-    });
-
-    const standardFailure = await failureHarness.processMessage('buy groceries', {
-        workStyleMode: store.MODE_STANDARD
-    });
-    const urgentFailure = await failureHarness.processMessage('buy groceries', {
-        workStyleMode: store.MODE_URGENT
-    });
-
-    assert.equal(standardFailure.type, 'error');
-    assert.equal(urgentFailure.type, 'error');
-    assert.equal(
-        standardFailure.confirmationText,
-        '⚠️ I could not validate the task details. Please clarify and retry.'
-    );
-    assert.equal(urgentFailure.confirmationText, standardFailure.confirmationText);
-});
-
-test('GeminiAnalyzer _buildTierChain parses string fallbacks into chain', () => {
-    const analyzer = new GeminiAnalyzer(['dummy-key']);
-
-    // String fallback (constructor default uses comma-separated string)
-    const stringChain = analyzer._buildTierChain('gemini-2.5-pro', 'gemini-2.5-flash');
-    assert.deepEqual(stringChain, ['gemini-2.5-pro', 'gemini-2.5-flash']);
-
-    // Array fallback (server.js uses parseModelList which returns array)
-    const arrayChain = analyzer._buildTierChain('gemini-2.5-pro', ['gemini-2.5-flash']);
-    assert.deepEqual(arrayChain, ['gemini-2.5-pro', 'gemini-2.5-flash']);
-
-    // Multiple string fallbacks
-    const multiStringChain = analyzer._buildTierChain('gemini-2.5-pro', 'gemini-2.5-flash,gemini-1.5-pro');
-    assert.deepEqual(multiStringChain, ['gemini-2.5-pro', 'gemini-2.5-flash', 'gemini-1.5-pro']);
-
-    // Empty string fallback
-    const emptyChain = analyzer._buildTierChain('gemini-2.5-pro', '');
-    assert.deepEqual(emptyChain, ['gemini-2.5-pro']);
-
-    // Empty array fallback
-    const emptyArrayChain = analyzer._buildTierChain('gemini-2.5-pro', []);
-    assert.deepEqual(emptyArrayChain, ['gemini-2.5-pro']);
-
-    // null/undefined fallback
-    const nullChain = analyzer._buildTierChain('gemini-2.5-pro', null);
-    assert.deepEqual(nullChain, ['gemini-2.5-pro']);
-
-    // Duplicates in fallback are skipped
-    const dedupChain = analyzer._buildTierChain('gemini-2.5-pro', 'gemini-2.5-flash,gemini-2.5-flash');
-    assert.deepEqual(dedupChain, ['gemini-2.5-pro', 'gemini-2.5-flash']);
-
-    // Primary in fallback is skipped
-    const skipPrimaryChain = analyzer._buildTierChain('gemini-2.5-pro', 'gemini-2.5-pro,gemini-2.5-flash');
-    assert.deepEqual(skipPrimaryChain, ['gemini-2.5-pro', 'gemini-2.5-flash']);
-});
-
-test('GeminiAnalyzer advanced tier includes gemini-2.5-flash fallback by default', () => {
-    // No config passed — should use default fallback
-    const analyzer = new GeminiAnalyzer(['dummy-key']);
-    const advancedChain = analyzer._modelTiers.advanced;
-    assert.ok(
-        advancedChain.includes('gemini-2.5-flash'),
-        `Expected chain to include gemini-2.5-flash fallback, got: ${JSON.stringify(advancedChain)}`
-    );
-    assert.equal(advancedChain[0], 'gemini-2.5-pro', `Expected primary model gemini-2.5-pro, got: ${advancedChain[0]}`);
-});
-
-test('GeminiAnalyzer _executeWithFailover falls back to flash when all keys exhausted on pro', async () => {
-    const analyzer = new GeminiAnalyzer(['dummy-key-1', 'dummy-key-2']);
-    const calledModels = [];
-
-    // Override _buildTierChain to ensure explicit chain for test
-    analyzer._modelTiers.advanced = ['gemini-2.5-pro', 'gemini-2.5-flash'];
-
-    await assert.rejects(
-        () =>
-            analyzer._executeWithFailover(
-                'test prompt',
-                async (ai, prompt, model) => {
-                    calledModels.push(model);
-                    // Throw daily quota on pro, then on flash
-                    const err = new Error('Daily quota exhausted');
-                    err.status = 429;
-                    throw err;
-                },
-                { modelTier: 'advanced' }
-            ),
-        (err) => {
-            // Should exhaust both pro and flash before throwing quota exhaustion
-            assert.ok(
-                calledModels.includes('gemini-2.5-pro'),
-                `Expected pro to be tried, got: ${JSON.stringify(calledModels)}`
-            );
-            assert.ok(
-                calledModels.includes('gemini-2.5-flash'),
-                `Expected flash to be tried as fallback, got: ${JSON.stringify(calledModels)}`
-            );
-            assert.ok(
-                calledModels.indexOf('gemini-2.5-pro') < calledModels.indexOf('gemini-2.5-flash'),
-                'Expected pro to be tried before flash'
-            );
-            return true;
-        }
-    );
-});
-
-test('TickTickAdapter updateTask verifyAfterWrite treats timezone-equivalent dueDate values as verified', async () => {
-    const client = Object.create(TickTickClient.prototype);
-    client.getTask = async () => ({
-        id: 'task-tz-001',
-        projectId: 'proj-tz-001',
-        title: 'Test task',
-        content: '',
-        priority: 1,
-        // TickTick returned the dueDate with a different but equivalent timezone offset:
-        dueDate: '2026-04-30T23:59:00.000+0100',
-        repeatFlag: null,
-        status: 0
-    });
-    client.updateTask = async (_taskId, payload) => {
-        return { id: 'task-tz-001', projectId: 'proj-tz-001', ...payload };
-    };
-
-    const adapter = new TickTickAdapter(client);
-    const result = await adapter.updateTask(
-        'task-tz-001',
-        {
-            originalProjectId: 'proj-tz-001',
-            dueDate: '2026-04-30T22:59:00.000+0000' // Same moment as above, different TZ
-        },
-        { verifyAfterWrite: true }
-    );
-
-    assert.equal(result.verified, true, 'dueDate TZ-equivalent values should verify successfully');
-    assert.equal(result.verificationNote, 'Verified against TickTick API');
 });

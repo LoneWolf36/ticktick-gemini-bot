@@ -96,4 +96,28 @@ describe('Date resolution edge cases', () => {
         assert.ok(result.dueDate);
         assert.ok(result.dueDate.startsWith('2026-03-20'));
     });
+
+    it('should keep explicit Saturday dueDate on update even when existing dueDate exists and title is empty', () => {
+        const result = normalizeAction(
+            {
+                type: 'update',
+                title: '',
+                dueDate: 'Saturday',
+                confidence: 0.9,
+                targetQuery: 'move it to Saturday'
+            },
+            {
+                currentDate: '2026-05-01',
+                timezone: 'Europe/Dublin',
+                existingTask: {
+                    id: '69c68a5d4f2cca17598a1e4b',
+                    dueDate: '2026-05-01T23:00:00.000+0000'
+                }
+            }
+        );
+
+        assert.ok(result.dueDate);
+        assert.match(result.dueDate, /^2026-05-02/);
+        assert.equal(result.isAllDay, true);
+    });
 });
