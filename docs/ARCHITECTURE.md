@@ -60,6 +60,14 @@ Safety invariants:
 - Pending-confirmation receipts cannot already be changed/applied; they require confirmation details, a safe target identifier, and create/update confirmations require a proposed destination reference or choices.
 - Receipts must not carry raw task titles, descriptions, checklist text, or free-form user message text in diagnostic metadata.
 
+Verification semantics:
+
+- Mutation verification is evidence attached to an already-decided write result; it must not re-run accepted writes.
+- `confirmed` means TickTick read-back evidence matched the mutation. For completion, completed-task API evidence is preferred over active task status because recurring tasks can remain active after TickTick advances the next occurrence.
+- `inconclusive` means the write API accepted the mutation, but immediate live read-back could not prove final state. Receipts should use soft copy and safe next action such as resync/check TickTick, not a hard failure warning.
+- `unavailable` means verification reads failed after the write; receipts must not expose raw adapter errors.
+- `mismatch` means authoritative read-back contradicted the expected mutation and may use hard warning copy.
+
 Safe defaults: uncertainty stays conservative. Missing/ambiguous routing, malformed model output, stale preview, lock contention, or unknown state should become blocked, failed, deferred, pending confirmation, or busy — never an applied success.
 
 ## State Scope Substitution

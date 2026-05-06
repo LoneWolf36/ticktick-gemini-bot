@@ -1387,14 +1387,19 @@ export function buildFreeformReceipt(result, { projects = [] } = {}) {
         }
 
         const verificationState = record.verified ?? record.result?.verified;
+        const verificationStatus = record.verificationStatus ?? record.result?.verificationStatus;
         const verificationNote = record.verificationNote ?? record.result?.verificationNote;
 
         if (verificationState === false) {
             const note = typeof verificationNote === 'string' ? verificationNote.toLowerCase() : '';
-            if (note.includes('verification failed')) {
+            if (verificationStatus === 'inconclusive' || note.includes('verification inconclusive')) {
+                lines.push('⚠️ Change sent; TickTick live verification is still inconclusive.');
+            } else if (verificationStatus === 'unavailable' || note.includes('verification unavailable')) {
+                lines.push('⚠️ Change sent; verification unavailable.');
+            } else if (verificationStatus === 'mismatch' || note.includes('verification failed')) {
                 lines.push('⚠️ Verification did not confirm this change in TickTick.');
             } else {
-                lines.push('⚠️ Update sent; verification unavailable.');
+                lines.push('⚠️ Change sent; verification unavailable.');
             }
         }
     }

@@ -211,3 +211,24 @@ test('freeform receipt warns when verification is unavailable', () => {
     assert.match(text, /verification unavailable/);
     assert.doesNotMatch(text, /timeout/);
 });
+
+test('freeform receipt softens inconclusive completion verification', () => {
+    const text = buildFreeformReceipt({
+        results: [
+            {
+                status: 'succeeded',
+                result: {
+                    verified: false,
+                    verificationStatus: 'inconclusive',
+                    verificationNote: 'Verification inconclusive: completion accepted but TickTick still reports active status'
+                },
+                action: { type: 'complete' },
+                rollbackStep: { payload: { snapshot: { title: 'Hidden task' } } }
+            }
+        ]
+    });
+
+    assert.match(text, /TickTick live verification is still inconclusive/);
+    assert.doesNotMatch(text, /Verification did not confirm this change/);
+    assert.doesNotMatch(text, /active status/);
+});

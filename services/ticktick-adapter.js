@@ -851,37 +851,67 @@ export class TickTickAdapter {
     }
 
     /**
-     * Verifies a complete mutation by checking the task is no longer active.
+     * Verifies a complete mutation with completion-aware evidence.
+     * A completed recurring task may remain active as TickTick advances the next occurrence,
+     * so active status alone is not authoritative proof of failure.
      * @param {string} projectId - Project ID containing the task
      * @param {string} taskId - Task ID to verify
-     * @returns {Promise<{verified: boolean, verificationNote: string}>}
+     * @returns {Promise<{verified: boolean, verificationStatus: string, verificationNote: string}>}
      * @private
      */
     async _verifyComplete(projectId, taskId) {
         const VERIFY_DELAY_MS = 800;
         const MAX_RETRIES = 1;
+        let lastActiveStatus = null;
+        let lastFetchError = null;
+
         for (let attempt = 0; attempt <= MAX_RETRIES; attempt++) {
+            await new Promise((resolve) => setTimeout(resolve, VERIFY_DELAY_MS));
+
             try {
-                await new Promise((resolve) => setTimeout(resolve, VERIFY_DELAY_MS));
+                const completedTasks = await this._client.listCompletedTasks({ projectIds: [projectId] });
+                const completedMatch = Array.isArray(completedTasks) && completedTasks.some((task) => task.id === taskId);
+                if (completedMatch) {
+                    return {
+                        verified: true,
+                        verificationStatus: 'confirmed',
+                        verificationNote: 'Verified against TickTick completed-task API'
+                    };
+                }
+            } catch (err) {
+                lastFetchError = err;
+            }
+
+            try {
                 const task = await this._client.getTask(projectId, taskId);
+                lastActiveStatus = task.status;
                 const isCompleted = task.status !== 0 && task.status !== undefined;
                 if (!isCompleted && attempt < MAX_RETRIES) {
                     this._log('completeTask', `VERIFY_RETRY { attempt: ${attempt + 1}, status: ${task.status} }`);
                     continue;
                 }
-                if (!isCompleted) {
-                    const note = `Verification failed: task status is ${task.status} (expected completed)`;
-                    this._log('completeTask', `WARNING { ${note} }`, true);
-                    return { verified: false, verificationNote: note };
+                if (isCompleted) {
+                    return {
+                        verified: true,
+                        verificationStatus: 'confirmed',
+                        verificationNote: 'Verified against TickTick task API'
+                    };
                 }
-                return { verified: true, verificationNote: 'Verified against TickTick API' };
             } catch (err) {
-                const note = `Verification skipped due to fetch error: ${err.message}`;
-                this._log('completeTask', `WARNING { ${note} }`, true);
-                return { verified: false, verificationNote: note };
+                lastFetchError = err;
             }
         }
-        return { verified: false, verificationNote: 'Verification exhausted retries' };
+
+        if (lastActiveStatus === 0 || lastActiveStatus === undefined) {
+            const note = 'Verification inconclusive: completion accepted but TickTick still reports active status';
+            this._log('completeTask', `WARNING { ${note} }`, true);
+            return { verified: false, verificationStatus: 'inconclusive', verificationNote: note };
+        }
+
+        const detail = lastFetchError?.message ? `, error: "${lastFetchError.message}"` : '';
+        const note = 'Verification unavailable after completion';
+        this._log('completeTask', `WARNING { ${note}${detail} }`, true);
+        return { verified: false, verificationStatus: 'unavailable', verificationNote: note };
     }
 
     /**
@@ -1539,6 +1569,7 @@ export class TickTickAdapter {
             if (options.verifyAfterWrite) {
                 const verifyResult = await this._verifyComplete(projectId, taskId);
                 result.verified = verifyResult.verified;
+                result.verificationStatus = verifyResult.verificationStatus;
                 result.verificationNote = verifyResult.verificationNote;
             }
 

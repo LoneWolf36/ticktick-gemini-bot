@@ -137,6 +137,55 @@ test('TickTickAdapter _verifyUpdate rejects identical semantically invalid repea
     assert.match(result.verificationNote, /repeatFlag mismatch/);
 });
 
+test('TickTickAdapter _verifyComplete confirms completion via completed-task API despite active status', async () => {
+    const client = Object.create(TickTickClient.prototype);
+    client.listCompletedTasks = async (filter) => {
+        assert.deepEqual(filter.projectIds, ['62038bae2ed8d7085e1cb939']);
+        return [{ id: '69f298de8f08a688d22786f3', projectId: '62038bae2ed8d7085e1cb939', status: 2 }];
+    };
+    client.getTask = async () => ({
+        id: '69f298de8f08a688d22786f3',
+        projectId: '62038bae2ed8d7085e1cb939',
+        status: 0
+    });
+
+    const adapter = new TickTickAdapter(client);
+    const result = await adapter._verifyComplete('62038bae2ed8d7085e1cb939', '69f298de8f08a688d22786f3');
+
+    assert.equal(result.verified, true);
+    assert.equal(result.verificationStatus, 'confirmed');
+    assert.match(result.verificationNote, /completed-task API/);
+});
+
+test('TickTickAdapter completeTask does not retry completion when verification is inconclusive', async () => {
+    let completeCalls = 0;
+    const client = Object.create(TickTickClient.prototype);
+    client.completeTask = async () => {
+        completeCalls += 1;
+        return { id: '69f298de8f08a688d22786f3' };
+    };
+    client.listCompletedTasks = async () => [];
+    client.getTask = async () => ({
+        id: '69f298de8f08a688d22786f3',
+        projectId: '62038bae2ed8d7085e1cb939',
+        status: 0
+    });
+
+    const adapter = new TickTickAdapter(client);
+    const result = await adapter.completeTask(
+        '69f298de8f08a688d22786f3',
+        '62038bae2ed8d7085e1cb939',
+        'default',
+        { verifyAfterWrite: true }
+    );
+
+    assert.equal(completeCalls, 1);
+    assert.equal(result.completed, true);
+    assert.equal(result.verified, false);
+    assert.equal(result.verificationStatus, 'inconclusive');
+    assert.match(result.verificationNote, /inconclusive/);
+});
+
 test('TickTickAdapter updateTask sends full preserved payload for repeat updates', async () => {
     let updatePayload = null;
     const client = Object.create(TickTickClient.prototype);
